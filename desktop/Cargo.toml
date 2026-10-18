@@ -1,0 +1,9 @@
+[package]
+name = "anime-hub-desktop"
+version = "0.1.0"
+description = "Anime Hub desktop wrapper — hub lifecycle + dedicated-profile Chromium app window"
+edition = "2021"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"
