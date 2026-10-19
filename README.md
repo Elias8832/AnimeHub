@@ -28,7 +28,7 @@ This app is early in development — expect bugs and breaking changes.
 
 - **Playback** - episodes open in mpv with resume, auto-play next, progress tracking and a skip-credits hotkey. Your mpv config still works.
 - **AniList** - Matches all your animes against AniList to acquire metadata, coverart, etc. and supports rating, progress, etc. editing.
-- **Streaming & downloads (optional)** - with [ani-cli](https://github.com/pystardust/ani-cli) installed, link any AniList show to an ani-cli search result once; its episodes then play in mpv with the same resume, progress tracking, AniList sync and auto-play as local files, and download straight into your library folder. Episodes you have on disk and online ones share one list.
+- **Online episodes (optional)** - with [ani-cli](https://github.com/pystardust/ani-cli) installed, every show lists the episodes you don't have as online episodes: click one and it plays in mpv with the same resume, progress tracking, AniList sync and auto-play as local files, or download it straight into your library folder. Shows are matched automatically; "Wrong episodes?" on a show page fixes a bad match.
 
 ## Requirements
 
