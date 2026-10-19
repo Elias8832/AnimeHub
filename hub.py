@@ -220,7 +220,7 @@ ANILIST_URL = "https://graphql.anilist.co"
 # round-4 UI rework (genre hints/tray, home airing panel, stats panels);
 # old caches just lack the fields until the next refresh — additive.
 ANILIST_USER_QUERY = """query($name:String){
-User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} }
+User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
 MediaListCollection(userName:$name, type:ANIME){
 lists{ entries{ status progress score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring } coverImage{extraLarge} bannerImage title{english romaji} } } }
 }}"""
@@ -1171,7 +1171,7 @@ def anilist_favourite_set(media_id, want):
         return {"error": "AniList has no such media"}
     if state["is_favourite"] == bool(want):
         return state
-    q = "mutation($id:Int){ToggleFavourite(animeId:$id){code}}"
+    q = "mutation($id:Int){ToggleFavourite(animeId:$id){anime(perPage:1){pageInfo{total}}}}"
     # Same contract as anilist_entry_save: auth/validation errors raise.
     if anilist_mutation(q, {"id": media_id}) is None:
         return {"error": "AniList rejected the update"}
@@ -1189,7 +1189,7 @@ def log(msg):
     print("anime-hub: %s" % msg, file=sys.stderr, flush=True)
 
 
-def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozenset()):
+def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozenset(), favs=frozenset()):
     """Merge the user's AniList lists with the local library — Decision 4's
     spine, release-first (Decision 19): one card per AniList entry, with a
     source-capability badge (installed / partial / not installed) derived
@@ -1229,7 +1229,9 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
                     "year": e.get("year"), "airing": e.get("airing"),
                     "genres": e.get("genres") or [],
                     "next_episode": e.get("next_episode"),
-                    "poster": e.get("poster"), "updated": e.get("updated"),
+                    "poster": e.get("poster"), "banner": e.get("banner"),
+                    "updated": e.get("updated"),
+                    "favourite": e["id"] in favs,
                     "capability": cap,
                     "installed": installed,
                     "local_show_id": loc[0]["id"] if loc else None,
@@ -1240,6 +1242,26 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
     untracked = [s["id"] for s in scan
                  if (s.get("meta") or {}).get("anilist_id") not in listed]
     return {"entries": out, "untracked": untracked, "mode": "anilist"}
+
+
+def spine_favourites(cached):
+    """AniList favourite ids for the spine: the cached list's favourites,
+    overridden by in-app edits made after that cache was fetched, so a heart
+    toggled on a show page shows on its card before the next list refresh."""
+    favs = set(cached.get("favourites") or [])
+    ts = cached.get("_ts")
+    if not ts:
+        return favs
+    since = datetime.fromtimestamp(ts, timezone.utc).strftime(CANONICAL_TS)
+    for ref, cur in curation_all().items():
+        if not ref.startswith("aid:") or (cur.get("updated_at") or "") <= since:
+            continue
+        mid = int(ref[4:])
+        if cur.get("favourite"):
+            favs.add(mid)
+        else:
+            favs.discard(mid)
+    return favs
 
 
 def curation_all():
@@ -1296,7 +1318,9 @@ def spine_build_local(scan, curations, streams=()):
                               ("MOVIE" if s.get("kind") == "movie" else None),
                     "year": meta.get("year"), "airing": None,
                     "genres": [], "next_episode": None,
-                    "poster": s.get("poster"), "updated": updated,
+                    "poster": s.get("poster"), "banner": s.get("banner"),
+                    "updated": updated,
+                    "favourite": bool(cur.get("favourite")),
                     "capability": ("installed" if on_disk == total else
                                    "partial" if on_disk else "online"),
                     "installed": on_disk,
@@ -1329,7 +1353,7 @@ def full_library():
         cached = anilist_cache_stale()
     if cached:
         spine = spine_build(cached["entries"], scan, {link["media_id"] for link in links},
-                            bool(anicli_path()), stream_missed_ids())
+                            bool(anicli_path()), stream_missed_ids(), spine_favourites(cached))
     elif not connected:
         spine = spine_build_local(scan, curation_all(), streams)
     else:
@@ -4212,6 +4236,7 @@ def anilist_user_data(force=False):
         "score_format": ((u.get("mediaListOptions") or {}).get("scoreFormat")
                          or "POINT_10"),
         "entries": list(entries.values()),
+        "favourites": [n["id"] for n in (((u.get("favourites") or {}).get("anime") or {}).get("nodes") or [])],
     }
     # Atomic: request threads read this file concurrently, and a torn read
     # would briefly flip the spine into local mode.
@@ -4374,6 +4399,19 @@ def fetch_season_thumbs(show):
         did += 1
         time.sleep(2.2)
     return did
+
+
+def open_show_folder(show_id):
+    """Open a disk show's folder in the user's file manager."""
+    show = next((s for s in scan_library() if s["id"] == show_id), None)
+    if not show or not show.get("path"):
+        raise ValueError("no such show on disk")
+    path = (LIBRARY / show["path"]).resolve()
+    if path.is_file():
+        path = path.parent
+    if not path.is_dir() or not path.is_relative_to(LIBRARY.resolve()):
+        raise ValueError("folder not found")
+    subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def open_in_browser(url):
@@ -4686,6 +4724,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": True})
                 except Exception as e:
                     self.send_json({"error": str(e)}, 400)
+        elif route == "/api/open-folder":
+            if self._fields(body, strings=("show_id",)):
+                try:
+                    open_show_folder(body["show_id"])
+                    self.send_json({"ok": True})
+                except Exception as e:
+                    self.send_json({"error": str(e)}, 400)
         elif route == "/api/adopt-root":
             res = adopt_root()
             self.send_json(res, 200 if res.get("ok") else 400)
@@ -4819,6 +4864,8 @@ class Handler(BaseHTTPRequestHandler):
                 cpatch["rewatches"] = patch["repeat"]
             if "completed_at" in patch:
                 cpatch["finished_at"] = patch["completed_at"]
+            if fav is not None:
+                cpatch["favourite"] = fav
             curation_set(ref, cpatch)
             fav_result = None
             if load_token():
@@ -4828,7 +4875,10 @@ class Handler(BaseHTTPRequestHandler):
                             if patch else anilist_entry_state(body["media_id"])
                         if fav is not None and not result.get("error"):
                             fav_result = anilist_favourite_set(body["media_id"], fav)
-                            if fav_result and not fav_result.get("error"):
+                            if fav_result and fav_result.get("error"):
+                                self.send_json({"error": fav_result["error"]})
+                                return
+                            if fav_result:
                                 result = fav_result
                         if result and not result.get("error"):
                             cpatch2 = {}
