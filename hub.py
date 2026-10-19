@@ -17,11 +17,13 @@ from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 
 import os
+import pty
 import re
 import shutil
 import socket
 import sqlite3
 import subprocess
+import tempfile
 
 
 # Two location roots (PLAN v0.1: config replaces hardcoded constants):
@@ -40,6 +42,8 @@ PART_RE = re.compile(r"^part\s*(\d+)$", re.I)
 EP_RE = re.compile(r"\bE(\d{1,4})\b", re.I)
 SE_EP_RE = re.compile(r"\bS\d{1,3}\s*E(\d{1,4})\b", re.I)
 SEP_NUM_RE = re.compile(r"^(?:ep(?:isode)?)\.?\s*(\d{1,4})", re.I)
+# "<title> Episode 5.mp4" — the name ani-cli gives its downloads.
+EPISODE_WORD_RE = re.compile(r"\bEpisode\s*(\d{1,4})\b", re.I)
 DEFAULT_PORT = 8787
 
 CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners")
@@ -301,6 +305,9 @@ def settings_payload():
         "window": WINDOW,
         "scan": dict(scan_state),
         "tools": {t: shutil.which(t) for t in ("mpv", "ani-cli", "upscayl")},
+        # ani-cli bridge preferences: quality + default audio for new links.
+        "stream": {**stream_prefs(), "version": anicli_version(),
+                   "qualities": list(STREAM_QUALITIES)},
     }
 
 
@@ -597,7 +604,22 @@ def migration_7(c):
         created TEXT)""")
 
 
-MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7]
+def migration_8(c):
+    """ani-cli links (v0.2 streaming, TODO 18 second half): which ani-cli
+    search result streams a given AniList release. The hub stores only how
+    to ask the user's ani-cli again — query, the result's exact title (the
+    menu helper picks it by name) and its position as a fallback — plus the
+    episode list ani-cli reported and AniList display metadata. Watch facts
+    of streamed episodes live in `episodes` like every other episode, under
+    ids "stream:<anilist_id>:<episode>"."""
+    c.execute("""CREATE TABLE IF NOT EXISTS stream_links(
+        media_id INTEGER PRIMARY KEY, query TEXT NOT NULL, title TEXT,
+        idx INTEGER DEFAULT 1, mode TEXT DEFAULT 'sub', episodes TEXT,
+        episodes_ts REAL, meta TEXT, updated_at TEXT)""")
+
+
+MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
+              migration_8]
 
 
 def snapshot_before(target_version):
@@ -658,6 +680,9 @@ def parse_ep_number(name):
     if m:
         return int(m.group(1))
     m = EP_RE.search(name)
+    if m:
+        return int(m.group(1))
+    m = EPISODE_WORD_RE.search(name)
     if m:
         return int(m.group(1))
     return None
@@ -877,7 +902,9 @@ def merge_db(scan):
                 # a valid scan stay in place and are marked gone. A re-download
                 # restores the watch state untouched, and a moved/renamed file
                 # keeps its facts until re-matched.
-                stale = [eid for eid in set(rows) - known if not eid.startswith("online:")]
+                # Streamed episodes ("stream:") never come from a scan.
+                stale = [eid for eid in set(rows) - known
+                         if not eid.startswith(("online:", "stream:"))]
                 # DO NOTHING keeps ts = when the row first went missing; this
                 # runs on every library poll and must not keep re-stamping it.
                 ins = ("INSERT INTO tombstones(kind,key,ts) VALUES(?,?,?) "
@@ -1149,13 +1176,15 @@ def log(msg):
     print("anime-hub: %s" % msg, file=sys.stderr, flush=True)
 
 
-def spine_build(entries, scan):
+def spine_build(entries, scan, streamed=frozenset()):
     """Merge the user's AniList lists with the local library — Decision 4's
     spine, release-first (Decision 19): one card per AniList entry, with a
     source-capability badge (installed / partial / not installed) derived
     from how much of that release exists on disk, and local shows that
     aren't on any list surfaced as `untracked` (matched-but-unlisted shows
     land there too — they are part of the universe without being tracked).
+    `streamed` holds the AniList ids linked to an ani-cli source: with
+    nothing on disk such a release is "online" instead of "no source".
     Pure function: entries come from the cache, scan from scan_library()."""
     by_media = {}
     for s in scan:
@@ -1175,6 +1204,8 @@ def spine_build(entries, scan):
             cap = "installed"
         elif installed:
             cap = "partial"
+        elif e["id"] in streamed:
+            cap = "online"
         else:
             cap = "none"
         out.append({"id": e["id"], "title": e.get("title"), "status": e.get("status"),
@@ -1186,7 +1217,8 @@ def spine_build(entries, scan):
                     "poster": e.get("poster"), "updated": e.get("updated"),
                     "capability": cap,
                     "installed": installed,
-                    "local_show_id": loc[0]["id"] if loc else None})
+                    "local_show_id": loc[0]["id"] if loc else None,
+                    "stream_show_id": f"aid:{e['id']}" if e["id"] in streamed else None})
     # Untracked = not on any of the user's lists. A second folder matched to
     # an already-listed release is a fragment of a tracked release, not an
     # untracked show — the card deep-links to the fuller one.
@@ -1207,16 +1239,21 @@ def curation_all():
                     "started_at,finished_at,updated_at FROM curation")}
 
 
-def spine_build_local(scan, curations):
+def spine_build_local(scan, curations, streams=()):
     """Decision 6's no-AniList mode: the SAME spine shape AniList mode
     renders, driven purely by local watch state. Entries are disk shows
     only — sections derive from hub.db progress, with a curation status
     the user set explicitly winning over the derivation (Decision 18.5:
     no-AniList mode keeps manually-edited curation). Everything here is
-    installed by definition, so the UI's source filter locks on.
+    installed by definition, so the UI's source filter locks on — except
+    for releases linked to ani-cli (`streams`, the bridge's shows): a
+    linked release is one entry for the unified list (replacing its disk
+    folder's), "online" with nothing on disk, "partial" with some.
     Pure function: scan from scan_library(), curations from curation_all()."""
     out = []
-    for s in scan:
+    linked = {x["stream"]["local_show_id"]: x for x in streams if x["stream"]["local_show_id"]}
+    online = [x for x in streams if not x["stream"]["local_show_id"]]
+    for s in [linked.get(x["id"], x) for x in scan] + online:
         eps = [ep for sea in s["seasons"] for ep in sea["episodes"]]
         aid = (s.get("meta") or {}).get("anilist_id")
         cur = curations.get("aid:%d" % aid if aid else "sid:%s" % s["id"]) or {}
@@ -1237,6 +1274,8 @@ def spine_build_local(scan, curations):
         except ValueError:
             updated = 0
         meta = s.get("meta") or {}
+        streamed = s.get("kind") == "stream"
+        on_disk = sum(1 for ep in eps if ep.get("installed")) if streamed else total
         out.append({"id": s["id"], "title": s["title"],
                     "status": status, "progress": len(watched),
                     "score": cur.get("score") or 0, "episodes": total,
@@ -1245,7 +1284,9 @@ def spine_build_local(scan, curations):
                     "year": meta.get("year"), "airing": None,
                     "genres": [], "next_episode": None,
                     "poster": s.get("poster"), "updated": updated,
-                    "capability": "installed", "installed": total,
+                    "capability": ("installed" if on_disk == total else
+                                   "partial" if on_disk else "online"),
+                    "installed": on_disk,
                     "local_show_id": s["id"]})
     return {"entries": out, "untracked": [], "mode": "local"}
 
@@ -1253,6 +1294,11 @@ def spine_build_local(scan, curations):
 def full_library():
     scan = scan_library()
     merge_db(scan)
+    # ani-cli bridge: linked releases as shows of their own ("aid:<id>"),
+    # carried beside the scan — never inside it, so scan health, matching
+    # and tombstones stay about the disk.
+    links = stream_links_all()
+    streams = stream_shows(scan, links)
     # Spine (TODO 8, Decision 4): AniList lists merged with the library —
     # from the cache only, so the frequent library poll never waits on the
     # network. Absent until the first /api/anilist fetch or boot warm-up.
@@ -1268,9 +1314,9 @@ def full_library():
         # /api/anilist visit re-freshen it.
         cached = anilist_cache_stale()
     if cached:
-        spine = spine_build(cached["entries"], scan)
+        spine = spine_build(cached["entries"], scan, {link["media_id"] for link in links})
     elif not connected:
-        spine = spine_build_local(scan, curation_all())
+        spine = spine_build_local(scan, curation_all(), streams)
     else:
         # AniList mode with no cache at all (first ever connect): no spine
         # yet (the boot warm-up fills it); the UI renders the plain local
@@ -1278,8 +1324,10 @@ def full_library():
         spine = None
     continue_row = []
     history = []
-    for s in scan:
+    for s in scan + streams:
         for ep in eps_of(s):
+            if ep.get("installed"):
+                continue  # a stream show's on-disk episode — the scan side lists it
             if ep["last_played"]:
                 history.append(ep | {"show": s["title"], "show_id": s["id"], "poster": s["poster"]})
             if not ep["watched"] and ep["position"] > 30 and ep["duration"] and ep["position"] / ep["duration"] < 0.92:
@@ -1306,8 +1354,10 @@ def full_library():
             now = {"episode_id": a["ep_id"], "show": a["show_title"], "label": a["label"], "percent": a.get("percent") or 0}
     return {"shows": scan, "continue": continue_row[:20], "history": history,
             # Legacy fields kept as empty lists since the streaming strip
-            # (TODO 18, Decision 18.5): online playback returns in v0.2.
+            # (TODO 18, Decision 18.5). Streamed episodes ride in
+            # continue/history above; their shows are `streams`.
             "continue_online": [], "history_online": [],
+            "streams": streams, "stream_ready": bool(anicli_path()),
             # Scan health (TODO 23): state = ok/partial/missing/unconfigured;
             # root = ok/changed (configured root differs from the indexed one).
             "scan": dict(scan_state),
@@ -1330,6 +1380,8 @@ def full_library():
 
 
 def episode_by_id(eid):
+    if eid.startswith("stream:"):
+        return stream_episode(eid)
     scan = scan_library()
     merge_db(scan)  # attach the watch facts (watched/position) to the scan
     for s in scan:
@@ -1343,7 +1395,10 @@ def media_by_id(show_id):
     """The local show container with this id (sibling of episode_by_id at
     the show level) — used by the entry surface to attach local context
     and by bulk marks (TODO 6); the watch facts ride along (merge_db) so
-    AniList sync sees the real watched state."""
+    AniList sync sees the real watched state. "aid:<id>" is a streamed
+    release (the ani-cli bridge)."""
+    if show_id.startswith("aid:"):
+        return stream_show_by_media(stream_media_id(show_id))
     scan = scan_library()
     merge_db(scan)
     for s in scan:
@@ -1456,7 +1511,7 @@ def auto_track_after_play(ep_id):
     s, ep = episode_by_id(ep_id)
     if not s or not ep:
         return None
-    return anilist_track_show(s)
+    return anilist_track_show(stream_trackable(s) if s.get("kind") == "stream" else s)
 
 
 def bulk_watched(show_id, season=None, watched=True):
@@ -1494,7 +1549,8 @@ def bulk_watched(show_id, season=None, watched=True):
             for ep in sea["episodes"]:
                 ep["watched"] = 1
         try:
-            synced = anilist_track_show(s, manual=True)
+            synced = anilist_track_show(stream_trackable(s) if s.get("kind") == "stream" else s,
+                                        manual=True)
         except Exception as exc:
             log("bulk sync failed: %s" % exc)
     return {"ok": True, "episodes": len(eps), "watched": bool(watched),
@@ -1512,6 +1568,8 @@ def completion_for_episode(ep_id):
     s, ep = episode_by_id(ep_id)
     if not s or not ep:
         return
+    if s.get("kind") == "stream":
+        s = stream_trackable(s)
     aid = (s.get("meta") or {}).get("anilist_id")
     if not aid:
         return
@@ -1673,8 +1731,9 @@ def autoplay_next(ep_id, version=0):
     """Chain into the episode after ep_id, carrying the chosen file version
     (TODO 24): the same index into the next episode's parallel file list
     keeps the user's picked variant instead of resetting to the first one;
-    start_play clamps it to what exists. Online autoplay returns with the
-    v0.2 streaming parity work (TODO 10)."""
+    start_play clamps it to what exists. Streamed episodes chain the same
+    way: next_episode walks the stream show's list, and an episode that is
+    on disk by now plays from disk."""
     try:
         nxt = next_episode(ep_id)
         if nxt:
@@ -1694,10 +1753,17 @@ def _record_session_error(ep_id, msg):
     _session_error.update(ep_id=ep_id, error=msg, ts=time.time())
 
 
-def watch_process(proc, ep_id, sock_path):
+def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
+    """Track one playback session over mpv's IPC socket. `startup` bounds
+    the wait for the socket; `failure(rc)` words a session that ended
+    before playback (stream sessions report ani-cli's own error)."""
     last_time = 0.0
     duration = 0.0
-    deadline = time.time() + 15
+    # No position write until mpv has reported one: a stream (or a slow
+    # file) answers on the socket while still buffering, and writing the
+    # initial 0 then would erase the resume point if the user quits early.
+    seen = False
+    deadline = time.time() + startup
     connected = False
     while time.time() < deadline and proc.poll() is None:
         if not sock_path.exists():
@@ -1712,8 +1778,10 @@ def watch_process(proc, ep_id, sock_path):
     if not connected and proc.poll() is not None and _owns_session(ep_id, proc):
         # mpv died before playback started (bad file, missing decoder…):
         # record it so the UI can explain the dead play click (TODO 24).
-        _record_session_error(ep_id, f"mpv exited before playback started "
-                                     f"(exit code {proc.wait()}). See mpv-stderr.log in the data dir.")
+        rc = proc.wait()
+        _record_session_error(ep_id, failure(rc) if failure else
+                              f"mpv exited before playback started "
+                              f"(exit code {rc}). See mpv-stderr.log in the data dir.")
     if connected:
         while proc.poll() is None:
             try:
@@ -1721,6 +1789,7 @@ def watch_process(proc, ep_id, sock_path):
                 d = mpv_ipc(sock_path, ["get_property", "duration"])
                 if t and isinstance(t.get("data"), (int, float)):
                     last_time = t["data"]
+                    seen = True
                 if d and isinstance(d.get("data"), (int, float)):
                     duration = d["data"]
                 # Generation guard (TODO 24): a retired watcher must not write
@@ -1728,6 +1797,12 @@ def watch_process(proc, ep_id, sock_path):
                 # immediately before every effect, not only at cleanup.
                 if not _owns_session(ep_id, proc):
                     break
+                if not seen:
+                    try:
+                        proc.wait(timeout=0.5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
                 now = utc_stamp()
                 with db() as c:
                     c.execute(
@@ -1753,14 +1828,15 @@ def watch_process(proc, ep_id, sock_path):
     try:
         rc = proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        stop_process_group(proc, signal.SIGKILL)
         rc = proc.wait()
+    anicli_release(proc)
     # Supersession (TODO 24): start_play terminates the replaced mpv with
     # SIGTERM, so returncode -SIGTERM means this watcher was retired — its
     # replacement owns tracking now, and this session must have no effects
     # at all (the old bug: a retired watcher marked the episode watched at
     # its own 80 % and overwrote the new session's position).
-    retired = rc == -signal.SIGTERM
+    retired = rc == -signal.SIGTERM or getattr(proc, "hub_retired", False)
     # "Done with this episode": the last position we saw was within ~3s of
     # the end (the poll runs every 2s, so a natural EOF — or a seek to the
     # end — always qualifies), or the skip-credits marker (hotkey quit).
@@ -1810,7 +1886,35 @@ def watch_process(proc, ep_id, sock_path):
         pass
 
 
+def resume_args(ep_id):
+    """mpv's --start for an episode, or nothing. Resume rule (TODO 24), the
+    one authoritative rule the UI mirrors: a saved position is a resume
+    point whenever it is non-trivial (> 1 % of the episode — the frontend's
+    resumable() uses exactly this), for unwatched rows including past the
+    92 % strip cutoff, and for watched rows still below the cutoff; a
+    finished row restarts. The old 60 s floor disagreed with the UI's
+    Resume label in the 1–60 s zone."""
+    with db() as c:
+        row = c.execute("SELECT position, duration, watched FROM episodes WHERE id=?", (ep_id,)).fetchone()
+    pos = row[0] if row else 0
+    dur = row[1] if row else 0
+    watched = bool(row[2]) if row else False
+    if dur and pos / dur > 0.01 and (pos / dur < 0.92 or not watched):
+        return [f"--start={int(pos // 60)}:{int(pos % 60)}"]
+    return []
+
+
+def retire_session(proc):
+    """Supersede a playback session (TODO 24): flag it for its watcher —
+    an ani-cli session exits with its own code, not -SIGTERM — then stop
+    its whole process group."""
+    proc.hub_retired = True
+    stop_process_group(proc)
+
+
 def start_play(ep_id, version=0):
+    if ep_id.startswith("stream:"):
+        return start_stream(ep_id)
     s, ep = episode_by_id(ep_id)
     if not ep:
         return {"error": "unknown episode"}
@@ -1819,21 +1923,8 @@ def start_play(ep_id, version=0):
     path = LIBRARY / files[version]["path"]
     if not path.exists():
         return {"error": "file missing"}
-    with db() as c:
-        row = c.execute("SELECT position, duration, watched FROM episodes WHERE id=?", (ep_id,)).fetchone()
-    pos = row[0] if row else 0
-    dur = row[1] if row else 0
-    watched = bool(row[2]) if row else False
     sock = Path("/tmp") / f"anime-hub-{uuid.uuid4().hex[:8]}.sock"
-    args = ["mpv", str(path), f"--input-ipc-server={sock}"]
-    # Resume rule (TODO 24), the one authoritative rule the UI mirrors:
-    # a saved position is a resume point whenever it is non-trivial (> 1 %
-    # of the episode — the frontend's resumable() uses exactly this), for
-    # unwatched rows including past the 92 % strip cutoff, and for watched
-    # rows still below the cutoff; a finished row restarts. The old 60 s
-    # floor disagreed with the UI's Resume label in the 1–60 s zone.
-    if dur and pos / dur > 0.01 and (pos / dur < 0.92 or not watched):
-        args.append(f"--start={int(pos // 60)}:{int(pos % 60)}")
+    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id)]
     # No --save-position-on-quit (TODO 24): the hub's IPC loop is the only
     # resume store. mpv's watch-later state would otherwise fight an
     # intentional restart/reset — a stale mpv-side position can override
@@ -1846,11 +1937,8 @@ def start_play(ep_id, version=0):
     with _launch_lock:
         with _active_lock:
             old = next(iter(_active.values()), None)
-            if old:
-                try:
-                    old["proc"].terminate()
-                except OSError:
-                    pass
+        if old:
+            retire_session(old["proc"])
 
         def spawn():
             """mpv's stderr lands in mpv-stderr.log (best effort — a log
@@ -1894,6 +1982,733 @@ def start_play(ep_id, version=0):
                               "label": label, "percent": 0, "version": version}
     threading.Thread(target=watch_process, args=(proc, ep_id, sock), daemon=True).start()
     return {"ok": True}
+
+
+# ---------- ani-cli bridge (v0.2 streaming, TODO 18 second half) ----------
+# Streaming and downloads are delegated to the user's own ani-cli: the hub
+# contains no provider code and fetches no video itself. It runs the ani-cli
+# on PATH, answers its menus through a small helper (ANI_CLI_MENU) instead of
+# fzf, and hands mpv the hub's IPC socket via ANI_CLI_PLAYER_FLAGS — so a
+# streamed episode gets the same progress tracking, resume, skip-credits and
+# autoplay as a file on disk.
+
+# The helper ani-cli calls in place of fzf: `menu "<prompt>"`, choices on
+# stdin ("N title" per line). Every list is recorded for the hub; "Select
+# anime" is answered by exact title (or by position for links made without
+# one); every other prompt is declined, which ends ani-cli instead of
+# leaving it waiting on a menu nobody sees.
+ANICLI_MENU_SH = r"""#!/bin/sh
+# Written by Anime Hub (hub.py) — regenerated on demand, edits are lost.
+for arg; do prompt=$arg; done
+list=$(cat)
+if [ -n "$HUB_ANICLI_CAPTURE" ]; then
+    printf '\036%s\n%s\n' "$prompt" "$list" >>"$HUB_ANICLI_CAPTURE"
+fi
+case "$prompt" in
+    "Select anime"*)
+        if [ -n "$HUB_ANICLI_TITLE" ]; then
+            printf '%s\n' "$list" | awk 'substr($0, length($1) + 2) == ENVIRON["HUB_ANICLI_TITLE"] { print; found = 1; exit } END { exit !found }'
+            exit
+        elif [ -n "$HUB_ANICLI_INDEX" ]; then
+            printf '%s\n' "$list" | awk '$1 == ENVIRON["HUB_ANICLI_INDEX"] { print; found = 1; exit } END { exit !found }'
+            exit
+        fi
+        ;;
+esac
+exit 1
+"""
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+# ani-cli's die() prints its message in bold red.
+ANICLI_DIE_RE = re.compile(r"\x1b\[1;31m(.*?)\x1b\[0m")
+STREAM_EP_RE = re.compile(r"^\d{1,4}(?:\.\d{1,2})?$")
+DL_PERCENT_RE = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
+STREAM_QUALITIES = ("best", "1080", "720", "480", "360", "worst")
+STREAM_MODES = ("sub", "dub")
+# Airing shows gain episodes; the show page re-asks ani-cli after this long.
+STREAM_EPISODES_TTL = 6 * 3600
+ANICLI_PROBE_TIMEOUT = 60
+# ani-cli scrapes the episode's sources before mpv even starts, so a stream
+# gets far longer than a local file to bring up its IPC socket.
+STREAM_STARTUP_TIMEOUT = 90
+
+
+class AniCliError(Exception):
+    """An ani-cli failure, worded for the UI."""
+
+
+def anicli_path():
+    return shutil.which("ani-cli")
+
+
+_anicli_versions = {}
+
+
+def anicli_version():
+    exe = anicli_path()
+    if not exe:
+        return None
+    if exe not in _anicli_versions:
+        try:
+            out = subprocess.run([exe, "-V"], stdin=subprocess.DEVNULL, capture_output=True,
+                                 text=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        _anicli_versions[exe] = out.splitlines()[-1] if out else None
+    return _anicli_versions[exe]
+
+
+def stream_prefs():
+    q, m = get_setting("stream_quality"), get_setting("stream_mode")
+    return {"quality": q if q in STREAM_QUALITIES else "best",
+            "mode": m if m in STREAM_MODES else "sub"}
+
+
+def anicli_menu_helper():
+    path = DATA / "anicli-menu.sh"
+    try:
+        current = path.read_text()
+    except OSError:
+        current = None
+    if current != ANICLI_MENU_SH:
+        DATA.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        tmp.write_text(ANICLI_MENU_SH)
+        tmp.chmod(0o755)
+        os.replace(tmp, path)
+    return path
+
+
+def anicli_env(link=None, capture=None, **extra):
+    """The environment every ani-cli run gets: the menu helper, the user's
+    stream preferences, and the link's pick (exact title, else position)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HUB_ANICLI_")}
+    prefs = stream_prefs()
+    env.update(ANI_CLI_MENU=str(anicli_menu_helper()), TERM="dumb",
+               ANI_CLI_QUALITY=prefs["quality"],
+               ANI_CLI_MODE=(link or {}).get("mode") or prefs["mode"])
+    if capture:
+        env["HUB_ANICLI_CAPTURE"] = str(capture)
+    if link:
+        if link.get("title"):
+            env["HUB_ANICLI_TITLE"] = link["title"]
+        else:
+            env["HUB_ANICLI_INDEX"] = str(link.get("idx") or 1)
+    env.update({k: str(v) for k, v in extra.items()})
+    return env
+
+
+def anicli_spawn(args, env, stdout, stderr):
+    """Start ani-cli in its own process group with a pty as stdin: without a
+    terminal on stdin, ani-cli swaps ANI_CLI_MENU for rofi/dmenu whenever
+    either is installed. The pty stays open until anicli_release."""
+    exe = anicli_path()
+    if not exe:
+        raise AniCliError("ani-cli was not found — install ani-cli and make sure it is on PATH.")
+    master, slave = pty.openpty()
+    try:
+        proc = subprocess.Popen([exe, *args], stdin=slave, stdout=stdout, stderr=stderr,
+                                env=env, start_new_session=True)
+    except OSError as e:
+        os.close(master)
+        raise AniCliError(f"ani-cli could not be started: {e}")
+    finally:
+        os.close(slave)
+    proc.hub_pty = master
+    return proc
+
+
+def anicli_release(proc):
+    fd = getattr(proc, "hub_pty", None)
+    if fd is not None:
+        proc.hub_pty = None
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def stop_process_group(proc, sig=signal.SIGTERM):
+    """Signal a session's whole process group (start_new_session: pgid ==
+    pid) — an ani-cli session is a shell whose mpv / yt-dlp child would
+    otherwise outlive it."""
+    try:
+        os.killpg(proc.pid, sig)
+    except OSError:
+        try:
+            proc.send_signal(sig)
+        except OSError:
+            pass
+
+
+def anicli_message(text):
+    """ani-cli's own last error (die prints it in red), else the last line."""
+    found = ANICLI_DIE_RE.findall(text or "")
+    if found:
+        return found[-1].strip()
+    lines = [line.strip() for line in ANSI_RE.sub("", text or "").replace("\r", "\n").splitlines()]
+    lines = [line for line in lines if line]
+    return lines[-1] if lines else ""
+
+
+def anicli_probe(args, link=None, timeout=ANICLI_PROBE_TIMEOUT):
+    """Run ani-cli once for the lists it offers — never for playback: the
+    debug player only prints links, so even a show whose single result or
+    single episode ani-cli picks by itself starts nothing.
+    Returns (exit code, stderr, [(prompt, lines)])."""
+    fd, capture = tempfile.mkstemp(prefix="anime-hub-anicli-", suffix=".txt")
+    os.close(fd)
+    try:
+        proc = anicli_spawn(args, anicli_env(link, capture=capture, ANI_CLI_PLAYER="debug"),
+                            subprocess.DEVNULL, subprocess.PIPE)
+        try:
+            _, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            stop_process_group(proc, signal.SIGKILL)
+            proc.communicate()
+            raise AniCliError(f"ani-cli did not answer within {timeout} s — is the site reachable?")
+        finally:
+            anicli_release(proc)
+        text = Path(capture).read_text(errors="replace")
+    finally:
+        Path(capture).unlink(missing_ok=True)
+    lists = []
+    for chunk in text.split("\x1e")[1:]:
+        prompt, _, body = chunk.partition("\n")
+        lists.append((prompt.strip(), [line for line in body.splitlines() if line.strip()]))
+    return proc.returncode, err.decode(errors="replace"), lists
+
+
+def _anicli_failed(rc, err, link=None):
+    msg = anicli_message(err)
+    if link and "Invalid anime selection" in msg:
+        return AniCliError(f"ani-cli no longer finds “{link.get('title') or link['query']}” when searching "
+                           f"“{link['query']}” — choose the source again.")
+    return AniCliError(f"ani-cli: {msg}" if msg else f"ani-cli failed (exit code {rc}).")
+
+
+def anicli_search(query):
+    """ani-cli's search results for a query: [{index, title}]. A single hit
+    is taken by ani-cli without asking, so its title stays unknown (None)."""
+    query = " ".join(query.split()).lstrip("-").strip()
+    if not query:
+        raise AniCliError("Enter a title to search for.")
+    rc, err, lists = anicli_probe([query])
+    for prompt, lines in lists:
+        if prompt.startswith("Select anime"):
+            results = []
+            for line in lines:
+                n, _, title = line.partition(" ")
+                if n.isdigit() and title:
+                    results.append({"index": int(n), "title": title})
+            return {"query": query, "results": results}
+    if lists or rc == 0:
+        return {"query": query, "results": [{"index": 1, "title": None}]}
+    if "No results" in anicli_message(err):
+        return {"query": query, "results": []}
+    raise _anicli_failed(rc, err)
+
+
+def anicli_episodes(link):
+    """The episode list ani-cli offers for a link, as it spells the numbers."""
+    rc, err, lists = anicli_probe([link["query"]], link)
+    for prompt, lines in lists:
+        if prompt.startswith("Select episode"):
+            eps = [line.strip() for line in lines if STREAM_EP_RE.match(line.strip())]
+            if eps:
+                return eps
+    if rc == 0:
+        # One episode (movies): ani-cli picks it without asking.
+        return ["1"]
+    raise _anicli_failed(rc, err, link)
+
+
+STREAM_COLS = "media_id, query, title, idx, mode, episodes, episodes_ts, meta, updated_at"
+
+
+def _stream_link(row):
+    return {"media_id": row[0], "query": row[1], "title": row[2], "idx": row[3] or 1,
+            "mode": row[4] if row[4] in STREAM_MODES else "sub",
+            "episodes": json.loads(row[5]) if row[5] else [], "episodes_ts": row[6] or 0,
+            "meta": json.loads(row[7]) if row[7] else {}, "updated_at": row[8]}
+
+
+def stream_link_get(media_id):
+    with db() as c:
+        row = c.execute(f"SELECT {STREAM_COLS} FROM stream_links WHERE media_id=?", (media_id,)).fetchone()
+    return _stream_link(row) if row else None
+
+
+def stream_links_all():
+    with db() as c:
+        return [_stream_link(r) for r in c.execute(f"SELECT {STREAM_COLS} FROM stream_links")]
+
+
+def stream_meta(media_id, fallback_title):
+    """AniList display metadata for a streamed release; artwork is cached
+    like a disk show's. AniList being unreachable must not block a link."""
+    try:
+        m = fetch_media_full(id=media_id)
+    except Exception as e:
+        log("stream meta for %s failed: %s" % (media_id, e))
+        m = None
+    if not m:
+        return {"title": fallback_title}
+    t = m.get("title") or {}
+    name = f"stream-{media_id}"
+    poster = f"/img/{name}.jpg" if download((m.get("coverImage") or {}).get("extraLarge"),
+                                            POSTERS / f"{name}.jpg") else None
+    banner = f"/img/{name}.banner.jpg" if download(m.get("bannerImage"),
+                                                   POSTERS / f"{name}.banner.jpg") else None
+    art = media_episode_art(m)
+    return {"title": t.get("english") or t.get("romaji") or fallback_title,
+            "year": (m.get("startDate") or {}).get("year") or m.get("seasonYear"),
+            "score": m.get("averageScore"), "overview": strip_html(m.get("description")),
+            "format": m.get("format"), "episodes": m.get("episodes"),
+            "poster": poster, "banner": banner,
+            "thumbs": art.get("thumbs"), "titles": art.get("titles")}
+
+
+def stream_link_set(media_id, query, title, idx=1, mode=None, display=None):
+    """Link an AniList release to one of ani-cli's search results. The
+    episode probe runs first: a link is only stored once ani-cli has
+    proven it can find the show again."""
+    link = {"media_id": media_id, "query": query, "title": title or None, "idx": idx or 1,
+            "mode": mode if mode in STREAM_MODES else stream_prefs()["mode"]}
+    episodes = anicli_episodes(link)
+    meta = stream_meta(media_id, display or title or query)
+    with db() as c:
+        c.execute("""INSERT INTO stream_links(media_id,query,title,idx,mode,episodes,episodes_ts,meta,updated_at)
+                     VALUES(?,?,?,?,?,?,?,?,?)
+                     ON CONFLICT(media_id) DO UPDATE SET query=excluded.query, title=excluded.title,
+                     idx=excluded.idx, mode=excluded.mode, episodes=excluded.episodes,
+                     episodes_ts=excluded.episodes_ts, meta=excluded.meta, updated_at=excluded.updated_at""",
+                  (media_id, link["query"], link["title"], link["idx"], link["mode"],
+                   json.dumps(episodes), time.time(), json.dumps(meta), utc_stamp()))
+    return {"ok": True, "show_id": f"aid:{media_id}", "episodes": len(episodes)}
+
+
+def stream_refresh(media_id):
+    """Ask ani-cli for the episode list again (new episodes of airing shows)."""
+    link = stream_link_get(media_id)
+    if not link:
+        return {"error": "This show has no ani-cli source."}
+    episodes = anicli_episodes(link)
+    meta = link["meta"]
+    if not meta.get("poster"):
+        meta = stream_meta(media_id, meta.get("title") or link["title"] or link["query"])
+    with db() as c:
+        c.execute("UPDATE stream_links SET episodes=?, episodes_ts=?, meta=? WHERE media_id=?",
+                  (json.dumps(episodes), time.time(), json.dumps(meta), media_id))
+    return {"ok": True, "episodes": len(episodes), "added": len(set(episodes) - set(link["episodes"]))}
+
+
+def stream_set_mode(media_id, mode):
+    with db() as c:
+        n = c.execute("UPDATE stream_links SET mode=?, updated_at=? WHERE media_id=?",
+                      (mode, utc_stamp(), media_id)).rowcount
+    return {"ok": True, "mode": mode} if n else {"error": "This show has no ani-cli source."}
+
+
+def stream_unlink(media_id):
+    """Forget the source. Watch facts of streamed episodes stay in
+    `episodes` (Decision 17.3) and return with a re-link."""
+    with db() as c:
+        c.execute("DELETE FROM stream_links WHERE media_id=?", (media_id,))
+    return {"ok": True}
+
+
+def _stream_num(token):
+    f = float(token)
+    return int(f) if f.is_integer() else f
+
+
+def local_release_eps(scan):
+    """AniList id → (disk show, {episode number: episode}) for folders that
+    map onto one release — single-season folders, the same rule progress
+    sync uses (Decision 19). The fullest folder wins, as in spine_build."""
+    out = {}
+    for s in scan:
+        aid = (s.get("meta") or {}).get("anilist_id")
+        if not aid or len(s["seasons"]) != 1:
+            continue
+        eps = {ep["number"]: ep for ep in s["seasons"][0]["episodes"]}
+        if aid not in out or len(eps) > len(out[aid][1]):
+            out[aid] = (s, eps)
+    return out
+
+
+def _stream_show(link, rows, local):
+    """A linked release in the scanned-show shape, so the show page, history,
+    autoplay and bulk marks treat it like any other show. The unified list:
+    an episode that is also on disk plays from disk with its own facts."""
+    mid, meta = link["media_id"], link["meta"]
+    loc_show, loc_eps = local or (None, {})
+    eps = []
+    for token in link["episodes"]:
+        sid = f"stream:{mid}:{token}"
+        num = _stream_num(token)
+        twin = loc_eps.get(num)
+        if twin:
+            eps.append(dict(twin, number=num, stream_id=sid, token=token, installed=True))
+            continue
+        r = rows.get(sid)
+        eps.append({"id": sid, "stream_id": sid, "token": token, "number": num, "rel": None,
+                    "files": [], "season": 1, "season_label": "Online", "installed": False,
+                    "watched": bool(r[0]) if r else False, "position": r[1] if r else 0,
+                    "duration": r[2] if r else 0, "last_played": r[3] if r else None})
+    title = meta.get("title") or link["title"] or link["query"]
+    return {"id": f"aid:{mid}", "kind": "stream", "path": None, "title": title, "collection": None,
+            "poster": img_url(meta.get("poster")), "banner": img_url(meta.get("banner")),
+            "meta": {"anilist_id": mid, "title": title, "year": meta.get("year"),
+                     "score": meta.get("score"), "overview": meta.get("overview"),
+                     "format": meta.get("format"), "episodes_meta": None, "episode_thumbs": None},
+            "seasons": [{"key": 1, "season": 1, "label": "Online", "episodes": eps,
+                         "thumbs": meta.get("thumbs"), "titles": meta.get("titles")}],
+            "stream": {"query": link["query"], "title": link["title"], "mode": link["mode"],
+                       "total": meta.get("episodes"), "checked": link["episodes_ts"],
+                       "stale": time.time() - link["episodes_ts"] > STREAM_EPISODES_TTL,
+                       "local_show_id": loc_show["id"] if loc_show else None}}
+
+
+def stream_shows(scan, links=None):
+    """Every linked release as a show (scan must carry merge_db's facts)."""
+    links = stream_links_all() if links is None else links
+    if not links:
+        return []
+    with db() as c:
+        rows = {r[0]: r[1:] for r in c.execute(
+            "SELECT id, watched, position, duration, last_played FROM episodes WHERE id LIKE 'stream:%'")}
+    local = local_release_eps(scan)
+    return [_stream_show(link, rows, local.get(link["media_id"])) for link in links]
+
+
+def stream_media_id(ref):
+    """The AniList id inside "stream:<id>:<ep>" / "aid:<id>", else None."""
+    try:
+        return int(ref.split(":")[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def stream_show_by_media(media_id, scan=None):
+    link = stream_link_get(media_id) if media_id else None
+    if not link:
+        return None
+    if scan is None:
+        scan = scan_library()
+        merge_db(scan)
+    return stream_shows(scan, [link])[0]
+
+
+def stream_episode(eid):
+    """(stream show, episode) for a "stream:" id — also once the episode is
+    on disk and the unified list carries the local id in its place."""
+    s = stream_show_by_media(stream_media_id(eid))
+    if s:
+        for ep in eps_of(s):
+            if ep["id"] == eid or ep.get("stream_id") == eid:
+                return s, ep
+    return None, None
+
+
+def stream_trackable(s):
+    """A stream show as progress sync and the completion check read it:
+    whole-numbered episodes only (an episode 0 or a 12.5 recap is no
+    AniList progress)."""
+    eps = [e for e in s["seasons"][0]["episodes"] if isinstance(e["number"], int) and e["number"] >= 1]
+    return dict(s, seasons=[dict(s["seasons"][0], episodes=eps)])
+
+
+def mpv_script_flag():
+    """--script for the skip-credits hotkey, usable inside
+    ANI_CLI_PLAYER_FLAGS: ani-cli splits that on whitespace, so a path with
+    spaces goes through a symlink in the private runtime dir (or is left out)."""
+    if not SKIP_CREDITS_LUA.exists():
+        return None
+    path = str(SKIP_CREDITS_LUA)
+    if re.search(r"[\s*?\[]", path):
+        run = os.environ.get("XDG_RUNTIME_DIR")
+        if not run or re.search(r"[\s*?\[]", run):
+            return None
+        link = Path(run) / "anime-hub-skip-credits.lua"
+        try:
+            if not (link.is_symlink() and os.readlink(link) == path):
+                link.unlink(missing_ok=True)
+                link.symlink_to(path)
+        except OSError:
+            return None
+        path = str(link)
+    return f"--script={path}"
+
+
+def start_stream(ep_id):
+    """Play a streamed episode: ani-cli resolves it and runs mpv in the
+    foreground (--exit-after-play), with the hub's IPC socket, resume point
+    and skip-credits script passed through ANI_CLI_PLAYER_FLAGS. The session
+    is the ani-cli process; watch_process tracks it like a local mpv."""
+    s, ep = stream_episode(ep_id)
+    if not ep:
+        return {"error": "unknown episode"}
+    if ep["id"] != ep_id:
+        return start_play(ep["id"])  # on disk now — the unified list plays the file
+    if not anicli_path():
+        return {"error": "ani-cli was not found — install ani-cli and make sure it is on PATH."}
+    if not shutil.which("mpv"):
+        return {"error": "mpv was not found — install mpv and make sure it is on PATH."}
+    link = stream_link_get(s["meta"]["anilist_id"])
+    sock = Path("/tmp") / f"anime-hub-{uuid.uuid4().hex[:8]}.sock"
+    flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *resume_args(ep_id)]
+    script = mpv_script_flag()
+    if script:
+        flags.append(script)
+    user_flags = os.environ.get("ANI_CLI_PLAYER_FLAGS", "").strip()
+    if user_flags:
+        flags.append(user_flags)
+    env = anicli_env(link, ANI_CLI_PLAYER="mpv", ANI_CLI_PLAYER_FLAGS=" ".join(flags))
+    label = f"Online · E{ep['token']}"
+    with db() as c:
+        # Identity stamp (TODO 25): history stays readable without the link.
+        c.execute("INSERT INTO episodes(id,show_id,label) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE"
+                  " SET show_id=excluded.show_id, label=excluded.label", (ep_id, s["id"], label))
+    errlog = DATA / "anicli-stderr.log"
+    with _launch_lock:
+        with _active_lock:
+            old = next(iter(_active.values()), None)
+        if old:
+            retire_session(old["proc"])
+        err, offset = None, 0
+        try:
+            err = open(errlog, "ab")
+            err.write(f"\n=== {utc_stamp()}  {s['title']} E{ep['token']}\n".encode())
+            err.flush()
+            offset = err.tell()
+        except OSError:
+            err = None
+        try:
+            proc = anicli_spawn(["--exit-after-play", "-e", ep["token"], link["query"]], env,
+                                subprocess.DEVNULL, err or subprocess.DEVNULL)
+        except AniCliError as e:
+            return {"error": str(e)}
+        finally:
+            if err:
+                err.close()
+        with _active_lock:
+            _active.clear()
+            _active[ep_id] = {"proc": proc, "ep_id": ep_id, "show_title": s["title"],
+                              "label": label, "percent": 0, "version": 0}
+
+    def failure(rc):
+        try:
+            with open(errlog, "rb") as f:
+                f.seek(offset)
+                text = f.read().decode(errors="replace")
+        except OSError:
+            text = ""
+        e = _anicli_failed(rc, text, link)
+        return f"Could not stream E{ep['token']}. {e}"
+
+    threading.Thread(target=watch_process, args=(proc, ep_id, sock),
+                     kwargs={"startup": STREAM_STARTUP_TIMEOUT, "failure": failure},
+                     daemon=True).start()
+    return {"ok": True, "stream": True}
+
+
+# Downloads: one ani-cli -d at a time, into the library folder, so a
+# finished episode simply becomes a file the next scan picks up.
+_dl_cv = threading.Condition()
+_downloads = []
+_dl_state = {"seq": 0, "worker": None}
+
+
+def stream_download_dir(link, scan):
+    """Where a release's downloads go: the folder of its single-season disk
+    show when there is one, else a folder named after the release."""
+    if LIBRARY is None:
+        raise AniCliError("Choose a library folder in Settings first — downloads are saved there.")
+    if not LIBRARY.is_dir():
+        raise AniCliError(f"The library folder {LIBRARY} is not accessible right now.")
+    loc = local_release_eps(scan).get(link["media_id"])
+    if loc and loc[1]:
+        parent = (LIBRARY / next(iter(loc[1].values()))["rel"]).parent
+        if parent != LIBRARY:
+            return parent
+    name = re.sub(r"[/\x00]", " ", link["meta"].get("title") or link["title"] or link["query"])
+    name = " ".join(name.split()).lstrip(".") or f"anilist-{link['media_id']}"
+    return LIBRARY / name
+
+
+def downloads_payload():
+    with _dl_cv:
+        return [{k: v for k, v in j.items() if k not in ("proc", "cancel")} for j in _downloads]
+
+
+def download_enqueue(media_id, tokens):
+    link = stream_link_get(media_id)
+    if not link:
+        return {"error": "This show has no ani-cli source yet."}
+    if not anicli_path():
+        return {"error": "ani-cli was not found — install ani-cli and make sure it is on PATH."}
+    scan = scan_library()
+    merge_db(scan)
+    try:
+        dest = stream_download_dir(link, scan)
+    except AniCliError as e:
+        return {"error": str(e)}
+    loc = local_release_eps(scan).get(media_id)
+    on_disk = set(loc[1]) if loc else set()
+    title = link["meta"].get("title") or link["title"] or link["query"]
+    added = 0
+    with _dl_cv:
+        busy = {(j["media_id"], j["token"]) for j in _downloads if j["status"] in ("queued", "running")}
+        for token in tokens:
+            if token not in link["episodes"] or (media_id, token) in busy or _stream_num(token) in on_disk:
+                continue
+            busy.add((media_id, token))
+            _dl_state["seq"] += 1
+            _downloads.append({"id": _dl_state["seq"], "media_id": media_id, "token": token,
+                               "show": title, "show_id": f"aid:{media_id}", "dest": str(dest),
+                               "status": "queued", "percent": 0, "error": None})
+            added += 1
+        if added and _dl_state["worker"] is None:
+            _dl_state["worker"] = threading.Thread(target=_dl_loop, daemon=True)
+            _dl_state["worker"].start()
+        _dl_cv.notify_all()
+    return {"ok": True, "queued": added, "dest": str(dest)}
+
+
+def download_cancel(job_id):
+    with _dl_cv:
+        job = next((j for j in _downloads if j["id"] == job_id), None)
+        if not job:
+            return {"error": "unknown download"}
+        if job["status"] == "queued":
+            job["status"] = "cancelled"
+        elif job["status"] == "running":
+            job["cancel"] = True
+            if job.get("proc"):
+                stop_process_group(job["proc"])
+    return {"ok": True}
+
+
+def download_clear():
+    with _dl_cv:
+        _downloads[:] = [j for j in _downloads if j["status"] in ("queued", "running")]
+    return {"ok": True}
+
+
+def _dl_loop():
+    while True:
+        with _dl_cv:
+            job = None
+            while job is None:
+                job = next((j for j in _downloads if j["status"] == "queued"), None)
+                if job is None:
+                    _dl_cv.wait()
+            job["status"] = "running"
+        try:
+            _dl_run(job)
+        except Exception as e:
+            log("download failed: %s" % e)
+            with _dl_cv:
+                job.pop("proc", None)
+                job.update(status="failed", error=str(e))
+
+
+def _dl_has_file(dest, token):
+    try:
+        return any(n.endswith(f" Episode {token}.mp4") for n in os.listdir(dest))
+    except OSError:
+        return False
+
+
+def _dl_cleanup(dest, token, had_file, created):
+    """Remove what an unfinished download left: yt-dlp's .part/.ytdl
+    fragments, the subtitle, and a partial .mp4 (ffmpeg writes in place)."""
+    stem = f" Episode {token}"
+    try:
+        names = os.listdir(dest)
+    except OSError:
+        return
+    for n in names:
+        if (stem + ".mp4.part" in n or n.endswith(stem + ".mp4.ytdl") or n.endswith(stem + ".vtt")
+                or (not had_file and n.endswith(stem + ".mp4"))):
+            try:
+                (dest / n).unlink()
+            except OSError:
+                pass
+    if created:
+        try:
+            dest.rmdir()  # only succeeds when nothing else is in it
+        except OSError:
+            pass
+
+
+def _dl_run(job):
+    link = stream_link_get(job["media_id"])
+    if not link:
+        raise AniCliError("The show's ani-cli source was removed.")
+    dest = Path(job["dest"])
+    created = not dest.exists()
+    dest.mkdir(parents=True, exist_ok=True)
+    had_file = _dl_has_file(dest, job["token"])
+    # ani-cli hands ANI_CLI_PLAYER_FLAGS to yt-dlp/ffmpeg when downloading;
+    # the user's (mpv) flags would break them.
+    env = anicli_env(link, ANI_CLI_DOWNLOAD_DIR=str(dest), ANI_CLI_PLAYER_FLAGS="")
+    proc = anicli_spawn(["-d", "-e", job["token"], link["query"]], env, subprocess.PIPE, subprocess.STDOUT)
+    with _dl_cv:
+        job["proc"] = proc
+        if job.get("cancel"):
+            stop_process_group(proc)
+    tail, buf = [], b""
+    try:
+        while True:
+            chunk = proc.stdout.read1(65536)
+            if not chunk:
+                break
+            *lines, buf = re.split(rb"[\r\n]", buf + chunk)
+            for raw in lines:
+                line = raw.decode(errors="replace")
+                m = DL_PERCENT_RE.search(line)
+                if m:
+                    with _dl_cv:
+                        job["percent"] = float(m.group(1))
+                elif line.strip():
+                    tail = (tail + [line])[-40:]
+        rc = proc.wait()
+    finally:
+        proc.stdout.close()
+        anicli_release(proc)
+    with _dl_cv:
+        job.pop("proc", None)
+        cancelled = job.get("cancel")
+    if not cancelled and rc == 0 and _dl_has_file(dest, job["token"]):
+        with _dl_cv:
+            job.update(status="done", percent=100)
+        _dl_adopt(job["media_id"], dest)
+        return
+    _dl_cleanup(dest, job["token"], had_file, created)
+    with _dl_cv:
+        if cancelled:
+            job["status"] = "cancelled"
+        else:
+            msg = anicli_message("\n".join(tail + [buf.decode(errors="replace")]))
+            job.update(status="failed", error=msg or f"ani-cli exited with code {rc}")
+
+
+def _dl_adopt(media_id, dest):
+    """A download that started a new folder becomes a new disk show — match
+    it to the release right away instead of waiting for the matcher."""
+    try:
+        rel = str(dest.relative_to(LIBRARY))
+        show = next((s for s in scan_library() if s["path"] == rel), None)
+        if not show:
+            return
+        with db() as c:
+            known = c.execute("SELECT 1 FROM shows_meta WHERE show_id=?", (show["id"],)).fetchone()
+        if not known:
+            set_match(show["id"], media_id)
+    except Exception as e:
+        log("matching downloaded folder failed: %s" % e)
 
 
 def anilist_request(payload, token=None):
@@ -3267,6 +4082,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file_body(AUTH_CALLBACK_PAGE.encode(), "text/html; charset=utf-8")
         elif route == "/api/now":
             outbox_n = outbox_count()
+            # ani-cli downloads (additive): the nav's downloads popover.
+            downloads = downloads_payload()
             with _active_lock:
                 if not _active:
                     payload = {"playing": False}
@@ -3282,6 +4099,8 @@ class Handler(BaseHTTPRequestHandler):
                     if outbox_n:
                         # Quiet sync chip (TODO 14, Decision 3).
                         payload["outbox"] = outbox_n
+                    if downloads:
+                        payload["downloads"] = downloads
                     self.send_json(payload)
                     return
                 a = next(iter(_active.values()))
@@ -3289,7 +4108,11 @@ class Handler(BaseHTTPRequestHandler):
                            "percent": a.get("percent") or 0, "episode_id": a["ep_id"]}
                 if outbox_n:
                     payload["outbox"] = outbox_n
+                if downloads:
+                    payload["downloads"] = downloads
                 self.send_json(payload)
+        elif route == "/api/downloads":
+            self.send_json({"jobs": downloads_payload()})
         elif route.startswith("/img/"):
             name = os.path.basename(route)
             p = POSTERS / name
@@ -3345,13 +4168,22 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "tour_done")
+            # ani-cli bridge preferences: closed vocabularies.
+            choices = {"stream_quality": STREAM_QUALITIES, "stream_mode": STREAM_MODES}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
                     self._bad("'%s' must be a boolean" % key)
                     return
-            if not any(key in body for key in keys):
-                self._bad("nothing to change — send one of: %s" % ", ".join(keys))
+            for key, allowed in choices.items():
+                if key in body and body[key] not in allowed:
+                    self._bad("'%s' must be one of: %s" % (key, ", ".join(allowed)))
+                    return
+            if not any(key in body for key in (*keys, *choices)):
+                self._bad("nothing to change — send one of: %s" % ", ".join((*keys, *choices)))
                 return
+            for key in choices:
+                if key in body:
+                    set_setting(key, body[key])
             for key in keys:
                 if key not in body:
                     continue
@@ -3586,8 +4418,60 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/refresh":
             self.send_json({"ok": True})
             threading.Thread(target=refresh_meta, daemon=True).start()
+        elif route.startswith("/api/stream/") or route.startswith("/api/download"):
+            self._stream_route(route, body)
         else:
             self.send_error(404)
+
+    def _stream_route(self, route, body):
+        """The ani-cli bridge's routes. AniCliError is ani-cli (or the site
+        behind it) failing — a readable 502, never a traceback."""
+        try:
+            if route == "/api/stream/search":
+                if self._fields(body, strings=("query",)):
+                    self.send_json(anicli_search(body["query"]))
+            elif route == "/api/stream/link":
+                if not self._fields(body, strings=("query",), ints=("media_id", "index")):
+                    return
+                title, mode, display = body.get("title"), body.get("mode"), body.get("display")
+                if body["media_id"] <= 0:
+                    self._bad("'media_id' must be a positive integer")
+                elif title is not None and not isinstance(title, str):
+                    self._bad("'title' must be a string or null")
+                elif mode is not None and mode not in STREAM_MODES:
+                    self._bad("'mode' must be one of: %s" % ", ".join(STREAM_MODES))
+                elif display is not None and not isinstance(display, str):
+                    self._bad("'display' must be a string")
+                else:
+                    self.send_json(stream_link_set(body["media_id"], body["query"], title,
+                                                   body.get("index") or 1, mode, display))
+            elif route in ("/api/stream/unlink", "/api/stream/refresh"):
+                if self._fields(body, ints=("media_id",)):
+                    fn = stream_unlink if route.endswith("unlink") else stream_refresh
+                    self.send_json(fn(body["media_id"]))
+            elif route == "/api/stream/mode":
+                if self._fields(body, ints=("media_id",)):
+                    if body.get("mode") not in STREAM_MODES:
+                        self._bad("'mode' must be one of: %s" % ", ".join(STREAM_MODES))
+                    else:
+                        self.send_json(stream_set_mode(body["media_id"], body["mode"]))
+            elif route == "/api/download":
+                eps = body.get("episodes")
+                if not self._fields(body, ints=("media_id",)):
+                    return
+                if not isinstance(eps, list) or not eps or not all(isinstance(e, str) for e in eps):
+                    self._bad("'episodes' must be a non-empty list of episode strings")
+                else:
+                    self.send_json(download_enqueue(body["media_id"], eps))
+            elif route == "/api/download/cancel":
+                if self._fields(body, ints=("id",)):
+                    self.send_json(download_cancel(body["id"]))
+            elif route == "/api/download/clear":
+                self.send_json(download_clear())
+            else:
+                self.send_error(404)
+        except AniCliError as e:
+            self.send_json({"error": str(e)}, 502)
 
     def _bad(self, msg):
         self.send_json({"error": msg}, 400)
