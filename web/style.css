@@ -470,3 +470,18 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .zrow{display:inline-flex;align-items:center;gap:10px}
 .zrow .btn{height:38px;width:38px;padding:0;font-size:17px;border-radius:10px}
 .zrow .zval{min-width:52px;text-align:center;font-weight:500;color:var(--ink)}
+/* online episodes (ani-cli, v0.2): loading/unavailable tiles, "Wrong episodes?" dialog, downloads popover */
+.ep.loading .eplay{opacity:1;transform:scale(1)}.eplay .spin{width:18px;height:18px;border-width:2.5px;border-color:rgba(12,22,36,.2);border-top-color:#0c1624}
+.ep.off{cursor:default}.ep.off .epimg{filter:grayscale(.7) brightness(.7)}.ep.off:hover .eplay{opacity:0}
+.eprog.dl i{background:var(--online)}
+.pill .spin{width:14px;height:14px;border-color:rgba(12,22,36,.25);border-top-color:currentColor}
+.link-btn.fix{padding:0;margin-top:14px;font-size:13px}.link-btn.fix:hover{color:var(--ink)}
+.eps-note{margin:-4px 0 16px}.eps-note .link-btn.fix{margin:0 0 0 6px;vertical-align:baseline}
+.slres{display:grid;gap:2px;max-height:300px;overflow:auto;margin:0 -6px}
+.slres .mi.on{background:color-mix(in srgb,var(--accent) 10%,var(--s2))}.slres .mi.on .ico{color:var(--accent-hi)}
+.pop.dl .dlj{display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px}.pop.dl .dlj:hover{background:var(--s2)}
+.dlj-t{flex:1;min-width:0}.dlj-t b{display:block;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dlj-t small{display:block;color:var(--mute);font-size:12px}.dlj.failed small{color:var(--bad)}.dlj.done small{color:var(--ok)}
+.dlj .bar{margin:7px 0 2px;height:3px}
+.chip.dl-on{color:var(--online);border-color:color-mix(in srgb,var(--online) 45%,var(--line))}.chip.dl-on .pc{font-size:12px;font-weight:650;font-variant-numeric:tabular-nums}
+.chip.ib.dl-on{width:auto;padding:0 10px;gap:6px}

@@ -28,6 +28,7 @@ This app is early in development — expect bugs and breaking changes.
 
 - **Playback** - episodes open in mpv with resume, auto-play next, progress tracking and a skip-credits hotkey. Your mpv config still works.
 - **AniList** - Matches all your animes against AniList to acquire metadata, coverart, etc. and supports rating, progress, etc. editing.
+- **Online episodes (optional)** - with [ani-cli](https://github.com/pystardust/ani-cli) installed, every show lists the episodes you don't have as online episodes: click one and it plays in mpv with the same resume, progress tracking, AniList sync and auto-play as local files, or download it straight into your library folder. Shows are matched automatically; "Wrong episodes?" on a show page fixes a bad match.
 
 ## Requirements
 
@@ -37,6 +38,7 @@ This app is early in development — expect bugs and breaking changes.
 - A Chromium-family browser (chromium, chrome,brave, or edge)
 - rust/cargo
 - An AniList account (optional)
+- ani-cli (optional, for streaming and downloads)
 
 ## Run
 
@@ -82,8 +84,8 @@ is a full reset.
 
 ## Roadmap
 
-- **v0.1 (current)** — local library, AniList sync, stats, desktop wrapper. No streaming.
-- **v0.2** — streaming and downloads delegated to your own installed [ani-cli](https://github.com/pystardust/ani-cli) (the app contains no provider code and fetches no video itself), unified local/streaming episode list, better tools for unmatched shows.
+- **v0.1** — local library, AniList sync, stats, desktop wrapper.
+- **v0.2 (in progress)** — streaming and downloads delegated to your own installed [ani-cli](https://github.com/pystardust/ani-cli) (the app contains no provider code and fetches no video itself) and a unified local/streaming episode list are in; better tools for unmatched shows are next.
 - **Later** — multiple library roots, per-show path
   overrides.
 
@@ -95,7 +97,8 @@ is a full reset.
 
 ## Streaming/downloading/hosting/etc.-notice
 
-- Anime-hub **does not contain any streaming, downloading or hosting of animes**, nor does it bundle any provider code or third-party content. It is purely a local library manager: it plays video files you already own, and pulls metadata and artwork from AniList.
+- Anime-hub **does not contain any streaming, downloading or hosting of animes**, nor does it bundle any provider code or third-party content. It is a local library manager: it plays video files you already own, and pulls metadata and artwork from AniList.
+- The optional streaming and downloads are done entirely by your own installed ani-cli. Anime-hub only starts it (answering its menus itself) and hands mpv its progress-tracking socket; it never contacts a video site.
 
 ## License
 
