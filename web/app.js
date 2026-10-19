@@ -13,7 +13,7 @@ const S = {
   ani: null, settings: null, alData: null, modal: null, entry: null,
   lib: { tab: null, src: "all", fmt: "all", air: "all", year: "all", score: "all", sort: "updated", ...lsGet("hubLib", {}) },
   histRange: lsGet("histRange", "7d"), histMax: 120,
-  match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, countNext: false,
+  match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, countNext: false, opener: null,
 };
 
 /* @pure:start */
@@ -41,10 +41,12 @@ const ICONS = {
   search: ['<circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.6-3.6"/>'],
   refresh: ['<path d="M20 11a8 8 0 0 0-14.3-4.6L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.6L20 15.5M20 20v-4.5h-4.5"/>'],
   undo: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/>'],
+  folder: ['<path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2.2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'],
+  up: ['<path d="M12 19V5m-6 6 6-6 6 6"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
-const FMT_NAME = { TV: "TV", TV_SHORT: "TV short", MOVIE: "Movie", OVA: "OVA", ONA: "ONA", SPECIAL: "Special", MUSIC: "Music" };
-const fmtName = (f) => FMT_NAME[f] || f;
+const FMT = { TV: "TV", TV_SHORT: "TV short", MOVIE: "Movie", OVA: "OVA", ONA: "ONA", SPECIAL: "Special", MUSIC: "Music" };
+const fmtName = (f) => FMT[f] || f;
 /* Escape text and wrap the first case-insensitive match of q in <mark>. */
 const hl = (t, q) => {
   const s = String(t ?? ""), i = q ? s.toLowerCase().indexOf(q.toLowerCase()) : -1;
@@ -176,7 +178,6 @@ function zoomStep(cur, dir) { return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur +
 const LISTS = [["CURRENT", "Watching"], ["REPEATING", "Rewatching"], ["PAUSED", "Paused"],
                ["DROPPED", "Dropped"], ["COMPLETED", "Completed"], ["PLANNING", "Planning"]];
 const statusLabel = (st) => (LISTS.find(([v]) => v === st) || [0, st || "—"])[1];
-const FMT = { TV: "TV", TV_SHORT: "TV short", MOVIE: "Movie", OVA: "OVA", ONA: "ONA", SPECIAL: "Special", MUSIC: "Music" };
 const AIR = { RELEASING: "Airing", FINISHED_AIRING: "Finished", NOT_YET_RELEASED: "Upcoming", HIATUS: "Hiatus", CANCELLED: "Cancelled" };
 const CAP = { installed: "installed", partial: "partial", none: "no source" };
 const aniMode = () => S.data?.spine?.mode === "anilist";
@@ -186,18 +187,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function api(path, body) {
   const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
   try { return await res.json(); } catch { throw new Error(`HTTP ${res.status} from ${path}`); }
-}
-function whenText(iso) {
-  if (!iso) return "";
-  const d = parseStamp(iso), diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 90) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
-  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
-  const d0 = new Date(d); d0.setHours(0, 0, 0, 0);
-  const days = Math.round((t0 - d0) / 86400000);
-  if (days <= 1) return "yesterday";
-  return days < 14 ? `${days} days ago` : d.toLocaleDateString();
 }
 function toast(m) {
   const t = $("#toast");
@@ -277,7 +266,7 @@ function Home() {
   if (!up && !body) {
     body = `<div class="emptyx"><div class="eico">${ico("tv")}</div>${d.shows.length
       ? `<b>Nothing watched yet</b><span>Your library is waiting.</span><button class="btn pri" data-a="go" data-v="library">Browse library</button>`
-      : `<b>Your library is empty</b><span>Set library_root in the config file, then rescan.</span>`}</div>`;
+      : `<b>Your library is empty</b><span>Choose your anime folder in Settings → Library.</span>`}</div>`;
   }
   return `${up ? heroHTML(up) : ""}<div class="wrap page" style="padding-top:${up ? 0 : 20}px">${body}</div>`;
 }
@@ -299,6 +288,7 @@ function libModel() {
   const counts = {};
   for (const e of sp.entries) counts[e.status] = (counts[e.status] || 0) + 1;
   const tabs = LISTS.filter(([k]) => counts[k]).map(([k, l]) => ({ k, l, n: counts[k] }));
+  if (sp.entries.length) tabs.unshift({ k: "ALL", l: "All", n: sp.entries.length });
   const untracked = sp.untracked.map(showById).filter((s) => s && s.meta?.anilist_id);
   const unmatched = unmatchedShows();
   if (untracked.length) tabs.push({ k: "UNTRACKED", l: "Untracked", n: untracked.length });
@@ -311,7 +301,7 @@ function fixTab(m) {
 }
 function libFiltered(m) {
   const f = S.lib;
-  return m.entries.filter((e) => e.status === f.tab
+  return m.entries.filter((e) => (f.tab === "ALL" || e.status === f.tab)
     && (localMode() || f.src === "all" || e.capability === f.src)
     && (f.fmt === "all" || e.format === f.fmt)
     && (f.air === "all" || e.airing === f.air)
@@ -381,7 +371,7 @@ function scanNote() {
   if (!scan) return null;
   const bits = [];
   if (scan.root === "changed") bits.push("Your library folder changed — reconnect the new folder to pick your shows back up.");
-  if (scan.state === "unconfigured") bits.push("No library folder is configured yet — set library_root in the config file.");
+  if (scan.state === "unconfigured") bits.push("No library folder is configured yet — choose one in Settings.");
   if (scan.state === "missing") bits.push("The library folder is not accessible right now.");
   else if (scan.state === "partial") bits.push("Some folders could not be read — part of the library may be missing.");
   return bits.length ? bits.join(" ") : null;
@@ -489,7 +479,7 @@ function Det() {
   const seaAll = sea && sea.episodes.length > 0 && sea.episodes.every((e) => e.watched), showAll = flat.length > 0 && flat.every((e) => e.watched);
   const bulk = !flat.length ? "" : `${sea && sea.episodes.length ? `<button class="btn" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}${seaAll ? "Unwatch season" : "Mark season watched"}</button>` : ""}<button class="btn" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}${showAll ? "Unwatch all" : "Mark all watched"}</button>`;
   const info = [["Format", meta.format ? FMT[meta.format] || meta.format : s.kind === "movie" ? "Movie" : "—"], ["Year", meta.year || "—"], ["Episodes", epTotal(s)]];
-  const chips = `${meta.format ? `<span class="mchip">${esc(FMT[meta.format] || meta.format)}</span>` : ""}${meta.year ? `<span class="mchip">${esc(meta.year)}</span>` : ""}${meta.score ? `<span class="mchip">${ico("star", "star")}${meta.score}</span>` : ""}`;
+  const chips = `${meta.format ? `<span class="mchip">${esc(FMT[meta.format] || meta.format)}</span>` : ""}${meta.year ? `<span class="mchip">${esc(meta.year)}</span>` : ""}${meta.score ? `<span class="mchip">${ico("star", "star")}${esc(meta.score)}</span>` : ""}`;
   return `<div class="banner" style="${esc(bgStyle(s.banner || s.poster, hue))}"></div>
   <button class="pill backbtn" data-a="back">${ico("back")}${backLabel()}</button>
   <div class="wrap"><div class="hero" style="margin-top:-250px">${poster(s.title, s.poster)}<div>
@@ -520,7 +510,7 @@ const infoDl = (rows) => rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</
 function Cat() {
   const c = S.cat, hue = hueOf(c.title);
   const n = Math.min(c.episodes || 0, 48);
-  const chips = `${c.format ? `<span class="mchip">${esc(FMT[c.format] || c.format)}</span>` : ""}${c.year ? `<span class="mchip">${esc(c.year)}</span>` : ""}${c.score ? `<span class="mchip">${ico("star", "star")}${c.score}</span>` : ""}`;
+  const chips = `${c.format ? `<span class="mchip">${esc(FMT[c.format] || c.format)}</span>` : ""}${c.year ? `<span class="mchip">${esc(c.year)}</span>` : ""}${c.score ? `<span class="mchip">${ico("star", "star")}${esc(c.score)}</span>` : ""}`;
   return `<div class="banner" style="${esc(bgStyle(c.banner || c.poster, hue))}"></div>
   <button class="pill backbtn" data-a="back">${ico("back")}${backLabel()}</button>
   <div class="wrap"><div class="hero" style="margin-top:-250px">${poster(c.title, c.poster)}<div>
@@ -538,11 +528,6 @@ function Cat() {
     <div class="panel"><h3>From AniList</h3><dl class="form" id="infobox">${infoDl([["Format", c.format ? FMT[c.format] || c.format : "—"], ["Year", c.year || "—"], ["Episodes", c.episodes || "—"]])}</dl></div>
   </aside></div></div>`;
 }
-function openCat(c) {
-  if (S.view !== "show" && S.view !== "cat") S.showBack = S.view;
-  S.cat = c; S.view = "cat";
-  render(); scrollTo(0, 0); pushNav();
-}
 function catFromEntry(e) {
   return { id: e.id, title: e.title, poster: e.poster, year: e.year, format: e.format, episodes: e.episodes, onList: true };
 }
@@ -554,6 +539,16 @@ function catFromCand(x) {
 /* ---------- AniList entry panel (TODO 9, Decision 10) ---------- */
 let entryBusy = false;
 function entryFields(res) {
+  const prev = S.entry && S.entry.f;
+  if (res.queued && prev && !prev.local) {
+    /* Queued while connected: the reply carries the local overlay. Keep the
+       connected layout and fold the saved values into what was shown. */
+    const e = res.entry || {}, p = res.patch || {};
+    return { ...prev, status: e.status ?? prev.status, score: e.score ?? prev.score, progress: p.progress ?? prev.progress,
+             repeat: e.rewatches ?? prev.repeat, started_at: "started_at" in p ? p.started_at || null : prev.started_at,
+             completed_at: "completed_at" in p ? p.completed_at || null : prev.completed_at,
+             favourite: e.favourite != null ? !!e.favourite : prev.favourite };
+  }
   if (res.local) {
     const e = res.entry || {};
     return { status: e.status || null, score: e.score ?? null, progress: null, repeat: e.rewatches || 0,
@@ -584,7 +579,7 @@ function entryDraw(res) {
   if (!box || !S.entry) return;
   const prev = S.entry.f, f = entryFields(res);
   S.entry.f = f; S.entry.res = res;
-  box.innerHTML = entryHTML(f, !!res.pending);
+  box.innerHTML = entryHTML(f, !!(res.pending || res.queued));
   if (prev && !reduceMotion()) for (const k of ["progress", "repeat"]) if (prev[k] !== f[k]) box.querySelector(`.stepper b[data-k="${k}"]`)?.classList.add("pop2");
   const m = f.media || {}, next = m.next_episode;
   const air = $("#airline");
@@ -625,6 +620,7 @@ function entryPatch(patch, fav) {
   entrySave(S.entry.mid, patch, fav).then((res) => {
     if (res && res.error) { toast(res.error); return; }
     toast(res && res.queued ? "Saved — will sync when AniList is reachable" : patch && patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
+    if (res && res.queued) res.patch = patch || {};
     entryDraw(res);
     if (fav !== undefined) { const h = $("#entrybox .heart"); if (h) { h.classList.add("pop1"); if (fav) burstAt(h); } }
     if (patch && patch.status) refreshData();
@@ -713,7 +709,7 @@ function Stats() {
   const dist = Array.from({ length: 10 }, (_, i) => [String(i + 1), scored.filter((e) => Math.round(e.score) === i + 1).length]);
   const lmax = Math.max(...byList.map((x) => x[1]), 1), ftot = fseg.reduce((a, s) => a + s.v, 0) || 1;
   const hb = (k, c, i, mx) => `<div class="hb" title="${esc(k)}" tabindex="0"><span>${esc(k)}</span><div><i style="width:${(c / mx) * 100}%;animation-delay:${i * 60}ms"></i></div><span class="sub">${c}</span></div>`;
-  const note = aniMode() && !u ? '<p class="stat-note">Loading your full AniList totals…</p>' : localMode() ? "" : "";
+  const note = aniMode() && !u ? '<p class="stat-note">Loading your full AniList totals…</p>' : "";
   return `<div class="wrap page"><div class="sec first"><h2>Stats</h2><span class="sub">${aniMode() ? `AniList${u ? " · " + esc(u.name) : ""}` : "Based on progress stored on this device"}</span></div>
   <div class="tiles"><div class="tile">${ico("clock")}<b data-n="${Math.round(minutes / 60)}" data-s=" h">${Math.round(minutes / 60)} h</b><span>Time watched</span></div><div class="tile">${ico("tv")}<b data-n="${eps}">${eps}</b><span>Episodes</span></div><div class="tile">${ico("checkc")}<b data-n="${done}">${done}</b><span>Shows completed</span></div><div class="tile">${ico("star")}<b ${mean !== "—" ? `data-n="${mean}" data-d="1"` : ""}>${mean}</b><span>Mean score</span></div></div>${note}
   <div class="pgrid"><div class="panel wide2"><h3>Hours watched per month <span class="sub" style="font-weight:400;font-size:13px">on this device</span></h3>${barCols(months, (v) => v + " h")}</div>
@@ -740,8 +736,8 @@ function Sett() {
   const stateTxt = { ok: "Watching this folder.", unconfigured: "No library folder is configured yet.", missing: "The folder is not accessible right now.", partial: "Some folders could not be read — part of the library may be missing." };
   const changed = s.scan?.root === "changed", conn = !!ani.connected, off = !conn;
   return `<div class="wrap page"><div class="settings"><div class="sec first"><h2>Settings</h2></div>
-  <div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Set <code>library_root</code> in the config file, then restart the hub." : "Change it with <code>library_root</code> in the config file."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
-      `<div class="path"><input aria-label="Library folder" readonly value="${esc(s.library_root || "not configured")}"><button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}</div>
+  <div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
+      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}</div>
   <div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"], "Optional from v0.2 — streaming and downloads run through your own ani-cli.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — upscales banners when the config enables it.")}</div>
   <div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
       conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}</div>
@@ -752,6 +748,81 @@ function Sett() {
   <div class="group"><h3>Appearance</h3>${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>
   <div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div>
   <div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div></div></div>`;
+}
+/* Library folder picker (Decision 32): one inline folder browser shared by
+   Settings and the tour's first step (ctx). It renders from S.dir and paints
+   into its own slot, so walking folders never rebuilds the page or replays the
+   tour dialog's swap. It unfolds from the folder field: the field follows the
+   browsed folder, Browse toggles it like Cancel. Choosing writes library_root
+   to the config file. */
+const libPath = (ctx, s) => `<input id="libpath-${ctx}" aria-label="Library folder" value="${esc(s.library_root || "")}" placeholder="Choose a folder…" autocomplete="off" spellcheck="false">`;
+const dirBtn = (ctx) => `<button class="btn" id="dirbtn-${ctx}" data-a="dirbrowse" aria-expanded="${S.dir?.ctx === ctx}" aria-controls="dirpick-${ctx}">Browse…</button>`;
+function dirCrumbs(path) {
+  const parts = path.split("/").filter(Boolean), last = parts.length - 1;
+  const seg = (label, to, cur) => cur ? `<b aria-current="location">${esc(label)}</b>` : `<button data-a="dirgo" data-v="${esc(to)}">${esc(label)}</button>`;
+  return seg("/", "/", last < 0) + parts.map((x, i) => `${i ? "<i>/</i>" : ""}${seg(x, "/" + parts.slice(0, i + 1).join("/"), i === last)}`).join("");
+}
+function DirPick(ctx) {
+  const p = S.dir;
+  if (!p || p.ctx !== ctx) return `<div id="dirpick-${ctx}" hidden></div>`;
+  const cur = S.settings?.library_root, fresh = !p.shown; p.shown = true;
+  const n = p.dirs?.length, place = p.path && [...(p.places || [])].sort((x, y) => y.path.length - x.path.length).find((x) => p.path === x.path || p.path.startsWith(x.path + "/"));
+  const note = p.err ? `<span class="dp-note err">${esc(p.err)}</span>`
+    : p.confirm ? `<span class="dp-note">Switch from <code>${esc(cur)}</code>? Watch history and AniList data are kept; shows that aren't in the new folder leave the library until their files are back.</span>`
+    : `<span class="dp-note">${n ? `${n} folder${n === 1 ? "" : "s"}` : ""}</span>`;
+  return `<div id="dirpick-${ctx}" class="dirpick${fresh ? " in" : ""}" role="group" aria-label="Choose your library folder"><div class="dp-well">
+    <div class="dp-bar"><button class="btn dp-up" data-a="dirgo" data-v="${esc(p.parent || "")}" ${p.parent ? "" : "disabled"} aria-label="Parent folder" title="Parent folder">${ico("up")}</button>
+      <nav class="dp-crumbs" aria-label="Folder path">${p.path ? dirCrumbs(p.path) : ""}</nav>
+      ${p.places?.length ? `<div class="dp-places">${p.places.map((x) => `<button class="chip ${x === place ? "on" : ""}" data-a="dirgo" data-v="${esc(x.path)}">${esc(x.label)}</button>`).join("")}</div>` : ""}</div>
+    <div class="dp-list">${p.dirs == null ? '<p class="dim">Loading…</p>' : !p.dirs.length ? `<p class="dp-empty">${ico("folder")}<span>No subfolders here — you can still use this folder.</span></p>` : p.dirs.map((d) => `<button class="dp-dir" data-a="dirgo" data-v="${esc(d.path)}">${ico("folder")}<span>${esc(d.name)}</span></button>`).join("")}</div>
+    <div class="dp-foot ${p.confirm ? "ask" : ""}">${note}${p.confirm
+      ? '<button class="btn" data-a="dirconfirm" data-v="0">Back</button><button class="btn pri" data-a="dirconfirm" data-v="1">Switch folder</button>'
+      : `<button class="btn" data-a="dirclose">Cancel</button><button class="btn pri" data-a="diruse" ${p.path ? "" : "disabled"}>Use this folder</button>`}</div></div></div>`;
+}
+/* Edge fades replace the list's scrollbar: shown only where more folders hide. */
+function dirFade(l) { l.classList.toggle("ft", l.scrollTop > 2); l.classList.toggle("fb", l.scrollTop + l.clientHeight < l.scrollHeight - 2); }
+document.addEventListener("scroll", (e) => e.target.classList?.contains("dp-list") && dirFade(e.target), true);
+function paintDir(ctx = S.dir?.ctx) {
+  const el = $("#dirpick-" + ctx);
+  if (!el) return;
+  const had = el.contains(document.activeElement);
+  el.outerHTML = DirPick(ctx);
+  $("#dirbtn-" + ctx)?.setAttribute("aria-expanded", String(S.dir?.ctx === ctx));
+  const box = $("#dirpick-" + ctx), cr = box.querySelector(".dp-crumbs"), l = box.querySelector(".dp-list");
+  if (cr) cr.scrollLeft = cr.scrollWidth; // the deepest folder stays in view
+  if (l) dirFade(l);
+  if (had) box.querySelector(":is(.dp-dir,[data-a=diruse],[data-a=dirconfirm][data-v='1']):not(:disabled)")?.focus();
+}
+async function dirGo(path) {
+  const p = S.dir;
+  if (!p) return;
+  p.confirm = false; p.err = "";
+  let r;
+  try { r = await api("/api/browse" + (path ? "?path=" + encodeURIComponent(path) : "")); } catch { r = { error: "Could not reach the hub." }; }
+  if (S.dir !== p) return; // closed meanwhile
+  if (r.error && !p.path && path) { await dirGo(""); p.err = r.error; } // a bad typed path still opens a listing
+  else if (r.error) p.err = r.error;
+  else { Object.assign(p, r); const f = $("#libpath-" + p.ctx); if (f) f.value = p.path; }
+  paintDir();
+}
+function dirClose() {
+  const ctx = S.dir?.ctx;
+  S.dir = null;
+  const f = $("#libpath-" + ctx);
+  if (f) f.value = S.settings?.library_root || "";
+  paintDir(ctx);
+}
+async function dirSet(path) {
+  let r;
+  try { r = await api("/api/library-root", { path, adopt: true }); } catch { r = { error: "Could not reach the hub." }; }
+  if (!S.dir) return;
+  if (!r.ok) { S.dir.confirm = false; S.dir.err = r.error || "Could not use this folder."; paintDir(); return; }
+  S.dir = null;
+  toast("Library folder set — scanning…");
+  await loadSettings();
+  await reload();
+  api("/api/refresh", {}).catch(() => {});
+  if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render();
 }
 async function loadSettings() {
   try { S.settings = await api("/api/settings"); } catch { S.settings = null; }
@@ -836,8 +907,8 @@ function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
   const b = [
-    `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path"><input aria-label="Library folder" readonly value="${esc(s.library_root || "not configured")}"></div>
-     <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with the folder — see Settings." : "Set library_root in the config file and restart the hub."}</div>`,
+    `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}
+     <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>`,
     `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
@@ -1357,6 +1428,7 @@ const A = {
       return pollOauth();
     }
     const win = window.open("about:blank", "_blank");
+    if (win) win.opener = null; // anilist.co gets no handle on this window
     let r = null;
     try { r = await api("/api/auth/start", {}); } catch {}
     if (!r || r.error) { win?.close(); return setMsg(r?.error || "Could not reach the hub."); }
@@ -1364,7 +1436,23 @@ const A = {
     else { const m = $("#animsg"); if (m) m.innerHTML = `Popup blocked — <a href="${esc(r.url)}" target="_blank" rel="noopener">open AniList</a> to continue.`; }
     return pollOauth();
   },
-  tour: async () => { if (!S.settings) await loadSettings(); S.tour = { step: 0, choice: "connect" }; openModal({ t: "tour" }); },
+  tour: async () => { if (!S.settings) await loadSettings(); S.tour = { step: 0, choice: "connect" }; S.dir = null; openModal({ t: "tour" }); },
+  dirbrowse: (v, t) => {
+    const ctx = t.closest(".dialog") ? "tour" : "settings", typed = ($("#libpath-" + ctx)?.value || "").trim(), field = t.tagName === "INPUT";
+    if (S.dir?.ctx === ctx) { if (field) dirGo(typed); else dirClose(); return; } // Browse again = Cancel; Enter in the field walks there
+    S.dir = { ctx, dirs: null };
+    paintDir(ctx);
+    dirGo(typed || S.settings?.library_root || "");
+  },
+  dirgo: (v) => dirGo(v),
+  dirclose: () => dirClose(),
+  diruse: () => {
+    const p = S.dir, cur = S.settings?.library_root;
+    if (!p?.path) return;
+    if (cur && cur !== p.path) { p.confirm = true; paintDir(); return; } // switching an indexed root is a confirmed step (Decision 23.7)
+    dirSet(p.path);
+  },
+  dirconfirm: (v) => { if (v === "1") dirSet(S.dir.path); else { S.dir.confirm = false; paintDir(); } },
   tourpick: (v) => { S.tour.choice = v; paintModal(); }, tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
@@ -1401,7 +1489,7 @@ const A = {
       closeModal(); refreshData();
     }).catch(() => { toast("Could not save — is the hub running?"); t.disabled = false; });
   },
-  close: () => closeModal(), scrim: (v, t, e) => { if (e.target === t) closeModal(); },
+  close: () => closeModal(), scrim: (v, t, e) => { if (e.target === t) S.modal?.t === "done" ? A.dnskip() : closeModal(); }, /* a backdrop dismissal is a Skip (Decision 25: once per event) */
 };
 
 /* ---------- events ---------- */
@@ -1556,8 +1644,10 @@ document.addEventListener("keydown", (e) => {
       const f = $$("#modal :is(button,select,input):not(:disabled)"), i = f.indexOf(document.activeElement);
       if (e.shiftKey && i <= 0) { f[f.length - 1].focus(); e.preventDefault(); } else if (!e.shiftKey && i === f.length - 1) { f[0].focus(); e.preventDefault(); }
     } else if (e.key === "Enter" && document.activeElement.id === "tok") { e.preventDefault(); $("[data-a=anitoken]")?.click(); }
+    else if (e.key === "Enter" && document.activeElement.id === "libpath-tour") { e.preventDefault(); A.dirbrowse(null, document.activeElement); }
     return;
   }
+  if (e.key === "Enter" && document.activeElement.id === "libpath-settings") { e.preventDefault(); A.dirbrowse(null, document.activeElement); return; }
   if (e.key === "Enter" && document.activeElement.id?.startsWith("mq-")) { e.preventDefault(); A.msearch(document.activeElement.id.slice(3)); return; }
   if (e.key === "/" && !inInput) { e.preventDefault(); q.focus(); return; }
   if (e.key === "Escape") {

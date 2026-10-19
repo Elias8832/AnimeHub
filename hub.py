@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse, quote, parse_qs
+from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 
 import os
@@ -34,13 +34,11 @@ MPV = APP_DIR / "mpv"
 SKIP_CREDITS_LUA = MPV / "skip-credits.lua"
 
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".webm", ".m4v"}
-SEASONISH_RE = re.compile(r"^(?:season\s*\d+|part\s*\d+|specials?|movies?|films?|ova|oav)", re.I)
 MOVIE_RE = re.compile(r"^(?:movies?|films?)$", re.I)
 SPECIAL_RE = re.compile(r"^(?:specials?|ova|oav)$", re.I)
 PART_RE = re.compile(r"^part\s*(\d+)$", re.I)
 EP_RE = re.compile(r"\bE(\d{1,4})\b", re.I)
 SE_EP_RE = re.compile(r"\bS\d{1,3}\s*E(\d{1,4})\b", re.I)
-SLUG_RE = re.compile(r"^[a-z0-9-]+$")
 SEP_NUM_RE = re.compile(r"^(?:ep(?:isode)?)\.?\s*(\d{1,4})", re.I)
 DEFAULT_PORT = 8787
 
@@ -248,7 +246,7 @@ _session_error = {"ep_id": None, "error": None, "ts": 0.0}
 _meta_status = {"running": False, "pending": 0, "current": None, "phase": None}
 MIN_VALID_SCAN = 10
 # Last scan's health (TODO 23): "ok", "missing" (root not a directory),
-# "partial" (some directories unreadable); "root_changed" when the configured
+# "partial" (some directories unreadable). "root" is "changed" when the configured
 # root differs from the one the database was indexed under. Surfaced in the
 # library payload so the UI can show readable states instead of nothing.
 scan_state = {"state": "ok", "walk_errors": 0, "root": "ok"}
@@ -271,7 +269,7 @@ def set_setting(key, value):
 # Defaults follow Decision 5's consent shape: syncing progress of releases
 # the user already tracks is the core promise of connecting (on), while
 # creating NEW public list entries on the user's behalf (auto-add on first
-# watch, Decision 5A) needs an explicit opt-in (off).
+# watch, Decision 5) needs an explicit opt-in (off).
 AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False}
 
 
@@ -289,8 +287,9 @@ def settings_payload():
     """TODO 15: the settings surface's read side — the automation toggles
     (Decision 5), the running config as plain values (paths as strings,
     never the token), scan health, and the detected tools the README
-    promises. Library-root changes still flow through the config file +
-    /api/adopt-root (Decision 23.7: identity policy, not a UI text field)."""
+    promises. The library root is chosen in the UI's folder picker
+    (Decision 32: /api/browse + /api/library-root, written back to the
+    config file); adopting a changed root stays explicit (Decision 23.7)."""
     return {
         "auto_progress_sync": automation_enabled("auto_progress_sync"),
         "auto_add_watch": automation_enabled("auto_add_watch"),
@@ -316,6 +315,89 @@ def adopt_root():
     set_setting("library_root", str(LIBRARY))
     scan_state["root"] = "ok"
     return {"ok": True, "library_root": str(LIBRARY)}
+
+
+def _user_dir(path):
+    """An absolute, normalized folder path from user input. normpath keeps
+    the user's own spelling (no symlink resolution: /mnt/Storage stays
+    /mnt/Storage even if it links elsewhere). Raises ValueError with a
+    message meant for the UI."""
+    p = os.path.expanduser(path.strip())
+    if not os.path.isabs(p):
+        raise ValueError("Enter a full folder path, e.g. /home/you/Anime.")
+    p = Path(os.path.normpath(p))
+    if not p.is_dir():
+        raise ValueError(f"Not a folder: {p}")
+    return p
+
+
+def browse_dirs(path=None):
+    """The library folder picker's read side (Decision 32): one level of
+    subfolders so the UI can walk to a folder. Folders only, hidden ones
+    skipped. The hub only answers its own localhost page (check_local), so
+    this lists nothing the user's file manager wouldn't. Places are the
+    usual Linux mount spots plus home, for drives outside $HOME."""
+    if path in (None, ""):
+        base = LIBRARY if LIBRARY and LIBRARY.is_dir() else Path.home()
+    else:
+        base = _user_dir(path)
+    try:
+        with os.scandir(base) as it:
+            dirs = sorted((e.name for e in it
+                           if not e.name.startswith(".") and e.is_dir()),
+                          key=str.casefold)
+    except PermissionError:
+        raise ValueError(f"Can't open {base}: permission denied.")
+    except OSError as e:
+        raise ValueError(f"Can't open {base}: {e.strerror or e}.")
+    user = os.environ.get("USER") or Path.home().name
+    places = [("Home", Path.home()), ("/mnt", Path("/mnt")), ("/media", Path("/media")),
+              (f"/run/media/{user}", Path("/run/media") / user)]
+    return {
+        "path": str(base),
+        "parent": str(base.parent) if base.parent != base else None,
+        "dirs": [{"name": d, "path": str(base / d)} for d in dirs],
+        "places": [{"label": label, "path": str(p)} for label, p in places if p.is_dir()],
+    }
+
+
+def write_config_key(key, value):
+    """Set one key in the config file, keeping every other key (unknown
+    ones included) as the user wrote them. A missing file is created; an
+    unreadable one is refused rather than overwritten — it is the user's
+    file. Written via a temp file + rename so a crash never truncates it."""
+    path = CONFIG_PATH
+    try:
+        raw = json.loads(path.read_text())
+    except FileNotFoundError:
+        raw = {}
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError(f"Could not read the config file {path} ({e}) — fix or remove it first.")
+    if not isinstance(raw, dict):
+        raise ValueError(f"The config file {path} must contain a JSON object — fix or remove it first.")
+    raw[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(raw, indent=2) + "\n")
+    os.replace(tmp, path)
+
+
+def set_library_root(path, adopt=False):
+    """Decision 32: the library folder is chosen in the UI and written back
+    to the config file's library_root, effective immediately (the next
+    /api/library call scans it). Decision 23.7 still holds: switching away
+    from an indexed root only tombstones the old one with adopt=True — the
+    UI sends that after the user confirmed the switch; without it the scan
+    flags the root as changed and the "Connect folder" step remains."""
+    global LIBRARY
+    p = _user_dir(path)
+    write_config_key("library_root", str(p))
+    LIBRARY = p
+    CONFIG["library_root"] = p
+    if adopt:
+        set_setting("library_root", str(p))
+        scan_state["root"] = "ok"
+    return {"ok": True, "library_root": str(p)}
 
 
 CANONICAL_TS = "%Y-%m-%d %H:%M:%S"
@@ -567,22 +649,6 @@ def load_overrides():
     return {}
 
 
-def is_seasonish(name):
-    return bool(SEASONISH_RE.match(name))
-
-
-def season_number(name):
-    m = re.match(r"^season\s*(\d+)$", name, re.I)
-    if m:
-        return int(m.group(1))
-    m = re.match(r"^part\s*(\d+)$", name, re.I)
-    if m:
-        return 1
-    if SPECIAL_RE.match(name):
-        return 0
-    return None
-
-
 def parse_ep_number(name):
     """Episode number from a filename: S01E02-style first (more specific),
     then a standalone E-token, else None. Fixes the S01E02 renumbering trap
@@ -741,6 +807,11 @@ def scan_library():
     show_list.sort(key=lambda x: (x["collection"] or x["title"]).lower())
     if scan_state["walk_errors"]:
         scan_state["state"] = "partial"
+    elif stored_root is None and show_list:
+        # First clean scan of a root on a database that never recorded one
+        # (fresh install configured after migration 3 ran): record it, or
+        # the changed-root guard (Decision 23.7) could never arm.
+        set_setting("library_root", str(LIBRARY))
     return show_list
 
 
@@ -807,20 +878,21 @@ def merge_db(scan):
                 # restores the watch state untouched, and a moved/renamed file
                 # keeps its facts until re-matched.
                 stale = [eid for eid in set(rows) - known if not eid.startswith("online:")]
-                for eid in stale:
-                    c.execute("INSERT INTO tombstones(kind,key,ts) VALUES('episode',?,?) "
-                              "ON CONFLICT(kind,key) DO UPDATE SET ts=excluded.ts", (eid, now))
-                for sid in gone_shows:
-                    c.execute("INSERT INTO tombstones(kind,key,ts) VALUES('show',?,?) "
-                              "ON CONFLICT(kind,key) DO UPDATE SET ts=excluded.ts", (sid, now))
-                for sid in set(season_rows) - {s["id"] for s in scan}:
-                    c.execute("INSERT INTO tombstones(kind,key,ts) VALUES('season',?,?) "
-                              "ON CONFLICT(kind,key) DO UPDATE SET ts=excluded.ts", (sid, now))
-                # IDs that are back in the scan clear their tombstone again.
-                for eid in known & set(rows):
-                    c.execute("DELETE FROM tombstones WHERE kind='episode' AND key=?", (eid,))
-                for sid in {s["id"] for s in scan} & set(meta):
-                    c.execute("DELETE FROM tombstones WHERE kind='show' AND key=?", (sid,))
+                # DO NOTHING keeps ts = when the row first went missing; this
+                # runs on every library poll and must not keep re-stamping it.
+                ins = ("INSERT INTO tombstones(kind,key,ts) VALUES(?,?,?) "
+                       "ON CONFLICT(kind,key) DO NOTHING")
+                scan_ids = {s["id"] for s in scan}
+                c.executemany(ins, [("episode", eid, now) for eid in stale])
+                c.executemany(ins, [("show", sid, now) for sid in gone_shows])
+                c.executemany(ins, [("season", sid, now) for sid in set(season_rows) - scan_ids])
+                # IDs that are back in the scan clear their tombstone again —
+                # only the ones actually tombstoned, not one DELETE per episode.
+                back = {("episode", eid) for eid in known & set(rows)} | \
+                       {("show", sid) for sid in scan_ids & set(meta)}
+                have = set(c.execute("SELECT kind, key FROM tombstones "
+                                     "WHERE kind IN ('episode','show')").fetchall())
+                c.executemany("DELETE FROM tombstones WHERE kind=? AND key=?", have & back)
     for s in scan:
         m = meta.get(s["id"])
         srows = season_rows.get(s["id"]) or {}
@@ -861,12 +933,9 @@ def anilist_cache_read():
     stall on a GraphQL round-trip; freshness comes from the background
     refresh loop and /api/anilist visits instead. Returns None when absent
     or stale."""
-    try:
-        cached = json.loads(ANILIST_CACHE.read_text())
-        if time.time() - cached.get("_ts", 0) < 900 and cached.get("user"):
-            return cached
-    except Exception:
-        pass
+    cached = anilist_cache_stale()
+    if cached and time.time() - cached.get("_ts", 0) < 900:
+        return cached
     return None
 
 
@@ -914,7 +983,9 @@ def _score_norm(value, fmt):
 
 
 def _score_format():
-    cached = anilist_cache_read()
+    # Any age: the user's scoring format rarely changes, and falling back to
+    # POINT_10 after 15 min offline would save an 8/10 as 8/100.
+    cached = anilist_cache_stale()
     return (cached or {}).get("score_format") or "POINT_10"
 
 
@@ -946,10 +1017,7 @@ def anilist_entry_state(media_id):
     if cached:
         return cached
     fmt = _score_format()
-    try:
-        data = anilist_mutation(ENTRY_STATE_QUERY, {"id": media_id, "fmt": fmt})
-    except AniListAuthError:
-        raise
+    data = anilist_mutation(ENTRY_STATE_QUERY, {"id": media_id, "fmt": fmt})
     if not data:
         return None
     m = (data.get("Media") if isinstance(data, dict) else None)
@@ -1026,9 +1094,13 @@ def anilist_entry_save(media_id, patch):
         fields.append("repeat: %d" % int(patch["repeat"]))
     for name, key in (("startedAt", "started_at"), ("completedAt", "completed_at")):
         if key in patch:
-            frag = _fuzzy_date_frag(patch[key])
-            if frag is None:
-                return {"error": "invalid date"}
+            if patch[key] in ("", None):
+                # Cleared in the panel: AniList clears a FuzzyDate on all-null.
+                frag = "year: null, month: null, day: null"
+            else:
+                frag = _fuzzy_date_frag(patch[key])
+                if frag is None:
+                    return {"error": "invalid date"}
             fields.append("%s: {%s}" % (name, frag))
     if not fields:
         return anilist_entry_state(media_id)
@@ -1317,7 +1389,7 @@ _completion_pending = []
 
 def anilist_track_show(s, manual=False):
     """Sync one local show against the cached AniList state — Decision 21's
-    highest-watched progress plus Decision 5A's consent-gated auto-add.
+    highest-watched progress plus Decision 5's consent-gated auto-add.
     All writes ride the outbox (TODO 14): offline/backoff/dedupe handled
     once. Compares against the cache only — never a synchronous read — and
     skips silently when it's cold; the next watched episode catches up.
@@ -1349,11 +1421,15 @@ def anilist_track_show(s, manual=False):
     # known, the folder's files must not exceed its total.
     if remote is not None:
         total = remote.get("episodes")
-        mappable = single and total and sum(len(x["episodes"]) for x in s["seasons"]) <= total
+        # An unknown total (airing show, `episodes: null`) is still one
+        # release — only a known total can rule a folder out (Decision 21).
+        mappable = single and (not total or sum(len(x["episodes"]) for x in s["seasons"]) <= total)
         if not mappable or highest <= (remote.get("progress") or 0):
             return None
         if outbox_pending_for(aid):
-            return None
+            # Offline E5 then E6: fold the newer count into the queued
+            # progress-only row instead of dropping it.
+            return {"progress": highest} if outbox_raise_progress(aid, highest) else None
         patch = {"progress": highest}
         outbox_enqueue(aid, patch=patch)
         return patch
@@ -1542,8 +1618,6 @@ def mpv_ipc(sock_path, command, timeout=2.0):
         except json.JSONDecodeError:
             continue
         if "data" in msg or ("error" in msg and msg.get("error") != "success"):
-            return msg
-        if msg.get("error") == "success" and "data" in msg:
             return msg
     return None
 
@@ -1823,7 +1897,6 @@ def start_play(ep_id, version=0):
 
 
 def anilist_request(payload, token=None):
-    last = None
     for attempt in range(4):
         try:
             headers = {"Content-Type": "application/json", "Accept": "application/json",
@@ -1836,12 +1909,16 @@ def anilist_request(payload, token=None):
             with urlopen(req, timeout=20) as r:
                 return json.loads(r.read())
         except Exception as e:
-            last = e
             if getattr(e, "code", None) == 429 and attempt < 3:
-                time.sleep(62)
+                # Honour AniList's Retry-After (usually well under a minute)
+                # instead of always parking the handler thread for 62 s.
+                try:
+                    wait = int(e.headers.get("Retry-After"))
+                except (AttributeError, TypeError, ValueError):
+                    wait = 62
+                time.sleep(min(max(wait, 1), 62))
                 continue
             raise
-    raise last
 
 
 def strip_html(text):
@@ -2203,7 +2280,7 @@ def store_show_meta(show, m):
     poster = f"/img/{poster_name}" if download((m.get("coverImage") or {}).get("extraLarge"), POSTERS / poster_name) else None
     banner = f"/img/{banner_name}" if download(m.get("bannerImage"), POSTERS / banner_name) else None
     if banner and UPSCALE_BANNERS:
-        # Background like the online path: keep the metadata queue moving
+        # In the background: keep the metadata queue moving
         # instead of blocking ~19s per banner on the Upscayl run.
         # Opt-in (config 'upscale_banners', default off): on machines without
         # working GPU Vulkan the upscaler emits all-black images — found
@@ -2234,6 +2311,9 @@ def clear_match(show_id):
     `episodes` and untouched (Decision 17.2). The next pass re-attempts."""
     with db() as c:
         c.execute("DELETE FROM shows_meta WHERE show_id=?", (show_id,))
+        # Per-season art/mapping belongs to the old match too; fetch_season_thumbs
+        # only fills missing keys, so stale rows would outlive any re-match.
+        c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
     overrides = load_overrides()
     changed = False
     for show in scan_library():
@@ -2264,6 +2344,8 @@ def set_match(show_id, anilist_id=None, query=None):
     overrides = load_overrides()
     overrides[show["title"]] = {"anilistId": anilist_id}
     (DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
+    with db() as c:
+        c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
     store_show_meta(show, m)
     return {"ok": True, "anilist_id": anilist_id,
             "title": (m.get("title") or {}).get("english") or (m.get("title") or {}).get("romaji")}
@@ -2271,7 +2353,7 @@ def set_match(show_id, anilist_id=None, query=None):
 
 def fetch_show_meta(show, override=None):
     with db() as c:
-        row = c.execute("SELECT poster, fetched_at FROM shows_meta WHERE show_id=?", (show["id"],)).fetchone()
+        row = c.execute("SELECT poster FROM shows_meta WHERE show_id=?", (show["id"],)).fetchone()
     if row and row[0] and not override:
         return True
     m = resolve_match(show, override)
@@ -2349,8 +2431,11 @@ def store_token(access_token, expires_in=None, user=None):
            "expires_at": (time.time() + expires_in) if expires_in else None,
            "user_id": (user or {}).get("id"), "user_name": (user or {}).get("name")}
     tmp = ANILIST_TOKEN_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(rec))
-    os.chmod(tmp, 0o600)
+    # Created 0600 — never briefly world-readable under the default umask.
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(rec))
+    os.chmod(tmp, 0o600)  # an existing .tmp keeps its old mode through O_CREAT
     os.replace(tmp, ANILIST_TOKEN_FILE)
     os.chmod(ANILIST_TOKEN_FILE, 0o600)
     return rec
@@ -2397,7 +2482,6 @@ def auth_start():
     global _AUTH_PENDING_TS
     if not ANILIST_CLIENT_ID:
         return {"error": "No AniList client id configured — add \"anilist_client_id\": <id> to the config file."}
-    redirect = f"http://localhost:{PORT}/auth/callback"
     _AUTH_PENDING_TS = time.time()
     # No redirect_uri parameter: AniList's implicit grant (unlike its
     # authorization-code grant) takes the redirect from the client's
@@ -2438,6 +2522,10 @@ def auth_finish(access_token, expires_in=None, require_pending=False):
         # AniList rejected it. Say so without echoing the token back.
         return {"error": "AniList rejected that token — create a fresh one."}
     store_token(access_token, expires_in, viewer)
+    cached = anilist_cache_stale()
+    if cached and (cached.get("user") or {}).get("name") != viewer["name"]:
+        # A different account: the cached lists are someone else's.
+        ANILIST_CACHE.unlink(missing_ok=True)
     # Reads follow this token's account (load_anilist_username reads
     # user_name from the token file) — no separate binding to maintain.
     # Decision 24: reconnect with the SAME account flushes the held queue
@@ -2701,8 +2789,9 @@ def reconcile_analyze():
         installed = sum(len(x["episodes"]) for x in s["seasons"])
         single = len(s["seasons"]) == 1
         # Facts (automatic). Both directions; container guard like the
-        # completion trigger, plus the single-season numbering rule.
-        if total and installed <= total and single:
+        # completion trigger, plus the single-season numbering rule. An
+        # unknown total (airing) can't rule the folder out.
+        if single and (not total or installed <= total):
             watched = [ep["number"] for x in s["seasons"]
                        for ep in x["episodes"] if ep["watched"]]
             local_highest = max(watched) if watched else 0
@@ -2748,6 +2837,29 @@ def outbox_pending_for(media_id):
                          (media_id,)).fetchone()[0]
 
 
+def outbox_raise_progress(media_id, progress):
+    """Raise the newest queued row's progress when it is a plain
+    progress-only intent (the auto-track/bulk shape) below `progress`.
+    Rows carrying anything else are the user's own edits — left alone.
+    Returns True when a row was raised."""
+    with db() as c:
+        row = c.execute("SELECT id, payload FROM outbox WHERE media_id=?"
+                        " ORDER BY id DESC LIMIT 1", (media_id,)).fetchone()
+        if not row:
+            return False
+        try:
+            payload = json.loads(row[1])
+        except ValueError:
+            return False
+        patch = payload.get("patch") or {}
+        if set(patch) != {"progress"} or "favourite" in payload \
+                or not isinstance(patch["progress"], int) or patch["progress"] >= progress:
+            return False
+        payload["patch"] = {"progress": progress}
+        c.execute("UPDATE outbox SET payload=? WHERE id=?", (json.dumps(payload), row[0]))
+        return True
+
+
 def reconcile_apply(decisions):
     """Apply the user's curation choices. 'anilist' adopts the remote values
     into the local overlay (no write needed — already there); 'local' keeps
@@ -2789,10 +2901,6 @@ def reconcile_apply(decisions):
                 applied += 1
     reconcile_clear()
     return applied
-
-
-def reconcile_dismiss():
-    reconcile_clear()
 
 
 def anilist_user_data(force=False):
@@ -2849,7 +2957,11 @@ def anilist_user_data(force=False):
                          or "POINT_10"),
         "entries": list(entries.values()),
     }
-    ANILIST_CACHE.write_text(json.dumps(out | {"_ts": time.time()}))
+    # Atomic: request threads read this file concurrently, and a torn read
+    # would briefly flip the spine into local mode.
+    tmp = ANILIST_CACHE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(out | {"_ts": time.time()}))
+    os.replace(tmp, ANILIST_CACHE)
     return out
 
 
@@ -3057,7 +3169,7 @@ class Handler(BaseHTTPRequestHandler):
         header (DNS rebinding) or a non-JSON POST body is never ours. The
         accepted port follows the configured one — a hardcoded value rejects
         every request from an alternate-port instance (TODO 22, hit live
-        during the config work)."""
+        during the config work). The JSON content-type gate lives in do_POST."""
         if self.headers.get("Host", "") not in (f"127.0.0.1:{PORT}", f"localhost:{PORT}"):
             self.send_error(403)
             return False
@@ -3129,17 +3241,28 @@ class Handler(BaseHTTPRequestHandler):
                                 "entry": curation_get("aid:%d" % mid)})
                 return
             try:
+                # pending (additive): a queued outbox intent for this media
+                # drives the panel's "Waiting to sync" chip.
                 self.send_json({"state": anilist_entry_state(mid),
-                                "score_format": _score_format()})
+                                "score_format": _score_format(),
+                                "pending": bool(outbox_pending_for(mid))})
             except AniListAuthError as e:
                 self.send_json({"error": e.reason, "auth": True}, 401)
             except Exception as e:
                 self.send_json({"error": str(e)}, 502)
-        elif route == "/api/auth/status":            self.send_json(auth_status())
+        elif route == "/api/auth/status":
+            self.send_json(auth_status())
         elif route == "/api/settings":
             # TODO 15: the settings surface's read side (Decision 5) —
             # toggles + running config + detected tools, never the token.
             self.send_json(settings_payload())
+        elif route == "/api/browse":
+            # Decision 32: the library folder picker walks one level at a time.
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                self.send_json(browse_dirs(qs.get("path", [""])[0]))
+            except ValueError as e:
+                self._bad(str(e))
         elif route == "/auth/callback":
             self.send_file_body(AUTH_CALLBACK_PAGE.encode(), "text/html; charset=utf-8")
         elif route == "/api/now":
@@ -3161,6 +3284,7 @@ class Handler(BaseHTTPRequestHandler):
                         payload["outbox"] = outbox_n
                     self.send_json(payload)
                     return
+                a = next(iter(_active.values()))
                 payload = {"playing": True, "show": a["show_title"], "label": a["label"],
                            "percent": a.get("percent") or 0, "episode_id": a["ep_id"]}
                 if outbox_n:
@@ -3195,6 +3319,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
         except ValueError:
+            self.send_json({"error": "invalid Content-Length"}, 400)
+            return
+        if length < 0:
+            # rfile.read(-1) would block the handler thread until EOF.
             self.send_json({"error": "invalid Content-Length"}, 400)
             return
         if length > 1_000_000:
@@ -3263,6 +3391,17 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/adopt-root":
             res = adopt_root()
             self.send_json(res, 200 if res.get("ok") else 400)
+        elif route == "/api/library-root":
+            # Decision 32: choose the library folder from the UI; adopt is
+            # the user's confirmed switch away from an indexed root (23.7).
+            if self._fields(body, strings=("path",)):
+                if "adopt" in body and not isinstance(body["adopt"], bool):
+                    self._bad("'adopt' must be a boolean")
+                    return
+                try:
+                    self.send_json(set_library_root(body["path"], body.get("adopt", False)))
+                except ValueError as e:
+                    self._bad(str(e))
         elif route == "/api/match":
             if self._fields(body, strings=("show_id",)):
                 aid = body.get("anilist_id")
@@ -3356,11 +3495,26 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     self._bad("'score' must be a number")
                     return
+                if not 0 <= patch["score"] <= 100:  # also rejects nan/inf
+                    self._bad("'score' must be between 0 and 100")
+                    return
             for k in ("progress", "repeat"):
                 if k in patch:
                     if isinstance(patch[k], bool) or not isinstance(patch[k], int) or patch[k] < 0:
                         self._bad("'%s' must be a non-negative integer" % k)
                         return
+            # Validate everything before the local write: a rejected field
+            # must not leave the overlay disagreeing with AniList.
+            for k in ("started_at", "completed_at"):
+                if k in patch:
+                    if patch[k] in ("", None):
+                        patch[k] = None
+                    elif not isinstance(patch[k], str) or _fuzzy_date_frag(patch[k]) is None:
+                        self._bad("'%s' must be a YYYY[-MM[-DD]] date" % k)
+                        return
+            if fav is not None and not isinstance(fav, bool):
+                self._bad("'favourite' must be a boolean")
+                return
             cpatch = {k: v for k, v in patch.items() if k in
                       ("status", "score", "rewatches", "started_at", "finished_at")}
             if "repeat" in patch:
@@ -3369,10 +3523,6 @@ class Handler(BaseHTTPRequestHandler):
                 cpatch["finished_at"] = patch["completed_at"]
             curation_set(ref, cpatch)
             fav_result = None
-            if fav is not None:
-                if not isinstance(fav, bool):
-                    self._bad("'favourite' must be a boolean")
-                    return
             if load_token():
                 try:
                     if patch or fav is not None:
@@ -3510,7 +3660,7 @@ def main():
     threading.Thread(target=anilist_refresh_loop, daemon=True).start()
     print(f"Anime Hub → http://127.0.0.1:{PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
-    print(f"  library  {LIBRARY or 'not configured — set library_root in the config file'}", flush=True)
+    print(f"  library  {LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)
     u = load_anilist_username()
     a = auth_status()
     print(f"  anilist  reads as {u or 'not configured (optional)'}; oauth "
