@@ -47,8 +47,7 @@ cargo build --release
 ./install.sh
 ```
 
-The server starts on `http://127.0.0.1:8787`. First run: point it at
-your library folder via the config file, then Rescan.
+The server starts on `http://127.0.0.1:8787`.
 
 ## Configuration
 
@@ -66,7 +65,7 @@ with `--config FILE`). All keys optional, a broken file only warns:
 
 | Key | Meaning |
 | --- | --- |
-| `library_root` | the folder anime-hub watches for video files |
+| `library_root` | the folder anime-hub watches for video files (also set from Settings → Library) |
 | `port` | server port (default `8787`) |
 | `data_dir` | database and cache location (default `~/.local/share/anime-hub`, honours `XDG_DATA_HOME`) |
 | `window` | `"app"` (default, standalone Chromium window), `"browser"` (tab), `"none"` (server only; `--no-browser` forces it for one run) |

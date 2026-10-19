@@ -26,9 +26,18 @@ use std::time::{Duration, Instant};
 
 use libc::flock;
 
-/// Last-resort hub.py location (the common install layout on the machine
-/// this wrapper was first built on).
-const DEFAULT_HUB_PY: &str = "/home/elias/.local/share/anime-hub/hub.py";
+/// Last-resort hub.py location: `anime-hub/hub.py` under the user's data
+/// dir (XDG_DATA_HOME, else ~/.local/share). Nothing user-specific is baked
+/// into the binary.
+fn default_hub_py() -> PathBuf {
+    let base = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".local/share")))
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    base.join("anime-hub").join("hub.py")
+}
 
 /// Mirror of hub.py's APP_BROWSERS preference order.
 const CHROMIUM_FAMILY: [&str; 6] = [
@@ -74,7 +83,7 @@ fn find_hub_py() -> Option<PathBuf> {
             dir = d.parent().map(|p| p.to_path_buf());
         }
     }
-    let def = PathBuf::from(DEFAULT_HUB_PY);
+    let def = default_hub_py();
     if def.exists() {
         return Some(def);
     }
@@ -211,7 +220,7 @@ fn main() {
                 "anime-hub: hub.py not found (looked via $ANIME_HUB_PY, \
                  hub.path next to the config, up from this executable, and {}). \
                  Install the app or set ANIME_HUB_PY.",
-                DEFAULT_HUB_PY
+                default_hub_py().display()
             );
             std::process::exit(1);
         }
