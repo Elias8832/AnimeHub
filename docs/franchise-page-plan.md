@@ -100,10 +100,19 @@ Each phase ends with the test suite green.
    the entry's own (numbers fit, no stills shared with an earlier entry),
    else ani.zip. The "wrong entry?" backend is `POST /api/season-match`;
    its dialog is drawn on the new page (phase 5).
-4. **Page model.** `franchise_view(fid)` returns entries in order, each
-   with facts, art, and its merged episode slots (local + online +
-   placeholders up to the aired count). `GET /api/franchise?id=`.
-   Online links resolve in the background when an entry is opened.
+4. **Page model.** *(done)* Pure `franchise_page(...)`; `franchise_view(id)`
+   gathers the stored data for `GET /api/franchise?id=<entry>` (that entry
+   selected). Entries in air order, each with facts, art, `group`
+   (`main` = the line from the first-aired TV/ONA entry, else `extra`),
+   a display `label` (what the title adds to the franchise's; "Season N"
+   when that is nothing; its own title when unrelated, e.g.
+   Nisemonogatari) and `slots`: one per episode number on disk, in the
+   ani-cli list, or aired. A slot has `local` and/or `online` sources,
+   `id` = what Play plays (the file when there is one), and is watched
+   when either source is. `other_local` lists the franchise folders'
+   files that are no entry. Not built yet → the entry alone with
+   `building` while it builds in the background; the opened entry's
+   ani-cli link and stills load in the background too.
 5. **Frontend.** New show page on the page model; entry switcher (main
    seasons first row, movies/specials/OVAs second row); one tile style
    with a source badge; search results are entries that open their
