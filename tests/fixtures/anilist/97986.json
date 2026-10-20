@@ -1,0 +1,156 @@
+{
+ "id": 97986,
+ "title": {
+  "romaji": "Made in Abyss",
+  "english": "Made in Abyss",
+  "native": "メイドインアビス"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 13,
+ "duration": 25,
+ "averageScore": 84,
+ "season": "SUMMER",
+ "seasonYear": 2017,
+ "startDate": {
+  "year": 2017,
+  "month": 7,
+  "day": 7
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx97986-TQ7dCgbS3y5s.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/97986-C55UnbJKB7ZF.jpg",
+ "description": "The \"Abyss\" is the last unexplored place in the world. Strange and wonderful creatures roam within, and it is full of precious relics that present humans can't recreate. Those that dare to explore the depths are known as \"Cave Raiders.\" An orphan girl named Riko lives on the rim. Her dream is to become a Cave Raider like her mother and solve the mysteries of the cave system. One day, Riko starts exploring the caves and discovers a robot who resembles a human boy.<br><br>\n\n(Source: Anime News Network, edited)\n<br><br>\n<i>Note: The last episode aired with a runtime of ~48 minutes as opposed to the standard 24 minute long episode.</i>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 100643,
+     "type": "ANIME",
+     "format": "MOVIE",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2020,
+      "month": 1,
+      "day": 17
+     },
+     "title": {
+      "romaji": "Made in Abyss: Fukaki Tamashii no Reimei",
+      "english": "Made in Abyss: Dawn of the Deep Soul"
+     }
+    }
+   },
+   {
+    "relationType": "SUMMARY",
+    "node": {
+     "id": 101343,
+     "type": "ANIME",
+     "format": "MOVIE",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2019,
+      "month": 1,
+      "day": 4
+     },
+     "title": {
+      "romaji": "Made in Abyss: Tabidachi no Yoake",
+      "english": "Made in Abyss: Journey's Dawn"
+     }
+    }
+   },
+   {
+    "relationType": "SUMMARY",
+    "node": {
+     "id": 101344,
+     "type": "ANIME",
+     "format": "MOVIE",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2019,
+      "month": 1,
+      "day": 18
+     },
+     "title": {
+      "romaji": "Made in Abyss: Hourou Suru Tasogare",
+      "english": "Made in Abyss: Wandering Twilight"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 86551,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2012,
+      "month": 10,
+      "day": 20
+     },
+     "title": {
+      "romaji": "Made in Abyss",
+      "english": "Made in Abyss"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Episode 1 - The City of the Great Pit",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/1ebcaa2281526934c3d15cb8153170901657903283_full.jpg"
+  },
+  {
+   "title": "Episode 2 - Resurrection Festival",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/283317f82dfe2a340abfebd8ed0ead341657903362_full.jpg"
+  },
+  {
+   "title": "Episode 3 - Departure",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/09d650761b928c1c82c79f52d3c0e4471657903337_full.jpg"
+  },
+  {
+   "title": "Episode 4 - The Edge of the Abyss",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/0e3c9248e4aecaa0887dfafa268594cf1657903385_full.jpg"
+  },
+  {
+   "title": "Episode 5 - Incinerator",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/eb94f7701be713cf2c7027ac4c1da63a1657903348_full.jpg"
+  },
+  {
+   "title": "Episode 6 - Seeker Camp",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/092f2661a4b510675618b72b73653d831657903313_full.jpg"
+  },
+  {
+   "title": "Episode 7 - The Unmovable Sovereign",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/f29f94207bcdf153d5d415165d068cd11657903325_full.jpg"
+  },
+  {
+   "title": "Episode 8 - Survival Training",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/7fba9b89172db9f5f1ba14b23755621a1657903461_full.jpg"
+  },
+  {
+   "title": "Episode 9 - The Great Fault",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/ee6ef0b33e735fc56a90f624b3e870b91657903373_full.jpg"
+  },
+  {
+   "title": "Episode 10 - Poison and the Curse",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/6359839dc631e21a7a0f0f8b3052714e1657903399_full.jpg"
+  },
+  {
+   "title": "Episode 11 - Nanachi",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/c295e79e8c6b9c5b43248563b4346d301657903415_full.jpg"
+  },
+  {
+   "title": "Episode 12 - The True Nature of the Curse",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/4f5f41616bd2d7d80fd79a3c297846551657903426_full.jpg"
+  },
+  {
+   "title": "Episode 13 - The Challengers",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/ec7b5248cf20b6f22f8176afb42da11e1657903486_full.jpg"
+  }
+ ]
+}

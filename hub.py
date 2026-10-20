@@ -231,6 +231,21 @@ streamingEpisodes{title thumbnail}"""
 MEDIA_QUERY_SEARCH = "query($search:String){Media(search:$search,type:ANIME){" + MEDIA_FIELDS + "}}"
 MEDIA_QUERY_ID = "query($id:Int){Media(id:$id,type:ANIME){" + MEDIA_FIELDS + "}}"
 MEDIA_QUERY_CANDIDATES = "query($search:String){Page(perPage:10){media(search:$search,type:ANIME){" + MEDIA_FIELDS + "}}}"
+# One franchise entry (docs/franchise-page-plan.md): everything the franchise
+# page draws for it, plus the typed relation edges the franchise is built
+# from. tests/record_fixtures.py records the test fixtures with this query.
+FRANCHISE_FIELDS = """id title{romaji english native} format status episodes duration averageScore
+season seasonYear startDate{year month day} nextAiringEpisode{episode airingAt}
+coverImage{extraLarge} bannerImage description
+relations{edges{relationType node{id type format status startDate{year month day} title{romaji english}}}}
+streamingEpisodes{title thumbnail}"""
+FRANCHISE_QUERY_ID = "query($id:Int){Media(id:$id,type:ANIME){" + FRANCHISE_FIELDS + "}}"
+# Relations that keep two entries on one franchise page. SPIN_OFF,
+# ALTERNATIVE (FMA vs Brotherhood) and CHARACTER do not. OTHER joins only
+# an entry of these formats whose title is this one's plus a season number
+# (AniList links "Cyberpunk: Edgerunners 2" as OTHER, both ways).
+FRANCHISE_RELATIONS = {"SEQUEL", "PREQUEL", "PARENT", "SIDE_STORY", "SUMMARY"}
+FRANCHISE_OTHER_FORMATS = {"TV", "TV_SHORT", "ONA", "MOVIE"}
 EPISODE_META_TTL = 12 * 3600
 
 _active = {}

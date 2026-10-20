@@ -1,0 +1,134 @@
+{
+ "id": 21262,
+ "title": {
+  "romaji": "Owarimonogatari",
+  "english": "Owarimonogatari",
+  "native": "終物語"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 12,
+ "duration": 24,
+ "averageScore": 85,
+ "season": "FALL",
+ "seasonYear": 2015,
+ "startDate": {
+  "year": 2015,
+  "month": 10,
+  "day": 4
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/nx21262-jfbv9hvjymMW.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/21262-nlSoKZSaxyJo.jpg",
+ "description": "Third and “Final Season” of the Monogatari Series, part 3/5. Contains the arcs Ougi Formula, Sodachi Riddle, Sodachi Lost and Shinobu Mail from the Owarimonogatari light novels.\n<br><br>\nDuring the month of October of his third year in high school, Koyomi Araragi is introduced to a transfer student named Ougi Oshino by his underclassman Suruga Kanbaru. Ougi tells Koyomi that she has something she wishes to consult with him. When she draws the map of Naoetsu High School, she finds something peculiar on there. This discovery reveals a tale that wasn’t meant to be told, and this makes Koyomi’s high school life totally different. This is the story that brings to light “what” makes Koyomi Araragi. This is the story that reveals the “beginning” of everything.\n<br><br>\n(Source: Aniplex)\n<br><br>\n<i>Note: The first episode aired with a runtime of ~48 minutes as opposed to the standard 24 minute long episode.</i>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 17074,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2013,
+      "month": 7,
+      "day": 7
+     },
+     "title": {
+      "romaji": "Monogatari Series: Second Season",
+      "english": "Monogatari Series Second Season"
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 20918,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2014,
+      "month": 12,
+      "day": 31
+     },
+     "title": {
+      "romaji": "Tsukimonogatari",
+      "english": "Tsukimonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 143747,
+     "type": "MANGA",
+     "format": "NOVEL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2013,
+      "month": 10,
+      "day": 21
+     },
+     "title": {
+      "romaji": "Owarimonogatari",
+      "english": "Owarimonogatari: End Tale"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Episode 1 - OUGI Formula, Parts 1 & 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/3957bf970b1cc2d161bb3788f8d017e01443855063_full.jpg"
+  },
+  {
+   "title": "Episode 2 - SODACHI Riddle, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/99cfa15df6db0f56abf59f1eb58fd0f11444426407_full.jpg"
+  },
+  {
+   "title": "Episode 3 - SODACHI Riddle, Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/27c3827964a93c18027321036a66c4d81445038934_full.jpg"
+  },
+  {
+   "title": "Episode 4 - SODACHI Lost, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/01099d0f675662d371e6f1ed25a8846d1445641552_full.jpg"
+  },
+  {
+   "title": "Episode 5 - SODACHI Lost, Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/956dfa44352ec1e6e9c004f3be4887cd1446245307_full.jpg"
+  },
+  {
+   "title": "Episode 6 - SODACHI Lost, Part 3",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/6d4879c988b4a0eeed94acfff0a237801446904914_full.jpg"
+  },
+  {
+   "title": "Episode 7 - SHINOBU Mail, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/b7979383ab4d8deedde63eb3a58b2dfb1447465547_full.jpg"
+  },
+  {
+   "title": "Episode 8 - SHINOBU Mail, Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/6880b733e0bea88adc3fa5a05cd63b2f1448109299_full.jpg"
+  },
+  {
+   "title": "Episode 9 - SHINOBU Mail, Part 3",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/b7f78d37fc71043d96552cec1624f1ca1448701340_full.jpg"
+  },
+  {
+   "title": "Episode 10 - SHINOBU Mail, Part 4",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/fc5cff76160672d4612278b43c82e75e1449309466_full.jpg"
+  },
+  {
+   "title": "Episode 11 - SHINOBU Mail, Part 5",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/6651d0bab9fce74a1d65687112cb865e1449883561_full.jpg"
+  },
+  {
+   "title": "Episode 12 - SHINOBU Mail, Part 6",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/66405183122f8144aecab4f7e6aac9531450471730_full.jpg"
+  }
+ ]
+}

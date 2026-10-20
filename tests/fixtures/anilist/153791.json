@@ -1,0 +1,49 @@
+{
+ "id": 153791,
+ "title": {
+  "romaji": "Made in Abyss: Retsujitsu no Ougonkyou - Papa to Issho",
+  "english": null,
+  "native": "メイドインアビス 烈日の黄金郷「パパといっしょ」"
+ },
+ "format": "SPECIAL",
+ "status": "FINISHED",
+ "episodes": 1,
+ "duration": 7,
+ "averageScore": 70,
+ "season": "FALL",
+ "seasonYear": 2022,
+ "startDate": {
+  "year": 2022,
+  "month": 10,
+  "day": 26
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b153791-CDhoG87JUdUV.png"
+ },
+ "bannerImage": null,
+ "description": "Short focusing on Prushka included with the first volume of the <i>Made in Abyss: Retsujitsu no Ougonkyou</i> Blu-ray/DVD box set.",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 114745,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2022,
+      "month": 7,
+      "day": 6
+     },
+     "title": {
+      "romaji": "Made in Abyss: Retsujitsu no Ougonkyou",
+      "english": "Made in Abyss: The Golden City of the Scorching Sun"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

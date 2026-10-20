@@ -1,0 +1,67 @@
+{
+ "id": 106495,
+ "title": {
+  "romaji": "Nisekoimonogatari",
+  "english": "Nisekoimonogatari",
+  "native": "ニセコイモノガタリ"
+ },
+ "format": "ONA",
+ "status": "FINISHED",
+ "episodes": 1,
+ "duration": 1,
+ "averageScore": 64,
+ "season": "SPRING",
+ "seasonYear": 2015,
+ "startDate": {
+  "year": 2015,
+  "month": 4,
+  "day": 1
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/nx106495-gEnPvRaS5HoU.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/106495-SwXFn0awIBzn.jpg",
+ "description": "Trailer for a fake crossover anime created by Shaft as an April Fools' Day joke, celebrating their 40th anniversary.\n",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 18897,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2014,
+      "month": 1,
+      "day": 11
+     },
+     "title": {
+      "romaji": "Nisekoi",
+      "english": "Nisekoi"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 5081,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2009,
+      "month": 7,
+      "day": 3
+     },
+     "title": {
+      "romaji": "Bakemonogatari",
+      "english": "Bakemonogatari"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

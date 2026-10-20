@@ -1,0 +1,85 @@
+{
+ "id": 120377,
+ "title": {
+  "romaji": "Cyberpunk: Edgerunners",
+  "english": "Cyberpunk: Edgerunners",
+  "native": "サイバーパンク エッジランナーズ"
+ },
+ "format": "ONA",
+ "status": "FINISHED",
+ "episodes": 10,
+ "duration": 24,
+ "averageScore": 85,
+ "season": "SUMMER",
+ "seasonYear": 2022,
+ "startDate": {
+  "year": 2022,
+  "month": 9,
+  "day": 13
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx120377-ayZPoxiWt4Li.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/120377-c15oLS8CA31s.jpg",
+ "description": "<i>Cyberpunk: Edgerunners</i> tells a standalone, 10-episode story about a street kid trying to survive in a technology and body modification-obsessed city of the future. Having everything to lose, he chooses to stay alive by becoming an edgerunner—a mercenary outlaw also known as a cyberpunk.<br>\n<br>\n(Source: CD PROJEKT RED)<br>\n<br>\n<i>Note: The first episode received a pre-screening at Anime Expo on July 2, 2022. The first 3 dubbed episodes were streamed on Twitch as part of a co-stream promotion on September 12, a day before the show’s premiere.</i>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "CHARACTER",
+    "node": {
+     "id": 154591,
+     "type": "ANIME",
+     "format": "MUSIC",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2022,
+      "month": 9,
+      "day": 12
+     },
+     "title": {
+      "romaji": "Let You Down",
+      "english": "Let You Down"
+     }
+    }
+   },
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 185521,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2024,
+      "month": 12,
+      "day": 14
+     },
+     "title": {
+      "romaji": "Cyberpunk: Edgerunners MADNESS",
+      "english": "Cyberpunk: Edgerunners MADNESS"
+     }
+    }
+   },
+   {
+    "relationType": "OTHER",
+    "node": {
+     "id": 195539,
+     "type": "ANIME",
+     "format": "ONA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2026,
+      "month": 10,
+      "day": 20
+     },
+     "title": {
+      "romaji": "Cyberpunk: Edgerunners 2",
+      "english": "Cyberpunk: Edgerunners 2"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

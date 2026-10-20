@@ -1,0 +1,85 @@
+{
+ "id": 194884,
+ "title": {
+  "romaji": "Kaguya-sama wa Kokurasetai: Otona e no Kaidan",
+  "english": "Kaguya-sama: Love Is War -Stairway to Adulthood-",
+  "native": "かぐや様は告らせたい 大人への階段"
+ },
+ "format": "SPECIAL",
+ "status": "FINISHED",
+ "episodes": 2,
+ "duration": 26,
+ "averageScore": 84,
+ "season": "FALL",
+ "seasonYear": 2025,
+ "startDate": {
+  "year": 2025,
+  "month": 12,
+  "day": 31
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx194884-rHgGAzKSCEWz.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/194884-PwYRWyOUEwZI.jpg",
+ "description": "Years after graduating from high school, Kaguya Shinomiya finds her old photo album and reminisces about when she was a part of Shuuchiin Academy's student council. At the time, Kaguya had just started dating the president Miyuki Shirogane, and the two were hopelessly in love. With each wholesome and silly memory from their past, Kaguya is filled with bliss.<br>\n<br>\n(Source: MAL Rewrite)<br>\n<br>\n<i>Note: The anime first premiered in Japan as a TV Special, and was later split into 2 episodes on streaming.</i>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 86635,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2015,
+      "month": 5,
+      "day": 19
+     },
+     "title": {
+      "romaji": "Kaguya-sama wa Kokurasetai: Tensaitachi no Renai Zunousen",
+      "english": "Kaguya-sama: Love is War"
+     }
+    }
+   },
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 151384,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2023,
+      "month": 4,
+      "day": 1
+     },
+     "title": {
+      "romaji": "Kaguya-sama wa Kokurasetai: First Kiss wa Owaranai",
+      "english": "Kaguya-sama: Love is War -The First Kiss That Never Ends-"
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 205081,
+     "type": "ANIME",
+     "format": "MOVIE",
+     "status": "NOT_YET_RELEASED",
+     "startDate": {
+      "year": null,
+      "month": null,
+      "day": null
+     },
+     "title": {
+      "romaji": "Kaguya-sama wa Kokurasetai: Kanketsu-hen",
+      "english": null
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

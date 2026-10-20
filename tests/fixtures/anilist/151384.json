@@ -1,0 +1,142 @@
+{
+ "id": 151384,
+ "title": {
+  "romaji": "Kaguya-sama wa Kokurasetai: First Kiss wa Owaranai",
+  "english": "Kaguya-sama: Love is War -The First Kiss That Never Ends-",
+  "native": "かぐや様は告らせたい -ファーストキッスは終わらない-"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 4,
+ "duration": 25,
+ "averageScore": 87,
+ "season": "SPRING",
+ "seasonYear": 2023,
+ "startDate": {
+  "year": 2023,
+  "month": 4,
+  "day": 1
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151384-gv0q8wOE6D58.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/151384-JybfIpHr2gx6.jpg",
+ "description": "Shuchiin Academy’s student council room: the place where Student Council Vice President Kaguya Shinomiya and President Miyuki Shirogane met. After a long battle in love, these two geniuses communicated their feelings and, at the Hoshin Festival, had their very first kiss. However, there was no clear confession of love. The relationship between these two, who assumed they would be a couple, remains ambiguous. Now, overly conscious of their feelings, they must face the biggest challenge yet: Christmas. It’s Shirogane who wants it to be perfect versus Kaguya who pursues the imperfect situation. This is the very “normal” love story of two geniuses and the first kiss that never ends.\n<br><br>\n(Source: Aniplex of America)\n<br><br>\n<em>Note: The anime first premiered in theaters across Japan on December 17, 2022. It was later split into 2 parts on TV, and 4 episodes on streaming, and Blu-Ray/DVD.</em>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 86635,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2015,
+      "month": 5,
+      "day": 19
+     },
+     "title": {
+      "romaji": "Kaguya-sama wa Kokurasetai: Tensaitachi no Renai Zunousen",
+      "english": "Kaguya-sama: Love is War"
+     }
+    }
+   },
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 125367,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2022,
+      "month": 4,
+      "day": 9
+     },
+     "title": {
+      "romaji": "Kaguya-sama wa Kokurasetai: Ultra Romantic",
+      "english": "Kaguya-sama: Love is War -Ultra Romantic-"
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 194884,
+     "type": "ANIME",
+     "format": "SPECIAL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2025,
+      "month": 12,
+      "day": 31
+     },
+     "title": {
+      "romaji": "Kaguya-sama wa Kokurasetai: Otona e no Kaidan",
+      "english": "Kaguya-sama: Love Is War -Stairway to Adulthood-"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Episode 1 - I Will Make You Invite Me to a Movie / Kaguya Wants to Be Stopped / Kaguya Wants It",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/f3178517627e7c3bc07e5e2d9629e3551547303791_full.jpg"
+  },
+  {
+   "title": "Episode 2 - Kaguya Wants to Trade / Chika Wants to Go Somewhere / Miyuki Wants to Hide His Ignorance",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/83a6a11ce7ffea4af4792326a035c4c71547911382_full.jpg"
+  },
+  {
+   "title": "Episode 3 - Miyuki Shirogane Still Hasn't Done It / Kaguya Wants to Be Figured Out / Kaguya Wants to Walk",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/deb541047d5119172fb6bee72d8eab9a1548495969_full.jpg"
+  },
+  {
+   "title": "Episode 4 - Kaguya Wants Affection / The Student Council Wants It to Be Said / Kaguya Wants Him to Send It / Miyuki Shirogane Wants to Talk",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/7137f5b28d75ca064a81a3581d37991c1549100829_full.jpg"
+  },
+  {
+   "title": "Episode 5 - Kaguya Wants to Handle It / Miyuki Shirogane Wants to Show Off / Kaguya Wants to Be Covered",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/24485a07e6c2e8a1e090b4f97193b5a11549725493_full.jpg"
+  },
+  {
+   "title": "Episode 6 - Yu Ishigami Wants to Live / Chika Fujiwara Wants to Test You / Kaguya Wants to Be Noticed",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/9c0eeea2814cedb6a684cfa5eb8d9acc1550324947_full.jpg"
+  },
+  {
+   "title": "Episode 7 - Miyuki Shirogane Wants to Work / Kaguya Wants Him to Join In / Kaguya Wants to Control It",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/e303e9211046cee485023d28382c8c7f1550916918_full.jpg"
+  },
+  {
+   "title": "Episode 8 - Kaguya Wants Her to Say It / Miyuki Shirogane Can't Lose / Yu Ishigami Closes His Eyes",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/068a47032ad07efb2436831bebfcfc7e1551522792_full.jpg"
+  },
+  {
+   "title": "Episode 9 - Kaguya Wants to Give a Gift / Chika Fujiwara Wants to Pay a Visit / About Kaguya Shinomiya, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/53f2ecc4fd462750cd989dbde81eea861552140158_full.jpg"
+  },
+  {
+   "title": "Episode 10 - Kaguya Won't Forgive / Kaguya Wants to Forgive / Miyuki Shirogane Wants to Go Somewhere",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/8812d09c20d672ee9448a6e417b030081552729197_full.jpg"
+  },
+  {
+   "title": "Episode 11 - Ai Hayasaka Wants to Get Soaked / Chika Fujiwara Really Wants to Eat It / Miyuki Shirogane Wants to See You / I Can't Hear the Fireworks, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/0cfb2557d5878a6d20a3438d041c2d291553340005_full.jpg"
+  },
+  {
+   "title": "Episode 12 - I Can't Hear the Fireworks, Part 2 / Kaguya Doesn't Want to Avoid Him",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/932019e8ba0f2ce3ca69cdf853bd5d751553958319_full.jpg"
+  },
+  {
+   "title": "Episode 1 - Chika Fujiwara Wants to Surprise | Miyuki Shirogane Wants to Talk | Kaguya Shinomiya's Impossible Task",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/80c11b2bf9ca7ec8b5b8487b1b2aea2a1766604702_full.jpg"
+  },
+  {
+   "title": "Episode 2 - The ABCs of Men and Women | Kaguya Wants to Talk | Kaguya Wants to See Them Off",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/6ba4dd1080953aee1f43562101eeaf761766604874_full.jpg"
+  }
+ ]
+}

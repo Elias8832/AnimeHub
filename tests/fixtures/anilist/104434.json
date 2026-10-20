@@ -1,0 +1,49 @@
+{
+ "id": 104434,
+ "title": {
+  "romaji": "Koyomi History",
+  "english": null,
+  "native": "こよみヒストリー"
+ },
+ "format": "OVA",
+ "status": "FINISHED",
+ "episodes": 1,
+ "duration": 4,
+ "averageScore": 66,
+ "season": null,
+ "seasonYear": null,
+ "startDate": {
+  "year": 2016,
+  "month": 9,
+  "day": 22
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx104434-6Pbe0XxAZp2S.png"
+ },
+ "bannerImage": null,
+ "description": "Adaptation of the Koyomi History short story, released in the Madogatari blu-ray.",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 17074,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2013,
+      "month": 7,
+      "day": 7
+     },
+     "title": {
+      "romaji": "Monogatari Series: Second Season",
+      "english": "Monogatari Series Second Season"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

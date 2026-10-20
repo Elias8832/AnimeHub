@@ -1,0 +1,218 @@
+{
+ "id": 176301,
+ "title": {
+  "romaji": "Kusuriya no Hitorigoto 2nd Season",
+  "english": "The Apothecary Diaries Season 2",
+  "native": "薬屋のひとりごと 第2期"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 24,
+ "duration": 24,
+ "averageScore": 88,
+ "season": "WINTER",
+ "seasonYear": 2025,
+ "startDate": {
+  "year": 2025,
+  "month": 1,
+  "day": 10
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx176301-TIGmldLffQGX.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/176301-GkuTF1YTT6b2.jpg",
+ "description": "Using her wit and vast knowledge of medicines and poisons alike, Maomao played a pivotal role in solving a series of mysteries and conspiracies that plagued the imperial court. Having recently come to terms with the secrets of her parents, she returns to fulfill her normal duties on behalf of the emperor's highest-ranking consorts. Maomao also works alongside the eunuch Jinshi to better the consorts' many ladies-in-waiting, including helping them learn to read.\n<br><br>\nHowever, with the arrival of a merchant caravan comes a new wave of intrigue. A pattern of strange coincidences involving the visitors and their wares unsettles Maomao, driving her to investigate the puzzling circumstances behind the convoy. As dangers from both outside and within threaten the balance between the imperial concubines, Maomao continues to utilize her cunning and medical expertise to keep the women safe from harm.\n<br><br>\n(Source: MAL Rewrite)",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 99026,
+     "type": "MANGA",
+     "format": "NOVEL",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2014,
+      "month": 8,
+      "day": 29
+     },
+     "title": {
+      "romaji": "Kusuriya no Hitorigoto",
+      "english": "The Apothecary Diaries"
+     }
+    }
+   },
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 161645,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2023,
+      "month": 10,
+      "day": 22
+     },
+     "title": {
+      "romaji": "Kusuriya no Hitorigoto",
+      "english": "The Apothecary Diaries"
+     }
+    }
+   },
+   {
+    "relationType": "SIDE_STORY",
+    "node": {
+     "id": 186148,
+     "type": "ANIME",
+     "format": "ONA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2025,
+      "month": 1,
+      "day": 13
+     },
+     "title": {
+      "romaji": "Maomao no Hitorigoto 2nd Season",
+      "english": null
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 195516,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2026,
+      "month": 10,
+      "day": 2
+     },
+     "title": {
+      "romaji": "Kusuriya no Hitorigoto 3rd Season",
+      "english": "The Apothecary Diaries Season 3"
+     }
+    }
+   },
+   {
+    "relationType": "ALTERNATIVE",
+    "node": {
+     "id": 99022,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2017,
+      "month": 5,
+      "day": 25
+     },
+     "title": {
+      "romaji": "Kusuriya no Hitorigoto",
+      "english": "The Apothecary Diaries"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Episode 48 - The Beginning",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/684f1e23301186ac476d81dccfcf0d9f1751641470_full.jpg"
+  },
+  {
+   "title": "Episode 47 - The Shi Clan",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/e3c0ecacad4d061e52f12e9dc7a92e3f1751029483_full.jpg"
+  },
+  {
+   "title": "Episode 46 - Royal Guard",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/6f5547c8cf0bf16af678f001f4b76ef91749828530_full.jpg"
+  },
+  {
+   "title": "Episode 45 - Taibon",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/04a6ed5db2e73d5d4cc406ade92edb471749226051_full.jpg"
+  },
+  {
+   "title": "Episode 44 - The Stronghold",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/4855905bceedac06455b5b63a4d9b9381748623687_full.jpg"
+  },
+  {
+   "title": "Episode 43 - Festival",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/8c4b27c06b3ec17a0f39dfccef8bd7e41748017056_full.jpg"
+  },
+  {
+   "title": "Episode 42 - Lantern Plant",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/7058956511c24ea6948c928ee38f86411746806897_full.jpg"
+  },
+  {
+   "title": "Episode 41 - Fox Village",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/2dcdaa962da3cd25a33916216add5b541746199755_full.jpg"
+  },
+  {
+   "title": "Episode 40 - Festering Resentment",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/de5892a568267d7e29dd7495df6d72401745592100_full.jpg"
+  },
+  {
+   "title": "Episode 39 - Ice",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/07a1d7b71fae297e02a34d1de3211c231744989687_full.jpg"
+  },
+  {
+   "title": "Episode 38 - The Dancing Ghost",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/23b2f1547473283035ff16100961cbe21744388803_full.jpg"
+  },
+  {
+   "title": "Episode 37 - The Baths",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/dec082d6da739511093952f79639f79b1743764428_full.jpg"
+  },
+  {
+   "title": "Episode 36 - Ka Zuigetsu",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/0a38f519fcc61a0b06277ab8de972b441743172143_full.jpg"
+  },
+  {
+   "title": "Episode 35 - The Hunt",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/71d821fdc41ec5bd48b78355a6b197e61742573588_full.jpg"
+  },
+  {
+   "title": "Episode 34 - A Ghost Story",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/6e498db105721c70e584112a6c08c7111741968829_full.jpg"
+  },
+  {
+   "title": "Episode 33 - The Late Emperor",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/1d6c455c7cf4465e7439e048684268c61741366868_full.jpg"
+  },
+  {
+   "title": "Episode 32 - The Empress Dowager",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/2dbd3d143531aa494fb0c9e7abdfcc821740757602_full.jpg"
+  },
+  {
+   "title": "Episode 31 - The Shrine of Choosing",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/320edf06ef7e17fc5c7e3636c57c055c1740154684_full.jpg"
+  },
+  {
+   "title": "Episode 30 - The Crystal Pavilion, For the Third Time",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/08430bd822e4e919c1bf5214734704741739547157_full.jpg"
+  },
+  {
+   "title": "Episode 29 - The Moon Fairy",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/b65eb9ac72c75cc25c47f1056e14f4bb1738945870_full.jpg"
+  },
+  {
+   "title": "Episode 28 - Mirror",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/fbb607f88350ea5aa90de69a454f53ef1738339602_full.jpg"
+  },
+  {
+   "title": "Episode 27 - Corpse Fungus",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/066f609a9d274d993b46126a3ea730991737721646_full.jpg"
+  },
+  {
+   "title": "Episode 26 - Caravan",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/534d2fd94aec6ae647f2670509137d031737129686_full.jpg"
+  },
+  {
+   "title": "Episode 25 - Maomao and Maomao",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/dcd8594821409d91f04889eecfb9b8281736524318_full.jpg"
+  }
+ ]
+}
