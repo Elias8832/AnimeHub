@@ -90,3 +90,33 @@ def scan_summary(shows):
                         "seasons": {sea["label"]: numbers(e["number"] for e in sea["episodes"])
                                     for sea in s["seasons"]}}
             for s in shows}
+
+
+def match_library(c, scan):
+    """Give a case's folders their matches ("match": folder → AniList id)
+    and store each match's franchise, as the background passes would; then
+    merge_db, so the scan carries meta, season ranges and watch facts."""
+    with hub.db() as db:
+        for s in scan:
+            mid = c.get("match", {}).get(s["path"])
+            if mid:
+                db.execute("INSERT OR REPLACE INTO shows_meta(show_id, anilist_id, title) VALUES(?,?,?)",
+                           (s["id"], mid, s["title"]))
+    for mid in set(c.get("match", {}).values()):
+        if not hub.franchise_of(mid):
+            hub.store_franchise(hub.build_franchise(mid, anilist))
+    hub.merge_db(scan)
+    return scan
+
+
+def folder(scan, path):
+    return next(s for s in scan if s["path"] == path)
+
+
+def season(show, label):
+    return next(x for x in show["seasons"] if x["label"] == label)
+
+
+def ranges(rs):
+    """Ranges as cases.json writes them: [first, last, media id, offset]."""
+    return [[r["first_ep"], r["last_ep"], r["id"], r["offset"]] for r in rs]

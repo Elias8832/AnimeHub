@@ -87,11 +87,19 @@ Each phase ends with the test suite green.
    Schema versions 11–14 are reserved no-ops: the abandoned rework already
    moved real databases to 14, so new tables start at migration 15 and any
    ported rework columns must be added idempotently (`_add_columns`).
-3. **Local mapping.** Port from the rework: migrations for
-   `season_releases` facts, `release_units`, `map_numbered_seasons` (run
-   against the franchise's TV line), `season_art` + ani.zip stills,
-   per-entry progress sync / completion / reconcile, per-season "wrong
-   entry?" dialog.
+3. **Local mapping.** *(done)* `map_folder(show, anchor, entries, pins)`:
+   numbered seasons walk the franchise's line from the folder's match
+   (`main_line`: SEQUEL links, TV first, movies stepped through, OTHER +
+   numbered title), spanning entries by episode count (AoT S3 = 12 + 10,
+   absolute numbering); named seasons ("Specials/Lost Girls") match one
+   entry by title; generic Specials stay unmapped. Computed from the stored
+   franchise on every read, so `season_releases` keeps only user pins
+   (migration 16). `release_units` drives per-entry progress sync,
+   completion, reconcile, AniList watched marks and library counts.
+   Episode stills per entry (`entry_art`): AniList's listing only when it is
+   the entry's own (numbers fit, no stills shared with an earlier entry),
+   else ani.zip. The "wrong entry?" backend is `POST /api/season-match`;
+   its dialog is drawn on the new page (phase 5).
 4. **Page model.** `franchise_view(fid)` returns entries in order, each
    with facts, art, and its merged episode slots (local + online +
    placeholders up to the aired count). `GET /api/franchise?id=`.
@@ -99,7 +107,8 @@ Each phase ends with the test suite green.
 5. **Frontend.** New show page on the page model; entry switcher (main
    seasons first row, movies/specials/OVAs second row); one tile style
    with a source badge; search results are entries that open their
-   franchise page; library cards per the decision below.
+   franchise page; library cards per the decision below; the per-season
+   "wrong entry?" dialog (`/api/season-match`).
 6. **Cleanup.** Remove `aid:` standalone shows, `merge_streams`,
    client-side season ordering, and the old season art paths.
 
