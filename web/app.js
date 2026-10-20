@@ -11,9 +11,10 @@ const S = {
   data: null, view: "home", showId: null, seasonIdx: 0, showBack: "home", cat: null,
   q: "", menu: null, alres: null, alq: null, alBusy: false,
   ani: null, settings: null, alData: null, modal: null, entry: null,
-  lib: { tab: null, src: "all", fmt: "all", air: "all", year: "all", score: "all", sort: "updated", ...lsGet("hubLib", {}) },
+  lib: (({ year, score, ...l }) => ({ tab: null, src: "all", fmt: "all", air: "all", sort: "updated", ...l,
+         year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all" }))(lsGet("hubLib", {})),
   histRange: lsGet("histRange", "7d"), histMax: 120,
-  match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, countNext: false, opener: null,
+  match: {}, advOpen: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, countNext: false, opener: null,
   slink: {}, dl: [], releases: {}, loadingEp: null,
 };
 
@@ -44,6 +45,8 @@ const ICONS = {
   undo: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/>'],
   folder: ['<path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2.2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'],
   up: ['<path d="M12 19V5m-6 6 6-6 6 6"/>'],
+  shield: ['<path d="M12 3.5 5 6.3v5.4c0 4.3 3 7.6 7 8.8 4-1.2 7-4.5 7-8.8V6.3z"/>'],
+  cal: ['<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4m7-4v4"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
 const FMT = { TV: "TV", TV_SHORT: "TV short", MOVIE: "Movie", OVA: "OVA", ONA: "ONA", SPECIAL: "Special", MUSIC: "Music" };
@@ -227,7 +230,7 @@ function heroHTML(up) {
     ${pct >= 1 && !ep.watched ? `<div class="bar" style="width:min(420px,100%)"><i style="width:${pct}%"></i></div>` : ""}
     ${chips ? `<div class="hmeta">${chips}</div>` : ""}
     ${desc ? `<p class="desc">${esc(desc)}</p>` : ""}
-    <div class="cta"><button class="pill solid" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${resumable(ep) ? "Resume" : "Play"}</span></button><button class="pill" data-a="open" data-v="${esc(s.id)}">Details</button></div>
+    <div class="cta"><button class="pill solid" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play"}</span></button><button class="pill" data-a="open" data-v="${esc(s.id)}">Details</button></div>
   </div></div>`;
 }
 /* One tile per show you actually played, newest first, each pointing at the
@@ -270,7 +273,8 @@ function Home() {
       ${airing.length ? `<div><div class="sec"><h2>Airing</h2></div>${airing.map((e) => {
         const s = showById(e.local_show_id), p = e.episodes ? Math.min(100, ((e.progress || 0) / e.episodes) * 100) : 0;
         const n = e.next_episode?.number, have = s ? s.seasons.flatMap((x) => x.episodes).filter((x) => !streamEp(x)).length : 0;
-        return `<button class="airing" data-a="entry" data-v="${esc(e.id)}"><div class="al-top"><i class="live"></i><b>${esc(e.title)}</b></div><div class="al-bar"><i style="width:${p}%"></i></div><div class="al-meta"><span>${e.progress || 0}/${e.episodes || "?"} watched</span><small>${have ? `${have} on disk` : n ? `E${n - 1} is out` : "Online"}</small></div></button>`;
+        const art = e.banner || s?.banner;
+        return `<button class="airing${art ? " art" : ""}" data-a="entry" data-v="${esc(e.id)}">${art ? `<span class="cbg" style="background-image:${esc(cssUrl(art))}"></span>` : ""}<div class="al-top"><i class="live"></i><b>${esc(e.title)}</b></div><div class="al-bar"><i style="width:${p}%"></i></div><div class="al-meta"><span>${e.progress || 0}/${e.episodes || "?"} watched</span><small>${have ? `${have} on disk` : n ? `E${n - 1} is out` : "Online"}</small></div></button>`;
       }).join("")}</div>` : ""}</div>`;
   }
   if (!up && !body) {
@@ -284,8 +288,13 @@ function Home() {
 /* @home:end */
 
 /* ---------- library ---------- */
-const YR = { "2020s": (y) => y >= 2020, "2010s": (y) => y >= 2010 && y < 2020, "2000s": (y) => y >= 2000 && y < 2010, "Before 2000": (y) => y < 2000 };
-const SC = { "9–10": (n) => n >= 9, "7–8": (n) => n >= 7 && n < 9, "5–6": (n) => n >= 5 && n < 7, "Under 5": (n) => n < 5 };
+/* Year and score filters are ranges: "all" or [lo, hi] (older saved
+   bucket names read as "all"). */
+const inRange = (r, v) => !Array.isArray(r) || (v != null && v >= r[0] && v <= r[1]);
+function yearBounds() {
+  const ys = (S.data.spine?.entries || []).map((e) => e.year).filter((y) => y != null);
+  return ys.length ? [Math.min(...ys), Math.max(...ys)] : [1960, new Date().getFullYear() + 1];
+}
 const SORT = {
   updated: (a, b) => (b.updated || 0) - (a.updated || 0), score: (a, b) => (b.score || 0) - (a.score || 0),
   year: (a, b) => (b.year || 0) - (a.year || 0), title: (a, b) => (a.title || "").localeCompare(b.title || ""),
@@ -316,8 +325,8 @@ function libFiltered(m) {
     && (srcLocked() || f.src === "all" || e.capability === f.src)
     && (f.fmt === "all" || e.format === f.fmt)
     && (f.air === "all" || e.airing === f.air)
-    && (f.year === "all" || (e.year != null && YR[f.year](e.year)))
-    && (f.score === "all" || (e.score > 0 && SC[f.score](e.score)))).sort(SORT[f.sort] || SORT.updated);
+    && inRange(f.year, e.year)
+    && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))).sort(SORT[f.sort] || SORT.updated);
 }
 function entryCard(e, i) {
   const s = e.local_show_id ? showById(e.local_show_id) : null;
@@ -326,7 +335,7 @@ function entryCard(e, i) {
   const prog = e.progress || 0, pct = e.episodes ? Math.min(100, Math.round((100 * prog) / e.episodes)) : 0;
   const hint = [FMT[e.format] || e.format, AIR[e.airing]].filter(Boolean).join(" · ");
   return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}">
-    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${hint ? `<span class="hint">${esc(hint)}</span>` : ""}
+    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${hint ? `<span class="hint">${esc(hint)}</span>` : ""}${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}
     ${res ? `<span class="resume-tag">${ico("play")}${esc(epCode(res.sea, res.ep))}${res.ep.position ? " · " + fmtTime(res.ep.position) : ""}</span>` : ""}
     ${inProg(e.status) && pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
     <h3>${esc(e.title)}</h3>
@@ -390,11 +399,36 @@ function scanNote() {
 const metaText = (d) => `Fetching ${d.meta_phase || "metadata"} · ${d.meta_pending} left${d.meta_current ? ` · ${d.meta_current}` : ""}`;
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
-const filtersActive = () => ["fmt", "air", "year", "score"].some((k) => S.lib[k] !== "all") || (!srcLocked() && S.lib.src !== "all");
+const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || ["year", "score"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
 const fsel = (k, label, opts, locked) => {
   const set = !locked && k !== "sort" && S.lib[k] !== "all";
   return `<label class="fl">${label}<select data-a="filt" data-k="${k}" class="${set ? "set" : ""}" ${locked ? "disabled" : ""}>${(locked ? [opts[1]] : opts).map(([v, l]) => `<option value="${esc(v)}" ${v === S.lib[k] || locked ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
 };
+/* Two-handle range: two stacked range inputs over one painted track. */
+function frng(k, label, lo, hi, step, fmt) {
+  const v = Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi];
+  const a = Math.max(lo, Math.min(hi, v[0])), b = Math.max(a, Math.min(hi, v[1]));
+  const pct = (x) => ((x - lo) / (hi - lo || 1)) * 100;
+  const inp = (n, val, l) => `<input type="range" aria-label="${label} ${l}" min="${lo}" max="${hi}" step="${step}" value="${val}" data-r="${n}">`;
+  return `<div class="fl rng${Array.isArray(S.lib[k]) ? " set" : ""}" data-k="${k}" style="--a:${pct(a)}%;--b:${pct(b)}%"><span>${label} <b class="rv">${a <= lo && b >= hi ? "any" : `${fmt(a)} – ${fmt(b)}`}</b></span>
+    <div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div></div>`;
+}
+let rngFrame = 0;
+document.addEventListener("input", (e) => {
+  const r = e.target.closest?.(".rng input");
+  if (!r) return;
+  const box = r.closest(".rng"), k = box.dataset.k, [i0, i1] = box.querySelectorAll("input");
+  let a = +i0.value, b = +i1.value;
+  if (a > b) { if (r === i0) i0.value = a = b; else i1.value = b = a; }
+  const lo = +i0.min, hi = +i0.max, all = a <= lo && b >= hi;
+  S.lib[k] = all ? "all" : [a, b];
+  box.style.setProperty("--a", ((a - lo) / (hi - lo || 1)) * 100 + "%");
+  box.style.setProperty("--b", ((b - lo) / (hi - lo || 1)) * 100 + "%");
+  box.querySelector(".rv").textContent = all ? "any" : `${a} – ${b}`;
+  box.classList.toggle("set", !all);
+  clearTimeout(rngFrame);
+  rngFrame = setTimeout(() => { paintWall(); syncFilters(); saveLib(); }, 30);
+});
 /* Keep the "set" tint and the Clear button in step with the selects without rebuilding them (focus stays put). */
 function syncFilters() {
   const f = $(".filters");
@@ -428,8 +462,8 @@ function Lib() {
       ${fsel("src", "Source", [["all", "any"], ["installed", "installed"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]], srcLocked())}
       ${fsel("fmt", "Format", [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]])}
       ${fsel("air", "Airing", [["all", "any"], ["RELEASING", "Airing"], ["FINISHED_AIRING", "Finished"], ["NOT_YET_RELEASED", "Upcoming"]])}
-      ${fsel("year", "Year", [["all", "any"], ...Object.keys(YR).map((k) => [k, k])])}
-      ${fsel("score", "Score", [["all", "any"], ...Object.keys(SC).map((k) => [k, k])])}
+      ${frng("year", "Year", ...yearBounds(), 1, String)}
+      ${frng("score", "Score", 0, 10, 0.5, (x) => String(x))}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${fsel("sort", "Sort by", [["updated", "Recently updated"], ["score", "Score"], ["year", "Year"], ["title", "Title"]])}
       <button class="btn" data-a="rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}Rescan</button></div>`;
@@ -451,7 +485,7 @@ function paintWall(fade) {
 
 /* ---------- detail ---------- */
 const alUrl = (id) => `https://anilist.co/anime/${id}`;
-const alChip = (id) => id ? `<a class="chip al" href="${alUrl(id)}" data-a="ext" data-v="${alUrl(id)}" title="Open on AniList">AniList${ico("ext")}</a>` : "";
+const alChip = (id) => id ? `<a class="mchip al" href="${alUrl(id)}" data-a="ext" data-v="${alUrl(id)}" title="Open on AniList">AniList${ico("ext")}</a>` : "";
 function fmtIn(sec) {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${Math.max(1, m)} min`;
@@ -459,6 +493,13 @@ function fmtIn(sec) {
 /* @detail:start */
 const epThumbOf = (thumbs, ep) => !thumbs ? null : Array.isArray(thumbs) ? (thumbs[ep.number - 1] || null) : (thumbs[String(ep.number)] || null);
 
+/* Audio of an episode's files: a "(Dub)"-style version label means dub,
+   anything else counts as sub. */
+function fileLangs(ep) {
+  const files = ep.files?.length ? ep.files : [{ path: ep.rel || "", label: "" }];
+  const dub = files.some((f) => /\bdub/i.test(f.label || "")), sub = files.some((f) => !/\bdub/i.test(f.label || ""));
+  return sub && dub ? "sub+dub" : dub ? "dub" : "sub";
+}
 function epTile(s, sea, ep, tgId, i = 0) {
   /* Art order (Elias, 2026-10-17): the matched per-episode still when the
      listing has one, otherwise the show poster on EVERY tile — slicing the
@@ -470,18 +511,52 @@ function epTile(s, sea, ep, tgId, i = 0) {
   const part = !ep.watched && pct > 1;
   const files = ep.files || [], online = streamEp(ep), unavail = online && (!S.data.stream_ready || s.stream?.unavailable);
   const loading = epLoading(ep.id), job = online && dlJob(ep.id);
-  const cls = ["ep", ep.watched ? "watched" : "", ep.id === tgId && resumable(ep) ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", unavail ? "off" : ""].filter(Boolean).join(" ");
+  const picking = S.sel?.show === s.id, picked = picking && S.sel.ids.has(ep.id);
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", ep.watched ? "watched" : "", ep.id === tgId && resumable(ep) ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", unavail ? "off" : ""].filter(Boolean).join(" ");
   const sub = loading ? "Loading…" : job ? (job.status === "running" ? `Downloading · ${Math.floor(job.percent)}%` : "Waiting to download")
-    : ep.watched ? "Watched" : part ? `Resume · ${fmtLeft(ep.duration, ep.position)} left` : `E${ep.number}`;
-  const chip = !online ? `<span class="src installed">${files.length > 1 ? files.length + " versions" : "installed"}</span>`
-    : unavail ? '<span class="src none">not available</span>' : '<span class="src online">online</span>';
+    : ep.watched ? `E${ep.number} · Watched` : part ? `Resume · ${fmtLeft(ep.duration, ep.position)} left` : `E${ep.number}`;
+  const chip = !online ? `<span class="src installed"${files.length > 1 ? ` title="${files.length} versions"` : ""}>installed · ${fileLangs(ep)}</span>`
+    : unavail ? '<span class="src none">not available</span>' : `<span class="src online">online · ${esc(s.stream?.mode || S.settings?.stream?.mode || "sub")}</span>`;
   return `<div class="${cls}" tabindex="0" data-a="${unavail ? "unavail" : "playep"}" data-v="${esc(ep.id)}" style="--h:${hueOf(s.title)};--i:${Math.min(i, 16)}">
     <span class="epimg" data-bg="${esc(art || "")}" data-bp="${pos}"></span>
-    <em class="ghost">E${ep.number}</em>${part ? `<i class="eprog"><i style="width:${pct}%"></i></i>` : ""}${job?.status === "running" ? `<i class="eprog dl"><i style="width:${job.percent}%"></i></i>` : ""}
+    ${part ? `<i class="eprog"><i style="width:${pct}%"></i></i>` : ""}${job?.status === "running" ? `<i class="eprog dl"><i style="width:${job.percent}%"></i></i>` : ""}
     <span class="eplay">${loading ? '<i class="spin"></i>' : ico("play")}</span>
     <div class="et"><b>${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</b><small>${esc(sub)}</small></div>
-    ${chip}${ep.watched ? `<i class="tick">${ico("check")}</i>` : ""}
+    ${chip}${ep.watched ? `<i class="tick">${ico("check")}</i>` : ""}${picking ? `<i class="selbox">${picked ? ico("check") : ""}</i>` : ""}
     <button class="dots" aria-label="Episode ${ep.number} menu" data-a="cm" data-v="${esc(ep.id)}">${ico("dots")}</button></div>`;
+}
+/* Multi-select (S.sel = { show, ids, anchor }): tiles toggle instead of
+   playing; shift extends a range within the season, the bar acts on all. */
+function selToggle(id, range) {
+  const s = showById(S.showId);
+  if (!s) return;
+  if (S.sel?.show !== s.id) S.sel = { show: s.id, ids: new Set(), anchor: null };
+  const eps = (s.seasons[S.seasonIdx] || s.seasons[0]).episodes.map((e) => e.id);
+  const a = eps.indexOf(S.sel.anchor), b = eps.indexOf(id);
+  if (range && a >= 0 && b >= 0) for (const x of eps.slice(Math.min(a, b), Math.max(a, b) + 1)) S.sel.ids.add(x);
+  else if (S.sel.ids.has(id)) S.sel.ids.delete(id);
+  else S.sel.ids.add(id);
+  S.sel.anchor = id;
+  patchShow(); paintSel();
+}
+function selEnd() { if (!S.sel) return; S.sel = null; if (S.view === "show") patchShow(); paintSel(); }
+function selEps() {
+  const s = showById(S.showId);
+  return s && S.sel?.show === s.id ? s.seasons.flatMap((x) => x.episodes).filter((e) => S.sel.ids.has(e.id)) : [];
+}
+function paintSel() {
+  let bar = $("#selbar");
+  const on = S.view === "show" && S.sel?.show === S.showId;
+  if (!on) { bar?.remove(); return; }
+  const s = showById(S.showId), eps = selEps(), n = eps.length;
+  const ok = S.data.stream_ready && !s.stream?.unavailable;
+  const dl = ok ? eps.filter((e) => streamEp(e) && !dlJob(e.id)) : [];
+  if (!bar) { bar = document.createElement("div"); bar.id = "selbar"; bar.setAttribute("role", "toolbar"); bar.setAttribute("aria-label", "Selected episodes"); document.body.append(bar); }
+  bar.innerHTML = `<b>${n} selected</b><button class="link-btn" data-a="selall">Select season</button><span class="fill"></span>
+    <button class="btn" data-a="selmark" data-w="true" ${n ? "" : "disabled"}>${ico("check")}Mark watched</button>
+    <button class="btn" data-a="selmark" data-w="false" ${n ? "" : "disabled"}>${ico("undo")}Mark unwatched</button>
+    ${ok ? `<button class="btn" data-a="seldl" ${dl.length ? "" : "disabled"}>${ico("download")}Download${dl.length ? " " + dl.length : ""}</button>` : ""}
+    <button class="btn" data-a="selmode" aria-label="Stop selecting">${ico("close")}</button>`;
 }
 /* @detail:end */
 /* ---------- online episodes (ani-cli, v0.2) ----------
@@ -599,11 +674,12 @@ function Det() {
   const hue = hueOf(s.title), matched = !!meta.anilist_id, release = isStream(s), st = s.stream || {};
   const ready = !!S.data.stream_ready, unavail = release && (st.unavailable || !ready), prov = !!st.provisional;
   const movie = s.kind === "movie" || s.movie;
-  const goLabel = tg ? `${KIND_WORD[tg.kind]}${movie ? "" : " " + epCode(tg.sea, tg.ep)}` : "";
+  const goLabel = tg ? `${KIND_WORD[tg.kind]}${movie || tg.kind === "rewatch" ? "" : " " + epCode(tg.sea, tg.ep)}` : "";
   const goBusy = tg && epLoading(tg.ep.id);
   const online = sea ? sea.episodes.filter((e) => streamEp(e) && !dlJob(e.id)) : [];
   const dl = ready && !unavail && online.length ? dlBtn(meta.anilist_id, online.map((e) => e.id.split(":")[2]), movie ? "Download" : release ? "Download all" : "Download missing") : "";
   const flat = s.seasons.flatMap((x) => x.episodes);
+  const local = !release && s.path && flat.some((e) => !streamEp(e)) ? `<button class="pill" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}<span>Local</span></button>` : "";
   const seaAll = sea && sea.episodes.length > 0 && sea.episodes.every((e) => e.watched), showAll = flat.length > 0 && flat.every((e) => e.watched);
   const bulk = !flat.length || prov ? "" : `${sea && sea.episodes.length ? `<button class="btn" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}${seaAll ? "Unwatch season" : "Mark season watched"}</button>` : ""}<button class="btn" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}${showAll ? "Unwatch all" : "Mark all watched"}</button>`;
   const info = [["Format", meta.format ? FMT[meta.format] || meta.format : movie ? "Movie" : "—"], ["Year", meta.year || "—"], ["Episodes", st.total || epTotal(s) || "—"]];
@@ -611,6 +687,8 @@ function Det() {
   const playing = isPlayingShow(s.id) ? `<span class="playing"><span class="eq"><i></i><i></i><i></i></span>${S.data.now.loading ? "Loading" : "Playing in mpv"} · ${esc(S.data.now.label)}</span>` : "";
   /* The only surfaced bit of the source: a fix for a bad automatic match. */
   const fix = ready && matched && (s.stream && !prov) ? '<button class="link-btn fix" data-a="srcfix">Wrong episodes?</button>' : "";
+  const mBusy = S.modeBusy === meta.anilist_id, curMode = st.mode || S.settings?.stream?.mode || "sub";
+  const modeSeg = ready && matched && s.stream && !prov && !unavail ? `<span class="seg${mBusy ? " busy" : ""}" role="group" aria-label="Audio for online episodes">${SLMODES.map(([m, l]) => `<button class="${curMode === m ? "on" : ""}" aria-pressed="${curMode === m}" data-a="smode" data-v="${m}" ${mBusy ? "disabled" : ""}>${mBusy && curMode !== m ? '<i class="spin"></i>' : ""}${l}</button>`).join("")}</span>` : "";
   const note = !release || !unavail ? "" : `<p class="sub eps-note">${ready ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "Install ani-cli to watch this online."}</p>`;
   return `<div class="banner" style="${esc(bgStyle(s.banner || s.poster, hue))}"></div>
   <button class="pill backbtn" data-a="back">${ico("back")}${backLabel()}</button>
@@ -618,7 +696,7 @@ function Det() {
     <h1>${esc(s.title)}</h1>
     <div class="meta">${playing}<span class="live-t" id="airline"></span>${chips}${alChip(meta.anilist_id)}</div>
     ${meta.overview ? `<p class="desc" style="margin-top:14px">${esc(meta.overview)}</p>` : ""}
-    <div class="cta">${tg && !unavail ? `<button class="pill solid${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}${matched ? "" : '<span class="warn">Unmatched — no AniList entry yet</span>'}</div>
+    <div class="cta">${tg && !unavail ? `<button class="pill solid${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}${local}${matched ? "" : '<span class="warn">Unmatched — no AniList entry yet</span>'}</div>
   </div></div>
   <div class="body"><section>
     ${matched ? "" : `<h2 style="font-size:26px;margin-bottom:6px">Match this show</h2>${(autoSuggest([s]), matchUI(s))}<div style="height:34px"></div>`}
@@ -626,7 +704,7 @@ function Det() {
       const uw = x.episodes.filter((e) => !e.watched).length;
       return `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${uw ? ` · ${uw}` : ""}</button>`;
     }).join("")}</div>` : ""}
-    <div class="eps-head"><h2>${movie ? "Movie" : "Episodes"}</h2><div class="ctl">${bulk}${dl}</div></div>${note}
+    <div class="eps-head"><h2>${movie ? "Movie" : "Episodes"}</h2><div class="ctl">${modeSeg}${flat.length && !prov ? `<button class="btn${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}${S.sel?.show === s.id ? "Done" : "Select"}</button>` : ""}${bulk}${dl}</div></div>${note}
     ${sea && sea.episodes.length ? `<div class="eps">${sea.episodes.map((ep, i) => epTile(s, sea, ep, tg && tg.ep.id, i)).join("")}</div>`
       : `<p class="sub">${st.pending ? '<i class="spin"></i> Loading…' : release && prov ? "No episodes are out yet." : "No episodes."}</p>`}
   </section><aside>
@@ -638,7 +716,6 @@ function Det() {
 const infoDl = (rows) => rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
 
 /* ---------- AniList entry panel (TODO 9, Decision 10) ---------- */
-let entryBusy = false;
 function entryFields(res) {
   const prev = S.entry && S.entry.f;
   if (res.queued && prev && !prev.local) {
@@ -662,26 +739,31 @@ function entryFields(res) {
 }
 function entryHTML(f, pending) {
   const max = f.score_max || 10, dec = (f.score_format || "").includes("DECIMAL");
-  const fmtLabel = (f.score_format || "POINT_10").replace("POINT_", "").replace("_", ".");
   const media = f.media || {}, show = S.view === "show" ? showById(S.showId) : null;
   const stp = (k, v, lab, cap) => `<span class="stepper"><button aria-label="Decrease ${lab}" data-a="ebump" data-k="${k}" data-d="-1">${ico("minus")}</button><b data-k="${k}">${v}${cap ? " / " + cap : ""}</b><button aria-label="Increase ${lab}" data-a="ebump" data-k="${k}" data-d="1">${ico("plus")}</button></span>`;
   const sel = `<select aria-label="Status" data-a="eset" data-k="status">${f.status ? "" : '<option value="">—</option>'}${LISTS.map(([v, l]) => `<option value="${v}" ${f.status === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
   return `${f.local ? '<p class="note">Saved on this device only — syncs when AniList connects.</p>' : ""}${pending ? '<p class="note"><span class="chip warn">Waiting to sync</span></p>' : ""}
   <dl class="form"><dt>Status</dt><dd>${sel}</dd>
-  <dt>Score</dt><dd><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:90px"> <span class="dim">/ ${max} (${esc(fmtLabel)})</span></dd>
+  <dt>Score</dt><dd><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:90px"> <span class="dim">/ ${max}</span></dd>
   <dt>Progress</dt><dd>${f.local ? `<span title="Follows your watched episodes">${show ? epWatched(show) + " / " + epTotal(show) : "—"}</span>` : stp("progress", f.progress ?? 0, "progress", media.episodes || "")}</dd>
   <dt>Rewatches</dt><dd>${stp("repeat", f.repeat ?? 0, "rewatches")}</dd>
-  <dt>Started</dt><dd><input type="date" aria-label="Start date" value="${esc(f.started_at || "")}" data-a="eset" data-k="started_at"></dd>
-  <dt>Finished</dt><dd><input type="date" aria-label="Finish date" value="${esc(f.completed_at || "")}" data-a="eset" data-k="completed_at"></dd>
+  <dt>Started</dt><dd>${dateField("started_at", "Start date", f.started_at)}</dd>
+  <dt>Finished</dt><dd>${dateField("completed_at", "Finish date", f.completed_at)}</dd>
   <dt>Favourite</dt><dd><button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button></dd></dl>`;
+}
+/* Paint the panel from fields; steppers that changed get their bump. */
+function entryPaint(f, pending, prev) {
+  const box = $("#entrybox");
+  if (!box) return;
+  box.innerHTML = entryHTML(f, pending);
+  if (prev && !reduceMotion()) for (const k of ["progress", "repeat"]) if (prev[k] !== f[k]) box.querySelector(`.stepper b[data-k="${k}"]`)?.classList.add("pop2");
 }
 function entryDraw(res) {
   const box = $("#entrybox");
   if (!box || !S.entry) return;
   const prev = S.entry.f, f = entryFields(res);
   S.entry.f = f; S.entry.res = res;
-  box.innerHTML = entryHTML(f, !!(res.pending || res.queued));
-  if (prev && !reduceMotion()) for (const k of ["progress", "repeat"]) if (prev[k] !== f[k]) box.querySelector(`.stepper b[data-k="${k}"]`)?.classList.add("pop2");
+  entryPaint(f, !!(res.pending || res.queued), prev);
   const m = f.media || {}, next = m.next_episode;
   const air = $("#airline");
   if (air) air.textContent = next ? (next.in_seconds > 0 ? `Airing · E${next.number} in ${fmtIn(next.in_seconds)}` : `E${next.number} has aired`) : "";
@@ -715,18 +797,71 @@ function entrySave(mid, patch, fav) {
   if (fav !== undefined) body.favourite = fav;
   return api("/api/entry", body);
 }
-function entryPatch(patch, fav) {
-  if (entryBusy || !S.entry) return;
-  entryBusy = true;
-  entrySave(S.entry.mid, patch, fav).then((res) => {
-    if (res && res.error) { toast(res.error); return; }
-    toast(res && res.queued ? "Saved — will sync when AniList is reachable" : patch && patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
-    if (res && res.queued) res.patch = patch || {};
-    entryDraw(res);
-    if (fav !== undefined) { const h = $("#entrybox .heart"); if (h) { h.classList.add("pop1"); if (fav) burstAt(h); } }
-    if (patch && patch.status) refreshData();
-  }).catch(() => toast("Could not save — is the hub running?")).finally(() => { entryBusy = false; });
+/* Edits show at once; saves run one at a time behind them. Edits made while
+   a save is out (or within `delay`, for stepper clicks) fold into the next
+   save, so rapid +/− costs one round-trip. A failed save reloads the entry. */
+let entryPend = null, entryTimer = 0, entryFlight = false;
+function entryPatch(patch, fav, delay = 0) {
+  const ent = S.entry;
+  if (!ent?.f) return;
+  const prev = ent.f;
+  ent.f = { ...prev, ...(patch || {}), ...(fav !== undefined ? { favourite: fav } : {}) };
+  entryPaint(ent.f, false, prev);
+  if (fav !== undefined) { const h = $("#entrybox .heart"); if (h) { h.classList.add("pop1"); if (fav) burstAt(h); } }
+  const p = entryPend && entryPend.mid === ent.mid ? entryPend : { mid: ent.mid, patch: {}, fav: undefined };
+  Object.assign(p.patch, patch || {});
+  if (fav !== undefined) p.fav = fav;
+  entryPend = p;
+  clearTimeout(entryTimer);
+  entryTimer = setTimeout(entryFlush, delay);
 }
+function entryFlush() {
+  if (entryFlight || !entryPend) return;
+  const job = entryPend, patch = job.patch;
+  entryPend = null; entryFlight = true;
+  entrySave(job.mid, patch, job.fav).then((res) => {
+    const here = S.entry?.mid === job.mid;
+    if (res && res.error) { toast(res.error); if (here) loadEntry(job.mid); return; }
+    toast(res && res.queued ? "Saved — will sync when AniList is reachable" : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
+    if (res && res.queued) res.patch = patch;
+    if (here && !entryPend) entryDraw(res); // newer edits are still on screen: keep them
+    if (patch.status || job.fav !== undefined) refreshData();
+  }).catch(() => { toast("Could not save — is the hub running?"); if (S.entry?.mid === job.mid) loadEntry(job.mid); })
+    .finally(() => { entryFlight = false; if (entryPend) entryFlush(); });
+}
+
+/* Date fields: typed (YYYY-MM-DD, YYYY-MM, YYYY or DD.MM.YYYY) or picked
+   from a small in-app calendar (S.cal = { k, y, m }). */
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function parseDateIn(v) {
+  const t = String(v || "").trim();
+  if (!t) return "";
+  let m = t.match(/^(\d{4})(?:[-/.](\d{1,2})(?:[-/.](\d{1,2}))?)?$/), y, mo, d;
+  if (m) [, y, mo, d] = m;
+  else if ((m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) [, d, mo, y] = m;
+  else return null;
+  if (mo && (+mo < 1 || +mo > 12)) return null;
+  if (d && (+d < 1 || +d > new Date(+y, +mo, 0).getDate())) return null;
+  return [y, mo && mo.padStart(2, "0"), d && d.padStart(2, "0")].filter(Boolean).join("-");
+}
+function dateField(k, label, v) {
+  const c = S.cal?.k === k ? S.cal : null;
+  return `<span class="datef"><input aria-label="${label}" value="${esc(v || "")}" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false" data-a="eset" data-k="${k}">
+    <button class="dpk" aria-label="Pick ${label.toLowerCase()}" aria-expanded="${!!c}" data-a="calopen" data-v="${k}">${ico("cal")}</button>${c ? calHTML(c, v) : ""}</span>`;
+}
+function calHTML(c, v) {
+  const first = new Date(c.y, c.m, 1), days = new Date(c.y, c.m + 1, 0).getDate(), lead = (first.getDay() + 6) % 7;
+  const iso = (d) => `${c.y}-${String(c.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const today = new Date(), tIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const cells = Array.from({ length: lead }, () => "<i></i>").join("") + Array.from({ length: days }, (_, i) => {
+    const d = iso(i + 1);
+    return `<button class="${d === v ? "on" : ""}${d === tIso ? " now" : ""}" data-a="calday" data-v="${d}">${i + 1}</button>`;
+  }).join("");
+  return `<div class="cal" role="dialog" aria-label="Choose a date"><div class="cal-h"><button data-a="calnav" data-v="-1" aria-label="Previous month">${ico("chevl")}</button><b>${MONTHS[c.m]} ${c.y}</b><button data-a="calnav" data-v="1" aria-label="Next month">${ico("chevr")}</button></div>
+    <div class="cal-w">${["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((x) => `<span>${x}</span>`).join("")}</div><div class="cal-g">${cells}</div>
+    <div class="cal-f"><button class="link-btn" data-a="calday" data-v="${tIso}">Today</button><button class="link-btn" data-a="calday" data-v="">Clear</button></div></div>`;
+}
+const calClose = () => { if (S.cal) { S.cal = null; if (S.entry?.f) entryPaint(S.entry.f, false); } };
 
 /* ---------- history ---------- */
 const HIST_RANGES = [
@@ -842,11 +977,12 @@ function Sett() {
   <div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — upscales banners when the config enables it.")}</div>
   ${streamGroup(s)}
   <div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
-      conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}</div>
-  <div class="group ${off ? "off" : ""}"><h3>Advanced AniList</h3>${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
+      conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}
+  <details class="adv${off ? " dis" : ""}" data-k="anilist" ${S.advOpen.anilist ? "open" : ""}><summary>${ico("chevr")}Advanced</summary>${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
     ${srow("Track episodes", "After playback marks an episode watched, publish the highest watched episode to AniList (single-season releases).", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}
+    ${srow("Watched marks from AniList", "Episodes up to your AniList progress show as watched, the rest as unwatched. Off: the marks saved on this device. Switching back loses nothing.", tgl("anilist_watched", "Watched marks from AniList", s.anilist_watched))}
     ${srow("Add shows automatically", "A first watch of a matched show that isn't on your lists adds it to Watching. Off by default.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}
-    ${srow(`Sync ratings<span class="soon">not built yet</span>`, "Keep scores in step between AniList and this device.", tgl("ratings", "Sync ratings", false, true))}</div>
+    ${srow(`Sync ratings<span class="soon">not built yet</span>`, "Keep scores in step between AniList and this device.", tgl("ratings", "Sync ratings", false, true))}</details></div>
   <div class="group"><h3>Appearance</h3>${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>
   <div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div>
   <div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div></div></div>`;
@@ -857,7 +993,9 @@ function streamGroup(s) {
   return `<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3>${off ? '<p class="sub">Install ani-cli to watch and download episodes you don\'t have.</p>' : ""}
     ${srow("Quality", "For watching and downloading online episodes.", `<select aria-label="Stream quality" data-a="spref" data-k="stream_quality" ${off ? "disabled" : ""}>${(st.qualities || []).map((q) => `<option value="${q}" ${q === st.quality ? "selected" : ""}>${QLABEL[q] || q + "p"}</option>`).join("")}</select>`)}
     ${srow("Audio", "Sub or dub for online episodes. Any episode's menu plays the other one.", `<span class="seg" role="group" aria-label="Default audio">${SLMODES.map(([m, l]) => `<button class="${st.mode === m ? "on" : ""}" aria-pressed="${st.mode === m}" data-a="spref" data-k="stream_mode" data-v="${m}" ${off ? "disabled" : ""}>${l}</button>`).join("")}</span>`)}
-    ${srow("Downloads", "Saved into your library folder, one folder per show.", "")}</div>`;
+    ${srow("Downloads", "Saved into your library folder, one folder per show.", "")}
+    ${srow("VPN status icon", "Shows in the top bar whether a VPN connection is up.", tgl("vpn_icon", "VPN status icon", s.vpn_icon !== false, off))}
+    ${srow("Warn without VPN", "Asks before an online episode or download starts while no VPN is up.", tgl("vpn_warn", "Warn without VPN", s.vpn_warn !== false, off))}</div>`;
 }
 /* Library folder picker (Decision 32): one inline folder browser shared by
    Settings and the tour's first step (ctx). It renders from S.dir and paints
@@ -892,6 +1030,8 @@ function DirPick(ctx) {
 /* Edge fades replace the list's scrollbar: shown only where more folders hide. */
 function dirFade(l) { l.classList.toggle("ft", l.scrollTop > 2); l.classList.toggle("fb", l.scrollTop + l.clientHeight < l.scrollHeight - 2); }
 document.addEventListener("scroll", (e) => e.target.classList?.contains("dp-list") && dirFade(e.target), true);
+/* Settings fold-outs stay open across re-renders. */
+document.addEventListener("toggle", (e) => { if (e.target.matches?.("details.adv")) S.advOpen[e.target.dataset.k] = e.target.open; }, true);
 function paintDir(ctx = S.dir?.ctx) {
   const el = $("#dirpick-" + ctx);
   if (!el) return;
@@ -941,22 +1081,28 @@ async function loadSettings() {
 
 /* ---------- nav, search, downloads ---------- */
 const VIEWS = ["home", "library", "history", "stats", "settings"];
+/* One list for library and AniList hits: ranked by how well the title
+   matches, library first on ties; an AniList hit that is a library show
+   shows once, as the library show. AniList results follow the typing
+   (debounced) and the last ones stay up while the next search runs. */
+const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.indexOf(ql); return i === 0 ? 0 : i > 0 && /[^a-z0-9]/.test(l[i - 1]) ? 1 : i > 0 ? 2 : 3; };
 function srHTML() {
   const q = S.q.trim(), ql = q.toLowerCase();
   if (!q) return "";
-  const hits = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql)).slice(0, 6);
-  let h = hits.map((s, i) => `<button style="--i:${i}" class="mi" data-a="open" data-v="${esc(s.id)}">${poster(s.title, s.poster, { c: "t" })}<span><b>${hl(s.title, q)}</b><small>${esc(s.collection || `${epTotal(s)} episodes · installed`)}</small></span></button>`).join("");
-  if (!hits.length) h += '<p class="cap">No matches in your library</p>';
-  if (alSearchable()) {
-    if (S.alres) {
-      h += '<div class="cap">AniList results</div>' + (S.alres.slice(0, 6).map((x, i) => {
-        const e = aniMode() ? S.data.spine.entries.find((y) => y.id === x.id) : null;
-        const sub = e ? "On your list · " + statusLabel(e.status) : [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · ");
-        return `<button style="--i:${i}" class="mi" data-a="catpick" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge, { c: "t" })}<span><b>${hl(candLabel(x), q)}</b><small>${esc(sub)}</small></span></button>`;
-      }).join("") || '<p class="cap">No matches on AniList</p>');
-    } else if (S.alBusy) h += '<div class="cap"><i class="spin"></i> Searching AniList…</div>';
-    else h += `<button class="mi srch" data-a="alsearch">${ico("search")}Search AniList for “${esc(q)}”</button>`;
-  }
+  const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
+    .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), local: true, s }));
+  const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
+  const remote = (alSearchable() && S.alres || []).map((x, i) => ({ r: srRank(candLabel(x), ql), x, i })).filter((y) => !have.has(y.x.id));
+  const rows = [...local, ...remote].sort((a, b) => a.r - b.r || (b.local ? 1 : 0) - (a.local ? 1 : 0)).slice(0, 8);
+  let h = rows.map((y, i) => {
+    if (y.local) return `<button style="--i:${i}" class="mi" data-a="open" data-v="${esc(y.s.id)}">${poster(y.s.title, y.s.poster, { c: "t" })}<span><b>${hl(y.s.title, q)}</b><small>${esc(y.s.collection || `${epTotal(y.s)} episodes`)}</small></span><em class="src installed">library</em></button>`;
+    const x = y.x, e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+    const sub = e ? "On your list · " + statusLabel(e.status) : [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · ");
+    return `<button style="--i:${i}" class="mi" data-a="catpick" data-v="${y.i}">${poster(candLabel(x), x.coverImage?.extraLarge, { c: "t" })}<span><b>${hl(candLabel(x), q)}</b><small>${esc(sub)}</small></span><em class="src online">AniList</em></button>`;
+  }).join("");
+  const busy = alSearchable() && (S.alBusy || (S.alq !== q && q.length >= 2));
+  if (!rows.length && !busy) h += `<p class="cap">No matches${alSearchable() ? " in your library or on AniList" : " in your library"}</p>`;
+  if (busy) h += '<div class="cap"><i class="spin"></i> Searching AniList…</div>';
   return `<div class="pop sr">${h}</div>`;
 }
 /* AniList's catalog search needs no account: offered in AniList mode, and to
@@ -970,11 +1116,29 @@ function dlPop() {
       ${j.status === "running" ? `<div class="bar"><i style="width:${j.percent}%"></i></div>` : ""}</div>${live ? `<button class="chip ib" aria-label="Cancel download" title="Cancel" data-a="dlcancel" data-v="${j.id}">${ico("close")}</button>` : ""}</div>`;
   }).join("");
   const over = S.dl.some((j) => j.status !== "running" && j.status !== "queued");
-  return `<div class="pop dl"><div class="cap">Downloads</div>${rows || '<p class="dl-empty">Nothing downloading.</p>'}
+  return `<div class="pop dl"><div class="cap">Downloads</div>${rows ? `<div class="dlist">${rows}</div>` : '<p class="dl-empty">Nothing downloading.</p>'}
     ${over ? '<div class="row" style="padding:6px 8px 0"><button class="btn" data-a="dlclear">Clear finished</button></div>' : ""}
     ${S.data?.stream_ready ? "" : '<p class="dl-empty">Install ani-cli to download episodes.</p>'}</div>`;
 }
 let navSig = "", nrLast = "";
+/* VPN status (E5): a chip in the top bar and a question before online
+   episodes or downloads start without one — both switchable in Settings. */
+const vpnOn = () => !!S.data?.vpn?.active;
+function vpnChip() {
+  const v = S.data?.vpn;
+  if (!v?.known || !S.data.stream_ready || S.settings?.vpn_icon === false) return "";
+  return `<span class="chip vpn ${v.active ? "on" : "off"}" title="${v.active ? `VPN active (${esc(v.iface)})` : "No VPN detected"}">${ico("shield")}${v.active ? "VPN" : "No VPN"}</span>`;
+}
+function vpnGate(go) {
+  if (vpnOn() || !S.data?.vpn?.known || S.settings?.vpn_warn === false) return go();
+  openModal({ t: "vpn", go });
+}
+function VpnDlg() {
+  return `<h2 id="dt">No VPN detected</h2>
+  <p class="sub">Online episodes and downloads are fetched by ani-cli over your normal connection. Turn on your VPN first, or continue anyway.</p>
+  <p class="sub" style="margin-top:10px;font-size:13px">You can turn this question off in Settings → Online episodes.</p>
+  <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="vpngo">Continue anyway</button></div>`;
+}
 function paintNav() {
   const cur = S.view === "show" ? "library" : S.view;
   const links = $("#links");
@@ -988,6 +1152,7 @@ function paintNav() {
   const now = S.data?.now, ctx = now && findEpContext(now.episode_id), pct = now ? Math.round(now.percent) : 0;
   const nr = $("#nr"), dlHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued").length;
   const html = `${now ? `<button class="chip np" style="--pct:@P@%" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><span class="eq"><i></i><i></i><i></i></span><span class="npt">${esc(now.show)} · ${esc(now.label)}</span><span class="pc">${now.loading ? "Loading" : "@P@%"}</span></button>` : ""}
+    ${vpnChip()}
     ${S.outbox ? `<button class="chip sync" data-a="sync">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>` : ""}
     <div class="rel"><button class="chip ib${dlActive ? " dl-on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive ? `<span class="pc">${dlActive}</span>` : ""}</button>${S.menu === "dl" ? dlPop() : ""}</div>`;
   if (html === nrLast) {
@@ -995,7 +1160,10 @@ function paintNav() {
     const np = nr.querySelector(".np");
     if (np) { np.style.setProperty("--pct", pct + "%"); np.querySelector(".pc").textContent = pct + "%"; }
   } else {
+    const dlScroll = nr.querySelector(".dlist")?.scrollTop || 0;
     nr.innerHTML = html.replaceAll("@P@", pct); nrLast = html;
+    const dlist = nr.querySelector(".dlist");
+    if (dlist) dlist.scrollTop = dlScroll;
     if (!dlHad) nr.querySelector(".pop")?.classList.add("in");
   }
 }
@@ -1015,7 +1183,8 @@ function openCm(id, x, y) {
     ${ok ? `<button class="mi" data-a="playmode" data-v="${esc(id)}" data-m="${other}">${ico("play")}Play ${other === "dub" ? "dubbed" : "subbed"}</button>` : ""}
     ${ok && !dlJob(id) ? `<button class="mi" data-a="dlep" data-v="${esc(id)}">${ico("download")}Download</button>` : ""}`;
   m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
-  m.style.cssText += `;display:block;left:${Math.min(x, innerWidth - 250)}px;top:${Math.min(y, innerHeight - 240)}px`;
+  const z = zoomGet() / 100;
+  m.style.cssText += `;display:block;left:${Math.min(x / z, innerWidth / z - 250)}px;top:${Math.min(y / z, innerHeight / z - 240)}px`;
 }
 
 /* ---------- overlays ---------- */
@@ -1079,7 +1248,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg }[m.t]();
+  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -1284,6 +1453,8 @@ function render() {
   document.title = t ? `${t} · Anime Hub` : "Anime Hub";
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
   if (S.view === "show") { streamFreshen(showById(S.showId)); resolveHome(showById(S.showId)); }
+  if (S.sel && (S.view !== "show" || S.sel.show !== S.showId)) S.sel = null;
+  paintSel();
   if (S.view === "stats") loadAlData();
   applyFocus();
 }
@@ -1465,8 +1636,9 @@ function markLoading(id) {
   S.loadingEp = id;
   if (S.view === "show" && showById(S.showId)) patchShow();
 }
-async function play(id, version = 0, mode) {
+async function play(id, version = 0, mode, asked) {
   const online = id.startsWith("stream:");
+  if (online && !asked) return vpnGate(() => play(id, version, mode, true));
   S.playBusy = true;
   if (online) markLoading(id);
   const body = { id, version };
@@ -1478,7 +1650,8 @@ async function play(id, version = 0, mode) {
   pollSoon(600);
 }
 /* Queue ani-cli downloads; they land in the library folder as ordinary files. */
-async function download(mid, eps) {
+async function download(mid, eps, asked) {
+  if (!asked) return vpnGate(() => download(mid, eps, true));
   const r = await api("/api/download", { media_id: mid, episodes: eps }).catch(() => null);
   if (!r || r.error) return toast(r?.error || "Could not reach the hub.");
   toast(r.queued ? `Downloading ${r.queued} episode${r.queued === 1 ? "" : "s"}` : "Already downloaded or downloading");
@@ -1488,6 +1661,7 @@ async function setToggle(key, on) {
   const r = await api("/api/settings", { [key]: on }).catch(() => null);
   if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); return; }
   S.settings = r;
+  if (key === "anilist_watched") await refreshData();
   if (S.view === "settings") render();
   if (S.modal?.t === "tour") paintModal();
 }
@@ -1518,7 +1692,7 @@ const A = {
   filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); paintWall(); syncFilters(); },
   hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(); },
   histmore: () => { S.histMax += 200; render(); },
-  play: (v) => play(v), playep: (v, t) => play(v, +t.dataset.ver || 0),
+  play: (v) => play(v), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === S.showId || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
   cm: (v, t, e) => openCm(v, e.clientX, e.clientY),
   mark: (v, t) => {
     const w = t.dataset.w === "true";
@@ -1558,7 +1732,7 @@ const A = {
     if (S.view === "show") render();
   },
   playmode: (v, t) => play(v, 0, t.dataset.m),
-  unavail: () => toast(S.data.stream_ready ? "This episode isn't available to watch online." : "Install ani-cli to watch this online."),
+  unavail: (v, t, e) => (S.sel?.show === S.showId || e?.ctrlKey || e?.metaKey) ? selToggle(v, e?.shiftKey) : toast(S.data.stream_ready ? "This episode isn't available to watch online." : "Install ani-cli to watch this online."),
   dlep: (v) => { const [, mid, ep] = v.split(":"); download(+mid, [ep]); },
   dlmany: (v, t) => download(+v, JSON.parse(t.dataset.eps || "[]")),
   dlcancel: (v) => { api("/api/download/cancel", { id: +v }).then(() => pollSoon(200)).catch(() => {}); },
@@ -1575,10 +1749,13 @@ const A = {
   rescan: (v, t) => { if (t.disabled) return; t.disabled = true; t.classList.add("busy"); api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(() => { reload(); }, 2500); },
   adopt: (v, t) => { t.disabled = true; api("/api/adopt-root", {}).then((r) => { if (!r.ok) { toast(r.error || "Could not connect the folder."); t.disabled = false; return; } toast("Library folder connected."); loadSettings().then(reload); }).catch(() => { t.disabled = false; }); },
   alsearch: async () => {
-    S.alq = S.q.trim(); S.alBusy = true; paintNav();
-    try { const r = await api("/api/match-candidates", { query: S.alq }); if (r && r.error) { toast(r.error); S.alres = []; } else S.alres = r || []; }
-    catch { toast("AniList search failed — is the hub running?"); S.alres = []; }
-    S.alBusy = false; if (S.q.trim() === S.alq) paintNav();
+    const mine = S.alq = S.q.trim(); S.alBusy = true; paintNav();
+    let res;
+    try { const r = await api("/api/match-candidates", { query: mine }); res = r && r.error ? [] : r || []; }
+    catch { res = []; }
+    if (S.alq !== mine) return; // a newer search took over
+    S.alres = res; S.alBusy = false;
+    if (S.q.trim() === mine) paintNav();
   },
   catpick: (v) => {
     const x = S.alres[+v];
@@ -1590,16 +1767,62 @@ const A = {
     const k = t.dataset.k;
     if (k === "status") { if (v) entryPatch({ status: v }); return; }
     if (k === "score") { const n = parseFloat(v), max = S.entry?.f?.score_max || 10; if (Number.isNaN(n)) return; entryPatch({ score: Math.max(0, Math.min(max, n)) }); return; }
-    entryPatch({ [k]: String(v).trim() });
+    const d = parseDateIn(v);
+    if (d === null) { toast("Couldn't read that date — try YYYY-MM-DD"); t.value = S.entry?.f?.[k] || ""; return; }
+    if (d !== (S.entry?.f?.[k] || "")) entryPatch({ [k]: d });
+    else t.value = d;
   },
+  calopen: (v) => {
+    if (S.cal?.k === v) return calClose();
+    const cur = (S.entry?.f?.[v] || "").split("-"), now = new Date();
+    S.cal = { k: v, y: +cur[0] || now.getFullYear(), m: cur[1] ? +cur[1] - 1 : cur[0] ? 0 : now.getMonth() };
+    if (S.entry?.f) entryPaint(S.entry.f, false);
+  },
+  calnav: (v) => { if (!S.cal) return; const d = new Date(S.cal.y, S.cal.m + +v, 1); S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); entryPaint(S.entry.f, false); },
+  calday: (v) => { const k = S.cal?.k; S.cal = null; if (k && v !== (S.entry?.f?.[k] || "")) entryPatch({ [k]: v }); else calClose(); },
   ebump: (v, t) => {
     const k = t.dataset.k, f = S.entry?.f;
     if (!f) return;
     let n = Math.max(0, (f[k === "progress" ? "progress" : "repeat"] ?? 0) + +t.dataset.d);
     const cap = f.media?.episodes;
     if (k === "progress" && cap) n = Math.min(n, cap);
-    entryPatch({ [k === "progress" ? "progress" : "repeat"]: n });
+    entryPatch({ [k === "progress" ? "progress" : "repeat"]: n }, undefined, 450);
   },
+  smode: (v) => {
+    const s = showById(S.showId), mid = s?.meta?.anilist_id;
+    if (!mid || S.modeBusy || (s.stream?.mode || "sub") === v) return;
+    S.modeBusy = mid; softRender();
+    api("/api/stream/mode", { media_id: mid, mode: v }).then(async (r) => {
+      if (r.error) toast(r.error);
+      else { toast(v === "dub" ? "Online episodes are dubbed now" : "Online episodes are subbed now"); if (S.releases[mid]) { const rel = await api("/api/release?id=" + mid).catch(() => null); if (rel?.show) S.releases[mid] = rel.show; } await refreshData(); }
+    }).catch(() => toast("Could not switch — is the hub running?")).finally(() => { S.modeBusy = null; if (S.view === "show") softRender(); });
+  },
+  selmode: () => { if (S.sel?.show === S.showId) return selEnd(); S.sel = { show: S.showId, ids: new Set(), anchor: null }; patchShow(); paintSel(); },
+  selall: () => {
+    const s = showById(S.showId), sea = s && (s.seasons[S.seasonIdx] || s.seasons[0]);
+    if (!sea || S.sel?.show !== s.id) return;
+    const all = sea.episodes.every((e) => S.sel.ids.has(e.id));
+    for (const e of sea.episodes) all ? S.sel.ids.delete(e.id) : S.sel.ids.add(e.id);
+    patchShow(); paintSel();
+  },
+  selmark: (v, t) => {
+    const w = t.dataset.w === "true", ids = selEps().map((e) => e.id);
+    if (!ids.length) return;
+    api("/api/bulk-watched", { show_id: S.showId, watched: w, ids }).then((r) => {
+      if (r && r.error) return toast(r.error);
+      toast(w ? `Marked ${r.episodes} episode${r.episodes === 1 ? "" : "s"} watched${r.synced ? " — will sync" : ""}` : `Removed watched marks from ${r.episodes} episode${r.episodes === 1 ? "" : "s"}`);
+      S.sel = null; paintSel();
+      watchPatch(ids, w, false);
+    }).catch(() => toast("Could not save — is the hub running?"));
+  },
+  seldl: () => {
+    const s = showById(S.showId), eps = selEps().filter((e) => streamEp(e) && !dlJob(e.id));
+    if (!s?.meta?.anilist_id || !eps.length) return;
+    download(s.meta.anilist_id, eps.map((e) => e.id.split(":")[2]));
+    selEnd();
+  },
+  vpngo: () => { const go = S.modal?.go; closeModal(); go?.(); },
+  folder: (v) => api("/api/open-folder", { show_id: v }).then((r) => { if (!r.ok) toast(r.error || "Could not open the folder"); }).catch(() => toast("Could not open the folder — is the hub running?")),
   efav: () => { if (S.entry?.f) entryPatch(undefined, !S.entry.f.favourite); },
   /* match repair */
   pick: (v, t) => { const id = t.dataset.s; mst(id).pick = +v; paintMatch(id); },
@@ -1709,6 +1932,7 @@ const isField = (t) => /^(SELECT|INPUT)$/.test(t.tagName);
 document.addEventListener("click", (e) => {
   $("#cm").style.display = "none";
   if (S.menu && !e.target.closest(".rel,.search")) { S.menu = null; paintNav(); }
+  if (S.cal && !e.target.closest(".datef")) calClose();
   const t = e.target.closest("[data-a]");
   if (t && !t.disabled && !isField(t) && A[t.dataset.a]) A[t.dataset.a](t.dataset.v, t, e);
 });
@@ -1806,7 +2030,14 @@ document.addEventListener("pointerout", (e) => {
 });
 addEventListener("resize", () => $$("[data-glide]").forEach(glide));
 const q = $("#q");
-q.addEventListener("input", () => { S.q = q.value; S.alres = null; S.alq = null; S.menu = S.q.trim() ? "sr" : null; paintNav(); });
+let alTimer = 0;
+q.addEventListener("input", () => {
+  S.q = q.value; S.menu = S.q.trim() ? "sr" : null;
+  if (!S.q.trim()) { S.alres = null; S.alq = null; }
+  paintNav();
+  clearTimeout(alTimer);
+  if (alSearchable() && S.q.trim().length >= 2) alTimer = setTimeout(() => { if (S.q.trim() !== S.alq) A.alsearch(); }, 350);
+});
 q.addEventListener("focus", () => { if (S.q.trim()) { S.menu = "sr"; paintNav(); } });
 q.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -1824,8 +2055,8 @@ q.addEventListener("keydown", (e) => {
   if (picked) { e.preventDefault(); q.blur(); picked.click(); return; }
   const t = S.q.trim().toLowerCase();
   if (!t) return;
-  const hit = S.data.shows.find((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(t));
-  if (hit) { q.blur(); openShow(hit.id); } else if (alSearchable()) A.alsearch();
+  const first = $("#sr .mi");
+  if (first) { e.preventDefault(); q.blur(); first.click(); }
 });
 addEventListener("scroll", () => document.body.classList.toggle("sc", scrollY > 8), { passive: true });
 
@@ -1865,6 +2096,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/" && !inInput) { e.preventDefault(); q.focus(); return; }
   if (e.key === "Escape") {
     if (S.menu) { S.menu = null; paintNav(); return; }
+    if (S.sel && !inInput) { selEnd(); return; }
     if (S.q) { clearSearch(); paintNav(); q.blur(); return; }
     if (inInput) { document.activeElement.blur(); return; }
     if (S.view === "show") A.back(); else if (S.view !== "home") nav("home");

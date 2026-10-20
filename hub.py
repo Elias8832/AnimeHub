@@ -220,7 +220,7 @@ ANILIST_URL = "https://graphql.anilist.co"
 # round-4 UI rework (genre hints/tray, home airing panel, stats panels);
 # old caches just lack the fields until the next refresh — additive.
 ANILIST_USER_QUERY = """query($name:String){
-User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} }
+User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
 MediaListCollection(userName:$name, type:ANIME){
 lists{ entries{ status progress score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring } coverImage{extraLarge} bannerImage title{english romaji} } } }
 }}"""
@@ -275,7 +275,11 @@ def set_setting(key, value):
 # the user already tracks is the core promise of connecting (on), while
 # creating NEW public list entries on the user's behalf (auto-add on first
 # watch, Decision 5) needs an explicit opt-in (off).
-AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False}
+AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
+                       # Not writes, just switches kept beside them:
+                       # watched marks read from AniList progress, and the
+                       # VPN status icon / no-VPN warning for online episodes.
+                       "anilist_watched": False, "vpn_icon": True, "vpn_warn": True}
 
 
 def automation_enabled(key):
@@ -288,6 +292,35 @@ def set_automation(key, on):
     set_setting(key, "1" if on else "0")
 
 
+VPN_IFACE_RE = re.compile(r"^(wg|tun|tap|ppp|ipsec|proton|pvpn|nordlynx|nordtun|mullvad|expressvpn|surfshark|cscotun|gpd|utun)", re.I)
+VPN_IFACE_SKIP = re.compile(r"^(lo|tailscale|zt|docker|br-|veth|virbr|vboxnet|vmnet)", re.I)
+
+
+def vpn_status():
+    """Best-effort VPN check for the online-episode warning: an up network
+    interface that is a tunnel — WireGuard/tun devices have no hardware
+    address (ARPHRD_NONE, type 65534) or a VPN client's usual name. Mesh
+    networks (Tailscale, ZeroTier) and container bridges don't count."""
+    try:
+        names = sorted(os.listdir("/sys/class/net"))
+    except OSError:
+        return {"active": False, "iface": None, "known": False}
+    for n in names:
+        if VPN_IFACE_SKIP.match(n):
+            continue
+        base = Path("/sys/class/net") / n
+        try:
+            state = (base / "operstate").read_text().strip()
+            kind = (base / "type").read_text().strip()
+        except OSError:
+            continue
+        if state == "down":
+            continue
+        if VPN_IFACE_RE.match(n) or kind == "65534":
+            return {"active": True, "iface": n, "known": True}
+    return {"active": False, "iface": None, "known": True}
+
+
 def settings_payload():
     """TODO 15: the settings surface's read side — the automation toggles
     (Decision 5), the running config as plain values (paths as strings,
@@ -298,6 +331,9 @@ def settings_payload():
     return {
         "auto_progress_sync": automation_enabled("auto_progress_sync"),
         "auto_add_watch": automation_enabled("auto_add_watch"),
+        "anilist_watched": automation_enabled("anilist_watched"),
+        "vpn_icon": automation_enabled("vpn_icon"),
+        "vpn_warn": automation_enabled("vpn_warn"),
         "tour_done": get_setting("tour_done") == "1",
         "library_root": str(LIBRARY) if LIBRARY else None,
         "data_dir": str(DATA),
@@ -629,8 +665,24 @@ def migration_9(c):
         media_id INTEGER PRIMARY KEY, ts REAL)""")
 
 
+def migration_10(c):
+    """Season → release map (multi-season rework, step 1): one row says
+    which AniList release a range of a folder's episodes belongs to.
+    ep_offset turns a local episode into the release's own number
+    (local E13 with offset -12 is release E1). Seeded from the per-season
+    matches already stored in season_thumbs, so matched seasons keep working."""
+    c.execute("""CREATE TABLE IF NOT EXISTS season_releases(
+        show_id TEXT, sea_key TEXT, first_ep INTEGER, last_ep INTEGER,
+        media_id INTEGER, ep_offset INTEGER DEFAULT 0, source TEXT,
+        PRIMARY KEY(show_id, sea_key, first_ep))""")
+    c.execute("""INSERT OR IGNORE INTO season_releases(show_id, sea_key, first_ep, last_ep,
+                    media_id, ep_offset, source)
+                 SELECT show_id, sea_key, 1, NULL, anilist_id, 0, 'auto'
+                 FROM season_thumbs WHERE anilist_id IS NOT NULL""")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
-              migration_8, migration_9]
+              migration_8, migration_9, migration_10]
 
 
 def snapshot_before(target_version):
@@ -1171,7 +1223,7 @@ def anilist_favourite_set(media_id, want):
         return {"error": "AniList has no such media"}
     if state["is_favourite"] == bool(want):
         return state
-    q = "mutation($id:Int){ToggleFavourite(animeId:$id){code}}"
+    q = "mutation($id:Int){ToggleFavourite(animeId:$id){anime(perPage:1){pageInfo{total}}}}"
     # Same contract as anilist_entry_save: auth/validation errors raise.
     if anilist_mutation(q, {"id": media_id}) is None:
         return {"error": "AniList rejected the update"}
@@ -1189,7 +1241,7 @@ def log(msg):
     print("anime-hub: %s" % msg, file=sys.stderr, flush=True)
 
 
-def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozenset()):
+def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozenset(), favs=frozenset()):
     """Merge the user's AniList lists with the local library — Decision 4's
     spine, release-first (Decision 19): one card per AniList entry, with a
     source-capability badge (installed / partial / not installed) derived
@@ -1229,7 +1281,9 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
                     "year": e.get("year"), "airing": e.get("airing"),
                     "genres": e.get("genres") or [],
                     "next_episode": e.get("next_episode"),
-                    "poster": e.get("poster"), "updated": e.get("updated"),
+                    "poster": e.get("poster"), "banner": e.get("banner"),
+                    "updated": e.get("updated"),
+                    "favourite": e["id"] in favs,
                     "capability": cap,
                     "installed": installed,
                     "local_show_id": loc[0]["id"] if loc else None,
@@ -1240,6 +1294,45 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
     untracked = [s["id"] for s in scan
                  if (s.get("meta") or {}).get("anilist_id") not in listed]
     return {"entries": out, "untracked": untracked, "mode": "anilist"}
+
+
+def apply_anilist_watched(shows, entries):
+    """Settings → Advanced AniList → "Watched marks from AniList": episodes
+    up to the entry's progress read as watched, later ones as unwatched.
+    Display only — hub.db keeps the local marks, so switching back restores
+    them. Same mapping guard as progress sync (anilist_track_show): one
+    release per single-season folder, files within the release's total."""
+    prog = {e["id"]: (e.get("progress") or 0, e.get("episodes")) for e in entries}
+    for s in shows:
+        aid = (s.get("meta") or {}).get("anilist_id")
+        if aid not in prog or len(s["seasons"]) != 1:
+            continue
+        done, total = prog[aid]
+        eps = [e for e in s["seasons"][0]["episodes"] if isinstance(e["number"], int) and e["number"] >= 1]
+        if total and len(eps) > total:
+            continue
+        for e in eps:
+            e["watched"] = e["number"] <= done
+
+
+def spine_favourites(cached):
+    """AniList favourite ids for the spine: the cached list's favourites,
+    overridden by in-app edits made after that cache was fetched, so a heart
+    toggled on a show page shows on its card before the next list refresh."""
+    favs = set(cached.get("favourites") or [])
+    ts = cached.get("_ts")
+    if not ts:
+        return favs
+    since = datetime.fromtimestamp(ts, timezone.utc).strftime(CANONICAL_TS)
+    for ref, cur in curation_all().items():
+        if not ref.startswith("aid:") or (cur.get("updated_at") or "") <= since:
+            continue
+        mid = int(ref[4:])
+        if cur.get("favourite"):
+            favs.add(mid)
+        else:
+            favs.discard(mid)
+    return favs
 
 
 def curation_all():
@@ -1296,7 +1389,9 @@ def spine_build_local(scan, curations, streams=()):
                               ("MOVIE" if s.get("kind") == "movie" else None),
                     "year": meta.get("year"), "airing": None,
                     "genres": [], "next_episode": None,
-                    "poster": s.get("poster"), "updated": updated,
+                    "poster": s.get("poster"), "banner": s.get("banner"),
+                    "updated": updated,
+                    "favourite": bool(cur.get("favourite")),
                     "capability": ("installed" if on_disk == total else
                                    "partial" if on_disk else "online"),
                     "installed": on_disk,
@@ -1329,7 +1424,7 @@ def full_library():
         cached = anilist_cache_stale()
     if cached:
         spine = spine_build(cached["entries"], scan, {link["media_id"] for link in links},
-                            bool(anicli_path()), stream_missed_ids())
+                            bool(anicli_path()), stream_missed_ids(), spine_favourites(cached))
     elif not connected:
         spine = spine_build_local(scan, curation_all(), streams)
     else:
@@ -1337,6 +1432,8 @@ def full_library():
         # yet (the boot warm-up fills it); the UI renders the plain local
         # grid meanwhile.
         spine = None
+    if cached and automation_enabled("anilist_watched"):
+        apply_anilist_watched(scan + streams, cached["entries"])
     continue_row = []
     history = []
     for s in scan + streams:
@@ -1367,6 +1464,7 @@ def full_library():
             now = {"episode_id": a["ep_id"], "show": a["show_title"], "label": a["label"],
                    "percent": a.get("percent") or 0, "loading": bool(a.get("loading"))}
     return {"shows": scan, "continue": continue_row[:20], "history": history,
+            "vpn": vpn_status(),
             # Legacy fields kept as empty lists since the streaming strip
             # (TODO 18, Decision 18.5). Streamed episodes ride in
             # continue/history above; their shows are `streams`.
@@ -1535,7 +1633,7 @@ def auto_track_after_play(ep_id):
     return anilist_track_show(trackable(s))
 
 
-def bulk_watched(show_id, season=None, watched=True):
+def bulk_watched(show_id, season=None, watched=True, ids=None):
     """TODO 6 (Decision 27): mark every episode of one season — or the whole
     container — watched (or unwatched) in one go. This is bookkeeping for
     shows watched before the app existed, NOT playback: no completion event
@@ -1544,17 +1642,19 @@ def bulk_watched(show_id, season=None, watched=True):
     published progress becomes the highest watched episode (single-release
     containers; multi-season folders stay local-only until the
     release-mapping work, and unwatching stays local — AniList corrections
-    stay on the entry panel). Returns a small report for the UI."""
+    stay on the entry panel). `ids` (multi-select) limits the mark to those
+    episodes of the show. Returns a small report for the UI."""
     s = media_by_id(show_id)
     if not s:
         return {"error": "unknown show"}
+    pick = set(ids) if ids is not None else None
     if season is not None:
         if not 0 <= season < len(s["seasons"]):
             return {"error": "no such season"}
         targets = [s["seasons"][season]]
     else:
         targets = s["seasons"]
-    eps = [ep for sea in targets for ep in sea["episodes"]]
+    eps = [ep for sea in targets for ep in sea["episodes"] if pick is None or ep["id"] in pick]
     with db() as c:
         for ep in eps:
             c.execute(
@@ -1566,9 +1666,8 @@ def bulk_watched(show_id, season=None, watched=True):
         # The in-memory show still carries the pre-mark flags (the scan
         # happened before the writes) — reflect them so the sync sees the
         # fresh state. Unwatching stays local (Decision 27).
-        for sea in targets:
-            for ep in sea["episodes"]:
-                ep["watched"] = 1
+        for ep in eps:
+            ep["watched"] = 1
         try:
             synced = anilist_track_show(trackable(s), manual=True)
         except Exception as exc:
@@ -2651,6 +2750,27 @@ def stream_set_mode(media_id, mode):
     return {"ok": True, "mode": mode} if n else {"error": STREAM_UNAVAILABLE}
 
 
+def stream_switch_mode(media_id, mode):
+    """The show page's Sub/Dub toggle: every online episode follows, so the
+    episode list is re-read in the new language. A language ani-cli has no
+    episodes in keeps the old one."""
+    link = stream_link_get(media_id)
+    if not link:
+        return {"error": STREAM_UNAVAILABLE}
+    if link["mode"] == mode:
+        return {"ok": True, "mode": mode}
+    old = link["mode"]
+    stream_set_mode(media_id, mode)
+    try:
+        r = stream_refresh(media_id)
+    except AniCliError:
+        r = None
+    if not r or r.get("error") or not r.get("episodes"):
+        stream_set_mode(media_id, old)
+        return {"error": "No %s version found online." % ("dubbed" if mode == "dub" else "subbed")}
+    return {"ok": True, "mode": mode, "episodes": r["episodes"]}
+
+
 def _stream_num(token):
     f = float(token)
     return int(f) if f.is_integer() else f
@@ -3006,6 +3126,7 @@ def download_enqueue(media_id, tokens):
             busy.add((media_id, token))
             _dl_state["seq"] += 1
             _downloads.append({"id": _dl_state["seq"], "media_id": media_id, "token": token,
+                               "mode": link["mode"],
                                "show": title, "show_id": f"aid:{media_id}", "dest": str(dest),
                                "status": "queued", "percent": 0, "error": None})
             added += 1
@@ -3061,6 +3182,18 @@ def _dl_has_file(dest, token):
         return False
 
 
+def _dl_mark_dub(dest, token):
+    """ani-cli names sub and dub downloads alike; a "(Dub)" suffix makes the
+    dub its own version of the episode (scan reads "(...)" as a version
+    label) and keeps a later sub download from overwriting it."""
+    for n in os.listdir(dest):
+        if n.endswith(f" Episode {token}.mp4"):
+            target = dest / (n[:-4] + " (Dub).mp4")
+            if not target.exists():
+                os.replace(dest / n, target)
+            return
+
+
 def _dl_cleanup(dest, token, had_file, created):
     """Remove what an unfinished download left: yt-dlp's .part/.ytdl
     fragments, the subtitle, and a partial .mp4 (ffmpeg writes in place)."""
@@ -3093,7 +3226,8 @@ def _dl_run(job):
     had_file = _dl_has_file(dest, job["token"])
     # ani-cli hands ANI_CLI_PLAYER_FLAGS to yt-dlp/ffmpeg when downloading;
     # the user's (mpv) flags would break them.
-    env = anicli_env(link, ANI_CLI_DOWNLOAD_DIR=str(dest), ANI_CLI_PLAYER_FLAGS="")
+    mode = job.get("mode") or link["mode"]
+    env = anicli_env(link, ANI_CLI_DOWNLOAD_DIR=str(dest), ANI_CLI_PLAYER_FLAGS="", ANI_CLI_MODE=mode)
     proc = anicli_spawn(["-d", "-e", job["token"], link["query"]], env, subprocess.PIPE, subprocess.STDOUT)
     with _dl_cv:
         job["proc"] = proc
@@ -3122,6 +3256,8 @@ def _dl_run(job):
         job.pop("proc", None)
         cancelled = job.get("cancel")
     if not cancelled and rc == 0 and _dl_has_file(dest, job["token"]):
+        if mode == "dub" and not had_file:
+            _dl_mark_dub(dest, job["token"])
         with _dl_cv:
             job.update(status="done", percent=100)
         _dl_adopt(job["media_id"], dest)
@@ -4212,6 +4348,7 @@ def anilist_user_data(force=False):
         "score_format": ((u.get("mediaListOptions") or {}).get("scoreFormat")
                          or "POINT_10"),
         "entries": list(entries.values()),
+        "favourites": [n["id"] for n in (((u.get("favourites") or {}).get("anime") or {}).get("nodes") or [])],
     }
     # Atomic: request threads read this file concurrently, and a torn read
     # would briefly flip the spine into local mode.
@@ -4270,6 +4407,32 @@ SEASON_GENERIC_LABELS = {"specials", "special", "ova", "oav", "extras", "others"
 
 def season_key(sea):
     return f"{sea['key']}|{sea['label']}"
+
+
+def set_release_range(c, show_id, sea_key, first_ep, last_ep, media_id, ep_offset=0, source="auto"):
+    """Map local episodes first_ep..last_ep (last_ep None = to the end of the
+    season) of one season onto an AniList release. Replaces an existing range
+    that starts at the same episode."""
+    c.execute("""INSERT OR REPLACE INTO season_releases(show_id, sea_key, first_ep, last_ep,
+                    media_id, ep_offset, source) VALUES(?,?,?,?,?,?,?)""",
+              (show_id, sea_key, first_ep, last_ep, media_id, ep_offset, source))
+
+
+def release_of(show_id, sea_key, ep_number):
+    """Which release a local episode belongs to: (media_id, release episode
+    number), or None when the season has no mapping covering it. Every
+    per-release feature asks this instead of assuming one release per folder."""
+    if ep_number is None:
+        return None
+    with db() as c:
+        row = c.execute("""SELECT media_id, ep_offset FROM season_releases
+            WHERE show_id=? AND sea_key=? AND first_ep<=?
+              AND (last_ep IS NULL OR last_ep>=?)
+            ORDER BY first_ep DESC LIMIT 1""",
+            (show_id, sea_key, ep_number, ep_number)).fetchone()
+    if not row or row[0] is None:
+        return None
+    return row[0], ep_number + row[1]
 
 
 def base_season_of(title):
@@ -4374,6 +4537,19 @@ def fetch_season_thumbs(show):
         did += 1
         time.sleep(2.2)
     return did
+
+
+def open_show_folder(show_id):
+    """Open a disk show's folder in the user's file manager."""
+    show = next((s for s in scan_library() if s["id"] == show_id), None)
+    if not show or not show.get("path"):
+        raise ValueError("no such show on disk")
+    path = (LIBRARY / show["path"]).resolve()
+    if path.is_file():
+        path = path.parent
+    if not path.is_dir() or not path.is_relative_to(LIBRARY.resolve()):
+        raise ValueError("folder not found")
+    subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def open_in_browser(url):
@@ -4633,7 +4809,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
-            keys = ("auto_progress_sync", "auto_add_watch", "tour_done")
+            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "tour_done")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": STREAM_QUALITIES, "stream_mode": STREAM_MODES}
             for key in keys:
@@ -4673,7 +4849,11 @@ class Handler(BaseHTTPRequestHandler):
                                            or season < 0):
                     self._bad("'season' must be a non-negative integer or null")
                     return
-                r = bulk_watched(body["show_id"], season, body["watched"])
+                ids = body.get("ids")
+                if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, str) for i in ids)):
+                    self._bad("'ids' must be a list of episode ids")
+                    return
+                r = bulk_watched(body["show_id"], season, body["watched"], ids)
                 self.send_json(r, 200 if r.get("ok") else 404)
         elif route == "/api/reset":
             if self._fields(body, strings=("id",)):
@@ -4683,6 +4863,13 @@ class Handler(BaseHTTPRequestHandler):
             if self._fields(body, strings=("url",)):
                 try:
                     open_in_browser(body["url"])
+                    self.send_json({"ok": True})
+                except Exception as e:
+                    self.send_json({"error": str(e)}, 400)
+        elif route == "/api/open-folder":
+            if self._fields(body, strings=("show_id",)):
+                try:
+                    open_show_folder(body["show_id"])
                     self.send_json({"ok": True})
                 except Exception as e:
                     self.send_json({"error": str(e)}, 400)
@@ -4819,6 +5006,8 @@ class Handler(BaseHTTPRequestHandler):
                 cpatch["rewatches"] = patch["repeat"]
             if "completed_at" in patch:
                 cpatch["finished_at"] = patch["completed_at"]
+            if fav is not None:
+                cpatch["favourite"] = fav
             curation_set(ref, cpatch)
             fav_result = None
             if load_token():
@@ -4828,7 +5017,10 @@ class Handler(BaseHTTPRequestHandler):
                             if patch else anilist_entry_state(body["media_id"])
                         if fav is not None and not result.get("error"):
                             fav_result = anilist_favourite_set(body["media_id"], fav)
-                            if fav_result and not fav_result.get("error"):
+                            if fav_result and fav_result.get("error"):
+                                self.send_json({"error": fav_result["error"]})
+                                return
+                            if fav_result:
                                 result = fav_result
                         if result and not result.get("error"):
                             cpatch2 = {}
@@ -4911,6 +5103,13 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.send_json(stream_link_set(body["media_id"], body["query"], title,
                                                    body.get("index") or 1, mode, display))
+            elif route == "/api/stream/mode":
+                if not self._fields(body, strings=("mode",), ints=("media_id",)):
+                    return
+                if body["mode"] not in STREAM_MODES:
+                    self._bad("'mode' must be one of: %s" % ", ".join(STREAM_MODES))
+                else:
+                    self.send_json(stream_switch_mode(body["media_id"], body["mode"]))
             elif route == "/api/stream/refresh":
                 if self._fields(body, ints=("media_id",)):
                     self.send_json(stream_refresh(body["media_id"]))
