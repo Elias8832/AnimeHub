@@ -34,9 +34,13 @@ page changes between them except a small source badge.
 - **Franchise**: the anime entries connected by AniList relations
   `SEQUEL`, `PREQUEL`, `PARENT`, `SIDE_STORY`, `SUMMARY` (anime formats
   only: `TV`, `TV_SHORT`, `ONA`, `OVA`, `SPECIAL`, `MOVIE`; no manga/novel
-  `ALTERNATIVE`/`ADAPTATION` edges). Capped at ~60 entries. Franchise id =
-  the oldest entry's id, so it stays stable when new seasons are announced.
-  Entries are ordered by start date.
+  `ALTERNATIVE`/`ADAPTATION` edges). A link only counts when neither side
+  calls it `SPIN_OFF`, `ALTERNATIVE` or `CHARACTER`: AniList's two sides can
+  disagree (AoT calls Junior High a spin-off, Junior High calls AoT its
+  parent), and the page must not depend on where the walk starts. Capped
+  at ~60 entries. Franchise id = the oldest entry's id, so it stays stable
+  when new seasons are announced. Entries are ordered by start date,
+  undated ones last.
 - **Episode slot**: `(entry id, episode number)`. A slot has zero or more
   sources: local file(s), an online token. Play uses the local file when
   there is one, otherwise online. Download turns an online slot into a local
@@ -77,9 +81,12 @@ Each phase ends with the test suite green.
    (movie between seasons), Monogatari (side arcs), Cyberpunk: Edgerunners,
    Blue Box (S2 in its own folder), Kaguya-sama, absolute numbering,
    Specials/OVA folders, a single-season show, an unmatched folder.
-2. **Data layer.** Tables `media` (entry facts + art, refreshed by TTL;
+2. **Data layer.** *(done)* Tables `media` (entry facts + art, refreshed by TTL;
    airing entries daily) and `franchise_members(media_id, franchise_id,
    pos)`. Pure `build_franchise(start_id, fetch)` + background job.
+   Schema versions 11–14 are reserved no-ops: the abandoned rework already
+   moved real databases to 14, so new tables start at migration 15 and any
+   ported rework columns must be added idempotently (`_add_columns`).
 3. **Local mapping.** Port from the rework: migrations for
    `season_releases` facts, `release_units`, `map_numbered_seasons` (run
    against the franchise's TV line), `season_art` + ani.zip stills,

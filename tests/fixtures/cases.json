@@ -8,9 +8,9 @@
    {"dir": "The Apothecary Diaries/Season 1", "eps": [1, 24]},
    {"dir": "The Apothecary Diaries/Season 2", "eps": [1, 10]}]},
  {"name": "aot",
-  "about": "absolute numbering in Season 2, Season 3 is two AniList entries (12 + 10), a Specials folder",
-  "anilist": [16498],
-  "franchise": {"16498": [16498, 18397, 20691, 20811, 20692, 20958, 99634, 100465, 99147, 104578, 119113, 110277, 131681, 146984, 162314]},
+  "about": "absolute numbering in Season 2, Season 3 is two AniList entries (12 + 10), a Specials folder; Junior High is a spin-off (own page) that names AoT its PARENT",
+  "anilist": [16498, 21281],
+  "franchise": {"21281": [21281], "16498": [16498, 18397, 20691, 20811, 20692, 20958, 99634, 100465, 99147, 104578, 119113, 110277, 131681, 146984, 162314]},
   "scan": {"Attack on Titan": {"kind": "show", "seasons": {"Season 1": "1-25", "Season 2": "26-37", "Season 3": "1-22", "Specials": "1-3"}}},
   "library": [
    {"dir": "Attack on Titan/Season 1", "eps": [1, 25]},
