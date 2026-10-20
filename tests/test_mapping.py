@@ -183,6 +183,52 @@ class Art(unittest.TestCase):
         self.assertEqual(got, {"thumbs": {"1": "u1"}, "titles": {"1": "t1"}, "source": "anizip"})
         self.assertIsNone(hub.episode_listing(m, [support.anilist(16498)], lambda mid: None))
 
+    def test_anizip_specials_numbering(self):
+        """ani.zip as it answers for Kaguya-sama's "The First Kiss That
+        Never Ends" (4 episodes): TVDB files it as specials, so "1" is the
+        theatrical cut and the episodes are "O1".."O4"."""
+        eps = {"1": {"image": "movie", "title": "Complete Movie"},
+               **{f"O{n}": {"image": f"e{n}", "title": f"t{n}"} for n in range(1, 5)}}
+        self.assertEqual({k: v["title"] for k, v in hub.anizip_pick(eps, 4).items()},
+                         {"1": "t1", "2": "t2", "3": "t3", "4": "t4"})
+        # A season with its own plain numbers keeps them.
+        plain = {**{str(n): {"image": f"p{n}", "title": None} for n in range(1, 13)}, "O1": {"image": "x", "title": None}}
+        self.assertEqual(sorted(hub.anizip_pick(plain, 12), key=int), [str(n) for n in range(1, 13)])
+
+    def test_corrected_still_is_not_the_old_file(self):
+        """A listing fixed later (Kaguya "First Kiss": the theatrical cut
+        was episode 1) gets the new picture, not the file the wrong one
+        left under the same episode number."""
+        support.use_library(support.case("kaguya"))
+
+        def fake_download(url, dest):
+            dest.write_bytes(url.encode())
+            return True
+
+        with mock.patch.object(hub, "download", side_effect=fake_download):
+            old = hub.commit_thumbs(151384, {"thumbs": {"1": "https://x/movie.jpg"}}, prefix="z")[1]
+            new = hub.commit_thumbs(151384, {"thumbs": {"1": "https://x/episode1.jpg"}}, prefix="z")[1]
+        self.assertNotEqual(old, new)
+        self.assertEqual((hub.EPIMGS / new.rsplit("/", 1)[1]).read_bytes(), b"https://x/episode1.jpg")
+
+    def test_entry_opened_during_a_pass_is_not_dropped(self):
+        """Opening Season 3 while Season 2's stills are still downloading:
+        both get them (the second open used to be skipped)."""
+        c = support.case("kaguya")
+        support.match_library(c, support.use_library(c))
+        opened = []
+
+        def anizip(mid):
+            if mid == 112641 and not opened:
+                opened.append(hub.refresh_entry_art(ids={125367}, anizip=anizip))  # finds the pass running
+            return {"1": {"image": f"z{mid}", "title": f"t{mid}"}}
+
+        with mock.patch.object(hub, "commit_thumbs", side_effect=lambda mid, raw, prefix="": {
+                int(k): f"/epimg/{prefix}{mid}.{k}.jpg" for k in raw["thumbs"] or {}}):
+            self.assertEqual(hub.refresh_entry_art(ids={112641}, anizip=anizip), 2)
+        self.assertEqual(opened, [0])
+        self.assertEqual(sorted(hub.entry_art_all([112641, 125367])), [112641, 125367])
+
     def test_season_art_spans_entries(self):
         rs = [{"id": 99147, "first_ep": 1, "last_ep": 12, "offset": 0},
               {"id": 104578, "first_ep": 13, "last_ep": None, "offset": -12}]

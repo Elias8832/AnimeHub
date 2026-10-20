@@ -53,8 +53,8 @@ page changes between them except a small source badge.
 - **Watch facts**: keep the existing ids (disk episode id, `stream:mid:n`).
   A slot is watched if any of its sources is; marking writes all of them.
 
-Stable ids everywhere: page route `#/f/<franchise id>/<entry id>`; endpoints
-take entry ids, never list positions.
+Stable ids everywhere: page route `#f=<entry id>` (the entry selected on its
+franchise's page); endpoints take entry ids, never list positions.
 
 ## Rules
 
@@ -113,11 +113,17 @@ Each phase ends with the test suite green.
    files that are no entry. Not built yet → the entry alone with
    `building` while it builds in the background; the opened entry's
    ani-cli link and stills load in the background too.
-5. **Frontend.** New show page on the page model; entry switcher (main
-   seasons first row, movies/specials/OVAs second row); one tile style
-   with a source badge; search results are entries that open their
-   franchise page; library cards per the decision below; the per-season
-   "wrong entry?" dialog (`/api/season-match`).
+5. **Frontend.** *(done)* `Fran()` in `app.js` draws the page model: entry
+   switcher (main seasons first row, movies/specials/OVAs second row), one
+   tile style with an "on disk" / "online" badge, "Other files" with
+   "Which season is this?" and an "On disk" panel with "Wrong season?"
+   (`/api/season-match`). Marks go through `POST /api/entry-watched`
+   (every source of a slot; marking watched syncs the entry). Every way
+   into a matched folder, an online show, a search result or a list card
+   opens the franchise page; unmatched folders keep the old page. Library:
+   one card per franchise (`franchise_id` on every card). All AniList
+   requests share one pace under the rate limit, with a reserve for a page
+   the user just opened (`_anilist_slot`).
 6. **Cleanup.** Remove `aid:` standalone shows, `merge_streams`,
    client-side season ordering, and the old season art paths.
 

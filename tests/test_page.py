@@ -44,6 +44,12 @@ class Entries(unittest.TestCase):
         self.assertEqual(main_labels(page_of(120377)), [(120377, "Season 1"), (195539, "Season 2")])
         self.assertEqual(main_labels(page_of(97986)), [(97986, "Season 1"), (114745, "The Golden City of the Scorching Sun")])
 
+    def test_lone_entry_keeps_its_title(self):
+        """Season 2 opened from search while its franchise is still being
+        found is not "Season 1"."""
+        page = hub.franchise_page([support.anilist(176301)], [], {}, {}, {}, online_ok=False)
+        self.assertEqual(main_labels(page), [(176301, "The Apothecary Diaries Season 2")])
+
     def test_seasons_with_names_of_their_own(self):
         page = page_of(5081)
         self.assertEqual(page["title"], "Bakemonogatari")
@@ -123,6 +129,38 @@ class View(unittest.TestCase):
         page = hub.franchise_view(21281)
         self.assertEqual((page["building"], [e["id"] for e in page["entries"]]), (True, [21281]))
 
+    def test_tiles_know_their_folder_season(self):
+        local = self.entry(hub.franchise_view(176301), 176301)["slots"][0]["local"]
+        show = support.folder(self.scan, "The Apothecary Diaries")
+        self.assertEqual((local["show_id"], local["season"], local["season_label"]),
+                         (show["id"], hub.season_key(support.season(show, "Season 2")), "Season 2"))
+
+    def test_marking_writes_every_source(self):
+        r = hub.entry_watched(176301, True, [3, 11])
+        self.assertEqual(r["episodes"], 2)
+        disk = support.season(support.folder(self.scan, "The Apothecary Diaries"), "Season 2")["episodes"]
+        self.assertEqual(sorted(r["ids"]), sorted([disk[2]["id"], "stream:176301:3", "stream:176301:11"]))
+        slots = self.entry(hub.franchise_view(176301), 176301)["slots"]
+        self.assertEqual([x["number"] for x in slots if x["watched"]], [3, 11])
+        hub.entry_watched(176301, False)
+        self.assertFalse(any(x["watched"] for x in self.entry(hub.franchise_view(176301), 176301)["slots"]))
+
+    def test_marking_syncs_the_entry(self):
+        sent = []
+        cache = {"entries": [{"id": 176301, "progress": 0, "episodes": 24}]}
+        with mock.patch.object(hub, "anilist_connected", return_value=True), \
+                mock.patch.object(hub, "automation_enabled", return_value=False), \
+                mock.patch.object(hub, "anilist_cache_read", return_value=cache), \
+                mock.patch.object(hub, "outbox_pending_for", return_value=0), \
+                mock.patch.object(hub, "outbox_enqueue", side_effect=lambda mid, patch=None: sent.append((mid, patch))):
+            self.assertEqual(hub.entry_watched(176301, True, [1, 2, 13])["synced"], {"progress": 13})
+        self.assertEqual(sent, [(176301, {"progress": 13})])
+
+    def test_library_cards_know_their_franchise(self):
+        cards = hub.tag_franchises([{"id": 200929}, {"id": "folder", "media_id": 176301}, {"id": "x", "media_id": None}])
+        self.assertEqual([(c["media_id"], c["franchise_id"]) for c in cards],
+                         [(200929, 161645), (176301, 161645), (None, None)])
+
     def test_endpoint(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), hub.Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -139,6 +177,17 @@ class View(unittest.TestCase):
             urllib.request.urlopen(base + "/api/franchise?id=x")
         self.assertEqual(e.exception.code, 400)
         e.exception.close()
+
+
+class OnlineOnly(unittest.TestCase):
+    def test_online_only_show_syncs_its_release(self):
+        """A release watched online only (no folder) is its own entry for
+        progress sync and completion."""
+        link = {"media_id": 5, "episodes": ["1", "2", "2.5"], "meta": {"episodes": 12}, "title": "x",
+                "query": "x", "mode": "sub", "episodes_ts": 0}
+        show = hub._stream_show(link, {}, None)
+        units = hub.release_units(hub.trackable(show))
+        self.assertEqual([(u["media_id"], [n for _, n in u["eps"]], u["total"]) for u in units], [(5, [1, 2], 12)])
 
 
 class Pure(unittest.TestCase):

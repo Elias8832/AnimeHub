@@ -128,6 +128,26 @@ class Refresh(unittest.TestCase):
         self.assertEqual(hub.refresh_franchises({161645}, self.fetch), 1)
 
 
+class Pace(unittest.TestCase):
+    """Every AniList request shares one pace below the rate limit; the
+    background leaves a reserve for a page someone is waiting on."""
+
+    def setUp(self):
+        hub._al_times.clear()
+        self.addCleanup(hub._al_times.clear)
+
+    def test_background_leaves_a_reserve(self):
+        bg, fg = hub.ANILIST_BACKGROUND_PER_MIN, hub.ANILIST_PER_MIN
+        for i in range(bg):
+            self.assertEqual(hub._anilist_try(bg, 100 + i), 0)
+        self.assertGreater(hub._anilist_try(bg, 130), 0)       # background waits
+        for i in range(fg - bg):
+            self.assertEqual(hub._anilist_try(fg, 130), 0)      # an opened page doesn't
+        self.assertAlmostEqual(hub._anilist_try(fg, 130), 30)   # until the oldest is a minute old
+        self.assertGreater(hub._anilist_try(bg, 161), 0)        # the page's requests count too
+        self.assertEqual(hub._anilist_try(bg, 180), 0)
+
+
 class Migration(unittest.TestCase):
     def test_database_from_the_abandoned_rework(self):
         """A database the rework left at version 14 still gets the tables."""
