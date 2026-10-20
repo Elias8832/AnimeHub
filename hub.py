@@ -665,8 +665,24 @@ def migration_9(c):
         media_id INTEGER PRIMARY KEY, ts REAL)""")
 
 
+def migration_10(c):
+    """Season → release map (multi-season rework, step 1): one row says
+    which AniList release a range of a folder's episodes belongs to.
+    ep_offset turns a local episode into the release's own number
+    (local E13 with offset -12 is release E1). Seeded from the per-season
+    matches already stored in season_thumbs, so matched seasons keep working."""
+    c.execute("""CREATE TABLE IF NOT EXISTS season_releases(
+        show_id TEXT, sea_key TEXT, first_ep INTEGER, last_ep INTEGER,
+        media_id INTEGER, ep_offset INTEGER DEFAULT 0, source TEXT,
+        PRIMARY KEY(show_id, sea_key, first_ep))""")
+    c.execute("""INSERT OR IGNORE INTO season_releases(show_id, sea_key, first_ep, last_ep,
+                    media_id, ep_offset, source)
+                 SELECT show_id, sea_key, 1, NULL, anilist_id, 0, 'auto'
+                 FROM season_thumbs WHERE anilist_id IS NOT NULL""")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
-              migration_8, migration_9]
+              migration_8, migration_9, migration_10]
 
 
 def snapshot_before(target_version):
@@ -4391,6 +4407,32 @@ SEASON_GENERIC_LABELS = {"specials", "special", "ova", "oav", "extras", "others"
 
 def season_key(sea):
     return f"{sea['key']}|{sea['label']}"
+
+
+def set_release_range(c, show_id, sea_key, first_ep, last_ep, media_id, ep_offset=0, source="auto"):
+    """Map local episodes first_ep..last_ep (last_ep None = to the end of the
+    season) of one season onto an AniList release. Replaces an existing range
+    that starts at the same episode."""
+    c.execute("""INSERT OR REPLACE INTO season_releases(show_id, sea_key, first_ep, last_ep,
+                    media_id, ep_offset, source) VALUES(?,?,?,?,?,?,?)""",
+              (show_id, sea_key, first_ep, last_ep, media_id, ep_offset, source))
+
+
+def release_of(show_id, sea_key, ep_number):
+    """Which release a local episode belongs to: (media_id, release episode
+    number), or None when the season has no mapping covering it. Every
+    per-release feature asks this instead of assuming one release per folder."""
+    if ep_number is None:
+        return None
+    with db() as c:
+        row = c.execute("""SELECT media_id, ep_offset FROM season_releases
+            WHERE show_id=? AND sea_key=? AND first_ep<=?
+              AND (last_ep IS NULL OR last_ep>=?)
+            ORDER BY first_ep DESC LIMIT 1""",
+            (show_id, sea_key, ep_number, ep_number)).fetchone()
+    if not row or row[0] is None:
+        return None
+    return row[0], ep_number + row[1]
 
 
 def base_season_of(title):
