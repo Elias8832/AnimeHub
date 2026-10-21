@@ -155,6 +155,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": e.reason, "auth": True}, 401)
             except Exception as e:
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
+        elif route == "/api/outbox":
+            # TODO 14: the sync chip's list of queued changes (additive).
+            self.send_json({"items": sync.outbox_items()})
         elif route == "/api/auth/status":
             self.send_json(anilist.auth_status())
         elif route == "/api/settings":
@@ -443,6 +446,15 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=anilist.refresh_user_data, kwargs={"force": True},
                              daemon=True).start()
             self.send_json({"ok": True, "applied": applied})
+        elif route == "/api/outbox/flush":
+            # TODO 14: the sync chip's "try now" — every held row, this moment.
+            before = sync.outbox_count()
+            sync.outbox_retry_now()
+            sent = sync.outbox_flush()
+            self.send_json({"sent": sent, "before": before, "left": sync.outbox_count()})
+        elif route == "/api/outbox/cancel":
+            if self._fields(body, ints=("id",)):
+                self.send_json({"ok": sync.outbox_cancel(body["id"]), "left": sync.outbox_count()})
         elif route == "/api/reconcile/dismiss":
             sync.reconcile_clear()
             self.send_json({"ok": True})

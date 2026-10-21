@@ -1258,6 +1258,37 @@ function dlPop() {
     ${over ? '<div class="row" style="padding:6px 8px 0"><button class="btn" data-a="dlclear">Clear finished</button></div>' : ""}
     ${S.data?.stream_ready ? "" : '<p class="dl-empty">Install ani-cli to download episodes.</p>'}</div>`;
 }
+/* The sync chip's list (TODO 14): what is queued for AniList, why it is
+   still waiting, and a cancel per change — the local change stays. */
+const LIST_WORD = Object.fromEntries(LISTS);
+function obChange(it) {
+  if (it.eps) return `Watched marks on ${it.eps} episode${it.eps === 1 ? "" : "s"}`;
+  const p = it.patch || {}, out = [];
+  if (p.status) out.push(LIST_WORD[p.status] || p.status);
+  if ("progress" in p) out.push(`Progress ${p.progress}`);
+  if ("score" in p) out.push(p.score ? `Score ${p.score}` : "Score cleared");
+  if ("repeat" in p) out.push(`Rewatches ${p.repeat}`);
+  if ("started_at" in p) out.push(p.started_at ? `Started ${p.started_at}` : "Start date cleared");
+  if ("completed_at" in p) out.push(p.completed_at ? `Finished ${p.completed_at}` : "Finish date cleared");
+  if ("favourite" in it) out.push(it.favourite ? "Add to favourites" : "Remove from favourites");
+  return out.join(" · ") || "Update";
+}
+function obState(it) {
+  if (it.state === "seasons") return "Waits for AniList's season info";
+  if (it.state === "retrying") return `AniList unreachable — next try in ${Math.max(1, Math.round(it.retry_in / 60))} min`;
+  return "Waiting to send";
+}
+function obPop() {
+  const items = S.obItems;
+  const rows = (items || []).map((it) => `<div class="dlj"><div class="dlj-t"><b>${esc(it.title)}</b><small class="obc">${esc(obChange(it))}</small><small>${esc(obState(it))}</small></div>
+    <button class="chip ib" aria-label="Cancel this change" title="Don't send this to AniList" data-a="obcancel" data-v="${it.id}">${ico("close")}</button></div>`).join("");
+  return `<div class="pop dl ob"><div class="cap">Waiting to sync with AniList</div>
+    ${!items ? '<p class="dl-empty"><i class="spin"></i></p>' : rows ? `<div class="dlist">${rows}</div>` : '<p class="dl-empty">Nothing waiting.</p>'}
+    <p class="dl-empty">Cancelling keeps the change in the app — only AniList won't get it.</p>
+    <div class="row" style="padding:6px 8px 0"><button class="btn" data-a="sync">${ico("refresh")}Sync now</button></div></div>`;
+}
+const obLoad = () => api("/api/outbox").then((r) => { S.obItems = r.items || []; if (S.menu === "ob") paintNav(); }).catch(() => {});
+
 let navSig = "", nrLast = "";
 /* VPN status (E5): a chip in the top bar and a question before online
    episodes or downloads start without one — both switchable in Settings. */
@@ -1291,7 +1322,7 @@ function paintNav() {
   const nr = $("#nr"), dlHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued").length;
   const html = `${now ? `<button class="chip np" style="--pct:@P@%" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><span class="eq"><i></i><i></i><i></i></span><span class="npt">${esc(now.show)} · ${esc(now.label)}</span><span class="pc">${now.loading ? "Loading" : "@P@%"}</span></button>` : ""}
     ${vpnChip()}
-    ${S.outbox ? `<button class="chip sync" data-a="sync">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>` : ""}
+    ${S.outbox ? `<div class="rel"><button class="chip sync" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : ""}
     <div class="rel"><button class="chip ib${dlActive ? " dl-on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive ? `<span class="pc">${dlActive}</span>` : ""}</button>${S.menu === "dl" ? dlPop() : ""}</div>`;
   if (html === nrLast) {
     /* Only the playback percent moved: patch in place so the progress fill glides instead of snapping. */
@@ -1754,7 +1785,8 @@ async function pollNow() {
       if (wasLoading !== !!now.loading) pagePatch();
       if (prevEp && prevEp !== now.episode_id) await reload(); // autoplay moved on: refresh ticks / next-up
     }
-    if (outbox !== S.outbox) S.outbox = outbox;
+    if (S.outbox > 0 && outbox === 0) toast("Waiting changes synced to AniList");
+    if (outbox !== S.outbox) { S.outbox = outbox; if (S.menu === "ob") outbox ? obLoad() : (S.menu = null); }
     const dls = now.downloads || [], done = (l) => l.filter((j) => j.status === "done").length;
     const finished = done(dls) > done(S.dl);
     const dlChanged = JSON.stringify(dls) !== JSON.stringify(S.dl);
@@ -1893,6 +1925,15 @@ const A = {
   unavail: (v, t, e) => (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey) ? selToggle(v, e?.shiftKey) : toast(S.data.stream_ready ? "This episode isn't available to watch online." : "Install ani-cli to watch this online."),
   dlep: (v) => { const [, mid, ep] = v.split(":"); download(+mid, [ep]); },
   dlmany: (v, t) => download(+v, JSON.parse(t.dataset.eps || "[]")),
+  obox: () => { S.menu = S.menu === "ob" ? null : "ob"; S.obItems = null; paintNav(); if (S.menu) obLoad(); },
+  obcancel: (v) => {
+    api("/api/outbox/cancel", { id: +v }).then((r) => {
+      if (r && r.error) return toast(r.error);
+      S.outbox = r.left; toast("Cancelled — AniList won't get this change");
+      if (!r.left) S.menu = null;
+      S.obItems = (S.obItems || []).filter((it) => it.id !== +v); paintNav();
+    }).catch(() => toast("Could not reach the hub — is it running?"));
+  },
   dlcancel: (v) => { api("/api/download/cancel", { id: +v }).then(() => pollSoon(200)).catch(() => {}); },
   dlclear: () => { api("/api/download/clear", {}).then(() => { S.dl = S.dl.filter((j) => j.status === "running" || j.status === "queued"); paintNav(); }).catch(() => {}); },
   spref: (v, t) => {
@@ -1901,7 +1942,14 @@ const A = {
       S.settings = r; if (S.view === "settings") render();
     }).catch(() => toast("Could not save — is the hub running?"));
   },
-  sync: () => toast("Changes are saved locally and will sync to AniList when the connection returns."),
+  sync: () => {
+    toast("Syncing with AniList…");
+    api("/api/outbox/flush", {}).then((r) => {
+      S.outbox = r.left; if (S.menu === "ob") obLoad(); paintNav();
+      toast(!r.left ? "All changes synced to AniList" : r.left < r.before ? `Synced ${r.before - r.left} — ${r.left} still waiting`
+        : "AniList is still unreachable — your changes are saved and will sync when it's back.");
+    }).catch(() => toast("Could not reach the hub — is it running?"));
+  },
   ext: (v, t, e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button) return; e.preventDefault(); openExternal(v); },
   menu: (v) => { S.menu = S.menu === v ? null : v; paintNav(); },
   rescan: (v, t) => { if (t.disabled) return; t.disabled = true; t.classList.add("busy"); api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(() => { reload(); }, 2500); },

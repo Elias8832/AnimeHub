@@ -1,6 +1,7 @@
 """AniList write outbox and connect-time reconciliation."""
 
 import json
+import threading
 import time
 
 from . import anilist, database, library, mapping, progress, settings, streaming, util
@@ -89,10 +90,81 @@ def outbox_verify(payload, remote):
     return {"status": "CURRENT", "progress": p} if payload["verify"].get("add") else None
 
 
+_flush_lock = threading.Lock()
+
+
+def outbox_items():
+    """The sync chip's list (TODO 14): every queued change with a title, what
+    it changes and why it is still waiting. `state` is "waiting" (not tried
+    yet), "retrying" (AniList unreachable or limiting) or "seasons" (marks
+    waiting for the folder's season map, TODO 59)."""
+    with database.db() as c:
+        rows = c.execute("SELECT id, media_id, payload, attempts, next_try, created"
+                         " FROM outbox ORDER BY id").fetchall()
+        media = c.execute("SELECT id, data FROM media").fetchall()
+        titles = dict(c.execute("SELECT media_id, title FROM stream_links WHERE title IS NOT NULL"))
+        titles.update(c.execute("SELECT anilist_id, title FROM shows_meta"
+                                " WHERE anilist_id IS NOT NULL AND title IS NOT NULL"))
+        folders = dict(c.execute("SELECT show_id, title FROM shows_meta WHERE title IS NOT NULL"))
+    for mid, data in media:
+        t = (json.loads(data).get("title") or {})
+        if t.get("english") or t.get("romaji"):
+            titles[mid] = t.get("english") or t.get("romaji")
+    for e in (anilist.anilist_cache_stale() or {}).get("entries", []):
+        if e.get("title"):
+            titles[e["id"]] = e["title"]
+    out = []
+    for row_id, media_id, payload_s, attempts, next_try, created in rows:
+        try:
+            payload = json.loads(payload_s)
+        except ValueError:
+            payload = {}
+        item = {"id": row_id, "media_id": media_id or None, "created": created,
+                "state": "seasons" if "resync" in payload else "retrying" if attempts else "waiting",
+                "retry_in": max(0, int(next_try - time.time())) if attempts else 0}
+        if "resync" in payload:
+            item["title"] = folders.get(payload["resync"]) or "A show in your library"
+            item["eps"] = len(payload.get("eps") or [])
+        else:
+            item["title"] = titles.get(media_id) or "AniList entry %d" % media_id
+            item["patch"] = payload.get("patch") or {}
+            if "favourite" in payload:
+                item["favourite"] = payload["favourite"]
+        out.append(item)
+    return out
+
+
+def outbox_cancel(row_id):
+    """Drop one queued change: AniList never hears of it. The local change
+    (watch marks, the curation overlay) stays as it is. True when a row went."""
+    with _flush_lock, database.db() as c:
+        return c.execute("DELETE FROM outbox WHERE id=?", (row_id,)).rowcount > 0
+
+
+def outbox_retry_now():
+    """Make every held row due now (TODO 14: AniList is back, or the user
+    asked the sync chip to try)."""
+    with database.db() as c:
+        c.execute("UPDATE outbox SET next_try=0")
+
+
+
 def outbox_flush(limit=20):
+    """One pass at a time: the loop and the sync chip's "try now" must never
+    send the same row twice."""
+    if not _flush_lock.acquire(blocking=False):
+        return 0
+    try:
+        return _outbox_flush(limit)
+    finally:
+        _flush_lock.release()
+
+
+def _outbox_flush(limit):
     """Send due rows FIFO through the normal write path. Auth failure stops
     the whole pass WITHOUT consuming attempts — the queue goes dormant until
-    a valid token exists again (Decision 24)."""
+    a valid token exists again (Decision 24). A transient failure ends the
+    pass too: AniList is down for the rows behind it as well."""
     try:
         state = anilist.auth_status()
     except Exception:
@@ -134,12 +206,10 @@ def outbox_flush(limit=20):
             if remote is None:
                 try:
                     data = anilist.anilist_cache_read() or anilist.anilist_user_data(force=True)
-                    remote = {e["id"]: e for e in data.get("entries", [])}
                 except Exception as e:
-                    remote = e
-            if isinstance(remote, Exception):
-                outbox_fail(row_id, attempts, "AniList list unreachable: %s" % remote, transient=True)
-                continue
+                    outbox_fail(row_id, attempts, "AniList list unreachable: %s" % e, transient=True)
+                    break
+                remote = {e["id"]: e for e in data.get("entries", [])}
             payload["patch"] = outbox_verify(payload, remote.get(media_id))
             if payload["patch"] is None:
                 with database.db() as c:
@@ -152,7 +222,7 @@ def outbox_flush(limit=20):
                 anilist.anilist_favourite_set(media_id, payload["favourite"])
         except anilist.AniListTransientError as e:
             outbox_fail(row_id, attempts, e, transient=True)
-            continue
+            break
         except anilist.AniListAuthError:
             # Dormant (Decision 24): stop the pass, keep attempts untouched,
             # retry when a valid token exists again.
@@ -184,13 +254,26 @@ def outbox_loop():
     """Background flush: shortly after boot, then every minute. Failures are
     invisible here by design — the chip carries the state (Decision 3)."""
     time.sleep(10)
+    seen = anilist.last_ok
     while True:
         try:
-            if outbox_count():
-                outbox_flush()
+            seen = outbox_tick(seen)
         except Exception as e:
             util.log("outbox loop: %s" % e)
         time.sleep(60)
+
+
+def outbox_tick(seen):
+    """One loop pass. `seen` is when AniList last answered as of the previous
+    pass; returns the new value."""
+    if outbox_count():
+        if anilist.last_ok > seen:
+            # AniList answered something since the last pass (the list
+            # refresh probes it every 5 min): back from an outage — push
+            # now instead of waiting out the backoff (TODO 14).
+            outbox_retry_now()
+        outbox_flush()
+    return anilist.last_ok
 
 
 def anilist_refresh_loop():

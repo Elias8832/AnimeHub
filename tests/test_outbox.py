@@ -176,5 +176,73 @@ class Deferred(unittest.TestCase):
         self.assertEqual((rows[0]["patch"], rows[0]["verify"]), ({"progress": 2}, {"add": settings.automation_enabled("auto_add_watch")}))
 
 
+class Reconnect(unittest.TestCase):
+    """TODO 14: held writes go out as soon as AniList answers again."""
+
+    def setUp(self):
+        Retries.setUp(self)
+        with database.db() as c:
+            c.execute("DELETE FROM outbox")
+        sync.outbox_enqueue(5114, patch={"progress": 3})
+        sync.outbox_enqueue(5115, patch={"progress": 4})
+
+    def held(self):
+        with database.db() as c:
+            return c.execute("SELECT media_id, attempts, next_try > ? FROM outbox ORDER BY id", (time.time(),)).fetchall()
+
+    def test_outage_ends_the_pass(self):
+        down = anilist.AniListTransientError("AniList unavailable (HTTP 403)", status=403)
+        with mock.patch.object(anilist, "anilist_entry_save", side_effect=down) as save:
+            sync.outbox_flush()
+        save.assert_called_once()  # the second row isn't tried against a dead API
+        self.assertEqual(self.held(), [(5114, 1, 1), (5115, 0, 0)])
+
+    def test_back_online_skips_the_backoff(self):
+        down = anilist.AniListTransientError("x", status=403)
+        with mock.patch.object(anilist, "anilist_entry_save", side_effect=down):
+            seen = sync.outbox_tick(sync.outbox_tick(anilist.last_ok))  # one row per pass
+        self.assertEqual(self.held(), [(5114, 1, 1), (5115, 1, 1)])
+        with mock.patch.object(anilist, "anilist_entry_save") as save:
+            sync.outbox_tick(seen)  # nothing answered yet: still backing off
+            save.assert_not_called()
+            with mock.patch.object(anilist, "last_ok", seen + 1):
+                sync.outbox_tick(seen)  # AniList answered: everything goes now
+        self.assertEqual(save.call_count, 2)
+        self.assertEqual(sync.outbox_count(), 0)
+
+
+class Listing(unittest.TestCase):
+    """TODO 14: the sync chip lists queued changes and can cancel one."""
+
+    def setUp(self):
+        Retries.setUp(self)
+        with database.db() as c:
+            c.execute("DELETE FROM outbox")
+            c.execute("DELETE FROM shows_meta")
+            c.execute("INSERT INTO shows_meta(show_id, anilist_id, title) VALUES('fold', 5114, 'Frieren')")
+
+    def test_items_say_what_and_why(self):
+        sync.outbox_enqueue(5114, patch={"progress": 3})
+        sync.outbox_enqueue(9999, patch={"status": "COMPLETED"}, favourite=True)
+        sync.outbox_defer("fold", ["b1", "b2"], True)
+        with mock.patch.object(anilist, "anilist_entry_save",
+                               side_effect=anilist.AniListTransientError("x", status=403)):
+            sync.outbox_flush()
+        with mock.patch.object(anilist, "anilist_cache_stale", return_value=None):
+            a, b, c = sync.outbox_items()
+        self.assertEqual((a["title"], a["patch"], a["state"]), ("Frieren", {"progress": 3}, "retrying"))
+        self.assertGreater(a["retry_in"], 0)
+        self.assertEqual((b["title"], b["favourite"], b["state"]), ("AniList entry 9999", True, "waiting"))
+        self.assertEqual((c["title"], c["eps"], c["state"], c["media_id"]), ("Frieren", 2, "seasons", None))
+
+    def test_cancel_drops_only_that_row(self):
+        sync.outbox_enqueue(5114, patch={"progress": 3})
+        sync.outbox_enqueue(5115, patch={"progress": 4})
+        first = sync.outbox_items()[0]["id"]
+        self.assertTrue(sync.outbox_cancel(first))
+        self.assertFalse(sync.outbox_cancel(first))
+        self.assertEqual([it["media_id"] for it in sync.outbox_items()], [5115])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -288,7 +288,13 @@ def background_work(fn):
     return run
 
 
+# When AniList last answered a request: the outbox loop pushes held writes
+# right away once AniList is back after an outage (TODO 14).
+last_ok = 0.0
+
+
 def anilist_request(payload, token=None):
+    global last_ok
     for attempt in range(4):
         _anilist_slot()
         try:
@@ -300,7 +306,9 @@ def anilist_request(payload, token=None):
                 headers["Authorization"] = "Bearer " + token
             req = Request(ANILIST_URL, data=json.dumps(payload).encode(), headers=headers)
             with urlopen(req, timeout=20) as r:
-                return json.loads(r.read())
+                out = json.loads(r.read())
+            last_ok = time.time()
+            return out
         except Exception as e:
             if getattr(e, "code", None) == 429 and attempt < 3:
                 # Honour AniList's Retry-After (usually well under a minute)
