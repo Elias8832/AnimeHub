@@ -1,0 +1,67 @@
+{
+ "id": 209939,
+ "title": {
+  "romaji": "Sousou no Frieren 3rd Season",
+  "english": null,
+  "native": "葬送のフリーレン 第3期"
+ },
+ "format": "TV",
+ "status": "NOT_YET_RELEASED",
+ "episodes": null,
+ "duration": null,
+ "averageScore": null,
+ "season": "FALL",
+ "seasonYear": 2027,
+ "startDate": {
+  "year": 2027,
+  "month": 10,
+  "day": null
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx209939-g2Njkml1rheG.jpg"
+ },
+ "bannerImage": null,
+ "description": "The third season of <i>Sousou no Frieren</i>.",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 182255,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2026,
+      "month": 1,
+      "day": 16
+     },
+     "title": {
+      "romaji": "Sousou no Frieren 2nd Season",
+      "english": "Frieren: Beyond Journey’s End Season 2"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 118586,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2020,
+      "month": 4,
+      "day": 28
+     },
+     "title": {
+      "romaji": "Sousou no Frieren",
+      "english": "Frieren: Beyond Journey’s End"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

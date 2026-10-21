@@ -231,6 +231,28 @@ streamingEpisodes{title thumbnail}"""
 MEDIA_QUERY_SEARCH = "query($search:String){Media(search:$search,type:ANIME){" + MEDIA_FIELDS + "}}"
 MEDIA_QUERY_ID = "query($id:Int){Media(id:$id,type:ANIME){" + MEDIA_FIELDS + "}}"
 MEDIA_QUERY_CANDIDATES = "query($search:String){Page(perPage:10){media(search:$search,type:ANIME){" + MEDIA_FIELDS + "}}}"
+# One franchise entry (docs/franchise-page-plan.md): everything the franchise
+# page draws for it, plus the typed relation edges the franchise is built
+# from. tests/record_fixtures.py records the test fixtures with this query.
+FRANCHISE_FIELDS = """id title{romaji english native} synonyms format status episodes duration averageScore
+season seasonYear startDate{year month day} nextAiringEpisode{episode airingAt}
+coverImage{extraLarge} bannerImage description
+relations{edges{relationType node{id type format status startDate{year month day} title{romaji english}}}}
+streamingEpisodes{title thumbnail}"""
+FRANCHISE_QUERY_ID = "query($id:Int){Media(id:$id,type:ANIME){" + FRANCHISE_FIELDS + "}}"
+# Relations that keep two entries on one franchise page. SPIN_OFF,
+# ALTERNATIVE (FMA vs Brotherhood) and CHARACTER do not. OTHER joins only
+# an entry of these formats whose title is this one's plus a season number
+# (AniList links "Cyberpunk: Edgerunners 2" as OTHER, both ways).
+FRANCHISE_RELATIONS = {"SEQUEL", "PREQUEL", "PARENT", "SIDE_STORY", "SUMMARY"}
+# AniList's two sides of a link can disagree: Attack on Titan calls Junior
+# High a SPIN_OFF, Junior High calls AoT its PARENT. Either side naming one
+# of these keeps the two apart.
+FRANCHISE_SEPARATE = {"SPIN_OFF", "ALTERNATIVE", "CHARACTER"}
+FRANCHISE_OTHER_FORMATS = {"TV", "TV_SHORT", "ONA", "MOVIE"}
+# What a franchise page holds: no music videos. None is a just-announced
+# entry AniList hasn't given a format yet.
+FRANCHISE_FORMATS = {"TV", "TV_SHORT", "ONA", "OVA", "SPECIAL", "MOVIE", None}
 EPISODE_META_TTL = 12 * 3600
 
 _active = {}
@@ -681,8 +703,50 @@ def migration_10(c):
                  FROM season_thumbs WHERE anilist_id IS NOT NULL""")
 
 
+def migration_reserved(c):
+    """Versions 11–14 were used by the abandoned multi-season rework
+    (docs/franchise-page-plan.md): databases it ran on are already at 14
+    and keep its extra tables, which nothing reads. Nothing to do here."""
+
+
+migration_reserved.noop = True
+
+
+def migration_15(c):
+    """Franchise pages (docs/franchise-page-plan.md, phase 2): `media` keeps
+    each AniList entry as FRANCHISE_QUERY_ID returned it, `franchises` /
+    `franchise_members` which entries share one page and in which order.
+    Filled in the background (refresh_franchises); pages only read them."""
+    c.execute("""CREATE TABLE IF NOT EXISTS media(
+        id INTEGER PRIMARY KEY, data TEXT NOT NULL, ts REAL NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS franchises(
+        id INTEGER PRIMARY KEY, ts REAL NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS franchise_members(
+        media_id INTEGER PRIMARY KEY, franchise_id INTEGER NOT NULL, pos INTEGER NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS franchise_members_fid ON franchise_members(franchise_id, pos)")
+
+
+def migration_16(c):
+    """Local mapping (docs/franchise-page-plan.md, phase 3): which entry a
+    folder season is, is now worked out from the stored franchise on every
+    read, so `season_releases` only keeps the user's own pins (source
+    'manual'); the automatic rows older matchers wrote go. `entry_art` holds
+    each entry's episode stills and titles, keyed by the entry's own
+    episode numbers (season_thumbs keyed them per folder season)."""
+    c.execute("DELETE FROM season_releases WHERE COALESCE(source, 'auto') != 'manual'")
+    c.execute("""CREATE TABLE IF NOT EXISTS entry_art(
+        media_id INTEGER PRIMARY KEY, thumbs TEXT, titles TEXT, source TEXT, ts REAL NOT NULL)""")
+
+
+def migration_17(c):
+    """ani.zip files some entries' episodes as "O1".."On" (anizip_pick):
+    stills read from it before that was understood are fetched again."""
+    c.execute("DELETE FROM entry_art WHERE source = 'anizip'")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
-              migration_8, migration_9, migration_10]
+              migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
+              migration_reserved, migration_reserved, migration_15, migration_16, migration_17]
 
 
 def snapshot_before(target_version):
@@ -715,7 +779,8 @@ def init_db():
     for target, step in enumerate(MIGRATIONS, start=1):
         if target <= version:
             continue
-        snapshot_before(target)
+        if not getattr(step, "noop", False):
+            snapshot_before(target)
         with db() as c:
             # Re-check under the write lock: two processes may race startup.
             if c.execute("PRAGMA user_version").fetchone()[0] >= target:
@@ -947,9 +1012,7 @@ def merge_db(scan):
         rows = {r[0]: r[1:] for r in c.execute("SELECT id, watched, position, duration, last_played FROM episodes")}
         meta = {r[0]: r for r in c.execute(
             "SELECT show_id, anilist_id, title, year, score, overview, poster, banner, episodes_meta, format, fetched_at, episode_thumbs FROM shows_meta")}
-        season_rows = {}
-        for sid, key, th, ti in c.execute("SELECT show_id, sea_key, thumbs, titles FROM season_thumbs"):
-            season_rows.setdefault(sid, {})[key] = (json.loads(th) if th else None, json.loads(ti) if ti else None)
+        season_rows = {r[0] for r in c.execute("SELECT DISTINCT show_id FROM season_thumbs")}
     known = {ep["id"] for s in scan for ep in eps_of(s)}
     stamps = []
     if len(scan) >= MIN_VALID_SCAN:
@@ -987,7 +1050,6 @@ def merge_db(scan):
                 c.executemany("DELETE FROM tombstones WHERE kind=? AND key=?", have & back)
     for s in scan:
         m = meta.get(s["id"])
-        srows = season_rows.get(s["id"]) or {}
         if m:
             s["meta"] = {"anilist_id": m[1], "title": m[2], "year": m[3], "score": m[4], "overview": m[5],
                          "episodes_meta": json.loads(m[8]) if m[8] else None, "format": m[9],
@@ -999,8 +1061,6 @@ def merge_db(scan):
             s["poster"] = None
             s["banner"] = None
         for sea in s["seasons"]:
-            th, ti = srows.get(season_key(sea), (None, None))
-            sea["thumbs"], sea["titles"] = th, ti
             for ep in sea["episodes"]:
                 r = rows.get(ep["id"])
                 ep["watched"] = bool(r[0]) if r else False
@@ -1012,6 +1072,9 @@ def merge_db(scan):
                     # show/label it belongs to, so its history row stays
                     # human-readable even after the file leaves the disk.
                     stamps.append((ep["id"], s["id"], ep_label(sea, ep)))
+    # Which entry each season is, and its stills (phase 3): needs the match
+    # (meta) set above.
+    attach_releases(scan)
     with db() as c:
         c.executemany(
             """INSERT INTO episodes(id,show_id,label) VALUES(?,?,?)
@@ -1255,13 +1318,19 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
     Pure function: entries come from the cache, scan from scan_library()."""
     by_media = {}
     for s in scan:
-        aid = (s.get("meta") or {}).get("anilist_id")
-        if not aid:
-            continue
-        eps = sum(1 for x in s["seasons"] for ep in x["episodes"] if disk_ep(ep))
-        cur = by_media.get(aid)
-        if cur is None or eps > cur[1]:
-            by_media[aid] = (s, eps)
+        # Per entry (release_units): a multi-season folder feeds each entry
+        # its seasons map to its own disk count, never the folder total.
+        # A folder nothing maps for yet (its franchise isn't built) still
+        # counts for its own match, as a whole.
+        units = [(u["media_id"], [ep for ep, _ in u["eps"]]) for u in release_units(s)] or \
+            [((s.get("meta") or {}).get("anilist_id"), list(eps_of(s)))]
+        for aid, held in units:
+            if not aid:
+                continue
+            eps = sum(1 for ep in held if disk_ep(ep))
+            cur = by_media.get(aid)
+            if cur is None or eps > cur[1]:
+                by_media[aid] = (s, eps)
     listed = {e["id"] for e in entries}
     out = []
     for e in entries:
@@ -1292,27 +1361,27 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
     # an already-listed release is a fragment of a tracked release, not an
     # untracked show — the card deep-links to the fuller one.
     untracked = [s["id"] for s in scan
-                 if (s.get("meta") or {}).get("anilist_id") not in listed]
+                 if (s.get("meta") or {}).get("anilist_id") not in listed
+                 and not any(u["media_id"] in listed for u in release_units(s))]
     return {"entries": out, "untracked": untracked, "mode": "anilist"}
 
 
 def apply_anilist_watched(shows, entries):
     """Settings → Advanced AniList → "Watched marks from AniList": episodes
-    up to the entry's progress read as watched, later ones as unwatched.
+    up to their entry's progress read as watched, later ones as unwatched.
     Display only — hub.db keeps the local marks, so switching back restores
-    them. Same mapping guard as progress sync (anilist_track_show): one
-    release per single-season folder, files within the release's total."""
+    them. Per entry (release_units), with the same fit rule as progress
+    sync, so each season of a folder follows its own entry."""
     prog = {e["id"]: (e.get("progress") or 0, e.get("episodes")) for e in entries}
     for s in shows:
-        aid = (s.get("meta") or {}).get("anilist_id")
-        if aid not in prog or len(s["seasons"]) != 1:
-            continue
-        done, total = prog[aid]
-        eps = [e for e in s["seasons"][0]["episodes"] if isinstance(e["number"], int) and e["number"] >= 1]
-        if total and len(eps) > total:
-            continue
-        for e in eps:
-            e["watched"] = e["number"] <= done
+        for u in release_units(s):
+            if u["media_id"] not in prog:
+                continue
+            done, total = prog[u["media_id"]]
+            if not unit_fits(u, total):
+                continue
+            for ep, n in u["eps"]:
+                ep["watched"] = n <= done
 
 
 def spine_favourites(cached):
@@ -1395,6 +1464,7 @@ def spine_build_local(scan, curations, streams=()):
                     "capability": ("installed" if on_disk == total else
                                    "partial" if on_disk else "online"),
                     "installed": on_disk,
+                    "media_id": aid,
                     "local_show_id": s["id"]})
     return {"entries": out, "untracked": [], "mode": "local"}
 
@@ -1407,7 +1477,7 @@ def full_library():
     # ("aid:<id>"), carried beside the scan. merge_db ran first, so scan
     # health, matching and tombstones stay about the disk.
     links = stream_links_all()
-    streams = merge_streams(scan, stream_shows(scan, links))
+    streams = stream_shows(scan, links)
     # Spine (TODO 8, Decision 4): AniList lists merged with the library —
     # from the cache only, so the frequent library poll never waits on the
     # network. Absent until the first /api/anilist fetch or boot warm-up.
@@ -1432,6 +1502,8 @@ def full_library():
         # yet (the boot warm-up fills it); the UI renders the plain local
         # grid meanwhile.
         spine = None
+    if spine:
+        tag_franchises(spine["entries"])
     if cached and automation_enabled("anilist_watched"):
         apply_anilist_watched(scan + streams, cached["entries"])
     continue_row = []
@@ -1500,7 +1572,7 @@ def episode_by_id(eid):
     scan, streams = library_shows()  # merge_db attaches the watch facts
     for s in scan + streams:
         for ep in eps_of(s):
-            if ep["id"] == eid or ep.get("stream_id") == eid:
+            if ep["id"] == eid:
                 return s, ep
     if eid.startswith("stream:"):
         s = release_show(stream_media_id(eid))
@@ -1512,18 +1584,11 @@ def episode_by_id(eid):
 
 def media_by_id(show_id):
     """The local show container with this id (sibling of episode_by_id at
-    the show level) — used by the entry surface to attach local context
-    and by bulk marks (TODO 6); the watch facts ride along (merge_db) so
-    AniList sync sees the real watched state. "aid:<id>" is an online
-    release (the ani-cli bridge) — the disk show it is merged into, if any."""
+    the show level) — used by bulk marks (TODO 6); the watch facts ride
+    along (merge_db) so AniList sync sees the real watched state.
+    "aid:<id>" is a release's online episodes (the ani-cli bridge)."""
     scan, streams = library_shows()
-    for s in scan + streams:
-        if s["id"] == show_id:
-            return s
-    if show_id.startswith("aid:"):
-        mid = stream_media_id(show_id)
-        return next((s for s in scan if s.get("stream") and s["meta"]["anilist_id"] == mid), None)
-    return None
+    return next((s for s in scan + streams if s["id"] == show_id), None)
 
 
 def _completion_event(media_id, title):
@@ -1561,19 +1626,22 @@ _completion_lock = threading.Lock()
 _completion_pending = []
 
 
-def anilist_track_show(s, manual=False):
+def anilist_track_show(s, manual=False, only=None):
     """Sync one local show against the cached AniList state — Decision 21's
-    highest-watched progress plus Decision 5's consent-gated auto-add.
-    All writes ride the outbox (TODO 14): offline/backoff/dedupe handled
-    once. Compares against the cache only — never a synchronous read — and
-    skips silently when it's cold; the next watched episode catches up.
-    Container guards mirror reconcile_analyze: per-season episode numbers
-    map onto one release only for single-season folders, and installed
-    files may not exceed the release's total.
+    highest-watched progress plus Decision 5's consent-gated auto-add, per
+    entry (release_units): each mapped season, or part of one, syncs to its
+    own entry with the entry's own episode numbers; unmapped seasons stay
+    local. All writes ride the outbox (TODO 14): offline/backoff/dedupe
+    handled once. Compares against the cache only — never a synchronous
+    read — and skips silently when it's cold; the next watched episode
+    catches up. An entry's files may not exceed its total (unit_fits).
     manual=True (TODO 6 bulk marks): an explicit user click syncs even when
     the auto_progress_sync automation is off (Decision 27 — a button you
     pressed is you acting, not an automation); the auto-add consent toggle
-    still gates unlisted shows. Returns the enqueued patch, or None."""
+    still gates unlisted entries. `only` (episode ids) limits the sync to
+    the entries holding those episodes — playing S3E5 never touches S1's
+    entry. Returns the enqueued patch (one entry), {media id: patch}
+    (several), or None."""
     if not anilist_connected():
         return None
     add = automation_enabled("auto_add_watch")
@@ -1582,55 +1650,49 @@ def anilist_track_show(s, manual=False):
     cached = anilist_cache_read()
     if not cached:
         return None
-    aid = (s.get("meta") or {}).get("anilist_id")
-    if not aid:
-        return None  # unmatched — the background pass may match it later
-    remote = next((e for e in cached.get("entries", []) if e.get("id") == aid), None)
-    single = len(s["seasons"]) == 1
-    watched = [x["number"] for sea in s["seasons"]
-               for x in sea["episodes"] if x["watched"]]
-    highest = max(watched) if watched else 0
-    # Decision 19's rule: never send a container-spanning count to a single
-    # release's progress. One release ⇔ one season; when the release is
-    # known, the folder's files must not exceed its total.
-    if remote is not None:
-        total = remote.get("episodes")
-        # An unknown total (airing show, `episodes: null`) is still one
-        # release — only a known total can rule a folder out (Decision 21).
-        mappable = single and (not total or sum(len(x["episodes"]) for x in s["seasons"]) <= total)
-        if not mappable or highest <= (remote.get("progress") or 0):
-            return None
-        if outbox_pending_for(aid):
-            # Offline E5 then E6: fold the newer count into the queued
-            # progress-only row instead of dropping it.
-            return {"progress": highest} if outbox_raise_progress(aid, highest) else None
-        patch = {"progress": highest}
-        outbox_enqueue(aid, patch=patch)
-        return patch
-    if not add:
+    entries = {e.get("id"): e for e in cached.get("entries", [])}
+    patches = {}
+    for u in release_units(s):
+        if only is not None and not any(ep["id"] in only for ep, _ in u["eps"]):
+            continue
+        aid = u["media_id"]
+        watched = [n for ep, n in u["eps"] if ep["watched"]]
+        highest = max(watched) if watched else 0
+        remote = entries.get(aid)
+        if remote is not None:
+            if not unit_fits(u, remote.get("episodes")) or highest <= (remote.get("progress") or 0):
+                continue
+            if outbox_pending_for(aid):
+                # Offline E5 then E6: fold the newer count into the queued
+                # progress-only row instead of dropping it.
+                if outbox_raise_progress(aid, highest):
+                    patches[aid] = {"progress": highest}
+                continue
+            patches[aid] = {"progress": highest}
+            outbox_enqueue(aid, patch=patches[aid])
+            continue
+        # Unlisted: consent-gated auto-add, and only an entry the user
+        # actually watched part of — never the whole franchise at once.
+        if not add or not highest or outbox_pending_for(aid) or not unit_fits(u, u.get("total")):
+            continue
+        patches[aid] = {"status": "CURRENT", "progress": highest}
+        outbox_enqueue(aid, patch=patches[aid])
+    if not patches:
         return None
-    if outbox_pending_for(aid):
-        return None
-    patch = {"status": "CURRENT"}
-    if single:
-        # No remote total to check against (the show isn't listed) — a
-        # single-season folder's highest watched number is a safe, honest
-        # progress; a container gets status only.
-        patch["progress"] = highest
-    outbox_enqueue(aid, patch=patch)
-    return patch
+    return next(iter(patches.values())) if len(patches) == 1 else patches
 
 
 def auto_track_after_play(ep_id):
     """The Decision 5 automations, evaluated after PLAYBACK marks an
     episode watched (manual marks use their own path — TODO 6). Delegates
-    to anilist_track_show with the automations' consent rules."""
+    to anilist_track_show with the automations' consent rules, for the
+    played episode's entry only."""
     if not anilist_connected():
         return None
     s, ep = episode_by_id(ep_id)
     if not s or not ep:
         return None
-    return anilist_track_show(trackable(s))
+    return anilist_track_show(trackable(s), only={ep["id"]})
 
 
 def bulk_watched(show_id, season=None, watched=True, ids=None):
@@ -1638,12 +1700,11 @@ def bulk_watched(show_id, season=None, watched=True, ids=None):
     container — watched (or unwatched) in one go. This is bookkeeping for
     shows watched before the app existed, NOT playback: no completion event
     fires (Decision 25), manual marks use this separate path. The local
-    facts flip first, then Decision 27's sync: the matched release's
-    published progress becomes the highest watched episode (single-release
-    containers; multi-season folders stay local-only until the
-    release-mapping work, and unwatching stays local — AniList corrections
-    stay on the entry panel). `ids` (multi-select) limits the mark to those
-    episodes of the show. Returns a small report for the UI."""
+    facts flip first, then Decision 27's sync: each touched entry's
+    published progress becomes its highest watched episode (release_units —
+    unmapped seasons stay local), and unwatching stays local (AniList
+    corrections stay on the entry panel). `ids` (multi-select) limits the
+    mark to those episodes of the show. Returns a small report for the UI."""
     s = media_by_id(show_id)
     if not s:
         return {"error": "unknown show"}
@@ -1669,7 +1730,7 @@ def bulk_watched(show_id, season=None, watched=True, ids=None):
         for ep in eps:
             ep["watched"] = 1
         try:
-            synced = anilist_track_show(trackable(s), manual=True)
+            synced = anilist_track_show(trackable(s), manual=True, only={ep["id"] for ep in eps})
         except Exception as exc:
             log("bulk sync failed: %s" % exc)
     return {"ok": True, "episodes": len(eps), "watched": bool(watched),
@@ -1679,31 +1740,28 @@ def bulk_watched(show_id, season=None, watched=True, ids=None):
 def completion_for_episode(ep_id):
     """Decision 25's trigger, evaluated after a PLAYBACK session completes an
     episode (never after manual marking — separate code path). Fires when
-    the finished episode is the matched release's final one and the disk
-    copy doesn't extend past that release: multi-season containers whose
-    matched release is only one part of the folder stay silent (their other
-    releases aren't matched yet), and releases with an unknown AniList total
-    (airing) can't fire until the total is known."""
+    the finished episode is the final one of its own entry (release_units:
+    S2's finale completes S2's entry, whatever folder it sits in) and the
+    disk copy fits that entry. Unmapped seasons stay silent, and entries
+    with an unknown total (airing) can't fire until the total is known."""
     s, ep = episode_by_id(ep_id)
     if not s or not ep:
         return
-    s = trackable(s)
-    aid = (s.get("meta") or {}).get("anilist_id")
-    if not aid:
+    unit, n = unit_of_episode(trackable(s), ep_id)
+    if not unit:
         return
-    total = None
+    aid = unit["media_id"]
+    total, title = None, None
     cached = anilist_cache_read()
     if cached:
         for e in cached.get("entries", []):
             if e.get("id") == aid:
-                total = e.get("episodes")
+                total, title = e.get("episodes"), e.get("title")
                 break
-    if not total or not ep.get("number") or ep["number"] != total:
+    total = total or unit.get("total")
+    if not total or n != total or not unit_fits(unit, total):
         return
-    installed = sum(len(x["episodes"]) for x in s["seasons"])
-    if installed > total:
-        return  # container spans more releases than the matched one
-    _completion_event(aid, (s.get("meta") or {}).get("title") or s["title"])
+    _completion_event(aid, title or (s.get("meta") or {}).get("title") or s["title"])
 
 
 def set_watched(eid, watched):
@@ -1799,9 +1857,10 @@ def mpv_ipc(sock_path, command, timeout=2.0):
 
 
 def season_rank(sea):
-    """One authoritative season order (TODO 24), mirrored exactly by the
-    UI's seasonRank (web/app.js): main seasons first, parts continuing
-    after them, then finales, movies, and everything else (Specials). The
+    """One authoritative season order (TODO 24) — the UI shows a folder's
+    seasons in the order the scan gives them: main seasons first, parts
+    continuing after them, then finales, movies, and everything else
+    (Specials). The
     scanner's numeric key alone cannot express this — Part N without a
     Season parent shares Season 1's key, so autoplay chained parts before
     season 1 while the UI showed seasons first."""
@@ -1825,9 +1884,46 @@ def ordered_seasons(s):
     return sorted(s["seasons"], key=season_rank)
 
 
+def entry_of_episode(ep_id):
+    """(AniList entry, its own episode number) an episode is: an online id
+    names it; a file is what its folder season maps to. None for a file
+    that maps to no entry."""
+    if ep_id.startswith("stream:"):
+        mid = stream_media_id(ep_id)
+        try:
+            return (mid, _stream_num(ep_id.split(":", 2)[2])) if mid else None
+        except ValueError:
+            return None
+    s, ep = episode_by_id(ep_id)
+    if not ep:
+        return None
+    unit, n = unit_of_episode(trackable(s), ep_id)
+    return (unit["media_id"], n) if unit else None
+
+
 def next_episode(ep_id):
-    """The episode after ep_id: next number in the same season, else the first
-    episode of the following season. None at the end of the show."""
+    """The episode id to play after ep_id, on its franchise page: the next
+    episode of the same entry, else the first of the next main season.
+    Files and online episodes chain into each other (the last file of a
+    season → the first episode not on disk, played online). An episode that
+    can't play (not available online) ends the chain rather than skipping
+    ahead. A file that maps to no entry walks its folder instead. None at
+    the end."""
+    at = entry_of_episode(ep_id)
+    if at:
+        mid, n = at
+        entries = franchise_view(mid, background=False)["entries"]
+        e = next((x for x in entries if x["id"] == mid), None)
+        if e:
+            def playable(entry, x):
+                return x and (x["local"] or (x["online"] and entry["online"]["available"])) and x["id"]
+
+            nxt = next((x for x in e["slots"] if x["number"] > n), None)
+            if nxt or e["group"] != "main":
+                return playable(e, nxt) or None
+            mains = [x for x in entries if x["group"] == "main"]
+            later = mains[mains.index(e) + 1:]
+            return (playable(later[0], later[0]["slots"][0]) or None) if later and later[0]["slots"] else None
     s, ep = episode_by_id(ep_id)
     if not ep:
         return None
@@ -1836,12 +1932,12 @@ def next_episode(ep_id):
         return None
     after = [e for e in sea["episodes"] if e["number"] > ep["number"]]
     if after:
-        return min(after, key=lambda e: e["number"])
+        return min(after, key=lambda e: e["number"])["id"]
     seasons = ordered_seasons(s)
     for nxt in seasons[seasons.index(sea) + 1:]:
         eps = sorted(nxt["episodes"], key=lambda e: e["number"])
         if eps:
-            return eps[0]
+            return eps[0]["id"]
     return None
 
 
@@ -1849,13 +1945,12 @@ def autoplay_next(ep_id, version=0):
     """Chain into the episode after ep_id, carrying the chosen file version
     (TODO 24): the same index into the next episode's parallel file list
     keeps the user's picked variant instead of resetting to the first one;
-    start_play clamps it to what exists. Streamed episodes chain the same
-    way: next_episode walks the stream show's list, and an episode that is
-    on disk by now plays from disk."""
+    start_play clamps it to what exists. Files and online episodes chain
+    into each other along the franchise page (next_episode)."""
     try:
         nxt = next_episode(ep_id)
         if nxt:
-            start_play(nxt["id"], version)
+            start_play(nxt, version)
     except Exception as e:
         print(f"Autoplay: {e}", file=sys.stderr, flush=True)
 
@@ -2538,6 +2633,10 @@ def _count_fits(episodes, m):
     """ani-cli's episode list against AniList's count: a merged-seasons
     listing or a different show of the same name fails here."""
     n = sum(1 for e in episodes if re.fullmatch(r"\d+", e) and int(e) >= 1)
+    if m.get("status") == "NOT_YET_RELEASED":
+        # Nothing has aired: any listed episodes belong to another show
+        # ("Chainsaw Man" for the announced "Chainsaw Man: Shikaku-hen").
+        return False
     nxt = (m.get("nextAiringEpisode") or {}).get("episode")
     if m.get("status") == "RELEASING" and nxt:
         aired = nxt - 1
@@ -2681,6 +2780,8 @@ def stream_autolink(media_id, rematch=False):
                 raise AniCliError("Couldn't reach AniList — check your connection.")
             if not m:
                 raise AniCliError(STREAM_UNAVAILABLE)
+            if m.get("status") == "NOT_YET_RELEASED":
+                raise AniCliError("This isn't out yet.")  # no miss: it will be
             try:
                 found = stream_match(m)
             except AniCliError as e:
@@ -2780,36 +2881,37 @@ def disk_ep(ep):
     return not ep["id"].startswith("stream:")
 
 
-def local_release_eps(scan):
-    """AniList id → (disk show, {episode number: episode}) for folders that
-    map onto one release — single-season folders, the same rule progress
-    sync uses (Decision 19). The fullest folder wins, as in spine_build.
-    Reads disk episodes only (scan before merge_streams)."""
-    out = {}
+def entry_files(scan, media_id):
+    """{the entry's own episode number: episode} of every file that maps to
+    it (release_units), and the folder downloads for it go to: the folder
+    season holding its files under its own numbers (files are saved as
+    "… Episode N"), or None."""
+    eps, homes = {}, {}
     for s in scan:
-        aid = (s.get("meta") or {}).get("anilist_id")
-        if not aid or len(s["seasons"]) != 1:
-            continue
-        eps = {ep["number"]: ep for ep in s["seasons"][0]["episodes"] if disk_ep(ep)}
-        if aid not in out or len(eps) > len(out[aid][1]):
-            out[aid] = (s, eps)
-    return out
+        for u in release_units(s):
+            if u["media_id"] != media_id:
+                continue
+            for ep, n in u["eps"]:
+                if disk_ep(ep):
+                    eps.setdefault(n, ep)
+            for i in u["seasons"]:
+                sea = s["seasons"][i]
+                if any(r["id"] == media_id and r["offset"] == 0 and r["last_ep"] is None for r in sea["releases"]):
+                    folder = (LIBRARY / sea["episodes"][0]["rel"]).parent
+                    homes[folder] = homes.get(folder, 0) + len(sea["episodes"])
+    return eps, max(homes, key=homes.get) if homes else None
 
 
-def _stream_show(link, rows, local, extra=None):
-    """A release in the scanned-show shape, so the show page, history,
-    autoplay and bulk marks treat it like any other show. An episode that
-    is also on disk is the disk episode (its id and facts)."""
+def _stream_show(link, rows, extra=None):
+    """A release's online episodes in the scanned-show shape, so history,
+    continue watching, playback and progress sync read them like any other
+    episodes. Files of the same release are their own episodes; the
+    franchise page shows the two as one."""
     mid, meta = link["media_id"], link["meta"]
-    loc_show, loc_eps = local or (None, {})
     eps = []
     for token in link["episodes"]:
         sid = f"stream:{mid}:{token}"
         num = _stream_num(token)
-        twin = loc_eps.get(num)
-        if twin:
-            eps.append(dict(twin, number=num, stream_id=sid, token=token, installed=True))
-            continue
         r = rows.get(sid)
         eps.append({"id": sid, "stream_id": sid, "token": token, "number": num, "rel": None,
                     "files": [], "season": 1, "season_label": "Episodes", "installed": False,
@@ -2822,12 +2924,15 @@ def _stream_show(link, rows, local, extra=None):
             "meta": {"anilist_id": mid, "title": title, "year": meta.get("year"),
                      "score": meta.get("score"), "overview": meta.get("overview"),
                      "format": meta.get("format"), "episodes_meta": None, "episode_thumbs": None},
+            # One season that is the release itself, so progress sync and
+            # completion (release_units) count its episodes for it.
             "seasons": [{"key": 1, "season": 1, "label": "Episodes", "episodes": eps,
-                         "thumbs": meta.get("thumbs"), "titles": meta.get("titles")}],
+                         "thumbs": meta.get("thumbs"), "titles": meta.get("titles"),
+                         "releases": [{"id": mid, "first_ep": 1, "last_ep": None, "offset": 0,
+                                       "total": meta.get("episodes")}]}],
             "stream": {"mode": link["mode"], "total": meta.get("episodes"),
                        "matched_by": link.get("matched_by"),
-                       "stale": time.time() - link["episodes_ts"] > STREAM_EPISODES_TTL,
-                       "local_show_id": loc_show["id"] if loc_show else None, **(extra or {})}}
+                       "stale": time.time() - link["episodes_ts"] > STREAM_EPISODES_TTL, **(extra or {})}}
 
 
 def _stream_rows():
@@ -2841,40 +2946,16 @@ def stream_shows(scan, links=None):
     links = stream_links_all() if links is None else links
     if not links:
         return []
-    rows, local = _stream_rows(), local_release_eps(scan)
-    return [_stream_show(link, rows, local.get(link["media_id"])) for link in links]
-
-
-def merge_streams(scan, streams):
-    """One show per anime: a linked release with a single-season disk folder
-    is folded into that folder's show — its online episodes join the disk
-    ones in the same season list. Releases without a folder stay shows of
-    their own ("aid:<id>"), which this returns."""
-    by_id = {s["id"]: s for s in scan}
-    standalone = []
-    for st in streams:
-        loc = by_id.get(st["stream"]["local_show_id"])
-        if not loc:
-            standalone.append(st)
-            continue
-        sea, online = loc["seasons"][0], st["seasons"][0]
-        listed = {e["number"] for e in online["episodes"]}
-        eps = [e if e.get("installed") else dict(e, season=sea["season"], season_label=sea["label"])
-               for e in online["episodes"]]
-        eps += [e for e in sea["episodes"] if e["number"] not in listed]
-        sea["episodes"] = sorted(eps, key=lambda e: e["number"])
-        sea["thumbs"] = sea.get("thumbs") or online["thumbs"]
-        sea["titles"] = sea.get("titles") or online["titles"]
-        loc["stream"] = st["stream"]
-    return standalone
+    rows = _stream_rows()
+    return [_stream_show(link, rows) for link in links]
 
 
 def library_shows():
-    """(disk shows with their online episodes merged in, standalone online
-    shows) — the one view of "a show" every lookup goes through."""
+    """(disk shows, online shows) — the one view of "a show" every episode
+    lookup goes through."""
     scan = scan_library()
     merge_db(scan)
-    return scan, merge_streams(scan, stream_shows(scan))
+    return scan, stream_shows(scan)
 
 
 def stream_media_id(ref):
@@ -2897,25 +2978,8 @@ def release_show(media_id):
             "episodes": [str(n) for n in range(1, release_aired(m) + 1)], "episodes_ts": time.time(),
             "meta": disp}
     unavailable = not anicli_path() or media_id in stream_missed_ids()
-    return _stream_show(link, _stream_rows(), None,
+    return _stream_show(link, _stream_rows(),
                         {"provisional": True, "unavailable": unavailable, "ready": bool(anicli_path())})
-
-
-def release_payload(media_id):
-    """GET /api/release: the show page for any AniList release."""
-    link = stream_link_get(media_id)
-    if link:
-        scan, standalone = library_shows()
-        show = next((x for x in standalone if x["id"] == f"aid:{media_id}"), None) or next(
-            (x for x in scan if (x.get("meta") or {}).get("anilist_id") == media_id and x.get("stream")), None)
-        return {"show": show, "resolving": False}
-    stream_resolve_async(media_id)
-    try:
-        show = release_show(media_id)
-    except Exception as e:
-        log("release %s failed: %s" % (media_id, e))
-        show = None
-    return {"show": show, "resolving": media_id in _resolving}
 
 
 def trackable(s):
@@ -2997,8 +3061,6 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False):
     s, ep = episode_by_id(ep_id)
     if not ep:
         return {"error": "unknown episode"}
-    if ep["id"] != ep_id:
-        return start_play(ep["id"])  # on disk now — the file plays
     sea = next(x for x in s["seasons"] if any(e is ep for e in x["episodes"]))
     label = session_label(sea, ep)
     code = f"E{token}"
@@ -3079,17 +3141,15 @@ _dl_state = {"seq": 0, "worker": None}
 
 
 def stream_download_dir(link, scan):
-    """Where a release's downloads go: the folder of its single-season disk
-    show when there is one, else a folder named after the release."""
+    """Where a release's downloads go: the folder season its files are in
+    (entry_files), else a folder named after the release."""
     if LIBRARY is None:
         raise AniCliError("Choose a library folder in Settings first — downloads are saved there.")
     if not LIBRARY.is_dir():
         raise AniCliError(f"The library folder {LIBRARY} is not accessible right now.")
-    loc = local_release_eps(scan).get(link["media_id"])
-    if loc and loc[1]:
-        parent = (LIBRARY / next(iter(loc[1].values()))["rel"]).parent
-        if parent != LIBRARY:
-            return parent
+    home = entry_files(scan, link["media_id"])[1]
+    if home and home != LIBRARY:
+        return home
     name = link["meta"].get("title") or link["title"] or link["query"]
     # Plain quotes, as people type folder names (AniList titles use ’ “ ”).
     name = name.translate(str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'}))
@@ -3114,8 +3174,7 @@ def download_enqueue(media_id, tokens):
         dest = stream_download_dir(link, scan)
     except AniCliError as e:
         return {"error": str(e)}
-    loc = local_release_eps(scan).get(media_id)
-    on_disk = set(loc[1]) if loc else set()
+    on_disk = set(entry_files(scan, media_id)[0])
     title = link["meta"].get("title") or link["title"] or link["query"]
     added = 0
     with _dl_cv:
@@ -3288,8 +3347,49 @@ def _dl_adopt(media_id, dest):
         log("matching downloaded folder failed: %s" % e)
 
 
+# One pace for every AniList request, so none of them hits the rate limit
+# (each 429 parks a thread for up to a minute). AniList allows ~30 a minute
+# while degraded; background passes (`_al_ctx.background`) leave a reserve,
+# so a page someone just opened is fetched at once.
+ANILIST_PER_MIN = 28
+ANILIST_BACKGROUND_PER_MIN = 20
+_al_gate = threading.Lock()
+_al_times = []
+_al_ctx = threading.local()
+
+
+def _anilist_try(limit, now):
+    """Take a request slot in the last minute's window: 0 when taken, else
+    the seconds until one frees up."""
+    with _al_gate:
+        _al_times[:] = [t for t in _al_times if now - t < 60]
+        if len(_al_times) < limit:
+            _al_times.append(now)
+            return 0
+        return 60 - (now - _al_times[0])
+
+
+def _anilist_slot():
+    limit = ANILIST_BACKGROUND_PER_MIN if getattr(_al_ctx, "background", False) else ANILIST_PER_MIN
+    while True:
+        wait = _anilist_try(limit, time.time())
+        if not wait:
+            return
+        time.sleep(min(max(wait, 0.05), 2))
+
+
+def background_work(fn):
+    """Run `fn` as background AniList work: it keeps a reserve free for
+    what the user is waiting on."""
+    def run(*args, **kwargs):
+        _al_ctx.background = True
+        return fn(*args, **kwargs)
+    return run
+
+
 def anilist_request(payload, token=None):
     for attempt in range(4):
+        _anilist_slot()
         try:
             headers = {"Content-Type": "application/json", "Accept": "application/json",
                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) anime-hub/1.0"}
@@ -3360,15 +3460,18 @@ def parse_seps(seps):
     return {"thumbs": thumbs or None, "titles": titles or None}
 
 
-def commit_thumbs(anilist_id, parsed):
-    """Download parsed thumbnail urls into EPIMGS in parallel; returns {int(n): "/epimg/..."}."""
+def commit_thumbs(anilist_id, parsed, prefix=""):
+    """Download parsed thumbnail urls into EPIMGS in parallel; returns {int(n): "/epimg/..."}.
+    `prefix` keeps a second source's files apart from AniList's."""
     items = list((parsed["thumbs"] or {}).items())
     if not items:
         return {}
 
     def fetch_one(kv):
         k, url = kv
-        fname = f"{anilist_id}.{k}.jpg"
+        # The url is part of the name: a corrected listing must not reuse
+        # the picture an earlier, wrong one left under the same number.
+        fname = f"{prefix}{anilist_id}.{k}.{hashlib.sha1(url.encode()).hexdigest()[:8]}.jpg"
         dest = EPIMGS / fname
         if (dest.exists() and dest.stat().st_size) or download(url, dest):
             return int(k), f"/epimg/{fname}"
@@ -3703,8 +3806,8 @@ def clear_match(show_id):
     `episodes` and untouched (Decision 17.2). The next pass re-attempts."""
     with db() as c:
         c.execute("DELETE FROM shows_meta WHERE show_id=?", (show_id,))
-        # Per-season art/mapping belongs to the old match too; fetch_season_thumbs
-        # only fills missing keys, so stale rows would outlive any re-match.
+        # Old per-season art (season_thumbs, no longer written) goes with it.
+        # Season pins stay: they name entries, not the folder's match.
         c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
     overrides = load_overrides()
     changed = False
@@ -4156,9 +4259,9 @@ def reconcile_analyze():
     directions, guarded); curation conflicts come back as rows. Only shows
     whose matched release is ALSO on the user's lists participate — pushing
     facts to an unlisted show would create list entries, which is the
-    consent-gated auto-track domain (Decision 5, TODO 15). Multi-season
-    containers are skipped for facts: their episode numbers don't map 1:1
-    onto the one matched release (the release-matcher work owns that)."""
+    consent-gated auto-track domain (Decision 5, TODO 15). Per entry
+    (release_units): each mapped season of a folder reconciles against its
+    own entry; unmapped seasons sit out."""
     tok = load_token()
     if not tok or not tok.get("user_id"):
         return {"pending": False, "facts": [], "conflicts": []}
@@ -4172,54 +4275,56 @@ def reconcile_analyze():
     remote = {e["id"]: e for e in data.get("entries", [])}
     fmt = data.get("score_format") or "POINT_10"
     facts, conflicts = [], []
-    for s in scan_library():
-        aid = (s.get("meta") or {}).get("anilist_id")
-        if not aid or aid not in remote:
-            continue
-        e = remote[aid]
-        total = e.get("episodes")
-        installed = sum(len(x["episodes"]) for x in s["seasons"])
-        single = len(s["seasons"]) == 1
-        # Facts (automatic). Both directions; container guard like the
-        # completion trigger, plus the single-season numbering rule. An
-        # unknown total (airing) can't rule the folder out.
-        if single and (not total or installed <= total):
-            watched = [ep["number"] for x in s["seasons"]
-                       for ep in x["episodes"] if ep["watched"]]
-            local_highest = max(watched) if watched else 0
-            remote_progress = e.get("progress") or 0
-            if local_highest > remote_progress:
-                if not outbox_pending_for(aid):
-                    outbox_enqueue(aid, patch={"progress": local_highest})
-                facts.append({"show": s["title"], "kind": "progress",
-                              "remote": remote_progress, "local": local_highest})
-            elif remote_progress > local_highest:
-                marked = []
-                for x in s["seasons"]:
-                    for ep in x["episodes"]:
-                        if not ep["watched"] and ep["number"] and                                 ep["number"] <= remote_progress:
-                            set_watched(ep["id"], True)
-                            marked.append(ep["number"])
-                if marked:
-                    facts.append({"show": s["title"], "kind": "watched",
+    scan = scan_library()
+    merge_db(scan)  # the folder's match, season map and watch facts live in hub.db
+    seen = set()
+    for s in scan:
+        for u in release_units(trackable(s)):
+            aid = u["media_id"]
+            if aid not in remote or aid in seen:
+                continue
+            seen.add(aid)
+            e = remote[aid]
+            label = e.get("title") or s["title"]
+            # Facts (automatic). Both directions, per entry, in the entry's
+            # own numbering; a folder that doesn't fit the entry is never
+            # pushed (unit_fits). An unknown total (airing) can't rule it out.
+            if unit_fits(u, e.get("episodes")):
+                watched = [n for ep, n in u["eps"] if ep["watched"]]
+                local_highest = max(watched) if watched else 0
+                remote_progress = e.get("progress") or 0
+                if local_highest > remote_progress:
+                    if not outbox_pending_for(aid):
+                        outbox_enqueue(aid, patch={"progress": local_highest})
+                    facts.append({"show": label, "kind": "progress",
                                   "remote": remote_progress, "local": local_highest})
-        # Curation (user decides): only when the local overlay holds an
-        # opinion — a never-touched show has no local values to defend.
-        cur = curation_get("aid:%d" % aid) or {}
-        r_status, l_status = e.get("status"), cur.get("status")
-        r_score = _score_norm(e.get("score100"), fmt)
-        l_score = _score_norm(cur.get("score"), fmt)
-        status_diff = l_status and r_status and l_status != r_status
-        score_diff = l_score is not None and r_score is not None and             abs(l_score - r_score) > 0.51
-        if status_diff or score_diff:
-            conflicts.append({
-                "media_id": aid, "show_id": s["id"], "title": s["title"],
-                "remote": {"status": r_status, "score": e.get("score")},
-                "local": {"status": l_status, "score": cur.get("score")},
-                "diff": ("status" if status_diff else "") +
-                        ("+score" if status_diff and score_diff else
-                         ("score" if score_diff else "")),
-            })
+                elif remote_progress > local_highest:
+                    marked = []
+                    for ep, n in u["eps"]:
+                        if not ep["watched"] and n <= remote_progress:
+                            set_watched(ep["id"], True)
+                            marked.append(n)
+                    if marked:
+                        facts.append({"show": label, "kind": "watched",
+                                      "remote": remote_progress, "local": local_highest})
+            # Curation (user decides): only when the local overlay holds an
+            # opinion — a never-touched show has no local values to defend.
+            cur = curation_get("aid:%d" % aid) or {}
+            r_status, l_status = e.get("status"), cur.get("status")
+            r_score = _score_norm(e.get("score100"), fmt)
+            l_score = _score_norm(cur.get("score"), fmt)
+            status_diff = l_status and r_status and l_status != r_status
+            score_diff = l_score is not None and r_score is not None and \
+                abs(l_score - r_score) > 0.51
+            if status_diff or score_diff:
+                conflicts.append({
+                    "media_id": aid, "show_id": s["id"], "title": label,
+                    "remote": {"status": r_status, "score": e.get("score")},
+                    "local": {"status": l_status, "score": cur.get("score")},
+                    "diff": ("status" if status_diff else "") +
+                            ("+score" if status_diff and score_diff else
+                             ("score" if score_diff else "")),
+                })
     return {"pending": True, "facts": facts, "conflicts": conflicts}
 
 
@@ -4377,24 +4482,21 @@ def refresh_meta():
                 pass
             _meta_status["pending"] -= 1
             time.sleep(2.2)
-        # Missing episode art is a normal banner fallback, cached like a successful lookup.
         merge_db(scan)
-        with db() as c:
-            c.execute("DELETE FROM season_thumbs WHERE thumbs IS NULL AND COALESCE(ts,0) < ?",
-                      (time.time() - EPISODE_META_TTL,))
-            have_keys = {(r[0], r[1]) for r in c.execute("SELECT show_id, sea_key FROM season_thumbs")}
-        todo = [s for s in scan if s["meta"] and s["meta"].get("anilist_id")
-                and any(sea["episodes"] and (s["id"], season_key(sea)) not in have_keys
-                        for sea in s["seasons"])]
-        _meta_status["pending"] = len(todo)
+        _meta_status["phase"] = "franchises"
+        _meta_status["current"] = None
+        try:
+            refresh_franchises(franchise_seeds(scan))
+            drop_premature_links()
+        except Exception as e:
+            log("franchise refresh failed: %s" % e)
+        # Missing episode art is a normal poster fallback, retried later.
         _meta_status["phase"] = "episode art"
-        for s in todo:
-            try:
-                _meta_status["current"] = s["title"]
-                fetch_season_thumbs(s)
-            except Exception:
-                pass
-            _meta_status["pending"] -= 1
+        try:
+            merge_db(scan)  # seasons map onto the franchises just built
+            refresh_entry_art(scan)
+        except Exception as e:
+            log("episode art failed: %s" % e)
     finally:
         _meta_status["running"] = False
         _meta_status["pending"] = 0
@@ -4402,141 +4504,1016 @@ def refresh_meta():
         _meta_status["phase"] = None
 
 
+# --- Franchises (docs/franchise-page-plan.md) -------------------------------
+# A franchise is every AniList entry one show page holds: seasons, movies,
+# specials, OVAs and shorts, connected by FRANCHISE_RELATIONS. It is built
+# in the background from AniList and stored; pages only read the tables.
+
+FRANCHISE_LIMIT = 60
+MEDIA_TTL = 7 * 24 * 3600
+MEDIA_TTL_CHANGING = 24 * 3600  # airing or announced: dates, counts and new seasons move
+FRANCHISE_LOOP_EVERY = 6 * 3600
+_franchise_lock = threading.Lock()
+_SEASON_SUFFIX = re.compile(r"(?:season\s*)?\d+|\d+(?:st|nd|rd|th)\s+season"
+                            r"|(?:second|third|fourth|fifth|sixth)\s+season", re.I)
+
+
+def _media_ttl(m):
+    finished = (m or {}).get("status") in ("FINISHED", "CANCELLED")
+    return MEDIA_TTL if finished else MEDIA_TTL_CHANGING
+
+
+def media_entry(mid, pause=0):
+    """One AniList entry (FRANCHISE_QUERY_ID's shape) from the `media`
+    table, fetched again once stale. None when AniList has no such entry.
+    A failed fetch falls back to the stale copy. `pause` seconds follow a
+    network fetch, for background passes that walk many entries."""
+    with db() as c:
+        row = c.execute("SELECT data, ts FROM media WHERE id=?", (mid,)).fetchone()
+    stale = json.loads(row[0]) if row else None
+    if stale and time.time() - row[1] < _media_ttl(stale):
+        return stale
+    try:
+        m = (anilist_request({"query": FRANCHISE_QUERY_ID, "variables": {"id": mid}}).get("data") or {}).get("Media")
+    except HTTPError as e:
+        if e.code != 404:
+            if stale:
+                return stale
+            raise
+        m = None
+    except Exception:
+        if stale:
+            return stale
+        raise
+    finally:
+        time.sleep(pause)
+    if m:
+        with db() as c:
+            c.execute("INSERT INTO media(id, data, ts) VALUES(?,?,?) ON CONFLICT(id)"
+                      " DO UPDATE SET data=excluded.data, ts=excluded.ts", (mid, json.dumps(m), time.time()))
+    return m
+
+
+def _titles(m):
+    t = m.get("title") or {}
+    return [x.strip() for x in (t.get("english"), t.get("romaji")) if x and x.strip()]
+
+
+def numbered_season_of(a, b):
+    """True when one entry's title is the other's plus a season number:
+    "Cyberpunk: Edgerunners" / "Cyberpunk: Edgerunners 2" (or "... Season
+    2", "... 2nd Season"). Lets an OTHER link join a franchise."""
+    for x, y in ((a, b), (b, a)):
+        for root in _titles(x):
+            for t in _titles(y):
+                if t.lower().startswith(root.lower()):
+                    rest = t[len(root):].strip(" :-\u2013\u2014")
+                    if rest and _SEASON_SUFFIX.fullmatch(rest):
+                        return True
+    return False
+
+
+def _franchise_order(m):
+    d = m.get("startDate") or {}
+    return (d.get("year") or 9999, d.get("month") or 99, d.get("day") or 99, m["id"])
+
+
+def build_franchise(start_id, fetch):
+    """Every entry of start_id's franchise, in page order (release date;
+    undated entries last). fetch(id) returns one entry or None. A link
+    counts when neither side names it FRANCHISE_SEPARATE, so the same
+    franchise comes back whichever of its entries it starts from."""
+    start = fetch(start_id)
+    if not start:
+        return []
+    found, todo, gone = {start["id"]: start}, [start], set()
+    while todo and len(found) < FRANCHISE_LIMIT:
+        m = todo.pop(0)
+        for e in (m.get("relations") or {}).get("edges") or []:
+            node, rel = e.get("node") or {}, e.get("relationType")
+            nid = node.get("id")
+            if node.get("type") != "ANIME" or node.get("format") not in FRANCHISE_FORMATS \
+                    or nid in found or nid in gone:
+                continue
+            other = rel == "OTHER" and node.get("format") in FRANCHISE_OTHER_FORMATS
+            if rel not in FRANCHISE_RELATIONS and not other:
+                continue
+            n = fetch(nid)
+            if not n:
+                gone.add(nid)
+                continue
+            if other and not numbered_season_of(m, n):
+                continue
+            if any(b.get("relationType") in FRANCHISE_SEPARATE and (b.get("node") or {}).get("id") == m["id"]
+                   for b in (n.get("relations") or {}).get("edges") or []):
+                continue
+            found[nid] = n
+            todo.append(n)
+    if todo:
+        log("franchise of %s stopped at %d entries" % (start_id, FRANCHISE_LIMIT))
+    return sorted(found.values(), key=_franchise_order)
+
+
+def store_franchise(entries):
+    """Save one built franchise. Its id is its first entry's. Entries that
+    belonged to another franchise move here; a franchise left without
+    entries is dropped. Returns the franchise id."""
+    if not entries:
+        return None
+    ids, fid, now = [m["id"] for m in entries], entries[0]["id"], time.time()
+    q = ",".join("?" * len(ids))
+    with db() as c:
+        before = {r[0] for r in c.execute(
+            f"SELECT DISTINCT franchise_id FROM franchise_members WHERE media_id IN ({q})", ids)}
+        c.execute("DELETE FROM franchise_members WHERE franchise_id=?", (fid,))
+        c.execute(f"DELETE FROM franchise_members WHERE media_id IN ({q})", ids)
+        c.executemany("INSERT INTO franchise_members(media_id, franchise_id, pos) VALUES(?,?,?)",
+                      [(mid, fid, pos) for pos, mid in enumerate(ids)])
+        # The fetcher stores entries with their fetch time; this only fills
+        # in ones it didn't (tests) and never makes a stale entry look fresh.
+        c.executemany("INSERT INTO media(id, data, ts) VALUES(?,?,?) ON CONFLICT(id)"
+                      " DO UPDATE SET data=excluded.data", [(m["id"], json.dumps(m), now) for m in entries])
+        c.execute("INSERT INTO franchises(id, ts) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET ts=excluded.ts",
+                  (fid, now))
+        for old in before - {fid}:
+            if not c.execute("SELECT 1 FROM franchise_members WHERE franchise_id=?", (old,)).fetchone():
+                c.execute("DELETE FROM franchises WHERE id=?", (old,))
+    return fid
+
+
+def tag_franchises(cards):
+    """Library cards learn their entry (`media_id`: the AniList entry, or a
+    local folder's match) and its `franchise_id`, so the library shows one
+    card per franchise. None where no stored franchise holds the entry."""
+    with db() as c:
+        member = dict(c.execute("SELECT media_id, franchise_id FROM franchise_members"))
+    for card in cards:
+        mid = card["id"] if isinstance(card["id"], int) else card.get("media_id")
+        card["media_id"] = mid
+        card["franchise_id"] = member.get(mid)
+    return cards
+
+
+def franchise_of(mid):
+    """(franchise id, entries in page order) for one entry, from the
+    database only. None until the franchise has been built."""
+    with db() as c:
+        row = c.execute("SELECT franchise_id FROM franchise_members WHERE media_id=?", (mid,)).fetchone()
+        if not row:
+            return None
+        data = c.execute("""SELECT m.data FROM franchise_members f JOIN media m ON m.id = f.media_id
+                            WHERE f.franchise_id=? ORDER BY f.pos""", (row[0],)).fetchall()
+    return row[0], [json.loads(d[0]) for d in data]
+
+
+def _franchise_fresh(fid, entries):
+    with db() as c:
+        row = c.execute("SELECT ts FROM franchises WHERE id=?", (fid,)).fetchone()
+    return bool(row) and time.time() - row[0] < min(_media_ttl(m) for m in entries)
+
+
+def franchise_seeds(scan):
+    """AniList entries the library knows of: matched folders and linked
+    online releases. Their franchises are the ones kept up to date."""
+    ids = {(s.get("meta") or {}).get("anilist_id") for s in scan}
+    ids |= {link["media_id"] for link in stream_links_all()}
+    ids.discard(None)
+    return ids
+
+
+def _background_fetch(mid):
+    """media_entry for background walks: they wait while a page someone
+    opened is being built (franchise_build_async), then keep a slow pace."""
+    for _ in range(180):
+        if not _building:
+            break
+        time.sleep(0.5)
+    return media_entry(mid, pause=2.2)
+
+
+def refresh_franchises(seeds, fetch=None):
+    """Build and store the franchise of every seed whose stored one is
+    missing or stale (a day while any entry airs or is announced, else a
+    week). One build covers all seeds in that franchise. Returns how many
+    franchises were built; 0 when another pass is already running."""
+    fetch = fetch or _background_fetch
+    if not _franchise_lock.acquire(blocking=False):
+        return 0
+    try:
+        done, built = set(), 0
+        for mid in sorted(seeds):
+            if mid in done:
+                continue
+            known = franchise_of(mid)
+            if known and _franchise_fresh(*known):
+                done.update(m["id"] for m in known[1])
+                continue
+            try:
+                entries = build_franchise(mid, fetch)
+            except Exception as e:
+                log("franchise of %s failed: %s" % (mid, e))
+                continue
+            store_franchise(entries)
+            done.update(m["id"] for m in entries)
+            built += 1
+        return built
+    finally:
+        _franchise_lock.release()
+
+
+def franchise_refresh_loop():
+    """Keeps franchises current between metadata passes, so a newly
+    announced season or movie shows up without a restart."""
+    while True:
+        time.sleep(FRANCHISE_LOOP_EVERY)
+        try:
+            scan = scan_library()
+            merge_db(scan)
+            if refresh_franchises(franchise_seeds(scan)):
+                merge_db(scan)
+            drop_premature_links()
+            refresh_entry_art(scan)
+        except Exception as e:
+            log("franchise refresh loop: %s" % e)
+
+
+# --- Local mapping (docs/franchise-page-plan.md, phase 3) -------------------
+# Which franchise entry each local episode is. A folder's match (its first
+# season's entry) anchors it in a franchise; its numbered seasons are laid
+# over the franchise's line of seasons from there, other seasons are found
+# among the franchise's entries by name. Worked out from the stored
+# franchise on every read, never with a network call; only a user's own
+# pin (set_season_pin) is stored.
+
 SEASON_GENERIC_LABELS = {"specials", "special", "ova", "oav", "extras", "others", "other"}
+# The line a folder's numbered seasons walk: TV seasons first, then
+# specials/OVAs (AoT's final chapters); a movie between seasons is stepped
+# through but is no season (Made in Abyss S1 → Dawn of the Deep Soul → S2).
+# Format None is an entry AniList has only announced.
+LINE_FORMATS = (("TV", "TV_SHORT", "ONA", None), ("SPECIAL", "OVA"), ("MOVIE",))
+ORDINALS = {2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh", 8: "eighth"}
 
 
 def season_key(sea):
     return f"{sea['key']}|{sea['label']}"
 
 
-def set_release_range(c, show_id, sea_key, first_ep, last_ep, media_id, ep_offset=0, source="auto"):
-    """Map local episodes first_ep..last_ep (last_ep None = to the end of the
-    season) of one season onto an AniList release. Replaces an existing range
-    that starts at the same episode."""
-    c.execute("""INSERT OR REPLACE INTO season_releases(show_id, sea_key, first_ep, last_ep,
-                    media_id, ep_offset, source) VALUES(?,?,?,?,?,?,?)""",
-              (show_id, sea_key, first_ep, last_ep, media_id, ep_offset, source))
+def _edges(m):
+    return ((m or {}).get("relations") or {}).get("edges") or []
 
 
-def release_of(show_id, sea_key, ep_number):
-    """Which release a local episode belongs to: (media_id, release episode
-    number), or None when the season has no mapping covering it. Every
-    per-release feature asks this instead of assuming one release per folder."""
-    if ep_number is None:
+def main_line(anchor_id, entries):
+    """The seasons from `anchor_id` onward, following SEQUEL links inside
+    the franchise (LINE_FORMATS' order). AniList links some next seasons
+    only as OTHER (Cyberpunk: Edgerunners 2): those count when the title
+    says so (numbered_season_of). Pure: entries as build_franchise
+    returns them."""
+    by_id = {m["id"]: m for m in entries}
+    cur = by_id.get(anchor_id)
+    if not cur:
+        return []
+    line, seen = [cur], {cur["id"]}
+    while True:
+        near = [(e["relationType"], by_id[e["node"]["id"]]) for e in _edges(cur)
+                if e["node"]["id"] in by_id and e["node"]["id"] not in seen]
+        sequels = [m for rel, m in near if rel == "SEQUEL"]
+        nxt = next((m for group in LINE_FORMATS for m in sequels if m.get("format") in group), None)
+        if nxt is None:
+            nxt = next((m for rel, m in near if rel == "OTHER" and m.get("format") in LINE_FORMATS[0]
+                        and numbered_season_of(cur, m)), None)
+        if nxt is None:
+            return line
+        seen.add(nxt["id"])
+        cur = nxt
+        if nxt.get("format") != "MOVIE":
+            line.append(nxt)
+
+
+def names_season(m, label):
+    """True when an entry's title names the local season label: "Season 2"
+    matches "… Season 2", "… 2nd Season" and "… Second Season"; "Part 2"
+    matches "… Part 2"."""
+    hay = " ".join(_titles(m)).lower()
+    lm = re.fullmatch(r"(season|part)\s+(\d+)", (label or "").strip().lower())
+    if not lm:
+        return False
+    word, n = lm.group(1), int(lm.group(2))
+    pats = [rf"\b{word}\s+{n}\b"]
+    if word == "season":
+        pats.append(rf"\b{n}(st|nd|rd|th)\s+season\b")
+        if n in ORDINALS:
+            pats.append(rf"\b{ORDINALS[n]}\s+season\b")
+    return any(re.search(p, hay) for p in pats)
+
+
+def numbered_seasons(show):
+    """The seasons that walk the line, in watch order: Season N / Part N /
+    Final … (season ≥ 1; scan order is season_rank). Specials, named arcs
+    and movies are found by name instead (named_entry)."""
+    if show.get("kind") != "show":
+        return []
+    return [sea for sea in show["seasons"] if sea["episodes"] and (sea.get("season") or 0) >= 1]
+
+
+def _range(first, last, m, offset):
+    return {"id": m["id"], "first_ep": first, "last_ep": last, "offset": offset, "total": m.get("episodes")}
+
+
+def map_numbered_seasons(show, line):
+    """season key → ranges: lay the folder's numbered seasons over the line
+    in order. Each season starts at the next unused entry (a partly
+    downloaded season doesn't shift the next one) and spans as many entries
+    as its episodes need: AoT's 22-file Season 3 is AniList's 12 + 10.
+    Absolute numbering (S2 as E26–E37) is recognised by the first number
+    reaching the season's absolute start. A season that needs more entries
+    than the line has is left unmapped from there on: never guess."""
+    out, pos = {}, 0
+    for sea in numbered_seasons(show):
+        nums = sorted(e["number"] for e in sea["episodes"]
+                      if isinstance(e.get("number"), int) and e["number"] >= 1)
+        if not nums or pos >= len(line):
+            break
+        # AniList's air order can interleave a side arc (Owarimonogatari S1
+        # → Tsukimonogatari → Owarimonogatari Second Season): when an entry
+        # close ahead names this season and the next one doesn't, the
+        # season starts there.
+        if pos and not names_season(line[pos], sea["label"]):
+            ahead = next((j for j in range(pos + 1, min(pos + 3, len(line)))
+                          if names_season(line[j], sea["label"])), None)
+            if ahead is not None:
+                pos = ahead
+        start = 1
+        before = [m.get("episodes") for m in line[:pos]]
+        if pos and all(before) and nums[0] >= 1 + sum(before):
+            start = 1 + sum(before)
+        ranges, left = [], nums
+        while left and pos < len(line):
+            m = line[pos]
+            total = m.get("episodes")
+            pos += 1
+            if not total:
+                ranges.append(_range(start, None, m, 1 - start))
+                left = []
+                break
+            end = start + total - 1
+            rest = [n for n in left if n > end]
+            ranges.append(_range(start, end if rest else None, m, 1 - start))
+            left, start = rest, end + 1
+        if left:
+            break  # the line ran out: this season (and the rest) stays unmapped
+        out[season_key(sea)] = ranges
+    return out
+
+
+def named_entry(label, entries):
+    """The one franchise entry whose title or alternative name contains a
+    named season's label ("Specials/Lost Girls" → "Attack on Titan: Lost
+    Girls"; "Together with Papa" is only a synonym of Made in Abyss' "Papa
+    to Issho"), else None. Generic labels (Specials, OVA) and ambiguous
+    names stay unmapped."""
+    want = norm_title(label)
+    if not want or label.strip().lower() in SEASON_GENERIC_LABELS:
         return None
+    hits = [m for m in entries
+            if any(want in norm_title(t) for t in _titles(m) + (m.get("synonyms") or []))]
+    return hits[0] if len(hits) == 1 else None
+
+
+def map_folder(show, anchor_id, entries, pins=None):
+    """season key → [range]: which entry each part of each season of one
+    folder is. A range is {"id", "first_ep", "last_ep" (None = to the end),
+    "offset" (local number + offset = the entry's own number), "total"}.
+    `entries` is the anchor's franchise ([] while it isn't built yet:
+    then only a single-season folder maps, wholly onto its match). `pins`
+    (season key → ranges, [] = no entry) are the user's word and win.
+    Seasons that map to nothing are absent: their files stay local only."""
+    pins = pins or {}
+    filled = [sea for sea in show["seasons"] if sea["episodes"]]
+    out = {}
+    by_id = {m["id"]: m for m in entries}
+    if anchor_id:
+        known = anchor_id in by_id
+        if known:
+            out.update(map_numbered_seasons(show, main_line(anchor_id, entries)))
+        numbered = {season_key(x) for x in numbered_seasons(show)}
+        for sea in filled:
+            key = season_key(sea)
+            if key in out:
+                continue
+            if len(filled) == 1 and not (known and key in numbered):
+                out[key] = [_range(1, None, by_id.get(anchor_id) or {"id": anchor_id}, 0)]
+            elif known and key not in numbered:
+                m = named_entry(sea["label"], entries)
+                if m:
+                    out[key] = [_range(1, None, m, 0)]
+    for key, ranges in pins.items():
+        out[key] = ranges
+    return {k: v for k, v in out.items() if v}
+
+
+def release_units(s):
+    """The one place a folder's episodes become entries: one unit per
+    entry, {"media_id", "eps": [(episode, the entry's own number)],
+    "seasons": [season index], "total": the entry's episode count or None},
+    in season order. Reads the ranges merge_db attached
+    (`season["releases"]`). Episodes outside every range (specials numbered
+    0, unmapped seasons) belong to no unit, so nothing is ever synced for
+    them. Progress sync, completion, reconcile, AniList watched marks and
+    library counts all read this instead of counting seasons."""
+    units = {}
+    for i, sea in enumerate(s.get("seasons") or []):
+        ranges = sea.get("releases") or []
+        for ep in sea["episodes"]:
+            n = ep.get("number")
+            if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+                continue
+            r = next((r for r in reversed(ranges)
+                      if r["first_ep"] <= n and (r["last_ep"] is None or n <= r["last_ep"])), None)
+            if not r or n + r["offset"] < 1:
+                continue
+            u = units.setdefault(r["id"], {"media_id": r["id"], "eps": [], "seasons": [], "total": None})
+            u["total"] = u["total"] or r.get("total")
+            u["eps"].append((ep, n + r["offset"]))
+            if i not in u["seasons"]:
+                u["seasons"].append(i)
+    return list(units.values())
+
+
+def unit_fits(unit, total):
+    """A unit may only speak for its entry when it fits inside it: a known
+    total rules out more files, or higher numbers, than the entry has (a
+    wrong mapping never pushes a too-big count). An unknown total (airing)
+    can't rule anything out (Decision 21)."""
+    if not total:
+        return True
+    return len(unit["eps"]) <= total and max(n for _, n in unit["eps"]) <= total
+
+
+def unit_of_episode(s, ep_id):
+    """(unit, the entry's own episode number) for one episode, or (None, None)."""
+    for u in release_units(s):
+        for ep, n in u["eps"]:
+            if ep["id"] == ep_id:
+                return u, n
+    return None, None
+
+
+def own_listing(m, earlier):
+    """AniList's episode listing (stills, titles) for an entry, when it is
+    the entry's own: every number inside the entry, and no still shared
+    with an earlier entry of the franchise. AniList hands many sequels
+    their first season's listing (Attack on Titan, Kaguya-sama) or the
+    next season's (The Apothecary Diaries). None otherwise."""
+    parsed = parse_seps(m.get("streamingEpisodes") or [])
+    if not parsed["thumbs"]:
+        return None
+    count = m.get("episodes")
+    if count and any(int(k) > count for k in parsed["thumbs"]):
+        return None
+    seen = {url for e in earlier for url in (parse_seps(e.get("streamingEpisodes") or [])["thumbs"] or {}).values()}
+    if seen & set(parsed["thumbs"].values()):
+        return None
+    return parsed
+
+
+def episode_listing(m, earlier, anizip):
+    """An entry's episode stills and titles as remote urls, {"thumbs",
+    "titles", "source"}: its own AniList listing (own_listing), else
+    ani.zip's (`anizip(id)` → {str(n): {"image", "title"}}, None when
+    unreachable: then None, to retry later)."""
+    parsed = own_listing(m, earlier)
+    if parsed:
+        return dict(parsed, source="anilist")
+    eps = anizip(m["id"])
+    if eps is None:
+        return None
+    eps = anizip_pick(eps, m.get("episodes"))
+    return {"thumbs": {k: v["image"] for k, v in eps.items() if v.get("image")} or None,
+            "titles": {k: v["title"] for k, v in eps.items() if v.get("title")} or None,
+            "source": "anizip"}
+
+
+def anizip_pick(eps, count):
+    """ani.zip's episodes of an entry by its own numbers. Plain keys ("1")
+    are the episodes, except where TVDB files the entry as specials: then
+    its episodes are "O1".."On" and "1" may be something else entirely
+    (Kaguya-sama's "The First Kiss That Never Ends": "1" is the theatrical
+    cut, "O1".."O4" the four episodes). The keyed run that covers the
+    entry's episode count wins; plain keys when both or neither do."""
+    plain = {k: v for k, v in eps.items() if k.isdigit()}
+    other = {k[1:]: v for k, v in eps.items() if k[:1] == "O" and k[1:].isdigit()}
+    if count and len(plain) < count <= len(other):
+        return other
+    return plain
+
+
+def season_art(ranges, arts):
+    """A season's stills and titles keyed by its own episode numbers,
+    gathered from every entry it maps to (AoT S3's second entry, at offset
+    −12, fills E13–E22). `arts`: media id → {"thumbs", "titles"}."""
+    thumbs, titles = {}, {}
+    for r in ranges:
+        art = arts.get(r["id"]) or {}
+        for got, dst in ((art.get("thumbs"), thumbs), (art.get("titles"), titles)):
+            for k, v in (got or {}).items():
+                n = int(k) - r["offset"]
+                if v and n >= r["first_ep"] and (r["last_ep"] is None or n <= r["last_ep"]):
+                    dst.setdefault(str(n), v)
+    return thumbs or None, titles or None
+
+
+def franchise_entries(ids):
+    """media id → its franchise's entries in page order, for many ids in
+    one read ([] for an id no stored franchise holds)."""
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
     with db() as c:
-        row = c.execute("""SELECT media_id, ep_offset FROM season_releases
-            WHERE show_id=? AND sea_key=? AND first_ep<=?
-              AND (last_ep IS NULL OR last_ep>=?)
-            ORDER BY first_ep DESC LIMIT 1""",
-            (show_id, sea_key, ep_number, ep_number)).fetchone()
-    if not row or row[0] is None:
-        return None
-    return row[0], ep_number + row[1]
+        member = dict(c.execute("SELECT media_id, franchise_id FROM franchise_members"))
+        fids = {member[i] for i in ids if i in member}
+        rows = c.execute(f"""SELECT f.franchise_id, m.data FROM franchise_members f
+                             JOIN media m ON m.id = f.media_id
+                             WHERE f.franchise_id IN ({",".join("?" * len(fids))})
+                             ORDER BY f.franchise_id, f.pos""", tuple(fids)).fetchall() if fids else []
+    by_fid = {}
+    for fid, data in rows:
+        by_fid.setdefault(fid, []).append(json.loads(data))
+    return {i: by_fid.get(member.get(i), []) for i in ids}
 
 
-def base_season_of(title):
-    m = re.search(r"Season\s+(\d+)", title or "", re.I)
-    return int(m.group(1)) if m else 1
+def season_pins():
+    """show id → season key → the user's ranges for it ([] = no entry)."""
+    out = {}
+    with db() as c:
+        rows = c.execute("""SELECT r.show_id, r.sea_key, r.first_ep, r.last_ep, r.media_id, r.ep_offset, m.data
+                            FROM season_releases r LEFT JOIN media m ON m.id = r.media_id
+                            WHERE r.source = 'manual' ORDER BY r.show_id, r.sea_key, r.first_ep""").fetchall()
+    for sid, key, first, last, mid, offset, data in rows:
+        ranges = out.setdefault(sid, {}).setdefault(key, [])
+        if mid is not None:
+            total = json.loads(data).get("episodes") if data else None
+            ranges.append({"id": mid, "first_ep": first, "last_ep": last, "offset": offset or 0, "total": total})
+    return out
 
 
-def resolve_season_media(show, sea, base_media):
-    """Match one local season; never stitch unrelated playlists together."""
-    base_season = base_season_of((base_media.get("title") or {}).get("english"))
-    if sea["season"] == 1:
-        numbered = [x for x in show["seasons"] if x["episodes"] and x["season"] >= 1]
-        if sea["label"].strip() == f"Season {base_season}" or (len(numbered) == 1 and numbered[0] is sea):
-            return base_media
+def entry_art_all(ids):
+    """media id → {"thumbs", "titles"} (local /epimg/ urls) for stored entries."""
+    ids = list({i for i in ids if i})
+    if not ids:
+        return {}
+    with db() as c:
+        rows = c.execute(f"SELECT media_id, thumbs, titles FROM entry_art WHERE media_id IN ({','.join('?' * len(ids))})",
+                         ids).fetchall()
+    return {r[0]: {"thumbs": json.loads(r[1]) if r[1] else None, "titles": json.loads(r[2]) if r[2] else None}
+            for r in rows}
+
+
+def attach_releases(scan):
+    """merge_db's part: every season of every folder gets its ranges
+    (`releases`) and the stills/titles of the entries they cover."""
+    anchors = {s["id"]: (s.get("meta") or {}).get("anilist_id") for s in scan}
+    entries = franchise_entries(anchors.values())
+    pins = season_pins()
+    maps = {s["id"]: map_folder(s, anchors[s["id"]], entries.get(anchors[s["id"]]) or [], pins.get(s["id"]))
+            for s in scan}
+    arts = entry_art_all(r["id"] for m in maps.values() for ranges in m.values() for r in ranges)
+    for s in scan:
+        for sea in s["seasons"]:
+            sea["releases"] = maps[s["id"]].get(season_key(sea), [])
+            sea["thumbs"], sea["titles"] = season_art(sea["releases"], arts)
+
+
+def set_season_pin(show_id, sea_key, anilist_id=None, none=False):
+    """The "wrong entry?" repair for one season of a folder: pin it to a
+    user-chosen AniList entry (`none` = it is no entry: its files stay
+    local only), or with neither hand it back to the automatic mapping.
+    Watch facts are untouched; only which entry they count for changes."""
+    show = next((s for s in scan_library() if s["id"] == show_id), None)
+    if not show:
+        return {"error": "unknown show"}
+    sea = next((x for x in show["seasons"] if season_key(x) == sea_key), None)
+    if not sea:
+        return {"error": "no such season"}
+    m = None
+    if anilist_id is not None:
+        try:
+            m = media_entry(anilist_id)
+        except Exception as e:
+            return {"error": f"Could not reach AniList: {e}"}
+        if not m:
+            return {"error": f"AniList has no media with id {anilist_id}"}
+    nums = [e["number"] for e in sea["episodes"] if isinstance(e.get("number"), int) and e["number"] >= 1]
+    # Absolute numbering (a "Season 2" folder holding E26–E37) counts from
+    # its first file; otherwise the season's numbers are the entry's.
+    offset = 1 - min(nums) if m and nums and m.get("episodes") and max(nums) > m["episodes"] else 0
+    with db() as c:
+        c.execute("DELETE FROM season_releases WHERE show_id=? AND sea_key=?", (show_id, sea_key))
+        if m or none:
+            c.execute("""INSERT INTO season_releases(show_id, sea_key, first_ep, last_ep, media_id, ep_offset, source)
+                         VALUES(?,?,?,?,?,?,'manual')""", (show_id, sea_key, 1, None, anilist_id, offset))
+    if m:
+        threading.Thread(target=background_work(refresh_entry_art), daemon=True).start()
+    title = m and ((m.get("title") or {}).get("english") or (m.get("title") or {}).get("romaji"))
+    return {"ok": True, "anilist_id": anilist_id, "title": title, "cleared": not (m or none)}
+
+
+ANIZIP_URL = "https://api.ani.zip/mappings?anilist_id=%d"
+
+
+def anizip_episodes(anilist_id):
+    """{key: {"image", "title"}} for one entry from ani.zip, the public
+    AniList-id-keyed episode index (TVDB artwork, no API key); only the
+    AniList id is sent. Keys are "n" and "On" (see anizip_pick). {} when it
+    has nothing; None when it couldn't be reached (not cached, retried
+    later)."""
+    key = f"anizip:v2:{anilist_id}"
+    cached = cache_get(key, EPISODE_META_TTL)
+    if cached is not None:
+        return cached
+    try:
+        req = Request(ANIZIP_URL % anilist_id,
+                      headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) anime-hub/1.0"})
+        with urlopen(req, timeout=20) as r:
+            data = json.loads(r.read())
+    except HTTPError as e:
+        if e.code != 404:
+            return None
+        data = {}
+    except Exception:
         return None
-    label_l = sea["label"].strip().lower()
-    if sea["season"] >= 2:
-        label = f"Season {sea['season']}"
-        if sea["label"] != label:
-            label += " " + sea["label"]
-        candidates = fetch_media_candidates(f"{show['title']} {label}")
-        return next((m for m in candidates if m.get("format") == "TV"
-                     and m.get("episodes") == len(sea["episodes"])), None)
-    if show["kind"] == "movie":
-        base = f"{show.get('collection') or ''} {show['title']}".strip()
-        variants = [base]
-        nopar = re.sub(r"\s*\([^)]*\)", "", base).strip()
-        if nopar and nopar not in variants:
-            variants.append(nopar)
-        bare = show["title"].strip()
-        if bare and bare not in variants:
-            variants.append(bare)
-        for q in variants:
-            m = search_media(q, formats={"MOVIE"})
-            if m:
-                return m
-        return None
-    if label_l in SEASON_GENERIC_LABELS:
-        return None
-    for q in (f"{show['title']} {sea['label']}".strip(), sea["label"].strip()):
-        m = search_media(q, formats={"OVA", "SPECIAL", "MOVIE"}, must_contain=label_l)
-        if m:
-            return m
+    out = {}
+    for k, v in ((data or {}).get("episodes") or {}).items():
+        num = k[1:] if k[:1] == "O" else k
+        if num.isdigit() and int(num) >= 1 and isinstance(v, dict):
+            out[k] = {"image": v.get("image") or None, "title": (v.get("title") or {}).get("en") or None}
+    cache_put(key, out)
+    return out
+
+
+_entry_art_lock = threading.Lock()
+# Entries waiting for their stills: "now" = opened on a page (first),
+# "later" = what local seasons map to. One pass at a time works the queue;
+# a caller that finds a pass running leaves its entries to it.
+_art_queue = {"now": set(), "later": set()}
+_art_queue_lock = threading.Lock()
+
+
+def _art_next():
+    with _art_queue_lock:
+        for k in ("now", "later"):
+            if _art_queue[k]:
+                mid = min(_art_queue[k])
+                _art_queue[k].discard(mid)
+                return mid
     return None
 
 
-def search_media(q, formats=None, must_contain=None):
-    try:
-        m = fetch_media_full(search=q)
-    except Exception:
-        return None
-    if not m:
-        return None
-    if formats and m.get("format") not in formats:
-        return None
-    if must_contain:
-        t = m.get("title") or {}
-        hay = norm_title(f"{t.get('english') or ''} {t.get('romaji') or ''}")
-        if norm_title(must_contain) not in hay:
-            return None
-    return m
-
-
-def fetch_season_thumbs(show):
-    """Cache one matched listing per season, including normal banner-only results."""
+def _store_entry_art(mid, anizip):
+    """Fetch and store one entry's stills unless it has them (an entry
+    without stills is retried once EPISODE_META_TTL has passed). True when
+    stored."""
     with db() as c:
-        row = c.execute("SELECT anilist_id FROM shows_meta WHERE show_id=?",
-                      (show["id"],)).fetchone()
-        have = {r[0] for r in c.execute("SELECT sea_key FROM season_thumbs WHERE show_id=?", (show["id"],))}
-    pending = [sea for sea in show["seasons"] if sea["episodes"] and season_key(sea) not in have]
-    if not row or not row[0] or not pending:
-        return 0
-    try:
-        base_media = fetch_media_full(id=row[0])
-    except Exception:
-        return 0
-    if not base_media:
-        return 0
-    base_thumbs = parse_seps(base_media.get("streamingEpisodes") or [])["thumbs"]
+        row = c.execute("SELECT thumbs, ts FROM entry_art WHERE media_id=?", (mid,)).fetchone()
+    if row and (row[0] or row[1] >= time.time() - EPISODE_META_TTL):
+        return False
+    m = media_entry(mid, pause=2.2)
+    if not m:
+        return False
+    fr = franchise_of(mid)
+    earlier = []
+    for e in (fr[1] if fr else []):
+        if e["id"] == mid:
+            break
+        earlier.append(e)
+    raw = episode_listing(m, earlier, anizip)
+    if raw is None:
+        return False
+    got = commit_thumbs(mid, raw, prefix="z" if raw["source"] == "anizip" else "")
+    thumbs = {str(n): u for n, u in got.items()} or None
+    with db() as c:
+        c.execute("""INSERT INTO entry_art(media_id, thumbs, titles, source, ts) VALUES(?,?,?,?,?)
+                     ON CONFLICT(media_id) DO UPDATE SET thumbs=excluded.thumbs, titles=excluded.titles,
+                     source=excluded.source, ts=excluded.ts""",
+                  (mid, json.dumps(thumbs) if thumbs else None,
+                   json.dumps(raw["titles"]) if raw["titles"] else None, raw["source"], time.time()))
+    return True
+
+
+def refresh_entry_art(scan=None, anizip=None, ids=None):
+    """Background: fetch the episode stills of every entry a local season
+    maps to (or of `ids`: entries opened on a franchise page, which go
+    first) and store them (entry_art), so pages draw them without a
+    network call. Entries asked for while another pass runs are left to
+    that pass, never dropped. Returns the number of entries stored."""
+    anizip = anizip or anizip_episodes
+    if ids is None:
+        if scan is None:
+            scan = scan_library()
+            merge_db(scan)
+        ids, kind = {r["id"] for s in scan for sea in s["seasons"] for r in sea.get("releases") or []}, "later"
+    else:
+        kind = "now"
+    with _art_queue_lock:
+        _art_queue[kind].update(ids)
     did = 0
-    for sea in pending:
-        aid = None
-        arr = titles = None
+    while True:
+        if not _entry_art_lock.acquire(blocking=False):
+            return did  # the running pass takes our entries
         try:
-            media = resolve_season_media(show, sea, base_media)
-            if media:
-                aid = media["id"]
-                listing = parse_seps(media.get("streamingEpisodes") or [])
-                if aid == base_media["id"] or not polluted_playlist(base_thumbs, listing["thumbs"]):
-                    art = media_episode_art(media)
-                    arr, titles = art["thumbs"], art["titles"]
-        except Exception:
-            pass
+            while (mid := _art_next()) is not None:
+                try:
+                    did += _store_entry_art(mid, anizip)
+                except Exception as e:
+                    log("stills for %s failed: %s" % (mid, e))
+        finally:
+            _entry_art_lock.release()
+        with _art_queue_lock:
+            # Asked for between our last look and the release: go again.
+            if not (_art_queue["now"] or _art_queue["later"]):
+                return did
+
+
+# --- Franchise page (docs/franchise-page-plan.md, phase 4) ------------------
+# One page per franchise: every entry with its facts and art, and each
+# entry's episodes as one list of slots where a local file and an online
+# episode are the same thing with a different source. Built from stored
+# data only (franchise, mapping, links, watch facts, art); what is missing
+# (the franchise itself, an entry's online episode list, its stills) is
+# fetched in the background and the page is asked for again.
+
+FORMAT_LABELS = {"TV": "TV", "TV_SHORT": "Short", "ONA": "ONA", "OVA": "OVA", "SPECIAL": "Special",
+                 "MOVIE": "Movie", None: "Announced"}
+
+
+def franchise_root(entries):
+    """The entry the main seasons start from and the page is named after:
+    the first-aired TV/ONA entry (Bakemonogatari, though AniList calls the
+    later Nekomonogatari its prequel), else the oldest entry."""
+    return next((m for m in entries if m.get("format") in LINE_FORMATS[0] and m.get("format")),
+                entries[0] if entries else None)
+
+
+def _title_rest(m, roots):
+    """What an entry's title adds to the franchise's: "Season 3 Part 2" for
+    "Attack on Titan Season 3 Part 2"; "" when that is nothing worth
+    showing ("Kaguya-sama: Love is War?", "Cyberpunk: Edgerunners 2");
+    None when the title isn't the franchise's at all (Nisemonogatari)."""
+    found = None
+    for title in _titles(m):
+        for root in roots:
+            if title.lower().startswith(root.lower()):
+                rest = title[len(root):].strip(" :-–—~!?.,")
+                if sum(ch.isalnum() for ch in rest) >= 3:
+                    return rest
+                found = ""
+    return found
+
+
+def entry_label(m, roots, season_no):
+    """A short display label: what the title adds to the franchise's
+    ("Season 3 Part 2", "The Golden City of the Scorching Sun"); a main
+    season adding nothing is "Season N" by its place in the line; an entry
+    with a title of its own keeps it (Nisemonogatari). Display only
+    (rule 4): a miss is a longer label, never a wrong page."""
+    rest = _title_rest(m, roots)
+    if rest:
+        return rest
+    if rest == "" and season_no:
+        return f"Season {season_no}"
+    return (_titles(m) or [FORMAT_LABELS.get(m.get("format"), "Extra")])[0]
+
+
+def _entry_facts(m):
+    t = m.get("title") or {}
+    nxt = m.get("nextAiringEpisode") or {}
+    return {"id": m["id"], "title": t.get("english") or t.get("romaji"), "romaji": t.get("romaji"),
+            "format": m.get("format"), "format_label": FORMAT_LABELS.get(m.get("format"), m.get("format")),
+            "status": m.get("status"), "episodes": m.get("episodes"),
+            "aired": release_aired(m) if m.get("status") else 0,
+            "next_airing": {"episode": nxt.get("episode"), "at": nxt.get("airingAt")} if nxt else None,
+            "year": (m.get("startDate") or {}).get("year") or m.get("seasonYear"),
+            "season": m.get("season"), "score": m.get("averageScore"),
+            "duration": m.get("duration"), "overview": strip_html(m.get("description")),
+            "poster": (m.get("coverImage") or {}).get("extraLarge"), "banner": m.get("bannerImage")}
+
+
+def _watch(src):
+    return {k: src.get(k) for k in ("watched", "position", "duration", "last_played")}
+
+
+def entry_slots(m, local, link, rows, art, online_ok):
+    """One entry's episodes, in order: a slot per episode number that is on
+    disk (`local`: number → scanned episode), in the online episode list
+    (`link`, once ani-cli linked the entry), or aired by AniList (until
+    then: "stream:<id>:<n>" plays it and links on the way). A slot is
+    {"number", "title", "thumb", "id" (what Play plays: the file if there
+    is one), "source" ("local"/"online"/None), "local", "online", watch
+    facts}. It is watched when any of its sources is; position and
+    duration come from the source played last."""
+    mid = m["id"]
+    online = {}
+    if link:
+        for token in link["episodes"]:
+            online[_stream_num(token)] = token
+    elif online_ok:
+        online = {n: str(n) for n in range(1, (release_aired(m) if m.get("status") else 0) + 1)}
+    thumbs, titles = (art or {}).get("thumbs") or {}, (art or {}).get("titles") or {}
+    slots = []
+    for n in sorted(set(local) | set(online)):
+        ep, token = local.get(n), online.get(n)
+        sid = f"stream:{mid}:{token}" if token is not None else None
+        r = rows.get(sid) if sid else None
+        srcs = [x for x in (_watch(ep) if ep else None,
+                            {"watched": bool(r[0]), "position": r[1], "duration": r[2], "last_played": r[3]}
+                            if r else None) if x]
+        last = max(srcs, key=lambda x: x.get("last_played") or "", default={})
+        slots.append({"number": n, "title": titles.get(str(n)), "thumb": thumbs.get(str(n)),
+                      "id": ep["id"] if ep else sid, "source": "local" if ep else "online" if sid else None,
+                      "local": {"id": ep["id"], "files": ep["files"], "show_id": ep.get("show_id"),
+                                "season": ep.get("sea_key"), "folder": ep.get("folder"),
+                                "season_label": ep.get("season_label")} if ep else None,
+                      "online": {"id": sid, "token": token} if sid else None,
+                      "watched": any(x.get("watched") for x in srcs),
+                      "position": last.get("position") or 0, "duration": last.get("duration") or 0,
+                      "last_played": last.get("last_played")})
+    return slots
+
+
+def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=frozenset()):
+    """The page model (pure): `entries` in page order (franchise_of), `scan`
+    after merge_db (season ranges, watch facts), `links` media id → ani-cli
+    link, `rows` "stream:" id → (watched, position, duration,
+    last_played), `arts` media id → stills/titles, `online_ok` ani-cli is
+    there, `missed` entries ani-cli has no match for. Returns {"title",
+    "poster", "banner", "entries": [facts + "group" ("main" seasons /
+    "extra"), "label", "season", "slots", "online"], "other_local":
+    [{"show_id", "season", "label", "episodes"}]}: files of the
+    franchise's folders that are no entry, never hidden."""
+    ids = {m["id"] for m in entries}
+    root = franchise_root(entries)
+    line = [m["id"] for m in main_line(root["id"], entries)] if root else []
+    roots = _titles(root) if root else []
+    local, other = {}, []
+    for s in scan:
+        units = release_units(s)
+        mine = [u for u in units if u["media_id"] in ids]
+        if not mine and (s.get("meta") or {}).get("anilist_id") not in ids:
+            continue
+        for u in mine:
+            held = local.setdefault(u["media_id"], {})
+            for ep, n in u["eps"]:
+                if disk_ep(ep):
+                    held.setdefault(n, dict(ep, show_id=s["id"], folder=s["title"],
+                                            sea_key=f"{ep['season']}|{ep['season_label']}"))
+        mapped = {ep["id"] for u in units for ep, _ in u["eps"]}
+        for sea in s["seasons"]:
+            loose = [dict(ep, **_watch(ep)) for ep in sea["episodes"] if disk_ep(ep) and ep["id"] not in mapped]
+            if loose:
+                other.append({"show_id": s["id"], "season": season_key(sea), "label": sea["label"],
+                              "folder": s["title"], "episodes": loose})
+    out = []
+    for m in entries:
+        no = line.index(m["id"]) + 1 if m["id"] in line else None
+        mid = m["id"]
+        reachable = online_ok and mid not in missed
+        out.append(dict(_entry_facts(m), group="main" if no else "extra", season=no,
+                        label=entry_label(m, roots, no),
+                        online={"linked": mid in links, "available": bool(links.get(mid)) or reachable,
+                                "mode": (links.get(mid) or {}).get("mode")},
+                        slots=entry_slots(m, local.get(mid, {}), links.get(mid), rows, arts.get(mid), reachable)))
+    # Seasons named on their own (Monogatari: Nisemonogatari, Owarimonogatari)
+    # leave the first one its own name too, not "Season 1".
+    main = [(e, m) for e, m in zip(out, entries) if e["group"] == "main"]
+    if len(main) == 1:
+        # Nothing to number it against (or the franchise is still being
+        # found: a "Season 2" opened from search must not read "Season 1").
+        main[0][0]["label"] = (_titles(main[0][1]) or [main[0][0]["label"]])[0]
+    elif len(main) > 1 and all(_title_rest(m, roots) is None for _, m in main[1:]):
+        main[0][0]["label"] = _titles(main[0][1])[0]
+    facts = _entry_facts(root) if root else {}
+    return {"title": facts.get("title"), "poster": facts.get("poster"), "banner": facts.get("banner"),
+            "entries": out, "other_local": other}
+
+
+_building = set()
+
+
+def franchise_build_async(mid):
+    """Build and store a franchise nobody has opened yet (a search result),
+    in the background; the page asks again until it is there."""
+    if mid in _building:
+        return
+    _building.add(mid)
+
+    def run():
+        try:
+            entries = build_franchise(mid, media_entry)  # paced by _anilist_slot
+            if entries:
+                store_franchise(entries)
+        except Exception as e:
+            log("building franchise of %s failed: %s" % (mid, e))
+        finally:
+            _building.discard(mid)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def entry_watched(mid, watched, numbers=None):
+    """The franchise page's watched marks: every source of the entry's
+    slots (`numbers`, or all) flips at once — a slot is one episode, file
+    or online. Marking watched then publishes the entry's progress like a
+    bulk mark (Decision 27: a click is the user acting), with the same fit
+    rule; unwatching stays local."""
+    page = franchise_view(mid, background=False)
+    entry = next((e for e in page["entries"] if e["id"] == mid), None)
+    if not entry:
+        return {"error": "unknown entry"}
+    pick = set(numbers) if numbers is not None else None
+    slots = [x for x in entry["slots"] if pick is None or x["number"] in pick]
+    ids = [src["id"] for x in slots for src in (x["local"], x["online"]) if src]
+    with db() as c:
+        c.executemany("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched",
+                      [(i, int(bool(watched))) for i in ids])
+    synced = None
+    if watched:
+        done = {x["number"] for x in slots}
+        eps = [{"id": x["id"], "number": x["number"], "watched": x["watched"] or x["number"] in done}
+               for x in entry["slots"] if isinstance(x["number"], int) and x["number"] >= 1]
+        show = {"seasons": [{"episodes": eps, "releases": [
+            {"id": mid, "first_ep": 1, "last_ep": None, "offset": 0, "total": entry["episodes"]}]}]}
+        try:
+            synced = anilist_track_show(show, manual=True)
+        except Exception as e:
+            log("entry sync failed: %s" % e)
+    return {"ok": True, "episodes": len(slots), "ids": ids, "watched": bool(watched), "synced": synced}
+
+
+_freshening = set()
+
+
+def drop_premature_links():
+    """An automatic ani-cli link for an entry that hasn't aired is another
+    show's episodes (older versions made them: the announced "Chainsaw Man:
+    Shikaku-hen" played Chainsaw Man's season 1): drop them. Links the user
+    chose stay."""
+    with db() as c:
+        c.execute("""DELETE FROM stream_links WHERE COALESCE(matched_by, 'auto') = 'auto' AND media_id IN
+                     (SELECT id FROM media WHERE json_extract(data, '$.status') = 'NOT_YET_RELEASED')""")
+
+
+def stream_freshen_async(media_id):
+    """Ask ani-cli again for an entry's online episodes once its list is
+    stale (airing entries gain episodes), in the background."""
+    if media_id in _freshening or not anicli_path():
+        return
+    _freshening.add(media_id)
+
+    def run():
+        try:
+            stream_refresh(media_id)
+        except Exception as e:
+            log("refreshing %s failed: %s" % (media_id, e))
+        finally:
+            _freshening.discard(media_id)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def franchise_view(mid, background=True):
+    """GET /api/franchise?id=<entry>: the page holding this entry, with it
+    selected. Never waits on the network: a franchise not built yet comes
+    back as the entry alone with "building" (stored facts, when there are
+    any), and the selected entry's online episode list and stills are
+    fetched in the background ("resolving")."""
+    fr = franchise_of(mid)
+    if fr:
+        fid, entries = fr
+    else:
+        if background:
+            franchise_build_async(mid)
         with db() as c:
-            c.execute(
-                """INSERT INTO season_thumbs(show_id,sea_key,anilist_id,thumbs,titles,ts)
-                   VALUES(?,?,?,?,?,?)
-                   ON CONFLICT(show_id, sea_key) DO NOTHING""",
-                (show["id"], season_key(sea), aid,
-                 json.dumps(arr) if arr else None, json.dumps(titles) if titles else None, time.time()),
-            )
-        did += 1
-        time.sleep(2.2)
-    return did
+            row = c.execute("SELECT data FROM media WHERE id=?", (mid,)).fetchone()
+        fid, entries = None, [json.loads(row[0])] if row else []
+    building = fr is None
+    scan = scan_library()
+    merge_db(scan)
+    drop_premature_links()
+    links = {link["media_id"]: link for link in stream_links_all()}
+    ids = [m["id"] for m in entries]
+    arts = entry_art_all(ids)
+    online_ok = bool(anicli_path())
+    page = franchise_page(entries, scan, links, _stream_rows(), arts, online_ok, stream_missed_ids())
+    if not background:
+        return dict(page, id=fid, selected=mid)
+    sel = next((m for m in entries if m["id"] == mid), None)
+    if sel and mid not in links and sel.get("status") != "NOT_YET_RELEASED":
+        stream_resolve_async(mid)
+    elif mid in links and time.time() - links[mid]["episodes_ts"] > STREAM_EPISODES_TTL:
+        stream_freshen_async(mid)
+    if entries and mid not in arts:
+        threading.Thread(target=refresh_entry_art, kwargs={"ids": {mid}}, daemon=True).start()
+    return dict(page, id=fid, selected=mid, building=building or mid in _building,
+                resolving=sorted(i for i in ids if i in _resolving or i in _freshening), stream_ready=online_ok)
 
 
 def open_show_folder(show_id):
@@ -4737,9 +5714,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(payload)
         elif route == "/api/downloads":
             self.send_json({"jobs": downloads_payload()})
-        elif route == "/api/release":
-            # The show page for any AniList release (ani-cli bridge): linked
-            # → its show; otherwise AniList's episodes while it links.
+        elif route == "/api/franchise":
+            # The franchise page holding an entry (phase 4): every season,
+            # movie and special, local and online episodes as one list.
             try:
                 mid = int(parse_qs(urlparse(self.path).query).get("id", ["0"])[0])
             except ValueError:
@@ -4747,7 +5724,7 @@ class Handler(BaseHTTPRequestHandler):
             if mid <= 0:
                 self._bad("'id' must be a positive integer")
             else:
-                self.send_json(release_payload(mid))
+                self.send_json(franchise_view(mid))
         elif route.startswith("/img/"):
             name = os.path.basename(route)
             p = POSTERS / name
@@ -4855,6 +5832,18 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 r = bulk_watched(body["show_id"], season, body["watched"], ids)
                 self.send_json(r, 200 if r.get("ok") else 404)
+        elif route == "/api/entry-watched":
+            # The franchise page's marks: one entry's episodes (all, or the
+            # listed numbers), file and online alike.
+            if self._fields(body, ints=("media_id",), bools=("watched",)):
+                nums = body.get("numbers")
+                if not body.get("media_id") or body["media_id"] < 0:
+                    self._bad("'media_id' must be a positive integer")
+                elif nums is not None and (not isinstance(nums, list) or not all(
+                        isinstance(n, (int, float)) and not isinstance(n, bool) for n in nums)):
+                    self._bad("'numbers' must be a list of episode numbers")
+                else:
+                    self.send_json(entry_watched(body["media_id"], body["watched"], nums))
         elif route == "/api/reset":
             if self._fields(body, strings=("id",)):
                 reset_progress(body["id"])
@@ -4894,6 +5883,16 @@ class Handler(BaseHTTPRequestHandler):
                     self._bad("'anilist_id' must be an integer")
                 else:
                     self.send_json(set_match(body["show_id"], aid, body.get("query")))
+        elif route == "/api/season-match":
+            # One season of a folder → a chosen entry ("wrong entry?"),
+            # none: true = no entry, neither = back to the automatic mapping.
+            if self._fields(body, strings=("show_id", "season")):
+                aid = body.get("anilist_id")
+                if aid is not None and (isinstance(aid, bool) or not isinstance(aid, int)):
+                    self._bad("'anilist_id' must be an integer")
+                else:
+                    self.send_json(set_season_pin(body["show_id"], body["season"], aid,
+                                                  none=body.get("none") is True))
         elif route == "/api/match-candidates":
             if self._fields(body, strings=("query",)):
                 try:
@@ -5075,7 +6074,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"local": True, "entry": out})
         elif route == "/api/refresh":
             self.send_json({"ok": True})
-            threading.Thread(target=refresh_meta, daemon=True).start()
+            threading.Thread(target=background_work(refresh_meta), daemon=True).start()
         elif route.startswith("/api/stream/") or route.startswith("/api/download"):
             self._stream_route(route, body)
         else:
@@ -5110,9 +6109,6 @@ class Handler(BaseHTTPRequestHandler):
                     self._bad("'mode' must be one of: %s" % ", ".join(STREAM_MODES))
                 else:
                     self.send_json(stream_switch_mode(body["media_id"], body["mode"]))
-            elif route == "/api/stream/refresh":
-                if self._fields(body, ints=("media_id",)):
-                    self.send_json(stream_refresh(body["media_id"]))
             elif route == "/api/download":
                 eps = body.get("episodes")
                 if not self._fields(body, ints=("media_id",)):
@@ -5190,7 +6186,7 @@ def main():
               f"Is another instance already running, or is the configured 'port' taken?",
               file=sys.stderr, flush=True)
         sys.exit(1)
-    threading.Thread(target=refresh_meta, daemon=True).start()
+    threading.Thread(target=background_work(refresh_meta), daemon=True).start()
     # Warm the AniList cache so the spine (TODO 8) is populated on the very
     # first library view; /api/anilist visits keep it fresh afterwards.
     if load_anilist_username():
@@ -5199,7 +6195,8 @@ def main():
     threading.Thread(target=outbox_loop, daemon=True).start()
     # Spine freshness (TODO 8/17): keep the AniList cache warm in the
     # background — a stale cache must never read as a disconnect.
-    threading.Thread(target=anilist_refresh_loop, daemon=True).start()
+    threading.Thread(target=background_work(anilist_refresh_loop), daemon=True).start()
+    threading.Thread(target=background_work(franchise_refresh_loop), daemon=True).start()
     print(f"Anime Hub → http://127.0.0.1:{PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
     print(f"  library  {LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)

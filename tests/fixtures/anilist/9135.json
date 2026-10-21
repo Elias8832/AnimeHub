@@ -1,0 +1,85 @@
+{
+ "id": 9135,
+ "title": {
+  "romaji": "Hagane no Renkinjutsushi: Milos no Seinaru Hoshi",
+  "english": "Fullmetal Alchemist: The Sacred Star of Milos",
+  "native": "鋼の錬金術師 嘆きの丘の聖なる星"
+ },
+ "format": "MOVIE",
+ "status": "FINISHED",
+ "episodes": 1,
+ "duration": 110,
+ "averageScore": 69,
+ "season": "SUMMER",
+ "seasonYear": 2011,
+ "startDate": {
+  "year": 2011,
+  "month": 7,
+  "day": 2
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx9135-nPvbvO7QCx7L.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/9135-Ffg7j7Rd641G.jpg",
+ "description": "A fugitive alchemist with mysterious abilities leads the Elric brothers to a distant valley of slums inhabited by the Milos, a proud people struggling against bureaucratic exploitation. Ed and Al quickly find themselves in the middle of a rising rebellion, as the exiled Milos lash out against their oppressors. At the heart of the conflict is Julia, a young alchemist befriended by Alphonse. She'll stop at nothing to restore the Milos to their former glory – even if that means harnessing the awful power of the mythical Philosopher's Stone. <br><br>\r\n(Source: FUNimation)",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 5114,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2009,
+      "month": 4,
+      "day": 5
+     },
+     "title": {
+      "romaji": "Hagane no Renkinjutsushi: FULLMETAL ALCHEMIST",
+      "english": "Fullmetal Alchemist: Brotherhood"
+     }
+    }
+   },
+   {
+    "relationType": "SPIN_OFF",
+    "node": {
+     "id": 10842,
+     "type": "ANIME",
+     "format": "SPECIAL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2011,
+      "month": 6,
+      "day": 16
+     },
+     "title": {
+      "romaji": "Hagane no Renkinjutsushi: Milos no Seinaru Hoshi Tokubetsu Eizou",
+      "english": null
+     }
+    }
+   },
+   {
+    "relationType": "ALTERNATIVE",
+    "node": {
+     "id": 166142,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2011,
+      "month": 7,
+      "day": 2
+     },
+     "title": {
+      "romaji": "Hagane no Renkinjutsushi 11.5: Tabidachi no Mae ni",
+      "english": null
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

@@ -1,0 +1,116 @@
+{
+ "id": 21281,
+ "title": {
+  "romaji": "Shingeki! Kyojin Chuugakkou",
+  "english": "Attack on Titan: Junior High",
+  "native": "進撃！巨人中学校"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 12,
+ "duration": 18,
+ "averageScore": 70,
+ "season": "FALL",
+ "seasonYear": 2015,
+ "startDate": {
+  "year": 2015,
+  "month": 10,
+  "day": 4
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b21281-GwCKcZii6fVf.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/n21281-NJqGktD33FWm.jpg",
+ "description": "The school comedy story is set in a junior high school and centers on the original manga's characters such as Eren and Mikasa as they battle with Titans. The spin-off incorporates gags while using Shingeki no Kyojin's story and notable scenes as its basis.",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 66535,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2012,
+      "month": 4,
+      "day": 9
+     },
+     "title": {
+      "romaji": "Shingeki! Kyojin Chuugakkou",
+      "english": "Attack on Titan: Junior High"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 16498,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2013,
+      "month": 4,
+      "day": 7
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin",
+      "english": "Attack on Titan"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Episode 1 - Starting School! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/d5c017baa82e28e68f445608d094ddb31497973068_full.jpg"
+  },
+  {
+   "title": "Episode 2 - Chasing! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/395a8bf6ebad784afbc9ae0a36cbb3c51497973729_full.jpg"
+  },
+  {
+   "title": "Episode 3 - Dodgeball! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/8ada2be7646db7880a35a75ce565e60e1497975120_full.jpg"
+  },
+  {
+   "title": "Episode 4 - Cleanup! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/6c59679822150a746b7a17ab0445d28e1497976129_full.jpg"
+  },
+  {
+   "title": "Episode 5 - Studying Hard! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/27b99f5b83a1bb835959f37908f1645c1497975817_full.jpg"
+  },
+  {
+   "title": "Episode 6 - Love Letter! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/f1d80ebec3e4fda04632b48e52803bb71497978710_full.jpg"
+  },
+  {
+   "title": "Episode 7 - Showdown! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/08a59df75e7589743642223016c261bc1497978740_full.jpg"
+  },
+  {
+   "title": "Episode 8 - Spine-chiller! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/ccd17592b31c8e300bdacaa91efd75591497978905_full.jpg"
+  },
+  {
+   "title": "Episode 9 - Sweet Summer! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/803bd26a12d12dba07e43c103086c6071497979026_full.jpg"
+  },
+  {
+   "title": "Episode 10 - Recommendation! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/6090b3b9df957c8ffc539f31fb81324e1497982260_full.jpg"
+  },
+  {
+   "title": "Episode 11 - Clear and Sunny! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/edc6ce30fcd406d0409a54b86c1cbc931497993318_full.jpg"
+  },
+  {
+   "title": "Episode 12 - Attack! Titan Junior High School",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/789930e3555e5797388aa1874aadae3b1497982575_full.jpg"
+  }
+ ]
+}

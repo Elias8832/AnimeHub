@@ -1,0 +1,126 @@
+{
+ "id": 20918,
+ "title": {
+  "romaji": "Tsukimonogatari",
+  "english": "Tsukimonogatari",
+  "native": "憑物語"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 4,
+ "duration": 23,
+ "averageScore": 79,
+ "season": "FALL",
+ "seasonYear": 2014,
+ "startDate": {
+  "year": 2014,
+  "month": 12,
+  "day": 31
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx20918-8Gp6nJpbjFgr.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/20918-5k02zgWVjDZi.jpg",
+ "description": "Third season of the Monogatari Series, part 1/5. Contains the arc Yotsugi Doll from the Tsukimonogatari light novel.\n<br><br>\nOne day in February, Koyomi Araragi was taking a bath with his younger sister Tsukihi amidst finishing his studies for the college entrance exam. This was also following the incident involving Nadeko Sengoku, which was successfully amended behind the scenes by Deishu Kaiki. Koyomi noticed a change on his body “that could not be overlooked” and sought advice from Shinobu Oshino leading him to contact Yozuru Kagenui and Yotsugi Ononoki. Was this change signifying retribution for everything that Koyomi has done?!\n<br><br>\n(Source: Aniplex)",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 74227,
+     "type": "MANGA",
+     "format": "NOVEL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2012,
+      "month": 9,
+      "day": 26
+     },
+     "title": {
+      "romaji": "Tsukimonogatari",
+      "english": "Tsukimonogatari: Possession Tale"
+     }
+    }
+   },
+   {
+    "relationType": "CHARACTER",
+    "node": {
+     "id": 99678,
+     "type": "ANIME",
+     "format": "ONA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2014,
+      "month": 12,
+      "day": 31
+     },
+     "title": {
+      "romaji": "Okitegami Kyouko no Bibouroku × Monogatari",
+      "english": null
+     }
+    }
+   },
+   {
+    "relationType": "SIDE_STORY",
+    "node": {
+     "id": 21520,
+     "type": "ANIME",
+     "format": "ONA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2016,
+      "month": 1,
+      "day": 9
+     },
+     "title": {
+      "romaji": "Koyomimonogatari",
+      "english": "Koyomimonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 21745,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2017,
+      "month": 8,
+      "day": 12
+     },
+     "title": {
+      "romaji": "Owarimonogatari (Ge)",
+      "english": "Owarimonogatari Second Season"
+     }
+    }
+   },
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 21262,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2015,
+      "month": 10,
+      "day": 4
+     },
+     "title": {
+      "romaji": "Owarimonogatari",
+      "english": "Owarimonogatari"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Yotsugi Doll",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/a4d83a0fefd9f775df290e99992c32fa1429091673_full.jpg"
+  }
+ ]
+}

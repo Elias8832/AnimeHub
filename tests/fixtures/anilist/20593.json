@@ -1,0 +1,172 @@
+{
+ "id": 20593,
+ "title": {
+  "romaji": "Hanamonogatari",
+  "english": "Hanamonogatari",
+  "native": "花物語"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 5,
+ "duration": 24,
+ "averageScore": 78,
+ "season": "SUMMER",
+ "seasonYear": 2014,
+ "startDate": {
+  "year": 2014,
+  "month": 8,
+  "day": 16
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx20593-ri6S0Qt3mFkv.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/20593-axzVzexiYwqs.png",
+ "description": "Second season of the Monogatari Series, part 2/2. Contains the arc Suruga Devil from the Hanamonogatari light novel.\n<br><br>\nNow that Koyomi Araragi and Hitagi Senjougahara have graduated, few familiar faces remain at Naoetsu Private High School. One of them is Suruga Kanbaru, holder of the Monkey's Paw. When she begins to hear talk of a mysterious being known as the \"Devil,\" who will magically solve any problem, she immediately thinks these rumors are about her and decides to investigate.\n<br><br>\nKanbaru discovers the Devil is actually Rouka Numachi, a former rival who provides free advice to those who seek her out now that she can no longer play basketball due to a leg injury. As a collector of misfortune, Numachi enjoys relieving her clients' stress by giving them false hope. Though Kanbaru sees no real harm being done, she reprimands Rouka for lying and heads home, relieved she is not the cause of the rumors. But the next morning, when she finds that her left hand has reverted back to its original form, she may have a reason to worry after all.\n",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 100815,
+     "type": "ANIME",
+     "format": "OVA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2019,
+      "month": 2,
+      "day": 27
+     },
+     "title": {
+      "romaji": "Zoku Owarimonogatari",
+      "english": "Zoku Owarimonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 143721,
+     "type": "MANGA",
+     "format": "NOVEL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2011,
+      "month": 3,
+      "day": 29
+     },
+     "title": {
+      "romaji": "Hanamonogatari",
+      "english": "Hanamonogatari: Flower Tale"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Episode 1 - Tsubasa Tiger Part One",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/15c96c8af3501b336086d6d79508728c1375724914_full.jpg"
+  },
+  {
+   "title": "Episode 2 - Tsubasa Tiger Part Two",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/6432aaf228a6afc4a07d1b442bb0b0241376383990_full.jpg"
+  },
+  {
+   "title": "Episode 3 - Tsubasa Tiger Part Three",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/ff0acf731605af382ea8635b49cc3ffa1376514621_full.jpg"
+  },
+  {
+   "title": "Episode 4 - Tsubasa Tiger Part Four",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/54aa50732f65c8639bf00c41d7124e281377564179_full.jpg"
+  },
+  {
+   "title": "Episode 5 - Tsubasa Tiger Part Five",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/58979c831a3562ef3ae1b29ce0b3e14a1377706641_full.jpg"
+  },
+  {
+   "title": "Episode 6 - Summary One",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/9af67904aed2135e60d3b33047f38e341378784289_full.jpg"
+  },
+  {
+   "title": "Episode 7 - Mayoi Jiangshi Part One",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/93aa8c7cf8e1f76a223f915da39a26ca1379036114_full.jpg"
+  },
+  {
+   "title": "Episode 8 - Mayoi Jiangshi Part Two",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/6e270c0d0762c86b0139a8268e1f95691379721616_full.jpg"
+  },
+  {
+   "title": "Episode 9 - Mayoi Jiangshi Part Three",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/297e64b6f73b213e26470647fae8f1671380602663_full.jpg"
+  },
+  {
+   "title": "Episode 10 - Mayoi Jiangshi Part Four",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/aa1d73707bd33262655594657ed57a3b1380863242_full.jpg"
+  },
+  {
+   "title": "Episode 11 - Summary Two",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/ff87d6beab295734d15a1f37ac839a821381562293_full.jpg"
+  },
+  {
+   "title": "Episode 12 - Nadeko Medusa Part One",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/b12f114bbdc970a556847cb054adef701381962224_full.jpg"
+  },
+  {
+   "title": "Episode 13 - Nadeko Medusa Part Two",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/ae0a60e9af9b6778070805f0527db92b1382588813_full.jpg"
+  },
+  {
+   "title": "Episode 14 - Nadeko Medusa Part Three",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/d364ab83eefcd353c233e83768be1f8a1383344235_full.jpg"
+  },
+  {
+   "title": "Episode 15 - Nadeko Medusa Part Four",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/5250122d625aba2671dd6b0fe64ec02a1384237917_full.jpg"
+  },
+  {
+   "title": "Episode 16 - Summary Three",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/1783c55f41548d822819c78adfd7371f1384317121_full.jpg"
+  },
+  {
+   "title": "Episode 17 - Shinobu Time Part One",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/fa05685ff9f816deda6c0c9f538f8ab81385419907_full.jpg"
+  },
+  {
+   "title": "Episode 18 - Shinobu Time Part Two",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/e94dfb3b980ed08607b268ec3edeff981385596207_full.jpg"
+  },
+  {
+   "title": "Episode 19 - Shinobu Time Part Three",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/000bb21a1e42814a7832adf2742d08271386204192_full.jpg"
+  },
+  {
+   "title": "Episode 20 - Shinobu Time Part Four",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/6771663abec30a733f203532860e13cf1387231160_full.jpg"
+  },
+  {
+   "title": "Episode 21 - Hitagi End Part One",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/1e8dcc90a8bcb0c59b176b34f1d42f3f1387509291_full.jpg"
+  },
+  {
+   "title": "Episode 22 - Hitagi End Part Two",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/53e33d68bd35ca3b2fa098dff6ca4a351388449670_full.jpg"
+  },
+  {
+   "title": "Episode 23 - Hitagi End Part Three",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/3464a8ced1c80483022c82e515c4c75f1389058702_full.jpg"
+  },
+  {
+   "title": "Episode 24 - Hitagi End Part Four",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/823f3c5da1ab233ad297295d88084c841389205714_full.jpg"
+  },
+  {
+   "title": "Episode 25 - Hitagi End Part Five",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/efb30fd4f2c6eed8213521d1f3ea214a1389762172_full.jpg"
+  },
+  {
+   "title": "Episode 26 - Hitagi End Part Six",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/8e35ea366484d10ec6e299b52d7508571390537868_full.jpg"
+  }
+ ]
+}

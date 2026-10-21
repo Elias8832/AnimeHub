@@ -1,0 +1,224 @@
+{
+ "id": 5081,
+ "title": {
+  "romaji": "Bakemonogatari",
+  "english": "Bakemonogatari",
+  "native": "化物語"
+ },
+ "format": "TV",
+ "status": "FINISHED",
+ "episodes": 15,
+ "duration": 24,
+ "averageScore": 82,
+ "season": "SUMMER",
+ "seasonYear": 2009,
+ "startDate": {
+  "year": 2009,
+  "month": 7,
+  "day": 3
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx5081-9GocceQ5Z865.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/n5081-0Zcn5GOFYHMc.jpg",
+ "description": "First season of the Monogatari Series, part 1/6. Contains the arcs Hitagi Crab, Mayoi Snail, Suruga Monkey, Nadeko Snake, and Tsubasa Cat from the Bakemonogatari light novels.<br><br>\nThanks to Meme Oshino, Koyomi Araragi, a high school student, is able to remain a human after coming across a female vampire... However, since the incident, Koyomi seems to meet girls who have an apparition-related issue. Hitagi Senjougahara doesn’t weigh anything, Suruga Kanbaru’s right arm becomes like that of a monkey’s, and a young girl, Mayoi, cannot find her way home no matter how many times she tries. Koyomi, a Mr. Nice Guy, ends up helping each and every girl solve her problem with the help of Meme Oshino.\n<br><br>\n(Source: Aniplex)<br><br>\n<i>Note: Only the first 12 episodes were broadcast on television; the remaining three episodes were distributed on the anime's website between November 3, 2009, and June 25, 2010.</i>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 15689,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2012,
+      "month": 12,
+      "day": 31
+     },
+     "title": {
+      "romaji": "Nekomonogatari (Kuro)",
+      "english": "Nekomonogatari Black"
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 11597,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2012,
+      "month": 1,
+      "day": 8
+     },
+     "title": {
+      "romaji": "Nisemonogatari",
+      "english": "Nisemonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 44893,
+     "type": "MANGA",
+     "format": "NOVEL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2006,
+      "month": 11,
+      "day": 1
+     },
+     "title": {
+      "romaji": "Bakemonogatari",
+      "english": "Bakemonogatari: Monster Tale"
+     }
+    }
+   },
+   {
+    "relationType": "SIDE_STORY",
+    "node": {
+     "id": 21520,
+     "type": "ANIME",
+     "format": "ONA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2016,
+      "month": 1,
+      "day": 9
+     },
+     "title": {
+      "romaji": "Koyomimonogatari",
+      "english": "Koyomimonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "OTHER",
+    "node": {
+     "id": 106495,
+     "type": "ANIME",
+     "format": "ONA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2015,
+      "month": 4,
+      "day": 1
+     },
+     "title": {
+      "romaji": "Nisekoimonogatari",
+      "english": "Nisekoimonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "CHARACTER",
+    "node": {
+     "id": 54499,
+     "type": "MANGA",
+     "format": "NOVEL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2010,
+      "month": 10,
+      "day": 27
+     },
+     "title": {
+      "romaji": "Bakemonogatari Anime Complete Guidebook",
+      "english": null
+     }
+    }
+   },
+   {
+    "relationType": "ALTERNATIVE",
+    "node": {
+     "id": 101311,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2018,
+      "month": 3,
+      "day": 14
+     },
+     "title": {
+      "romaji": "Bakemonogatari",
+      "english": "Bakemonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "ALTERNATIVE",
+    "node": {
+     "id": 143663,
+     "type": "ANIME",
+     "format": "SPECIAL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2022,
+      "month": 2,
+      "day": 17
+     },
+     "title": {
+      "romaji": "Bakemonogatari PV",
+      "english": null
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Episode 1 - Hitagi Crab, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/0c04588785851d184602c930502764031347406127_full.jpg"
+  },
+  {
+   "title": "Episode 2 - Hitagi Crab, Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/c945ecb00e19f3f8c8f6cec78becbe931347671890_full.jpg"
+  },
+  {
+   "title": "Episode 3 - Mayoi Mai Mai, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/1047a8e578cf3d4f3c1e11a714d7d8311348509559_full.jpg"
+  },
+  {
+   "title": "Episode 4 - Mayoi Mai Mai, Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/79dc832508379795fbb4ab18a432fdd71348812377_full.jpg"
+  },
+  {
+   "title": "Episode 5 - Mayoi Mai Mai, Part 3",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/201b60812a2035928e34dc2413c917df1349728055_full.jpg"
+  },
+  {
+   "title": "Episode 6 - Suruga Monkey, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/b3447b17d3fa92ad457fce02a6061e841350324845_full.jpg"
+  },
+  {
+   "title": "Episode 7 - Suruga Monkey, Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/2acff1c67ee865ae199be9e8498c00ff1350691105_full.jpg"
+  },
+  {
+   "title": "Episode 8 - Suruga Monkey, Part 3",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/2dfd4660026f1fdd630d4895834742641351535583_full.jpg"
+  },
+  {
+   "title": "Episode 9 - Nadeko Snake, Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/ee6d3db913d6b06c6624a01eb61ee3fe1352160670_full.jpg"
+  },
+  {
+   "title": "Episode 10 - Nadeko Snake, Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/80513eccbc87c9ed6da3d5ac074110f41352754958_full.jpg"
+  },
+  {
+   "title": "Episode 11 - TSUBASA Cat,  Part 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/7bca0d1d95ae4baaba3fc5c9b001bcee1353363913_full.jpg"
+  },
+  {
+   "title": "Episode 12 - TSUBASA Cat,  Part 2",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/319744187c09dad545dbb2cfa014e88a1354047195_full.jpg"
+  }
+ ]
+}

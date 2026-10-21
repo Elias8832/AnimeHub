@@ -1,0 +1,70 @@
+{
+ "id": 189123,
+ "title": {
+  "romaji": "Ao no Hako Season 2",
+  "english": "Blue Box Season 2",
+  "native": "アオのハコ Season２"
+ },
+ "format": "TV",
+ "status": "RELEASING",
+ "episodes": 12,
+ "duration": 24,
+ "averageScore": 81,
+ "season": "FALL",
+ "seasonYear": 2026,
+ "startDate": {
+  "year": 2026,
+  "month": 10,
+  "day": 4
+ },
+ "nextAiringEpisode": {
+  "episode": 4,
+  "airingAt": 1792913400
+ },
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx189123-0secXELIhkIW.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/189123-s2oirY2r1Svy.jpg",
+ "description": "The second season of <i>Ao no Hako</i>.\n",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 132182,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2021,
+      "month": 4,
+      "day": 12
+     },
+     "title": {
+      "romaji": "Ao no Hako",
+      "english": "Blue Box"
+     }
+    }
+   },
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 170942,
+     "type": "ANIME",
+     "format": "ONA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2024,
+      "month": 10,
+      "day": 3
+     },
+     "title": {
+      "romaji": "Ao no Hako",
+      "english": "Blue Box"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

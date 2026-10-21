@@ -1,0 +1,85 @@
+{
+ "id": 170942,
+ "title": {
+  "romaji": "Ao no Hako",
+  "english": "Blue Box",
+  "native": "アオのハコ"
+ },
+ "format": "ONA",
+ "status": "FINISHED",
+ "episodes": 25,
+ "duration": 24,
+ "averageScore": 81,
+ "season": "FALL",
+ "seasonYear": 2024,
+ "startDate": {
+  "year": 2024,
+  "month": 10,
+  "day": 3
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx170942-KKcLfQzV57nG.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/170942-v2GO5YNO0Q5I.jpg",
+ "description": "<i>Do these sports-crossed lovers have a chance?</i>\n<br><br>\nTaiki Inomata loves badminton, but he has a long way to go before he can reach nationals. When Taiki sees upperclassman Chinatsu Kano practicing her heart out on the girls’ basketball team, he falls for her hard. After an unexpected turn of events brings the two closer together, sports might not be the first thing on their minds anymore!<br><br>(Source: TMS Anime)<br><br>\n<i>Note: The series streamed a week in advance on Netflix Japan starting with episode 2 released alongside episode 1.</i>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 132182,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2021,
+      "month": 4,
+      "day": 12
+     },
+     "title": {
+      "romaji": "Ao no Hako",
+      "english": "Blue Box"
+     }
+    }
+   },
+   {
+    "relationType": "OTHER",
+    "node": {
+     "id": 184816,
+     "type": "ANIME",
+     "format": "MUSIC",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2024,
+      "month": 11,
+      "day": 22
+     },
+     "title": {
+      "romaji": "Teenage Blue",
+      "english": null
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 189123,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2026,
+      "month": 10,
+      "day": 4
+     },
+     "title": {
+      "romaji": "Ao no Hako Season 2",
+      "english": "Blue Box Season 2"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

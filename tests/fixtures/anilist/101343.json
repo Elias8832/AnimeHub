@@ -1,0 +1,86 @@
+{
+ "id": 101343,
+ "title": {
+  "romaji": "Made in Abyss: Tabidachi no Yoake",
+  "english": "Made in Abyss: Journey's Dawn",
+  "native": "メイドインアビス 旅立ちの夜明け"
+ },
+ "synonyms": [],
+ "format": "MOVIE",
+ "status": "FINISHED",
+ "episodes": 1,
+ "duration": 120,
+ "averageScore": 81,
+ "season": "WINTER",
+ "seasonYear": 2019,
+ "startDate": {
+  "year": 2019,
+  "month": 1,
+  "day": 4
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101343-E9fMMi4b8fsL.png"
+ },
+ "bannerImage": null,
+ "description": "A compilation film recapping the first half of the anime series.<br>\n<br>\nThe enigmatic Abyss is an unforgiving and deadly place. Despite the dangers, it still captures the imagination of explorers such as Riko who wishes to follow in her mother’s footsteps and trains hard to become a Cave Raider. One day, she receives news that her mother died in the Abyss, yet a mysterious note tells Riko that her mother may still be alive. Vowing to uncover the truth about her mother’s fate, Riko embarks on a journey with a humanoid robot boy named Reg. Together they will discover if they have what it takes to survive where so many others have perished.<br>\n<br>\n(Source: Sentai Filmworks)",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 97986,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2017,
+      "month": 7,
+      "day": 7
+     },
+     "title": {
+      "romaji": "Made in Abyss",
+      "english": "Made in Abyss"
+     }
+    }
+   },
+   {
+    "relationType": "SEQUEL",
+    "node": {
+     "id": 101344,
+     "type": "ANIME",
+     "format": "MOVIE",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2019,
+      "month": 1,
+      "day": 18
+     },
+     "title": {
+      "romaji": "Made in Abyss: Hourou Suru Tasogare",
+      "english": "Made in Abyss: Wandering Twilight"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 86551,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "RELEASING",
+     "startDate": {
+      "year": 2012,
+      "month": 10,
+      "day": 20
+     },
+     "title": {
+      "romaji": "Made in Abyss",
+      "english": "Made in Abyss"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}

@@ -1,0 +1,184 @@
+{
+ "id": 162314,
+ "title": {
+  "romaji": "Shingeki no Kyojin: The Final Season - Kanketsu-hen Kouhen",
+  "english": "Attack on Titan Final Season THE FINAL CHAPTERS Special 2",
+  "native": "進撃の巨人 The Final Season完結編 後編"
+ },
+ "format": "SPECIAL",
+ "status": "FINISHED",
+ "episodes": 1,
+ "duration": 85,
+ "averageScore": 87,
+ "season": "FALL",
+ "seasonYear": 2023,
+ "startDate": {
+  "year": 2023,
+  "month": 11,
+  "day": 5
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx162314-qIWdAAFtvY8J.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/162314-N5M4XMz6O1j4.jpg",
+ "description": "Eren, as the Founding Titan, advances on Fort Salta with countless other Titans. Appearing before the refugees, who stand on the brink of despair, are Mikasa, Armin, Jean, Conny, Reiner, Pieck, and Levi, who narrowly escaped from the rumbling. The battle between former comrades and childhood friends with Eren concludes here.\n<br><br>\n(Source: Crunchyroll)",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 53390,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2009,
+      "month": 9,
+      "day": 9
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin",
+      "english": "Attack on Titan"
+     }
+    }
+   },
+   {
+    "relationType": "PREQUEL",
+    "node": {
+     "id": 146984,
+     "type": "ANIME",
+     "format": "SPECIAL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2023,
+      "month": 3,
+      "day": 4
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin: The Final Season - Kanketsu-hen Zenpen",
+      "english": "Attack on Titan Final Season THE FINAL CHAPTERS Special 1"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Attack on Titan Final Season THE FINAL CHAPTERS Special 1",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/1017583d42aaa83589b6aa95e4a51e6a1677868478_full.jpg"
+  },
+  {
+   "title": "Episode 87 - The Dawn of Humanity",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/0c39be83d52244805291d8e8237293461649016208_full.jpg"
+  },
+  {
+   "title": "Episode 86 - Retrospective",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/107fecc61807ea45578616e82f61a8a51647805821_full.jpg"
+  },
+  {
+   "title": "Episode 85 - Traitor",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/0ed572e1c4b5923f8cb2a776fb3f6b771647191633_full.jpg"
+  },
+  {
+   "title": "Episode 84 - Night of the End",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/008c5a0ca322a36f615b95230382b5f41646592421_full.jpg"
+  },
+  {
+   "title": "Episode 83 - Pride",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/02631a5dd771c74af0c20408afce19911645992756_full.jpg"
+  },
+  {
+   "title": "Episode 82 - Sunset",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/f1268e6d8838720406c1a5dca742ad7c1645379366_full.jpg"
+  },
+  {
+   "title": "Episode 81 - Thaw",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/b6bad89e8b3a4fc91ee7a0453e0e7c251644781705_full.jpg"
+  },
+  {
+   "title": "Episode 80 - From You, 2,000 Years Ago",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/f7406e6c967ae324e8c918c733a518f31644171379_full.jpg"
+  },
+  {
+   "title": "Episode 79 - Memories of the Future",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/0cf2a96494141459ed21f65944cb79081643563427_full.jpg"
+  },
+  {
+   "title": "Episode 78 - Two Brothers",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/cfd9fc28a648863144775d6b4175c54d1642957023_full.jpg"
+  },
+  {
+   "title": "Episode 77 - Sneak Attack",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/5353c5a73ea7e6629624690a498f0c261642355409_full.jpg"
+  },
+  {
+   "title": "Episode 76 - Judgment",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/0e5da9029f043c3822d9ed5f34b18d1c1641748544_full.jpg"
+  },
+  {
+   "title": "Episode 75 - Above and Below",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/44b399b67b97f201727633b41355c8a31616962875_full.jpg"
+  },
+  {
+   "title": "Episode 74 - Sole Salvation",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/d5f6ad6bd9fc33f1a44becf56f0d206d1616344340_full.jpg"
+  },
+  {
+   "title": "Episode 73 - Savagery",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/944483f657b5e19ce0956f383a28c48d1616341783_full.jpg"
+  },
+  {
+   "title": "Episode 72 - Children of the Forest",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/ebfaa4c3fa6ffca48f8388b653335cb81615142376_full.jpg"
+  },
+  {
+   "title": "Episode 71 - Guides",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/efdf918eb256edec1249fa7449c672001614531134_full.jpg"
+  },
+  {
+   "title": "Episode 70 - Deceiver",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/4402b85f5f1395541ad50fb69a5ae4251613935418_full.jpg"
+  },
+  {
+   "title": "Episode 69 - A Sound Argument",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/1557e1df17ec89418dc2355243cfd3451613331138_full.jpg"
+  },
+  {
+   "title": "Episode 68 - Brave Volunteers",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/7a05d97e62fc9ca1a9049b13d741db271612724387_full.jpg"
+  },
+  {
+   "title": "Episode 67 - Assassin's Bullet",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/abfee50e7f4dc59eb17e5f5e17fb76a61612111015_full.jpg"
+  },
+  {
+   "title": "Episode 66 - Assault",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/e350687c8bbadbf1c6c73dc541a0e57c1611520667_full.jpg"
+  },
+  {
+   "title": "Episode 65 - The War Hammer Titan",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/6fdde90f431f52982a23e429941e0cf91610909006_full.jpg"
+  },
+  {
+   "title": "Episode 64 - Declaration of War",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/e706a84d6020304288156862020160121610311074_full.jpg"
+  },
+  {
+   "title": "Episode 63 - From One Hand to Another",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/5326516a6776a8b7572d772c376ac1ea1609099263_full.jpg"
+  },
+  {
+   "title": "Episode 62 - The Door of Hope",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/8fa4696a3e48fd56d2dc8faad2646b3e1608488682_full.jpg"
+  },
+  {
+   "title": "Episode 61 - Midnight Train",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire4-tmb/adeaaa83963c53164bce6602daed217b1607876340_full.jpg"
+  },
+  {
+   "title": "Episode 60 - The Other Side of the Sea",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire1-tmb/5e5721da40ae3342fdddde39016301781607271386_full.jpg"
+  }
+ ]
+}

@@ -1,0 +1,130 @@
+{
+ "id": 119113,
+ "title": {
+  "romaji": "Shingeki no Kyojin: Chronicle",
+  "english": "Attack on Titan ~Chronicle~",
+  "native": "進撃の巨人 〜クロニクル〜"
+ },
+ "format": "MOVIE",
+ "status": "FINISHED",
+ "episodes": 1,
+ "duration": 120,
+ "averageScore": 77,
+ "season": "SUMMER",
+ "seasonYear": 2020,
+ "startDate": {
+  "year": 2020,
+  "month": 7,
+  "day": 17
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx119113-IzVI5oZ0og8O.jpg"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/119113-J6nd0aoRSTAA.jpg",
+ "description": "Movie compiling the first 3 seasons of <i>Shingeki no Kyojin</i>.",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 16498,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2013,
+      "month": 4,
+      "day": 7
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin",
+      "english": "Attack on Titan"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 20958,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2017,
+      "month": 4,
+      "day": 1
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin Season 2",
+      "english": "Attack on Titan Season 2"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 99147,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2018,
+      "month": 7,
+      "day": 23
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin Season 3",
+      "english": "Attack on Titan Season 3"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 104578,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2019,
+      "month": 4,
+      "day": 29
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin Season 3 Part 2",
+      "english": "Attack on Titan Season 3 Part 2"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 53390,
+     "type": "MANGA",
+     "format": "MANGA",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2009,
+      "month": 9,
+      "day": 9
+     },
+     "title": {
+      "romaji": "Shingeki no Kyojin",
+      "english": "Attack on Titan"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": [
+  {
+   "title": "Unknown",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire2-tmb/0bedaffb77b2957d4820b50acb8e63771629833827_full.jpg"
+  },
+  {
+   "title": "Unknown",
+   "thumbnail": "https://img1.ak.crunchyroll.com/i/spire3-tmb/32ad43f53015dc233d1e76bab4881cfd1629833839_full.jpg"
+  }
+ ]
+}

@@ -1,0 +1,121 @@
+{
+ "id": 21520,
+ "title": {
+  "romaji": "Koyomimonogatari",
+  "english": "Koyomimonogatari",
+  "native": "暦物語"
+ },
+ "format": "ONA",
+ "status": "FINISHED",
+ "episodes": 12,
+ "duration": 14,
+ "averageScore": 74,
+ "season": "WINTER",
+ "seasonYear": 2016,
+ "startDate": {
+  "year": 2016,
+  "month": 1,
+  "day": 9
+ },
+ "nextAiringEpisode": null,
+ "coverImage": {
+  "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21520-nZKCr7PZrv7e.png"
+ },
+ "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/21520-iaWBW3LJHil9.jpg",
+ "description": "Third season of the Monogatari Series, part 2/5. Adapts the arcs Koyomi Stone, Koyomi Flower, Koyomi Sand, Koyomi Water, Koyomi Wind, Koyomi Tree, Koyomi Tea, Koyomi Mountain, Koyomi Torus, Koyomi Seed, Koyomi Nothing, and Koyomi Dead from the Koyomimonogatari light novel.\n<br><br>\n“You’re looking for a horror story? I wish I got one for you.\" Untold stories… one per month for one year… Taking place between other Monogatari stories, a chapter not yet told surrounds Koyomi Araragi and the strange happenings he gets pulled into over the course of a year. With one episode told per month, the story unravels in this 12 episode-long series of shorts.\n<br><br>\n(Source: Aniplex)\n<br><br>\n<em>Premiered on the Japan-exclusive Koyomimonogatari mobile app.</em>",
+ "relations": {
+  "edges": [
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 5081,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2009,
+      "month": 7,
+      "day": 3
+     },
+     "title": {
+      "romaji": "Bakemonogatari",
+      "english": "Bakemonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 11597,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2012,
+      "month": 1,
+      "day": 8
+     },
+     "title": {
+      "romaji": "Nisemonogatari",
+      "english": "Nisemonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 17074,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2013,
+      "month": 7,
+      "day": 7
+     },
+     "title": {
+      "romaji": "Monogatari Series: Second Season",
+      "english": "Monogatari Series Second Season"
+     }
+    }
+   },
+   {
+    "relationType": "PARENT",
+    "node": {
+     "id": 20918,
+     "type": "ANIME",
+     "format": "TV",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2014,
+      "month": 12,
+      "day": 31
+     },
+     "title": {
+      "romaji": "Tsukimonogatari",
+      "english": "Tsukimonogatari"
+     }
+    }
+   },
+   {
+    "relationType": "ADAPTATION",
+    "node": {
+     "id": 143743,
+     "type": "MANGA",
+     "format": "NOVEL",
+     "status": "FINISHED",
+     "startDate": {
+      "year": 2013,
+      "month": 5,
+      "day": 20
+     },
+     "title": {
+      "romaji": "Koyomimonogatari",
+      "english": "Koyomimonogatari: Calendar Tale"
+     }
+    }
+   }
+  ]
+ },
+ "streamingEpisodes": []
+}
