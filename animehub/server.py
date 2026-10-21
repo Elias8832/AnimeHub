@@ -125,7 +125,7 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     except Exception:
                         pass
-                self.send_json({"error": str(e)}, 502)
+                self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/entry":
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -154,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
             except anilist.AniListAuthError as e:
                 self.send_json({"error": e.reason, "auth": True}, 401)
             except Exception as e:
-                self.send_json({"error": str(e)}, 502)
+                self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/auth/status":
             self.send_json(anilist.auth_status())
         elif route == "/api/settings":
@@ -394,7 +394,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     self.send_json(metadata.fetch_media_candidates(body["query"])[:10])
                 except Exception as e:
-                    self.send_json({"error": str(e)}, 502)
+                    self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/auth/start":
             r = anilist.auth_start()
             self.send_json(r, 200 if r.get("url") else 400)
@@ -427,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self.send_json(sync.reconcile_analyze())
             except Exception as e:
-                self.send_json({"error": str(e)}, 502)
+                self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/reconcile/apply":
             # TODO 16: curation winners. Facts were already applied during
             # analyze and are not user-decidable (Decision 14).
@@ -438,9 +438,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 applied = sync.reconcile_apply(decisions)
             except Exception as e:
-                self.send_json({"error": str(e)}, 502)
+                self.send_json({"error": anilist.friendly_error(e)}, 502)
                 return
-            threading.Thread(target=anilist.anilist_user_data, kwargs={"force": True},
+            threading.Thread(target=anilist.refresh_user_data, kwargs={"force": True},
                              daemon=True).start()
             self.send_json({"ok": True, "applied": applied})
         elif route == "/api/reconcile/dismiss":
@@ -551,7 +551,7 @@ class Handler(BaseHTTPRequestHandler):
                     sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav)
                     cur = library.curation_get(ref) or {}
                     self.send_json({"queued": True, "local": True,
-                                    "entry": cur, "reason": str(e)})
+                                    "entry": cur, "reason": anilist.friendly_error(e)})
                     return
                 except ValueError as e:
                     # AniList rejected the mutation itself (HTTP 400 with a
@@ -560,7 +560,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"error": str(e), "local": True})
                     return
                 except Exception as e:
-                    self.send_json({"error": str(e)}, 502)
+                    self.send_json({"error": anilist.friendly_error(e)}, 502)
                     return
             # No-AniList mode (Decision 10): the same fields store locally.
             out = library.curation_get(ref) or {}
@@ -686,7 +686,7 @@ def main():
     # Warm the AniList cache so the spine (TODO 8) is populated on the very
     # first library view; /api/anilist visits keep it fresh afterwards.
     if anilist.load_anilist_username():
-        threading.Thread(target=anilist.anilist_user_data, daemon=True).start()
+        threading.Thread(target=anilist.refresh_user_data, daemon=True).start()
     # Durable-write flush loop (TODO 14): retries held intents with backoff.
     threading.Thread(target=sync.outbox_loop, daemon=True).start()
     # Spine freshness (TODO 8/17): keep the AniList cache warm in the

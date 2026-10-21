@@ -188,7 +188,7 @@ function toast(m) {
   const t = $("#toast");
   t.innerHTML = '<i class="tdot"></i><span></span><b class="ttime"></b>'; // fresh timer bar each time
   t.querySelector("span").textContent = m;
-  t.classList.toggle("err", /could not|failed|error|can't|cannot|not accessible/i.test(m));
+  t.classList.toggle("err", /could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m));
   t.classList.add("on");
   clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 2400);
 }
@@ -671,7 +671,7 @@ function frUnavailable(msg) {
   S.view = "show"; S.showId = sid; S.seasonIdx = t ? Math.max(0, s.seasons.indexOf(t.sea)) : 0;
   history.replaceState(navSnap(), "", navUrl());
   render();
-  toast(msg + " Showing the folder instead.");
+  toast(msg + " Showing the folder for now.");
 }
 /* Watch state and loading badges move without rebuilding the page's
    artwork (patchShow); a different set of tiles is a full paint. */
@@ -1841,6 +1841,14 @@ const A = {
   mark: (v, t) => {
     const w = t.dataset.w === "true", f = S.view === "fr" && frFind(v);
     if (f) return frMark(f.e, [f.x.number], w);
+    /* A show page marks through bulk-watched, like its buttons: the mark
+       syncs to AniList (queued while it's down), as on the franchise page. */
+    const own = S.view === "show" && showById(S.showId)?.seasons.some((x) => x.episodes.some((e) => e.id === v));
+    if (own) return api("/api/bulk-watched", { show_id: S.showId, watched: w, ids: [v] }).then((r) => {
+      if (r && r.error) return toast(r.error);
+      toast(w ? `Marked as watched${r.synced ? " — will sync" : ""}` : "Marked as unwatched");
+      watchPatch([v], w, false);
+    }).catch(() => toast("Could not save — is the hub running?"));
     api("/api/watched", { id: v, watched: w }).then((r) => { if (r && r.error) return toast(r.error); toast(w ? "Marked as watched" : "Marked as unwatched"); watchPatch([v], w, false); }).catch(() => toast("Could not save — is the hub running?"));
   },
   reset: (v) => {

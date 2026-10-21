@@ -254,7 +254,7 @@ class Unavailable(unittest.TestCase):
             self.build(999998)
             page = pages.franchise_view(999998)
         self.assertEqual((page["building"], page["entries"]), (True, []))
-        self.assertEqual(page["unavailable"], "Couldn't reach AniList (HTTP Error 403: Forbidden).")
+        self.assertEqual(page["unavailable"], "AniList is unreachable right now — try again later.")
 
     def test_building_is_not_unavailable(self):
         with mock.patch.object(pages, "franchise_build_async"):

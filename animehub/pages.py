@@ -193,7 +193,7 @@ def franchise_build_async(mid):
             _build_failed.pop(mid, None)
         except Exception as e:
             util.log("building franchise of %s failed: %s" % (mid, e))
-            _build_failed[mid] = (time.time(), "Couldn't reach AniList (%s)." % e)
+            _build_failed[mid] = (time.time(), anilist.friendly_error(e))
         finally:
             _building.discard(mid)
 

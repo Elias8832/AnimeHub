@@ -372,7 +372,7 @@ def set_season_pin(show_id, sea_key, anilist_id=None, none=False):
         try:
             m = franchise.media_entry(anilist_id)
         except Exception as e:
-            return {"error": f"Could not reach AniList: {e}"}
+            return {"error": anilist.friendly_error(e)}
         if not m:
             return {"error": f"AniList has no media with id {anilist_id}"}
     nums = [e["number"] for e in sea["episodes"] if isinstance(e.get("number"), int) and e["number"] >= 1]
@@ -493,11 +493,15 @@ def refresh_entry_art(scan=None, anizip=None, ids=None):
         if not _entry_art_lock.acquire(blocking=False):
             return did  # the running pass takes our entries
         try:
+            failed, last = 0, None
             while (mid := _art_next()) is not None:
                 try:
                     did += _store_entry_art(mid, anizip)
                 except Exception as e:
-                    util.log("stills for %s failed: %s" % (mid, e))
+                    failed, last = failed + 1, e
+            if failed:
+                # One line per pass: an outage fails every entry the same way.
+                util.log("stills for %d entr%s failed: %s" % (failed, "y" if failed == 1 else "ies", last))
         finally:
             _entry_art_lock.release()
         with _art_queue_lock:

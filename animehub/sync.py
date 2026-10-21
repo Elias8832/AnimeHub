@@ -19,11 +19,15 @@ OUTBOX_BACKOFF = [30, 60, 120, 300, 900, 1800]
 OUTBOX_MAX_ATTEMPTS = 8
 
 
-def outbox_enqueue(media_id, patch=None, favourite=None):
+def outbox_enqueue(media_id, patch=None, favourite=None, verify=None):
+    """`verify` ({"add": bool}) marks a progress guess queued without a
+    fresh AniList list — outbox_verify settles it before it is sent."""
     tok = anilist.load_token() or {}
     payload = {"patch": patch or {}, "account_id": tok.get("user_id")}
     if favourite is not None:
         payload["favourite"] = bool(favourite)
+    if verify is not None:
+        payload["verify"] = verify
     with database.db() as c:
         c.execute("INSERT INTO outbox(media_id,payload,account_id,created)"
                   " VALUES(?,?,?,?)",
@@ -35,12 +39,15 @@ def outbox_count():
         return c.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
 
 
-def outbox_fail(row_id, attempts, error):
-    """Backoff schedule for transient failures; after the final attempt the
-    row is dropped with a loud log — the local overlay keeps the user's
-    change, and a poison row must not block the queue forever."""
+def outbox_fail(row_id, attempts, error, transient=False):
+    """Backoff schedule for failed rows. A transient failure (offline,
+    AniList down) retries forever at the backoff cap — an outage is not a
+    poison row (Decision 34; the 2026-10-21 outage outlasted the 8 tries).
+    A rejected row is dropped after the final attempt with a loud log — the
+    local overlay keeps the user's change, and a poison row must not block
+    the queue forever."""
     n = attempts + 1
-    if n >= OUTBOX_MAX_ATTEMPTS:
+    if not transient and n >= OUTBOX_MAX_ATTEMPTS:
         with database.db() as c:
             c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
         util.log("outbox: dropped entry %s after %d attempts — %s" % (row_id, n, error))
@@ -49,6 +56,17 @@ def outbox_fail(row_id, attempts, error):
         c.execute("UPDATE outbox SET attempts=?, next_try=?, last_error=? WHERE id=?",
                   (n, time.time() + OUTBOX_BACKOFF[min(n, len(OUTBOX_BACKOFF)) - 1],
                    str(error)[:300], row_id))
+
+
+def outbox_verify(payload, remote):
+    """The patch to send for a verify row, given its entry on the live list
+    (None = not on the list), or None when there is nothing to send: AniList
+    already has this progress or more, or the entry is unlisted and auto-add
+    was off when the row was queued."""
+    p = payload["patch"].get("progress")
+    if remote is not None:
+        return None if (remote.get("progress") or 0) >= p else {"progress": p}
+    return {"status": "CURRENT", "progress": p} if payload["verify"].get("add") else None
 
 
 def outbox_flush(limit=20):
@@ -67,6 +85,7 @@ def outbox_flush(limit=20):
                         (time.time(), limit)).fetchall()
     sent = 0
     tok = anilist.load_token() or {}
+    remote = None  # the live list, fetched once for the pass's verify rows
     for row_id, media_id, payload_s, attempts in due:
         try:
             payload = json.loads(payload_s)
@@ -79,13 +98,28 @@ def outbox_flush(limit=20):
         if payload.get("account_id") is not None and \
                 payload["account_id"] != tok.get("user_id"):
             continue
+        if payload.get("verify"):
+            if remote is None:
+                try:
+                    data = anilist.anilist_cache_read() or anilist.anilist_user_data(force=True)
+                    remote = {e["id"]: e for e in data.get("entries", [])}
+                except Exception as e:
+                    remote = e
+            if isinstance(remote, Exception):
+                outbox_fail(row_id, attempts, "AniList list unreachable: %s" % remote, transient=True)
+                continue
+            payload["patch"] = outbox_verify(payload, remote.get(media_id))
+            if payload["patch"] is None:
+                with database.db() as c:
+                    c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
+                continue
         try:
             if payload.get("patch"):
                 anilist.anilist_entry_save(media_id, payload["patch"])
             if "favourite" in payload:
                 anilist.anilist_favourite_set(media_id, payload["favourite"])
         except anilist.AniListTransientError as e:
-            outbox_fail(row_id, attempts, e)
+            outbox_fail(row_id, attempts, e, transient=True)
             continue
         except anilist.AniListAuthError:
             # Dormant (Decision 24): stop the pass, keep attempts untouched,
@@ -185,7 +219,7 @@ def reconcile_analyze():
         data = anilist.anilist_user_data(force=True)
     except Exception as e:
         return {"pending": True, "facts": [], "conflicts": [],
-                "error": "Could not fetch AniList state: %s" % e}
+                "error": anilist.friendly_error(e)}
     remote = {e["id"]: e for e in data.get("entries", [])}
     fmt = data.get("score_format") or "POINT_10"
     facts, conflicts = [], []

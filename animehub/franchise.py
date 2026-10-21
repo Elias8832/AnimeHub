@@ -229,7 +229,7 @@ def refresh_franchises(seeds, fetch=None):
     if not _franchise_lock.acquire(blocking=False):
         return 0
     try:
-        done, built = set(), 0
+        done, built, failed, last = set(), 0, 0, None
         for mid in sorted(seeds):
             if mid in done:
                 continue
@@ -240,11 +240,14 @@ def refresh_franchises(seeds, fetch=None):
             try:
                 entries = build_franchise(mid, fetch)
             except Exception as e:
-                util.log("franchise of %s failed: %s" % (mid, e))
+                failed, last = failed + 1, e
                 continue
             store_franchise(entries)
             done.update(m["id"] for m in entries)
             built += 1
+        if failed:
+            # One line per pass: an outage fails every franchise the same way.
+            util.log("franchise refresh: %d failed: %s" % (failed, last))
         return built
     finally:
         _franchise_lock.release()

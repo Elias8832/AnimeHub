@@ -8,7 +8,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from . import database, sync
+from . import database, sync, util
 from .config import config
 
 
@@ -370,6 +370,24 @@ class AniListTransientError(Exception):
         self.status = status
 
 
+def friendly_error(e):
+    """An AniList failure in the app's words, for the UI (the counterpart
+    of streaming.friendly_stream_error): never "HTTP Error 403: Forbidden".
+    An unexpected failure is logged with its details."""
+    if isinstance(e, AniListAuthError):
+        return e.reason
+    code = e.status if isinstance(e, AniListTransientError) else getattr(e, "code", None)
+    if code == 429:
+        return "AniList is limiting requests — try again in a minute."
+    if code == 404:
+        return "AniList has no entry with this id."
+    if code == 403 or (isinstance(code, int) and code >= 500) \
+            or isinstance(e, (URLError, TimeoutError, ConnectionError, AniListTransientError)):
+        return "AniList is unreachable right now — try again later."
+    util.log("AniList: %s" % e)
+    return "Something went wrong talking to AniList."
+
+
 def load_token():
     """The stored OAuth token dict, or None. A corrupt file counts as
     absent — auth state must degrade to 'not connected', never traceback."""
@@ -542,6 +560,11 @@ def anilist_mutation(query, variables=None):
         if e.code >= 500:
             raise AniListTransientError(f"AniList server error (HTTP {e.code})",
                                         status=e.code)
+        if e.code in (403, 429):
+            # An outage, not a bad request (found live 2026-10-21: "The
+            # AniList API has been temporarily disabled" as HTTP 403): queue
+            # and retry the write instead of dropping it as a validation error.
+            raise AniListTransientError(f"AniList unavailable (HTTP {e.code}): {msg}", status=e.code)
         raise ValueError(f"AniList mutation failed: {msg}")
     except (URLError, OSError, TimeoutError) as e:
         # Connection-level failure: the definition of "offline" (Decision 3).
@@ -554,6 +577,15 @@ def anilist_mutation(query, variables=None):
             raise AniListAuthError("AniList rejected the saved token — reconnect")
         raise ValueError(f"AniList mutation failed: {msg}")
     return (data or {}).get("data")
+
+
+def refresh_user_data(force=False):
+    """anilist_user_data for background threads: a failure is one log line
+    and the cached lists stay in use, not a thread traceback."""
+    try:
+        anilist_user_data(force=force)
+    except Exception as e:
+        util.log("AniList lists not refreshed: %s" % e)
 
 
 def anilist_user_data(force=False):

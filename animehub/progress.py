@@ -63,6 +63,8 @@ def anilist_track_show(s, manual=False, only=None):
         return None
     cached = anilist.anilist_cache_read()
     if not cached:
+        if manual or settings.automation_enabled("auto_progress_sync"):
+            return _track_blind(s, only, add)
         return None
     entries = {e.get("id"): e for e in cached.get("entries", [])}
     patches = {}
@@ -91,6 +93,30 @@ def anilist_track_show(s, manual=False, only=None):
             continue
         patches[aid] = {"status": "CURRENT", "progress": highest}
         sync.outbox_enqueue(aid, patch=patches[aid])
+    if not patches:
+        return None
+    return next(iter(patches.values())) if len(patches) == 1 else patches
+
+
+def _track_blind(s, only, add):
+    """anilist_track_show without a fresh list (AniList unreachable, TODO
+    58): queue each entry's highest watched episode as a verify row — the
+    flush checks it against the live list before sending (sync.outbox_verify),
+    so a guess never lowers progress or adds an entry unasked."""
+    patches = {}
+    for u in mapping.release_units(s):
+        if only is not None and not any(ep["id"] in only for ep, _ in u["eps"]):
+            continue
+        watched = [n for ep, n in u["eps"] if ep["watched"]]
+        if not watched or not mapping.unit_fits(u, u.get("total")):
+            continue
+        aid, highest = u["media_id"], max(watched)
+        if sync.outbox_pending_for(aid):
+            if sync.outbox_raise_progress(aid, highest):
+                patches[aid] = {"progress": highest}
+            continue
+        patches[aid] = {"progress": highest}
+        sync.outbox_enqueue(aid, patch=patches[aid], verify={"add": add})
     if not patches:
         return None
     return next(iter(patches.values())) if len(patches) == 1 else patches
