@@ -15,7 +15,7 @@ const S = {
          year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all" }))(lsGet("hubLib", {})),
   histRange: lsGet("histRange", "7d"), histMax: 120,
   match: {}, advOpen: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, countNext: false, opener: null,
-  slink: {}, dl: [], loadingEp: null,
+  slink: {}, dl: [], loadingEp: null, frDown: {},
 };
 
 /* @pure:start */
@@ -630,11 +630,11 @@ function frEntryOfShow(s) {
   const r = t && (t.sea.releases || []).find((r) => r.first_ep <= n && (r.last_ep == null || n <= r.last_ep));
   return r ? r.id : s.meta.anilist_id;
 }
-function openFranchise(mid) {
+function openFranchise(mid, fromShow = null) {
   nav("fr", (prev) => {
     if (prev !== "fr" && prev !== "show") S.showBack = prev;
     const keep = S.fr?.page?.entries.some((e) => e.id === mid) ? S.fr.page : null;
-    S.fr = { eid: mid, page: keep, err: null };
+    S.fr = { eid: mid, page: keep, err: null, fromShow };
     frLoad(mid); // after the view switched: an answer for another view is dropped
   });
 }
@@ -649,6 +649,7 @@ async function frLoad(mid) {
     const p = await api("/api/franchise?id=" + mid).catch(() => null);
     if (tok !== frTok || S.view !== "fr" || !S.fr) return;
     if (!p || p.error) { if (!S.fr.page) { S.fr.err = p?.error || "Could not reach the hub."; softRender(); } return; }
+    if (p.unavailable && !p.entries.length) return frUnavailable(p.unavailable);
     const first = !S.fr.page;
     S.fr.page = p; S.fr.err = null;
     first ? softRender() : frRepaint();
@@ -658,6 +659,19 @@ async function frLoad(mid) {
     if (!wait) return;
     await sleep(1500);
   }
+}
+/* AniList unreachable and nothing stored for this entry (TODO 57): a page
+   opened from a show falls back to that show's own page, which needs no
+   AniList; any other open says why instead of loading forever. */
+function frUnavailable(msg) {
+  const sid = S.fr.fromShow, s = sid && showById(sid);
+  if (!s) { S.fr.err = msg; softRender(); return; }
+  S.frDown[sid] = true;
+  const t = pickTarget(s);
+  S.view = "show"; S.showId = sid; S.seasonIdx = t ? Math.max(0, s.seasons.indexOf(t.sea)) : 0;
+  history.replaceState(navSnap(), "", navUrl());
+  render();
+  toast(msg + " Showing the folder instead.");
 }
 /* Watch state and loading badges move without rebuilding the page's
    artwork (patchShow); a different set of tiles is a full paint. */
@@ -801,11 +815,15 @@ function frCm(id, x0, y0) {
 function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" ? "History" : S.showBack === "stats" ? "Stats" : "Home"; }
 
 /* A folder with no AniList match yet: its files, and the way to match it.
-   Matched folders and online episodes open their franchise page (Fran). */
+   Matched folders and online episodes open their franchise page (Fran),
+   unless AniList can't deliver it right now (frUnavailable). */
 function Det() {
   const s = showById(S.showId), tg = pickTarget(s);
   const sea = s.seasons[S.seasonIdx] || s.seasons[0];
   const movie = s.kind === "movie";
+  /* A matched show lands here only while AniList can't deliver its
+     franchise page (frUnavailable): no re-match offer for it. */
+  const matched = !!s.meta?.anilist_id;
   const goLabel = tg ? `${KIND_WORD[tg.kind]}${movie || tg.kind === "rewatch" ? "" : " " + epCode(tg.sea, tg.ep)}` : "";
   const goBusy = tg && epLoading(tg.ep.id);
   const flat = s.seasons.flatMap((x) => x.episodes);
@@ -818,10 +836,10 @@ function Det() {
   <div class="wrap"><div class="hero" style="margin-top:-250px">${poster(s.title, s.poster)}<div>
     <h1>${esc(s.title)}</h1>
     <div class="meta">${playing}</div>
-    <div class="cta">${tg ? `<button class="pill solid${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}${local}<span class="warn">Unmatched — no AniList entry yet</span></div>
+    <div class="cta">${tg ? `<button class="pill solid${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}${local}<span class="warn">${matched ? "AniList unreachable — showing the folder" : "Unmatched — no AniList entry yet"}</span></div>
   </div></div>
   <div class="body"><section>
-    <h2 style="font-size:26px;margin-bottom:6px">Match this show</h2>${(autoSuggest([s]), matchUI(s))}<div style="height:34px"></div>
+    ${matched ? "" : `<h2 style="font-size:26px;margin-bottom:6px">Match this show</h2>${(autoSuggest([s]), matchUI(s))}<div style="height:34px"></div>`}
     ${s.seasons.length > 1 ? `<div class="rels" data-glide="seasons">${s.seasons.map((x, i) => {
       const uw = x.episodes.filter((e) => !e.watched).length;
       return `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${uw ? ` · ${uw}` : ""}</button>`;
@@ -1556,8 +1574,8 @@ const VIEW_TITLE = { home: "", library: "Library", history: "History", stats: "S
 function render() {
   if (S.view === "show" && !showById(S.showId)) S.view = "home";
   if (S.view === "show") {
-    const mid = frEntryOfShow(showById(S.showId));
-    if (mid) { S.view = "fr"; S.fr = { eid: mid, page: null, err: null }; history.replaceState(navSnap(), "", navUrl()); setTimeout(() => frLoad(mid)); }
+    const mid = !S.frDown[S.showId] && frEntryOfShow(showById(S.showId));
+    if (mid) { S.view = "fr"; S.fr = { eid: mid, page: null, err: null, fromShow: S.showId }; history.replaceState(navSnap(), "", navUrl()); setTimeout(() => frLoad(mid)); }
   }
   const fresh = S.navIn; S.navIn = false; // entrance choreography belongs to navigation, not to every re-render
   if (fresh) for (const k in glideMem) if (k !== "nav") delete glideMem[k];
@@ -1609,9 +1627,12 @@ function nav(view, fn) {
 }
 function openShow(id) {
   /* A matched folder or an online show is one franchise page; only
-     unmatched folders keep the plain show page. */
+     unmatched folders keep the plain show page (and any show whose
+     franchise AniList can't deliver right now: frUnavailable). Each open
+     tries the franchise again. */
   const s = showById(id), mid = s && frEntryOfShow(s);
-  if (mid) return openFranchise(mid);
+  delete S.frDown[id];
+  if (mid) return openFranchise(mid, id);
   nav("show", (prev) => {
     if (prev !== "show") S.showBack = prev;
     S.showId = id;

@@ -9,10 +9,12 @@ network."""
 
 import json
 import threading
+import time
 import unittest
 import urllib.request
 from http.server import ThreadingHTTPServer
 from unittest import mock
+from urllib.error import HTTPError
 
 from tests import support
 from animehub import anicli, anilist, database, franchise, library, mapping, pages, player, server, settings, streaming, sync
@@ -226,6 +228,48 @@ class View(unittest.TestCase):
             urllib.request.urlopen(base + "/api/franchise?id=x")
         self.assertEqual(e.exception.code, 400)
         e.exception.close()
+
+
+class Unavailable(unittest.TestCase):
+    """AniList unreachable and nothing stored for the entry (TODO 57): the
+    page says so instead of building forever, so the UI can fall back to
+    the folder; a later open tries AniList again."""
+
+    def setUp(self):
+        support.use_library(support.case("apothecary"))
+        pages._build_failed.clear()
+        self.addCleanup(pages._build_failed.clear)
+        self.down = HTTPError("https://graphql.anilist.co", 403, "Forbidden", None, None)
+
+    def build(self, mid):
+        pages.franchise_build_async(mid)
+        for _ in range(500):
+            if mid not in pages._building:
+                return
+            time.sleep(0.01)
+        self.fail("the build never finished")
+
+    def test_failed_build_is_unavailable(self):
+        with mock.patch.object(franchise, "build_franchise", side_effect=self.down):
+            self.build(999998)
+            page = pages.franchise_view(999998)
+        self.assertEqual((page["building"], page["entries"]), (True, []))
+        self.assertEqual(page["unavailable"], "Couldn't reach AniList (HTTP Error 403: Forbidden).")
+
+    def test_building_is_not_unavailable(self):
+        with mock.patch.object(pages, "franchise_build_async"):
+            self.assertIsNone(pages.franchise_view(999997)["unavailable"])
+
+    def test_tries_again_after_a_while(self):
+        with mock.patch.object(franchise, "build_franchise", side_effect=self.down):
+            self.build(999996)
+        with mock.patch.object(franchise, "build_franchise", return_value=[]) as fetch:
+            pages.franchise_build_async(999996)
+            fetch.assert_not_called()
+            pages._build_failed[999996] = (time.time() - pages.BUILD_RETRY, "older")
+            self.build(999996)
+            fetch.assert_called_once()
+        self.assertNotIn(999996, pages._build_failed)
 
 
 class Unmapped(unittest.TestCase):

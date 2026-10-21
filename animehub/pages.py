@@ -170,12 +170,18 @@ def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=froz
 
 
 _building = set()
+# Franchises whose last build failed (AniList unreachable): id -> (time,
+# reason). For BUILD_RETRY seconds the page answers "unavailable" instead of
+# "building" forever, so the UI can fall back to the folder's show page
+# (TODO 57); opening it after that tries AniList again.
+_build_failed = {}
+BUILD_RETRY = 60
 
 
 def franchise_build_async(mid):
     """Build and store a franchise nobody has opened yet (a search result),
     in the background; the page asks again until it is there."""
-    if mid in _building:
+    if mid in _building or time.time() - _build_failed.get(mid, (0, None))[0] < BUILD_RETRY:
         return
     _building.add(mid)
 
@@ -184,8 +190,10 @@ def franchise_build_async(mid):
             entries = franchise.build_franchise(mid, franchise.media_entry)  # paced by _anilist_slot
             if entries:
                 franchise.store_franchise(entries)
+            _build_failed.pop(mid, None)
         except Exception as e:
             util.log("building franchise of %s failed: %s" % (mid, e))
+            _build_failed[mid] = (time.time(), "Couldn't reach AniList (%s)." % e)
         finally:
             _building.discard(mid)
 
@@ -258,7 +266,8 @@ def franchise_view(mid, background=True):
     selected. Never waits on the network: a franchise not built yet comes
     back as the entry alone with "building" (stored facts, when there are
     any), and the selected entry's online episode list and stills are
-    fetched in the background ("resolving")."""
+    fetched in the background ("resolving"). An entry with nothing stored
+    whose build just failed comes back "unavailable" (the reason)."""
     fr = franchise.franchise_of(mid)
     if fr:
         fid, entries = fr
@@ -286,5 +295,7 @@ def franchise_view(mid, background=True):
         stream_freshen_async(mid)
     if entries and mid not in arts:
         threading.Thread(target=mapping.refresh_entry_art, kwargs={"ids": {mid}}, daemon=True).start()
+    failed = _build_failed.get(mid) if building and not entries and mid not in _building else None
     return dict(page, id=fid, selected=mid, building=building or mid in _building,
-                resolving=sorted(i for i in ids if i in streaming._resolving or i in _freshening), stream_ready=online_ok)
+                resolving=sorted(i for i in ids if i in streaming._resolving or i in _freshening), stream_ready=online_ok,
+                unavailable=failed[1] if failed else None)
