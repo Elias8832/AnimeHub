@@ -2344,9 +2344,14 @@ def anicli_release(proc):
 def stop_process_group(proc, sig=signal.SIGTERM):
     """Signal a session's whole process group (start_new_session: pgid ==
     pid) — an ani-cli session is a shell whose mpv / yt-dlp child would
-    otherwise outlive it."""
+    otherwise outlive it. Only a real child's group: os.killpg(1) is
+    kill(-1), which signals every process the user owns (logs them out),
+    and a test's MagicMock pid reads as 1."""
+    pid = proc.pid
     try:
-        os.killpg(proc.pid, sig)
+        if type(pid) is not int or pid <= 1 or pid == os.getpgrp():
+            raise OSError("not a child process group")
+        os.killpg(pid, sig)
     except OSError:
         try:
             proc.send_signal(sig)
