@@ -161,6 +161,53 @@ class View(unittest.TestCase):
         self.assertEqual([(c["media_id"], c["franchise_id"]) for c in cards],
                          [(200929, 161645), (176301, 161645), (None, None)])
 
+    def test_autoplay_follows_the_page(self):
+        """The last file of Season 1 → Season 2's first file; the last file
+        of Season 2 → its first episode not on disk, online; the last of
+        Season 2 → Season 3."""
+        show = support.folder(self.scan, "The Apothecary Diaries")
+        s1, s2 = (support.season(show, f"Season {i}")["episodes"] for i in (1, 2))
+        self.assertEqual(hub.next_episode(s1[-1]["id"]), s2[0]["id"])
+        self.assertEqual(hub.next_episode(s2[-1]["id"]), "stream:176301:11")
+        self.assertEqual(hub.next_episode("stream:176301:11"), "stream:176301:12")
+        s3 = self.entry(hub.franchise_view(195516), 195516)["slots"]
+        self.assertEqual(hub.next_episode("stream:176301:24"), s3[0]["id"] if s3 else None)
+
+    def test_autoplay_never_skips_ahead(self):
+        """Without ani-cli, Season 2's missing episodes can't play: the
+        chain stops instead of jumping to whatever comes next on disk."""
+        show = support.folder(self.scan, "The Apothecary Diaries")
+        with mock.patch.object(hub, "anicli_path", return_value=None):
+            self.assertIsNone(hub.next_episode(support.season(show, "Season 2")["episodes"][-1]["id"]))
+
+    def test_downloads_join_the_season_folder(self):
+        eps, home = hub.entry_files(self.scan, 176301)
+        self.assertEqual(sorted(eps), list(range(1, 11)))
+        self.assertEqual(home, hub.LIBRARY / "The Apothecary Diaries" / "Season 2")
+        self.assertEqual(hub.entry_files(self.scan, 195516), ({}, None))
+
+    def test_unaired_entry_gets_no_online_episodes(self):
+        """"3rd Season Part 2" hasn't aired. An automatic link older
+        versions made for it (to another show's episodes) is dropped, and
+        no new one is looked for; a link the user chose stays."""
+        def link(mid, by):
+            with hub.db() as c:
+                c.execute("""INSERT INTO stream_links(media_id, query, title, idx, mode, episodes, episodes_ts,
+                             meta, matched_by) VALUES(?,?,?,1,'sub',?,?, '{}', ?)""",
+                          (mid, "x", "x", json.dumps([str(n) for n in range(1, 13)]), 9e9, by))
+        link(200927, "auto")
+        page = hub.franchise_view(200927)
+        self.assertEqual(self.entry(page, 200927)["slots"], [])
+        self.assertIsNone(hub.stream_link_get(200927))
+        self.assertNotIn("stream_resolve_async", self.bg)
+        link(200929, "user")
+        self.assertEqual(len(self.entry(hub.franchise_view(200929), 200929)["slots"]), 12)
+
+    def test_unaired_entry_never_matches(self):
+        m = support.anilist(200927)
+        self.assertFalse(hub._count_fits([str(n) for n in range(1, 13)], m))
+        self.assertTrue(hub._count_fits([str(n) for n in range(1, 25)], support.anilist(176301)))
+
     def test_endpoint(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), hub.Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -177,6 +224,23 @@ class View(unittest.TestCase):
             urllib.request.urlopen(base + "/api/franchise?id=x")
         self.assertEqual(e.exception.code, 400)
         e.exception.close()
+
+
+class Unmapped(unittest.TestCase):
+    def test_autoplay_walks_an_unmatched_folder(self):
+        scan = support.use_library(support.case("unmatched"))
+        hub.merge_db(scan)
+        eps = scan[0]["seasons"][0]["episodes"]
+        self.assertEqual(hub.next_episode(eps[0]["id"]), eps[1]["id"])
+        self.assertIsNone(hub.next_episode(eps[1]["id"]))
+
+    def test_absolute_numbered_season_is_no_download_folder(self):
+        """AoT's Season 2 folder counts 26–37: a download saved as
+        "Episode 1" there would read as season 1."""
+        c = support.case("aot")
+        scan = support.match_library(c, support.use_library(c))
+        self.assertEqual(sorted(hub.entry_files(scan, 20958)[0]), list(range(1, 13)))
+        self.assertIsNone(hub.entry_files(scan, 20958)[1])
 
 
 class OnlineOnly(unittest.TestCase):

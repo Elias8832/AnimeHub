@@ -124,8 +124,18 @@ Each phase ends with the test suite green.
    one card per franchise (`franchise_id` on every card). All AniList
    requests share one pace under the rate limit, with a reserve for a page
    the user just opened (`_anilist_slot`).
-6. **Cleanup.** Remove `aid:` standalone shows, `merge_streams`,
-   client-side season ordering, and the old season art paths.
+6. **Cleanup.** *(done)* Autoplay follows the franchise page
+   (`next_episode`: the next episode of the entry, file or online, then the
+   next main season; an episode that can't play ends the chain instead of
+   skipping ahead). Online episodes are no longer merged into folders
+   (`merge_streams`, disk "twins") and the per-release page is gone
+   (`/api/release`, `release_payload`, its frontend); `aid:` shows remain
+   only as the online episodes history, continue watching and playback
+   read. Downloads go to the folder season holding the entry's files
+   (`entry_files`). The old show page is the unmatched-folder page;
+   client-side season ordering is gone. A stale online list refreshes when
+   its entry is opened. Unaired entries never link to ani-cli, and older
+   automatic links for them are dropped.
 
 ## Decisions
 
