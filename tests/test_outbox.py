@@ -2,12 +2,13 @@
 AniList is back; only rows AniList rejects run out of attempts."""
 
 import io
+import json
 import time
 import unittest
 from unittest import mock
 
 from tests import support
-from animehub import anilist, database, sync
+from animehub import anilist, database, settings, sync
 from animehub.config import config, CONFIG, apply_config
 
 
@@ -114,6 +115,65 @@ class Verify(unittest.TestCase):
         with database.db() as c:
             payload = c.execute("SELECT payload FROM outbox").fetchone()[0]
         self.assertIn('"verify": {"add"', payload)
+
+
+class Deferred(unittest.TestCase):
+    """TODO 59: marks on a multi-season folder whose franchise isn't built
+    yet are kept until its seasons map to entries."""
+
+    def setUp(self):
+        Retries.setUp(self)
+        with database.db() as c:
+            c.execute("DELETE FROM outbox")
+
+    def show(self, mapped=False):
+        rel = [{"id": 5114, "first_ep": 1, "last_ep": None, "offset": 0, "total": 12}] if mapped else []
+        eps = lambda k: [{"id": f"{k}{n}", "number": n, "watched": int(n <= 2)} for n in (1, 2, 3)]
+        return {"id": "fold", "meta": {"anilist_id": 100},
+                "seasons": [{"label": "Season 1", "releases": rel, "episodes": eps("a")},
+                            {"label": "Season 2", "releases": [], "episodes": eps("b")}]}
+
+    def track(self, only, franchise=()):
+        from animehub import mapping, progress
+        with mock.patch.object(anilist, "anilist_connected", return_value=True), \
+                mock.patch.object(anilist, "anilist_cache_read", return_value=None), \
+                mock.patch.object(mapping, "franchise_entries", return_value={100: list(franchise)}):
+            return progress.anilist_track_show(self.show(), manual=True, only=only)
+
+    def rows(self):
+        with database.db() as c:
+            return [json.loads(p) for (p,) in c.execute("SELECT payload FROM outbox ORDER BY id")]
+
+    def test_marks_wait_in_one_row(self):
+        self.assertEqual(self.track({"a1"}), {"later": True})
+        self.track({"b1", "b2"})
+        rows = self.rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["resync"], rows[0]["eps"]), ("fold", ["a1", "b1", "b2"]))
+
+    def test_nothing_deferred_once_mapped(self):
+        # The franchise exists: an episode no entry holds is local by design.
+        self.assertIsNone(self.track({"b1"}, franchise=[{"id": 100}]))
+        self.assertEqual(self.rows(), [])
+
+    def test_replay_once_seasons_map(self):
+        from animehub import library, mapping
+        self.track({"a1", "a2"})
+        with database.db() as c:
+            c.execute("UPDATE outbox SET next_try=0")
+        with mock.patch.object(library, "media_by_id", return_value=self.show(mapped=True)), \
+                mock.patch.object(anilist, "anilist_connected", return_value=True), \
+                mock.patch.object(anilist, "anilist_cache_read", return_value=None):
+            with mock.patch.object(mapping, "franchise_entries", return_value={100: []}):
+                sync.outbox_flush()
+            self.assertIn("resync", self.rows()[0])  # still waiting
+            with database.db() as c:
+                c.execute("UPDATE outbox SET next_try=0")
+            with mock.patch.object(mapping, "franchise_entries", return_value={100: [{"id": 100}]}):
+                sync.outbox_flush()
+        rows = self.rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["patch"], rows[0]["verify"]), ({"progress": 2}, {"add": settings.automation_enabled("auto_add_watch")}))
 
 
 if __name__ == "__main__":

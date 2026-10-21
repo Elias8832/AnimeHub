@@ -34,6 +34,26 @@ def outbox_enqueue(media_id, patch=None, favourite=None, verify=None):
                   (media_id, json.dumps(payload), tok.get("user_id"), util.utc_stamp()))
 
 
+def outbox_defer(show_id, eps, manual):
+    """TODO 59: watched episodes of a folder whose seasons can't be mapped
+    to entries yet, kept as one row per folder (media_id 0: no entry known
+    yet) until progress.replay_deferred can sync them. Later marks on the
+    same folder join its row."""
+    tok = anilist.load_token() or {}
+    with database.db() as c:
+        for row_id, payload_s in c.execute("SELECT id, payload FROM outbox WHERE media_id=0").fetchall():
+            payload = json.loads(payload_s)
+            if payload.get("resync") == show_id:
+                payload["eps"] = sorted(set(payload["eps"]) | set(eps))
+                payload["manual"] = payload.get("manual") or bool(manual)
+                c.execute("UPDATE outbox SET payload=? WHERE id=?", (json.dumps(payload), row_id))
+                return
+        c.execute("INSERT INTO outbox(media_id,payload,account_id,created) VALUES(0,?,?,?)",
+                  (json.dumps({"resync": show_id, "eps": sorted(eps), "manual": bool(manual),
+                               "account_id": tok.get("user_id")}),
+                   tok.get("user_id"), util.utc_stamp()))
+
+
 def outbox_count():
     with database.db() as c:
         return c.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
@@ -97,6 +117,18 @@ def outbox_flush(limit=20):
         # a warning at connect time; it is never sent across accounts.
         if payload.get("account_id") is not None and \
                 payload["account_id"] != tok.get("user_id"):
+            continue
+        if "resync" in payload:
+            try:
+                settled = progress.replay_deferred(payload)
+            except Exception as e:
+                outbox_fail(row_id, attempts, e, transient=True)
+                continue
+            if not settled:
+                outbox_fail(row_id, attempts, "seasons not mapped yet", transient=True)
+                continue
+            with database.db() as c:
+                c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
             continue
         if payload.get("verify"):
             if remote is None:

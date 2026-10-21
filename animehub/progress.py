@@ -41,6 +41,47 @@ _completion_pending = []
 
 
 def anilist_track_show(s, manual=False, only=None):
+    """_track plus TODO 59: marks on seasons that can't be mapped to entries
+    yet (the folder's franchise isn't built — AniList unreachable since the
+    match) are deferred, not dropped (sync.outbox_defer). Returns _track's
+    patches, {"later": True} when only a deferral was queued, or None."""
+    deferred = False
+    if anilist.anilist_connected() and (manual or settings.automation_enabled("auto_progress_sync")):
+        deferred = _defer_unmapped(s, only, manual)
+    return _track(s, manual, only) or ({"later": True} if deferred else None)
+
+
+def _defer_unmapped(s, only, manual):
+    """Queue the folder's watched episodes that no entry holds while its
+    franchise isn't stored. Once it is, unmapped episodes are local by
+    design (specials, seasons pinned to no entry) and nothing is deferred."""
+    anchor = (s.get("meta") or {}).get("anilist_id")
+    if not anchor or mapping.franchise_entries([anchor]).get(anchor):
+        return False
+    mapped = {ep["id"] for u in mapping.release_units(s) for ep, _ in u["eps"]}
+    eps = [ep["id"] for sea in s["seasons"] for ep in sea["episodes"]
+           if ep["watched"] and ep["id"] not in mapped and (only is None or ep["id"] in only)]
+    if not eps:
+        return False
+    sync.outbox_defer(s["id"], eps, manual)
+    return True
+
+
+def replay_deferred(payload):
+    """A deferred row's turn in the flush: True once settled (synced through
+    the normal path, or the folder is gone), False while the franchise is
+    still missing."""
+    s = library.media_by_id(payload["resync"])
+    if not s:
+        return True
+    anchor = (s.get("meta") or {}).get("anilist_id")
+    if anchor and not mapping.franchise_entries([anchor]).get(anchor):
+        return False
+    _track(streaming.trackable(s), bool(payload.get("manual")), set(payload["eps"]))
+    return True
+
+
+def _track(s, manual=False, only=None):
     """Sync one local show against the cached AniList state — Decision 21's
     highest-watched progress plus Decision 5's consent-gated auto-add, per
     entry (release_units): each mapped season, or part of one, syncs to its
