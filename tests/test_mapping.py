@@ -209,7 +209,7 @@ class Art(unittest.TestCase):
             old = hub.commit_thumbs(151384, {"thumbs": {"1": "https://x/movie.jpg"}}, prefix="z")[1]
             new = hub.commit_thumbs(151384, {"thumbs": {"1": "https://x/episode1.jpg"}}, prefix="z")[1]
         self.assertNotEqual(old, new)
-        self.assertEqual((hub.EPIMGS / new.rsplit("/", 1)[1]).read_bytes(), b"https://x/episode1.jpg")
+        self.assertEqual((hub.config.EPIMGS / new.rsplit("/", 1)[1]).read_bytes(), b"https://x/episode1.jpg")
 
     def test_entry_opened_during_a_pass_is_not_dropped(self):
         """Opening Season 3 while Season 2's stills are still downloading:

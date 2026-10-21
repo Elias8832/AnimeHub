@@ -63,7 +63,7 @@ def use_library(c):
         for f in files:
             (d / f).touch()
     hub.apply_config(dict(hub.CONFIG, library_root=lib, data_dir=base / "data"))
-    for d in (hub.DATA, hub.CACHE, hub.POSTERS, hub.EPIMGS):
+    for d in (hub.config.DATA, hub.config.CACHE, hub.config.POSTERS, hub.config.EPIMGS):
         d.mkdir(parents=True, exist_ok=True)
     hub.init_db()
     return hub.scan_library()

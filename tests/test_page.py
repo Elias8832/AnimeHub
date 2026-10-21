@@ -183,7 +183,7 @@ class View(unittest.TestCase):
     def test_downloads_join_the_season_folder(self):
         eps, home = hub.entry_files(self.scan, 176301)
         self.assertEqual(sorted(eps), list(range(1, 11)))
-        self.assertEqual(home, hub.LIBRARY / "The Apothecary Diaries" / "Season 2")
+        self.assertEqual(home, hub.config.LIBRARY / "The Apothecary Diaries" / "Season 2")
         self.assertEqual(hub.entry_files(self.scan, 195516), ({}, None))
 
     def test_unaired_entry_gets_no_online_episodes(self):
@@ -214,7 +214,7 @@ class View(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         port = server.server_address[1]
-        p = mock.patch.object(hub, "PORT", port)  # the Host check
+        p = mock.patch.object(hub.config, "PORT", port)  # the Host check
         p.start()
         self.addCleanup(p.stop)
         base = "http://127.0.0.1:%d" % port

@@ -11,8 +11,8 @@ from tests.support import hub
 class Isolation(unittest.TestCase):
     def test_database_is_temporary(self):
         support.use_library(support.case("frieren"))
-        self.assertTrue(hub.DB.is_relative_to(support.TMP))
-        self.assertTrue(hub.LIBRARY.is_relative_to(support.TMP))
+        self.assertTrue(hub.config.DB.is_relative_to(support.TMP))
+        self.assertTrue(hub.config.LIBRARY.is_relative_to(support.TMP))
 
     def test_network_is_blocked(self):
         with self.assertRaises(AssertionError):

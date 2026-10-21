@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
@@ -182,33 +183,38 @@ def read_config(path=None):
     return cfg, warnings, path
 
 
+# The live config values everything else reads. apply_config and
+# set_library_root rebind them while the hub runs, so code reads them as
+# config.LIBRARY (one shared object) rather than holding its own copy,
+# which would go stale after a rebind.
+config = SimpleNamespace()
+
+
 def apply_config(cfg):
-    """Bind the config to the module constants everything else reads.
+    """Bind the config to the `config` values everything else reads.
     Re-derives the per-user paths from data_dir so a relocated data dir
     moves the database, cache and AniList state together (Decision 23.7:
     the identity model is root/config-aware from day one)."""
-    global DATA, CACHE, POSTERS, EPIMGS, DB, LIBRARY, PORT
-    global ANILIST_CACHE, WINDOW, ANILIST_TOKEN_FILE, ANILIST_CLIENT_ID, UPSCALE_BANNERS
-    DATA = cfg["data_dir"] or _default_data_dir()
-    CACHE = DATA / "cache"
-    POSTERS = CACHE / "posters"
-    EPIMGS = CACHE / "epimgs"
-    DB = DATA / "hub.db"
-    LIBRARY = cfg["library_root"]
-    PORT = cfg["port"]
-    WINDOW = cfg["window"]
-    ANILIST_CACHE = DATA / "anilist_cache.json"
+    config.DATA = cfg["data_dir"] or _default_data_dir()
+    config.CACHE = config.DATA / "cache"
+    config.POSTERS = config.CACHE / "posters"
+    config.EPIMGS = config.CACHE / "epimgs"
+    config.DB = config.DATA / "hub.db"
+    config.LIBRARY = cfg["library_root"]
+    config.PORT = cfg["port"]
+    config.WINDOW = cfg["window"]
+    config.ANILIST_CACHE = config.DATA / "anilist_cache.json"
     # OAuth token lives with the other per-user state — outside the repo
     # (Decision 20 / READINESS A5); permissions tightened on every write.
-    ANILIST_TOKEN_FILE = DATA / "anilist_token.json"
+    config.ANILIST_TOKEN_FILE = config.DATA / "anilist_token.json"
     # Opt-in banner upscaler (see store_show_meta): default off.
-    UPSCALE_BANNERS = bool(cfg.get("upscale_banners"))
+    config.UPSCALE_BANNERS = bool(cfg.get("upscale_banners"))
     # The bundled client id makes connect a two-click affair on a fresh
     # install (Decision 20's setup-tour shape). It is a public identifier,
     # not a secret — every authorize URL carries it anyway. Its registered
     # redirect is http://localhost:8787/auth/callback, so a non-default
     # port needs a config override with the user's own client id.
-    ANILIST_CLIENT_ID = cfg.get("anilist_client_id") or DEFAULT_ANILIST_CLIENT_ID
+    config.ANILIST_CLIENT_ID = cfg.get("anilist_client_id") or DEFAULT_ANILIST_CLIENT_ID
 
 
 CONFIG_PATH = config_path_from_argv()
@@ -357,11 +363,11 @@ def settings_payload():
         "vpn_icon": automation_enabled("vpn_icon"),
         "vpn_warn": automation_enabled("vpn_warn"),
         "tour_done": get_setting("tour_done") == "1",
-        "library_root": str(LIBRARY) if LIBRARY else None,
-        "data_dir": str(DATA),
+        "library_root": str(config.LIBRARY) if config.LIBRARY else None,
+        "data_dir": str(config.DATA),
         "config_path": str(CONFIG_PATH),
-        "port": PORT,
-        "window": WINDOW,
+        "port": config.PORT,
+        "window": config.WINDOW,
         "scan": dict(scan_state),
         "tools": {t: shutil.which(t) for t in ("mpv", "ani-cli", "upscayl")},
         # ani-cli bridge preferences: quality + default audio for new links.
@@ -376,11 +382,11 @@ def adopt_root():
     indexed one, which lifts the root-changed tombstone guard so the next
     scan (GET /api/library re-scans every call) records the old root's rows
     as gone."""
-    if LIBRARY is None:
+    if config.LIBRARY is None:
         return {"error": "No library folder is configured.", "ok": False}
-    set_setting("library_root", str(LIBRARY))
+    set_setting("library_root", str(config.LIBRARY))
     scan_state["root"] = "ok"
-    return {"ok": True, "library_root": str(LIBRARY)}
+    return {"ok": True, "library_root": str(config.LIBRARY)}
 
 
 def _user_dir(path):
@@ -404,7 +410,7 @@ def browse_dirs(path=None):
     this lists nothing the user's file manager wouldn't. Places are the
     usual Linux mount spots plus home, for drives outside $HOME."""
     if path in (None, ""):
-        base = LIBRARY if LIBRARY and LIBRARY.is_dir() else Path.home()
+        base = config.LIBRARY if config.LIBRARY and config.LIBRARY.is_dir() else Path.home()
     else:
         base = _user_dir(path)
     try:
@@ -455,10 +461,9 @@ def set_library_root(path, adopt=False):
     from an indexed root only tombstones the old one with adopt=True — the
     UI sends that after the user confirmed the switch; without it the scan
     flags the root as changed and the "Connect folder" step remains."""
-    global LIBRARY
     p = _user_dir(path)
     write_config_key("library_root", str(p))
-    LIBRARY = p
+    config.LIBRARY = p
     CONFIG["library_root"] = p
     if adopt:
         set_setting("library_root", str(p))
@@ -499,7 +504,7 @@ def normalize_timestamp(value):
 
 @contextmanager
 def db():
-    conn = sqlite3.connect(DB, timeout=10)
+    conn = sqlite3.connect(config.DB, timeout=10)
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         with conn:
@@ -525,8 +530,8 @@ def migration_3(c):
     c.execute("""CREATE TABLE IF NOT EXISTS settings(
         key TEXT PRIMARY KEY, value TEXT)""")
     if (c.execute("SELECT 1 FROM settings WHERE key='library_root'").fetchone() is None
-            and LIBRARY is not None):
-        c.execute("INSERT INTO settings(key,value) VALUES('library_root',?)", (str(LIBRARY),))
+            and config.LIBRARY is not None):
+        c.execute("INSERT INTO settings(key,value) VALUES('library_root',?)", (str(config.LIBRARY),))
 
 
 def migration_4(c):
@@ -753,10 +758,10 @@ def snapshot_before(target_version):
     """WAL-safe backup (SQLite backup API) taken before applying a migration,
     so a failed migration is recoverable from the pre-change state. Skipped
     when nothing user-owned exists yet (fresh schema, zero rows)."""
-    dest = DB.parent / f"hub.db.backup-v{target_version - 1}"
+    dest = config.DB.parent / f"hub.db.backup-v{target_version - 1}"
     if dest.exists():
         return
-    src = sqlite3.connect(DB)
+    src = sqlite3.connect(config.DB)
     try:
         tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not any(t in tables and src.execute(f"SELECT 1 FROM {t} LIMIT 1").fetchone()
@@ -773,7 +778,7 @@ def snapshot_before(target_version):
 
 
 def init_db():
-    DB.parent.mkdir(parents=True, exist_ok=True)
+    config.DB.parent.mkdir(parents=True, exist_ok=True)
     with db() as c:
         version = c.execute("PRAGMA user_version").fetchone()[0]
     for target, step in enumerate(MIGRATIONS, start=1):
@@ -790,7 +795,7 @@ def init_db():
 
 
 def load_overrides():
-    f = DATA / "overrides.json"
+    f = config.DATA / "overrides.json"
     if f.exists():
         try:
             return json.loads(f.read_text())
@@ -819,16 +824,16 @@ def parse_ep_number(name):
 def scan_library():
     shows = {}
     scan_state.update(state="ok", walk_errors=0, root="ok")
-    if LIBRARY is None:
+    if config.LIBRARY is None:
         # No library configured (PLAN v0.1 config work): a readable state,
         # not a traceback — the UI explains how to configure one.
         scan_state["state"] = "unconfigured"
         return []
-    if not LIBRARY.is_dir():
+    if not config.LIBRARY.is_dir():
         scan_state["state"] = "missing"
         return []
     stored_root = get_setting("library_root")
-    if stored_root and stored_root != str(LIBRARY):
+    if stored_root and stored_root != str(config.LIBRARY):
         # Root-aware identity (Decision 23.7): the database was indexed under
         # a different root. Flag it — the config flow (step 3) must adopt a
         # root explicitly; a scan never silently tombstones the old one.
@@ -837,12 +842,12 @@ def scan_library():
     def walk_error(err):
         scan_state["walk_errors"] += 1
 
-    for dirpath, dirnames, filenames in os.walk(LIBRARY, onerror=walk_error):
+    for dirpath, dirnames, filenames in os.walk(config.LIBRARY, onerror=walk_error):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         videos = sorted(f for f in filenames if Path(f).suffix.lower() in VIDEO_EXTS)
         if not videos:
             continue
-        rel = Path(dirpath).relative_to(LIBRARY)
+        rel = Path(dirpath).relative_to(config.LIBRARY)
         if not rel.parts:
             # Videos loose in the root: used to raise IndexError (parts was
             # empty). Keep them watchable as one-file shows instead; the
@@ -964,7 +969,7 @@ def scan_library():
         # First clean scan of a root on a database that never recorded one
         # (fresh install configured after migration 3 ran): record it, or
         # the changed-root guard (Decision 23.7) could never arm.
-        set_setting("library_root", str(LIBRARY))
+        set_setting("library_root", str(config.LIBRARY))
     return show_list
 
 
@@ -977,7 +982,7 @@ def eps_of(show):
 def img_url(name):
     if not name:
         return None
-    p = POSTERS / os.path.basename(name)
+    p = config.POSTERS / os.path.basename(name)
     try:
         return f"{name}?v={int(p.stat().st_mtime)}"
     except OSError:
@@ -1101,7 +1106,7 @@ def anilist_cache_stale():
     outage must not silently flip the library into local mode). None only
     when nothing has ever been fetched."""
     try:
-        cached = json.loads(ANILIST_CACHE.read_text())
+        cached = json.loads(config.ANILIST_CACHE.read_text())
         if cached.get("user"):
             return cached
     except Exception:
@@ -2140,7 +2145,7 @@ def start_play(ep_id, version=0):
         return {"error": "unknown episode"}
     files = ep.get("files") or [{"path": ep["rel"], "label": "default"}]
     version = max(0, min(version, len(files) - 1))
-    path = LIBRARY / files[version]["path"]
+    path = config.LIBRARY / files[version]["path"]
     if not path.exists():
         return {"error": "file missing"}
     sock = Path("/tmp") / f"anime-hub-{uuid.uuid4().hex[:8]}.sock"
@@ -2167,8 +2172,8 @@ def start_play(ep_id, version=0):
             err_target = subprocess.DEVNULL
             log = None
             try:
-                DATA.mkdir(parents=True, exist_ok=True)
-                log = open(DATA / "mpv-stderr.log", "ab")
+                config.DATA.mkdir(parents=True, exist_ok=True)
+                log = open(config.DATA / "mpv-stderr.log", "ab")
                 log.write(f"\n=== {utc_stamp()}  {path}\n".encode())
                 err_target = log
             except OSError:
@@ -2278,13 +2283,13 @@ def stream_prefs():
 
 
 def anicli_menu_helper():
-    path = DATA / "anicli-menu.sh"
+    path = config.DATA / "anicli-menu.sh"
     try:
         current = path.read_text()
     except OSError:
         current = None
     if current != ANICLI_MENU_SH:
-        DATA.mkdir(parents=True, exist_ok=True)
+        config.DATA.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         tmp.write_text(ANICLI_MENU_SH)
         tmp.chmod(0o755)
@@ -2523,8 +2528,8 @@ def _release_display(m, fallback_title, art):
     cover = (m.get("coverImage") or {}).get("extraLarge")
     if art:
         name = f"stream-{m['id']}"
-        poster = f"/img/{name}.jpg" if download(cover, POSTERS / f"{name}.jpg") else cover
-        banner = (f"/img/{name}.banner.jpg" if download(m.get("bannerImage"), POSTERS / f"{name}.banner.jpg")
+        poster = f"/img/{name}.jpg" if download(cover, config.POSTERS / f"{name}.jpg") else cover
+        banner = (f"/img/{name}.banner.jpg" if download(m.get("bannerImage"), config.POSTERS / f"{name}.banner.jpg")
                   else m.get("bannerImage"))
         eps_art = media_episode_art(m)
     else:
@@ -2902,7 +2907,7 @@ def entry_files(scan, media_id):
             for i in u["seasons"]:
                 sea = s["seasons"][i]
                 if any(r["id"] == media_id and r["offset"] == 0 and r["last_ep"] is None for r in sea["releases"]):
-                    folder = (LIBRARY / sea["episodes"][0]["rel"]).parent
+                    folder = (config.LIBRARY / sea["episodes"][0]["rel"]).parent
                     homes[folder] = homes.get(folder, 0) + len(sea["episodes"])
     return eps, max(homes, key=homes.get) if homes else None
 
@@ -3083,7 +3088,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False):
         # Identity stamp (TODO 25): history stays readable without the link.
         c.execute("INSERT INTO episodes(id,show_id,label) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE"
                   " SET show_id=excluded.show_id, label=excluded.label", (ep_id, s["id"], label))
-    errlog = DATA / "anicli-stderr.log"
+    errlog = config.DATA / "anicli-stderr.log"
     with _launch_lock:
         with _active_lock:
             old = next(iter(_active.values()), None)
@@ -3148,19 +3153,19 @@ _dl_state = {"seq": 0, "worker": None}
 def stream_download_dir(link, scan):
     """Where a release's downloads go: the folder season its files are in
     (entry_files), else a folder named after the release."""
-    if LIBRARY is None:
+    if config.LIBRARY is None:
         raise AniCliError("Choose a library folder in Settings first — downloads are saved there.")
-    if not LIBRARY.is_dir():
-        raise AniCliError(f"The library folder {LIBRARY} is not accessible right now.")
+    if not config.LIBRARY.is_dir():
+        raise AniCliError(f"The library folder {config.LIBRARY} is not accessible right now.")
     home = entry_files(scan, link["media_id"])[1]
-    if home and home != LIBRARY:
+    if home and home != config.LIBRARY:
         return home
     name = link["meta"].get("title") or link["title"] or link["query"]
     # Plain quotes, as people type folder names (AniList titles use ’ “ ”).
     name = name.translate(str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'}))
     name = re.sub(r"[/\x00]", " ", name)
     name = " ".join(name.split()).lstrip(".") or f"anilist-{link['media_id']}"
-    return LIBRARY / name
+    return config.LIBRARY / name
 
 
 def downloads_payload():
@@ -3340,7 +3345,7 @@ def _dl_adopt(media_id, dest):
     """A download that started a new folder becomes a new disk show — match
     it to the release right away instead of waiting for the matcher."""
     try:
-        rel = str(dest.relative_to(LIBRARY))
+        rel = str(dest.relative_to(config.LIBRARY))
         show = next((s for s in scan_library() if s["path"] == rel), None)
         if not show:
             return
@@ -3477,7 +3482,7 @@ def commit_thumbs(anilist_id, parsed, prefix=""):
         # The url is part of the name: a corrected listing must not reuse
         # the picture an earlier, wrong one left under the same number.
         fname = f"{prefix}{anilist_id}.{k}.{hashlib.sha1(url.encode()).hexdigest()[:8]}.jpg"
-        dest = EPIMGS / fname
+        dest = config.EPIMGS / fname
         if (dest.exists() and dest.stat().st_size) or download(url, dest):
             return int(k), f"/epimg/{fname}"
         return None
@@ -3777,16 +3782,16 @@ def store_show_meta(show, m):
     year = (m.get("startDate") or {}).get("year")
     poster_name = f"{show['id']}.jpg"
     banner_name = f"{show['id']}.banner.jpg"
-    poster = f"/img/{poster_name}" if download((m.get("coverImage") or {}).get("extraLarge"), POSTERS / poster_name) else None
-    banner = f"/img/{banner_name}" if download(m.get("bannerImage"), POSTERS / banner_name) else None
-    if banner and UPSCALE_BANNERS:
+    poster = f"/img/{poster_name}" if download((m.get("coverImage") or {}).get("extraLarge"), config.POSTERS / poster_name) else None
+    banner = f"/img/{banner_name}" if download(m.get("bannerImage"), config.POSTERS / banner_name) else None
+    if banner and config.UPSCALE_BANNERS:
         # In the background: keep the metadata queue moving
         # instead of blocking ~19s per banner on the Upscayl run.
         # Opt-in (config 'upscale_banners', default off): on machines without
         # working GPU Vulkan the upscaler emits all-black images — found
         # destroying real banners 2026-10-15 — and AniList's own banners are
         # already high-resolution.
-        upscale_banner_async(POSTERS / banner_name)
+        upscale_banner_async(config.POSTERS / banner_name)
     seps = m.get("streamingEpisodes") or []
     eps_meta = [strip_html(e["title"]).split(" - ", 1)[-1] for e in seps] if seps else None
     thumbs = media_episode_art(m)["thumbs"]
@@ -3823,7 +3828,7 @@ def clear_match(show_id):
             if key and overrides.pop(key, None) is not None:
                 changed = True
     if changed:
-        (DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
+        (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
 
 
 def set_match(show_id, anilist_id=None, query=None):
@@ -3843,7 +3848,7 @@ def set_match(show_id, anilist_id=None, query=None):
         return {"error": f"AniList has no media with id {anilist_id}"}
     overrides = load_overrides()
     overrides[show["title"]] = {"anilistId": anilist_id}
-    (DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
+    (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
     with db() as c:
         c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
     store_show_meta(show, m)
@@ -3915,7 +3920,7 @@ def load_token():
     """The stored OAuth token dict, or None. A corrupt file counts as
     absent — auth state must degrade to 'not connected', never traceback."""
     try:
-        tok = json.loads(ANILIST_TOKEN_FILE.read_text())
+        tok = json.loads(config.ANILIST_TOKEN_FILE.read_text())
         if isinstance(tok, dict) and isinstance(tok.get("access_token"), str) and tok["access_token"]:
             return tok
     except Exception:
@@ -3930,19 +3935,19 @@ def store_token(access_token, expires_in=None, user=None):
     rec = {"access_token": access_token,
            "expires_at": (time.time() + expires_in) if expires_in else None,
            "user_id": (user or {}).get("id"), "user_name": (user or {}).get("name")}
-    tmp = ANILIST_TOKEN_FILE.with_suffix(".tmp")
+    tmp = config.ANILIST_TOKEN_FILE.with_suffix(".tmp")
     # Created 0600 — never briefly world-readable under the default umask.
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(json.dumps(rec))
     os.chmod(tmp, 0o600)  # an existing .tmp keeps its old mode through O_CREAT
-    os.replace(tmp, ANILIST_TOKEN_FILE)
-    os.chmod(ANILIST_TOKEN_FILE, 0o600)
+    os.replace(tmp, config.ANILIST_TOKEN_FILE)
+    os.chmod(config.ANILIST_TOKEN_FILE, 0o600)
     return rec
 
 
 def clear_token():
-    ANILIST_TOKEN_FILE.unlink(missing_ok=True)
+    config.ANILIST_TOKEN_FILE.unlink(missing_ok=True)
 
 
 def auth_disconnect():
@@ -3962,13 +3967,13 @@ def auth_status():
     only who is connected and until when (Decision 20 redaction rule)."""
     tok = load_token()
     if not tok:
-        return {"connected": False, "client_id_configured": bool(ANILIST_CLIENT_ID),
-                "redirect_uri": f"http://localhost:{PORT}/auth/callback"}
+        return {"connected": False, "client_id_configured": bool(config.ANILIST_CLIENT_ID),
+                "redirect_uri": f"http://localhost:{config.PORT}/auth/callback"}
     expired = tok.get("expires_at") is not None and tok["expires_at"] < time.time()
     return {"connected": not expired, "user": tok.get("user_name"), "user_id": tok.get("user_id"),
             "expires_at": tok.get("expires_at"), "expired": expired,
-            "client_id_configured": bool(ANILIST_CLIENT_ID),
-            "redirect_uri": f"http://localhost:{PORT}/auth/callback"}
+            "client_id_configured": bool(config.ANILIST_CLIENT_ID),
+            "redirect_uri": f"http://localhost:{config.PORT}/auth/callback"}
 
 
 _AUTH_PENDING_TS = 0.0
@@ -3980,7 +3985,7 @@ def auth_start():
     fresh (login correlation, READINESS A5). Returns the URL for the UI to
     open in the user's browser (their AniList session lives there)."""
     global _AUTH_PENDING_TS
-    if not ANILIST_CLIENT_ID:
+    if not config.ANILIST_CLIENT_ID:
         return {"error": "No AniList client id configured — add \"anilist_client_id\": <id> to the config file."}
     _AUTH_PENDING_TS = time.time()
     # No redirect_uri parameter: AniList's implicit grant (unlike its
@@ -3988,7 +3993,7 @@ def auth_start():
     # registered settings, and passing it anyway makes the authorize
     # endpoint answer unsupported_grant_type (found live 2026-10-15).
     return {"url": (f"https://anilist.co/api/v2/oauth/authorize"
-                    f"?client_id={ANILIST_CLIENT_ID}&response_type=token")}
+                    f"?client_id={config.ANILIST_CLIENT_ID}&response_type=token")}
 
 
 def auth_finish(access_token, expires_in=None, require_pending=False):
@@ -4025,7 +4030,7 @@ def auth_finish(access_token, expires_in=None, require_pending=False):
     cached = anilist_cache_stale()
     if cached and (cached.get("user") or {}).get("name") != viewer["name"]:
         # A different account: the cached lists are someone else's.
-        ANILIST_CACHE.unlink(missing_ok=True)
+        config.ANILIST_CACHE.unlink(missing_ok=True)
     # Reads follow this token's account (load_anilist_username reads
     # user_name from the token file) — no separate binding to maintain.
     # Decision 24: reconnect with the SAME account flushes the held queue
@@ -4410,9 +4415,9 @@ def anilist_user_data(force=False):
         # No-AniList mode (Decision 6): a readable payload shape, not a 502 —
         # the UI renders "not connected" rather than "unavailable".
         return {"user": None, "entries": []}
-    if not force and ANILIST_CACHE.exists():
+    if not force and config.ANILIST_CACHE.exists():
         try:
-            cached = json.loads(ANILIST_CACHE.read_text())
+            cached = json.loads(config.ANILIST_CACHE.read_text())
             if time.time() - cached.get("_ts", 0) < 600:
                 return {k: v for k, v in cached.items() if k != "_ts"}
         except Exception:
@@ -4462,9 +4467,9 @@ def anilist_user_data(force=False):
     }
     # Atomic: request threads read this file concurrently, and a torn read
     # would briefly flip the spine into local mode.
-    tmp = ANILIST_CACHE.with_suffix(".tmp")
+    tmp = config.ANILIST_CACHE.with_suffix(".tmp")
     tmp.write_text(json.dumps(out | {"_ts": time.time()}))
-    os.replace(tmp, ANILIST_CACHE)
+    os.replace(tmp, config.ANILIST_CACHE)
     return out
 
 
@@ -5526,10 +5531,10 @@ def open_show_folder(show_id):
     show = next((s for s in scan_library() if s["id"] == show_id), None)
     if not show or not show.get("path"):
         raise ValueError("no such show on disk")
-    path = (LIBRARY / show["path"]).resolve()
+    path = (config.LIBRARY / show["path"]).resolve()
     if path.is_file():
         path = path.parent
-    if not path.is_dir() or not path.is_relative_to(LIBRARY.resolve()):
+    if not path.is_dir() or not path.is_relative_to(config.LIBRARY.resolve()):
         raise ValueError("folder not found")
     subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -5584,7 +5589,7 @@ class Handler(BaseHTTPRequestHandler):
         accepted port follows the configured one — a hardcoded value rejects
         every request from an alternate-port instance (TODO 22, hit live
         during the config work). The JSON content-type gate lives in do_POST."""
-        if self.headers.get("Host", "") not in (f"127.0.0.1:{PORT}", f"localhost:{PORT}"):
+        if self.headers.get("Host", "") not in (f"127.0.0.1:{config.PORT}", f"localhost:{config.PORT}"):
             self.send_error(403)
             return False
         return True
@@ -5626,9 +5631,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self.send_json(anilist_user_data())
             except Exception as e:
-                if ANILIST_CACHE.exists():
+                if config.ANILIST_CACHE.exists():
                     try:
-                        stale = json.loads(ANILIST_CACHE.read_text())
+                        stale = json.loads(config.ANILIST_CACHE.read_text())
                         stale["stale"] = True
                         self.send_json(stale)
                         return
@@ -5732,10 +5737,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(franchise_view(mid))
         elif route.startswith("/img/"):
             name = os.path.basename(route)
-            p = POSTERS / name
+            p = config.POSTERS / name
             self.send_file(p, "image/jpeg", cache=True)
         elif route.startswith("/epimg/"):
-            self.send_file(EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
+            self.send_file(config.EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
         elif route in ("/", "/index.html"):
             self.send_file(WEB / "index.html", "text/html; charset=utf-8")
         elif route == "/style.css":
@@ -6161,8 +6166,8 @@ def open_ui():
     browser tab when no such browser exists. "browser": always a plain tab.
     "none" (or --no-browser for one run): nothing opens; the server just
     runs. Closing the window never stops the server."""
-    url = f"http://127.0.0.1:{PORT}"
-    if WINDOW == "app":
+    url = f"http://127.0.0.1:{config.PORT}"
+    if config.WINDOW == "app":
         for name in APP_BROWSERS:
             exe = shutil.which(name)
             if exe:
@@ -6178,16 +6183,16 @@ def main():
     no_browser = "--no-browser" in sys.argv
     for w in CONFIG_WARNINGS:
         print(f"anime-hub: {w}", file=sys.stderr, flush=True)
-    for d in (DATA, CACHE, POSTERS, EPIMGS):
+    for d in (config.DATA, config.CACHE, config.POSTERS, config.EPIMGS):
         d.mkdir(parents=True, exist_ok=True)
     init_db()
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        server = ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler)
     except OSError as e:
         # A bind failure must be readable (found by the cold-machine
         # simulation): the default case is a second instance or a taken
         # configured port, not a Python mystery.
-        print(f"anime-hub: cannot bind 127.0.0.1:{PORT} — {e}. "
+        print(f"anime-hub: cannot bind 127.0.0.1:{config.PORT} — {e}. "
               f"Is another instance already running, or is the configured 'port' taken?",
               file=sys.stderr, flush=True)
         sys.exit(1)
@@ -6202,14 +6207,14 @@ def main():
     # background — a stale cache must never read as a disconnect.
     threading.Thread(target=background_work(anilist_refresh_loop), daemon=True).start()
     threading.Thread(target=background_work(franchise_refresh_loop), daemon=True).start()
-    print(f"Anime Hub → http://127.0.0.1:{PORT}", flush=True)
+    print(f"Anime Hub → http://127.0.0.1:{config.PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
-    print(f"  library  {LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)
+    print(f"  library  {config.LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)
     u = load_anilist_username()
     a = auth_status()
     print(f"  anilist  reads as {u or 'not configured (optional)'}; oauth "
           f"{'connected as ' + a['user'] if a.get('connected') else 'not connected'}", flush=True)
-    if not no_browser and WINDOW != "none":
+    if not no_browser and config.WINDOW != "none":
         open_ui()
     server.serve_forever()
 
