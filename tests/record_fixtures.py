@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Record the AniList fixtures the tests run on (no network in tests).
 
-Walks each case's franchise from its start id over hub.FRANCHISE_RELATIONS
-and OTHER links to hub.FRANCHISE_OTHER_FORMATS (anime entries only; OTHER
+Walks each case's franchise from its start id over franchise.FRANCHISE_RELATIONS
+and OTHER links to franchise.FRANCHISE_OTHER_FORMATS (anime entries only; OTHER
 neighbours are recorded so tests can check which of them join), and saves
-every entry, as hub.FRANCHISE_QUERY_ID
+every entry, as franchise.FRANCHISE_QUERY_ID
 returns it, to tests/fixtures/anilist/<id>.json. Entries already recorded
 are kept; pass --refresh to fetch them again.
 
@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import hub  # noqa: E402
+from animehub import anilist, franchise  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 ANILIST = FIXTURES / "anilist"
@@ -30,7 +30,7 @@ def fetch(mid, refresh):
     path = ANILIST / f"{mid}.json"
     if path.exists() and not refresh:
         return json.loads(path.read_text())
-    media = hub.anilist_request({"query": hub.FRANCHISE_QUERY_ID, "variables": {"id": mid}})["data"]["Media"]
+    media = anilist.anilist_request({"query": franchise.FRANCHISE_QUERY_ID, "variables": {"id": mid}})["data"]["Media"]
     path.write_text(json.dumps(media, indent=1, ensure_ascii=False) + "\n")
     print(f"  recorded {mid} {(media.get('title') or {}).get('romaji')}", flush=True)
     time.sleep(PAUSE)
@@ -49,9 +49,9 @@ def walk(start, refresh):
             node = e["node"]
             if node.get("type") != "ANIME" or node["id"] in seen:
                 continue
-            if e["relationType"] in hub.FRANCHISE_RELATIONS:
+            if e["relationType"] in franchise.FRANCHISE_RELATIONS:
                 todo.append(node["id"])
-            elif e["relationType"] == "OTHER" and node.get("format") in hub.FRANCHISE_OTHER_FORMATS:
+            elif e["relationType"] == "OTHER" and node.get("format") in franchise.FRANCHISE_OTHER_FORMATS:
                 others.add(node["id"])
     if todo:
         print(f"  stopped at {LIMIT} entries", flush=True)
