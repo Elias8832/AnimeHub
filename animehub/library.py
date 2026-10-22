@@ -479,6 +479,10 @@ def spine_build_local(scan, curations, streams=()):
 def full_library():
     scan = scan_library()
     merge_db(scan)
+    kept = metadata.kept_local()
+    for s in scan:
+        if not s.get("meta"):
+            s["kept_local"] = s["id"] in kept  # additive (TODO 12c)
     # ani-cli bridge: a linked release's online episodes join its disk
     # folder's show; releases without a folder are shows of their own
     # ("aid:<id>"), carried beside the scan. merge_db ran first, so scan

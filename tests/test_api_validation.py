@@ -136,6 +136,15 @@ class ApiValidationTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("boolean", payload["error"])
 
+    def test_match_flags_must_be_real_booleans(self):
+        """TODO 12: keep-local's `keep` and the suggestion refresh's `fresh`."""
+        for route, body in (("/api/keep-local", b'{"show_id":"x","keep":"yes"}'),
+                            ("/api/match-candidates", b'{"query":"Frieren","fresh":1}')):
+            with self.subTest(route=route):
+                status, payload = self.post(route, body)
+                self.assertEqual(status, 400)
+                self.assertIn("boolean", payload["error"])
+
     def test_play_version_must_be_an_integer(self):
         status, payload = self.post("/api/play", b'{"id":"x","version":"2"}')
         self.assertEqual(status, 400)

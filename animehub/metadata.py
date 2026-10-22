@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from . import anilist, database, franchise, library, mapping, pages, upscale, util
+from . import anilist, database, franchise, library, mapping, pages, settings, upscale, util
 from .config import config
 
 
@@ -118,14 +118,15 @@ def media_episode_art(media):
         return {"thumbs": None, "titles": None}
     return episode_thumbs_meta(media["id"], seps)
 
-def fetch_media_candidates(title):
-    """A bounded title search over the AniList catalog, cached."""
+def fetch_media_candidates(title, fresh=False):
+    """A bounded title search over the AniList catalog, cached. fresh=True
+    skips the cache (the To match tab's per-show refresh, TODO 12b)."""
     query = re.sub(r"\s*\([^)]*\)", "", title).strip()
     query = re.sub(r"(\d+)(?:st|nd|rd|th)\s+Season", r"Season \1", query, flags=re.I)
     if not query:
         return []
     key = "media-candidates:v1:" + query.lower()
-    cached = database.cache_get(key, EPISODE_META_TTL)
+    cached = None if fresh else database.cache_get(key, EPISODE_META_TTL)
     if cached is not None:
         return cached
     data = anilist.anilist_request({"query": anilist.MEDIA_QUERY_CANDIDATES, "variables": {"search": query}})
@@ -347,6 +348,28 @@ def clear_match(show_id):
         (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
 
 
+def kept_local():
+    """Show ids the user marked "Not on AniList — keep local" (TODO 12c):
+    they leave the To match tab and the automatic matcher stops asking
+    AniList about them. Matching one by hand ends it."""
+    try:
+        return set(json.loads(settings.get_setting("kept_local") or "[]"))
+    except ValueError:
+        return set()
+
+
+def set_kept_local(show_id, keep=True):
+    if not any(s["id"] == show_id for s in library.scan_library()):
+        return {"error": "unknown show"}
+    ids = kept_local()
+    if keep:
+        ids.add(show_id)
+    else:
+        ids.discard(show_id)
+    settings.set_setting("kept_local", json.dumps(sorted(ids)))
+    return {"ok": True, "kept_local": keep}
+
+
 def set_match(show_id, anilist_id=None, query=None):
     """Manual match repair (TODO 28 minimal): commit a user-chosen AniList
     id (or raw search query) for a show and refetch its metadata. The
@@ -368,6 +391,8 @@ def set_match(show_id, anilist_id=None, query=None):
     with database.db() as c:
         c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
     store_show_meta(show, m)
+    if show_id in kept_local():
+        set_kept_local(show_id, False)
     return {"ok": True, "anilist_id": anilist_id,
             "title": (m.get("title") or {}).get("english") or (m.get("title") or {}).get("romaji")}
 
@@ -391,7 +416,8 @@ def refresh_meta():
         scan = library.scan_library()
         library.merge_db(scan)
         overrides = load_overrides()
-        missing = [s for s in scan if not s.get("poster")]
+        kept = kept_local()
+        missing = [s for s in scan if not s.get("poster") and s["id"] not in kept]
         _meta_status["pending"] = len(missing)
         _meta_status["phase"] = "show metadata"
         for s in missing:

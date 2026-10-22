@@ -411,10 +411,21 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.send_json(mapping.set_season_pin(body["show_id"], body["season"], aid,
                                                   none=body.get("none") is True))
+        elif route == "/api/keep-local":
+            # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
+            if self._fields(body, strings=("show_id",)):
+                if "keep" in body and not isinstance(body["keep"], bool):
+                    self._bad("'keep' must be a boolean")
+                else:
+                    res = metadata.set_kept_local(body["show_id"], body.get("keep", True))
+                    self.send_json(res, 200 if res.get("ok") else 400)
         elif route == "/api/match-candidates":
             if self._fields(body, strings=("query",)):
+                if "fresh" in body and not isinstance(body["fresh"], bool):
+                    self._bad("'fresh' must be a boolean")
+                    return
                 try:
-                    self.send_json(metadata.fetch_media_candidates(body["query"])[:10])
+                    self.send_json(metadata.fetch_media_candidates(body["query"], body.get("fresh") is True)[:10])
                 except Exception as e:
                     self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/auth/start":

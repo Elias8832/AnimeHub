@@ -304,7 +304,8 @@ const SORT = {
   year: (a, b) => (b.year || 0) - (a.year || 0), title: (a, b) => (a.title || "").localeCompare(b.title || ""),
 };
 const inProg = (st) => ["CURRENT", "REPEATING", "PAUSED"].includes(st);
-const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id);
+/* "Keep local" (TODO 12c) moves a folder from To match to Untracked. */
+const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id && !s.kept_local);
 
 /* One card per franchise, where its first entry sorts; the rest are
    counted on it ("+2"). It shows the entry last active in, else the
@@ -329,7 +330,7 @@ function libModel() {
   for (const e of sp.entries) (counts[e.status] ||= new Set()).add(franchiseKey(e));
   const tabs = LISTS.filter(([k]) => counts[k]).map(([k, l]) => ({ k, l, n: counts[k].size }));
   if (sp.entries.length) tabs.unshift({ k: "ALL", l: "All", n: new Set(sp.entries.map(franchiseKey)).size });
-  const untracked = sp.untracked.map(showById).filter((s) => s && s.meta?.anilist_id);
+  const untracked = sp.untracked.map(showById).filter((s) => s && (s.meta?.anilist_id || s.kept_local));
   const unmatched = unmatchedShows();
   if (untracked.length) tabs.push({ k: "UNTRACKED", l: "Untracked", n: untracked.length });
   if (unmatched.length) tabs.push({ k: "MATCH", l: "To match", n: unmatched.length, attn: true });
@@ -390,26 +391,30 @@ function matchUI(s) {
     ${m.busy ? '<div class="found"><i class="spin"></i>Searching AniList…</div>' : ""}
     ${c.length ? `<div class="cands">${c.map((x, i) => `<button class="cand ${i === m.pick ? "on" : ""}" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), null)}<b>${esc(candLabel(x))}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format, x.episodes ? x.episodes + " eps" : ""].filter(Boolean).join(" · "))}</small>${i === m.pick ? "<em>selected</em>" : ""}</button>`).join("")}</div>`
       : m.cands && !m.busy ? '<p class="sub">No AniList results for that title.</p>' : ""}
-    <div class="row"><input id="mq-${esc(s.id)}" aria-label="Search AniList" placeholder="Search AniList, or paste an ID or anilist.co URL" value="${esc(m.q)}"><button class="btn" data-a="msearch" data-v="${esc(s.id)}">Search</button></div>
+    <div class="row"><input id="mq-${esc(s.id)}" aria-label="Search AniList" placeholder="Search AniList, or paste an ID or anilist.co URL" value="${esc(m.q)}"><button class="btn" data-a="msearch" data-v="${esc(s.id)}">Search</button><button class="btn" data-a="mrefresh" data-v="${esc(s.id)}" title="Ask AniList again instead of using the saved suggestions"${m.busy ? " disabled" : ""}>${ico("refresh")}Refresh</button></div>
     ${m.err ? `<div class="msg">${esc(m.err)}</div>` : ""}
-    <div class="row">${c.length ? `<button class="btn pri" data-a="match" data-v="${esc(s.id)}">Match to “${esc(candLabel(c[m.pick] || c[0]))}”</button>` : ""}<button class="btn" data-a="keeplocal">Not on AniList — keep local</button></div></div>`;
+    <div class="row">${c.length ? `<button class="btn pri" data-a="match" data-v="${esc(s.id)}">Match to “${esc(candLabel(c[m.pick] || c[0]))}”</button>` : ""}<button class="btn" data-a="keeplocal" data-v="${esc(s.id)}" data-k="${!s.kept_local}">${s.kept_local ? "Back to To match" : "Not on AniList — keep local"}</button></div></div>`;
 }
 function paintMatch(id) {
   const el = document.querySelector(`.match[data-show="${CSS.escape(id)}"]`), s = showById(id);
   if (el && s) el.outerHTML = matchUI(s);
 }
 let candQ = Promise.resolve();
-async function runSearch(id, text) {
+async function runSearch(id, text, fresh = false) {
   const m = mst(id);
   m.busy = true; m.err = ""; paintMatch(id);
   try {
-    const r = await api("/api/match-candidates", { query: text });
+    const r = await api("/api/match-candidates", fresh ? { query: text, fresh } : { query: text });
     if (r && r.error) { m.err = r.error; m.cands = []; } else { m.cands = r || []; m.pick = 0; }
   } catch { m.err = "Search failed — is the hub running?"; m.cands = []; }
   m.busy = false; paintMatch(id);
 }
+/* Every unmatched folder, queued one search at a time — started on each
+   library load, so the To match tab opens with its suggestions ready
+   (TODO 12a, Decision 8). The metadata pass already searched these titles,
+   so most answers come from the cache. */
 function autoSuggest(list) {
-  for (const s of list.slice(0, 5)) {
+  for (const s of list) {
     const m = mst(s.id);
     if (m.tried || m.cands || m.busy) continue;
     m.tried = true;
@@ -874,7 +879,7 @@ function Det() {
   <div class="wrap"><div class="hero" style="margin-top:-250px">${poster(s.title, s.poster)}<div>
     <h1>${esc(s.title)}</h1>
     <div class="meta">${playing}</div>
-    <div class="cta">${tg ? `<button class="pill solid${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}${local}<span class="warn">${matched ? "AniList unreachable — showing the folder" : "Unmatched — no AniList entry yet"}</span></div>
+    <div class="cta">${tg ? `<button class="pill solid${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}${local}<span class="warn">${matched ? "AniList unreachable — showing the folder" : s.kept_local ? "Kept local — not on AniList" : "Unmatched — no AniList entry yet"}</span></div>
   </div></div>
   <div class="body"><section>
     ${matched ? "" : `<h2 style="font-size:26px;margin-bottom:6px">Match this show</h2>${(autoSuggest([s]), matchUI(s))}<div style="height:34px"></div>`}
@@ -1762,6 +1767,7 @@ async function reload() {
   catch (e) { return retryLoad(`Can't reach the hub (${e.message}) — retrying…`); }
   if (!d || d.error || !Array.isArray(d.shows)) return retryLoad(`The hub answered, but not with a library${d && d.error ? ": " + d.error : ""} — retrying…`);
   S.data = d; offlineNote(false);
+  autoSuggest(unmatchedShows());
   if (S.view === "fr" && S.fr) frLoad(S.fr.eid);
   try { softRender(); }
   catch (e) { console.error(e); offlineNote(true, `Display error: ${e.message} (see the browser console)`); }
@@ -2138,7 +2144,16 @@ const A = {
     hit ? commitMatch(v, +hit[1]) : runSearch(v, text);
   },
   match: (v) => { const m = mst(v), c = (m.cands || [])[m.pick]; if (c) commitMatch(v, c.id); },
-  keeplocal: () => toast("Kept local — you can match it later"),
+  mrefresh: (v) => { const m = mst(v); if (!m.busy) runSearch(v, m.q || showById(v)?.title || "", true); },
+  keeplocal: (v, t) => {
+    const keep = t.dataset.k === "true";
+    t.disabled = true;
+    api("/api/keep-local", { show_id: v, keep }).then((r) => {
+      if (r && r.error) { t.disabled = false; toast(r.error); return; }
+      toast(keep ? "Kept local — you can still match it from its page" : "Back in To match");
+      reload();
+    }).catch(() => { t.disabled = false; toast("Could not save — is the hub running?"); });
+  },
   /* settings + account */
   adv: (v) => { if (S.settings) setToggle(v, !S.settings[v]); },
   ani: () => openModal({ t: "ani" }),
