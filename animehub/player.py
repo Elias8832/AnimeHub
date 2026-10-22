@@ -1,6 +1,7 @@
 """Local playback in mpv: sessions, resume, auto-play next."""
 
 import json
+import os
 import re
 import signal
 import socket
@@ -26,6 +27,14 @@ _launch_lock = threading.Lock()
 # socket appeared), surfaced additively in /api/now so the UI can explain
 # a play click that produced nothing.
 _session_error = {"ep_id": None, "error": None, "ts": 0.0}
+
+
+def ipc_socket_path():
+    """A fresh mpv IPC socket path in the user's private runtime dir
+    (TODO 52h); /tmp only when $XDG_RUNTIME_DIR is unset or missing."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    base = Path(runtime) if runtime and Path(runtime).is_dir() else Path("/tmp")
+    return base / f"anime-hub-{uuid.uuid4().hex[:8]}.sock"
 
 
 def mpv_ipc(sock_path, command, timeout=2.0):
@@ -339,7 +348,7 @@ def start_play(ep_id, version=0):
     path = config.LIBRARY / files[version]["path"]
     if not path.exists():
         return {"error": "file missing"}
-    sock = Path("/tmp") / f"anime-hub-{uuid.uuid4().hex[:8]}.sock"
+    sock = ipc_socket_path()
     args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id)]
     # No --save-position-on-quit (TODO 24): the hub's IPC loop is the only
     # resume store. mpv's watch-later state would otherwise fight an

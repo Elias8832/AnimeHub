@@ -8,7 +8,6 @@ import subprocess
 import threading
 import time
 import unicodedata
-import uuid
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -645,7 +644,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False):
     label = session_label(sea, ep)
     code = f"E{token}"
     play_mode = "sub" if sub_once else link["mode"]
-    sock = Path("/tmp") / f"anime-hub-{uuid.uuid4().hex[:8]}.sock"
+    sock = player.ipc_socket_path()
     flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *player.resume_args(ep_id)]
     script = mpv_script_flag()
     if script:
