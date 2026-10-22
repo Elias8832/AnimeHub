@@ -15,11 +15,12 @@ from .config import config
 ANILIST_URL = "https://graphql.anilist.co"
 # The spine's cache query. genres + nextAiringEpisode landed with the
 # round-4 UI rework (genre hints/tray, home airing panel, stats panels);
-# old caches just lack the fields until the next refresh — additive.
+# old caches just lack the fields until the next refresh — additive
+# (airingAt joined for the home countdown, TODO 48).
 ANILIST_USER_QUERY = """query($name:String){
 User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
 MediaListCollection(userName:$name, type:ANIME){
-lists{ entries{ status progress score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring } coverImage{extraLarge} bannerImage title{english romaji} } } }
+lists{ entries{ status progress score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge} bannerImage title{english romaji} } } }
 }}"""
 MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
 coverImage{extraLarge} bannerImage description
@@ -629,8 +630,11 @@ def anilist_user_data(force=False):
                     "duration": e["media"].get("duration"),
                     "year": (e["media"].get("startDate") or {}).get("year"),
                     "genres": e["media"].get("genres") or [],
+                    # `at` (airingAt, unix seconds) is additive: the home
+                    # countdown stays right however old the cache is.
                     "next_episode": ({"number": e["media"]["nextAiringEpisode"]["episode"],
-                                      "in_seconds": e["media"]["nextAiringEpisode"]["timeUntilAiring"]}
+                                      "in_seconds": e["media"]["nextAiringEpisode"]["timeUntilAiring"],
+                                      "at": e["media"]["nextAiringEpisode"].get("airingAt")}
                                      if e["media"].get("nextAiringEpisode") else None),
                     "airing": e["media"].get("status"),
                     "season": e["media"].get("season"),

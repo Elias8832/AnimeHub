@@ -21,6 +21,20 @@
   --hi: inset 0 1px 0 rgba(255, 255, 255, .05);
   --sh-pop: 0 24px 60px -14px rgba(0, 0, 0, .8), 0 0 0 1px rgba(255, 255, 255, .05);
 }
+/* Palettes (Decision 28): graphite is :root; the others recolour surfaces + accent.
+   On <html>, so ambient()'s inline --amb still wins on show pages. */
+:root[data-pal=teal] {
+  --bg: #0f1314; --s1: #151a1b; --s2: #1d2324; --s3: #262d2f;
+  --line: #262d2f; --line-hi: #35403f;
+  --accent: #4fb3a6; --accent-hi: #7dd3c6; --accent-ink: #05201c; --online: #86c6d6;
+  --amb: #4fb3a6; --accent-rgb: 79 179 166;
+}
+:root[data-pal=oxide] {
+  --bg: #141110; --s1: #1b1716; --s2: #25201e; --s3: #2f2926;
+  --line: #2f2926; --line-hi: #433a35;
+  --accent: #d08a5c; --accent-hi: #eaa985; --accent-ink: #2a1407;
+  --amb: #d08a5c; --accent-rgb: 208 138 92;
+}
 
 /* ───────── base ───────── */
 *{box-sizing:border-box}
@@ -237,6 +251,7 @@ body.sc #nav{border-color:var(--line);box-shadow:0 12px 32px -20px #000}
 .airing.art{position:relative;overflow:hidden;isolation:isolate}.airing.art .cbg{z-index:-2;opacity:.55}.airing.art:before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(10,11,13,.92) 30%,rgba(10,11,13,.55))}.airing.art:hover .cbg{transform:scale(1.05)}
 .airing:hover{border-color:var(--line-hi);background:var(--s2);transform:translateX(4px);box-shadow:0 14px 26px -18px #000}
 .al-top{display:flex;align-items:center;gap:10px}.al-top b{font-weight:600;line-height:1.25}
+.al-in{margin-left:auto;flex:none;font-size:12.5px;font-weight:600;color:var(--accent-hi);font-variant-numeric:tabular-nums}
 .live{width:8px;height:8px;border-radius:50%;background:var(--warn);flex:none;animation:livePulse 1.8s ease-out infinite}
 @keyframes livePulse{0%{box-shadow:0 0 0 0 rgb(var(--warn-rgb)/.55)}80%,100%{box-shadow:0 0 0 8px rgb(var(--warn-rgb)/0)}}
 .al-bar{height:3px;border-radius:2px;background:var(--s3);overflow:hidden}.al-bar i{border-radius:2px}
@@ -254,6 +269,12 @@ body.sc #nav{border-color:var(--line);box-shadow:0 12px 32px -20px #000}
 .fl{display:grid;gap:4px;font-size:12px;color:var(--mute);font-weight:500}.fl select{font-size:13px;padding:6px 28px 6px 10px;border-radius:9px;color:var(--ink)}
 .filters .btn{font-size:13px;padding:7px 13px;color:var(--mute)}.filters .btn:hover{color:var(--ink)}
 .filters .btn .ico{width:14px;height:14px}.filters .btn.busy .ico{animation:spin .8s linear infinite}
+.note.offlist{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.note.offlist .btn .ico{width:14px;height:14px}
+.gtray{display:flex;flex-wrap:wrap;gap:6px;padding:12px 0 2px;animation:rise .4s var(--ease) both}
+.gchip{font-size:12.5px;font-weight:550;color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:4px 11px;display:inline-flex;align-items:baseline;gap:6px;background:rgba(255,255,255,.02)}
+.gchip sup{font-size:10.5px;top:0;opacity:.7;font-variant-numeric:tabular-nums}
+.gchip:hover{color:var(--ink);border-color:var(--line-hi)}
+.gchip.on{color:var(--accent-hi);border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:color-mix(in srgb,var(--accent) 14%,transparent)}
 .filters .btn.clr{color:var(--accent-hi);border-color:color-mix(in srgb,var(--accent) 40%,var(--line));animation:popIn .25s var(--spring) both}
 .match{display:grid;gap:16px;max-width:900px;margin-top:24px;padding:20px;border:1px solid var(--line);border-radius:var(--r-l);background:var(--s1);animation:rise .4s var(--ease) both}
 .match-head{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}.match-head b{font-size:18px;font-weight:650}.cands{display:flex;gap:12px;flex-wrap:wrap}
@@ -473,6 +494,15 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 
 /* Settings → Appearance zoom stepper: compact, no reset (Elias, 2026-10-17). */
 .zrow{display:inline-flex;align-items:center;gap:10px}
+.pals{display:inline-flex;gap:8px}
+.palbtn{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:550;color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:6px 13px 6px 8px}
+.palbtn:hover{color:var(--ink);border-color:var(--line-hi)}.palbtn.on{color:var(--ink);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.palbtn i{width:16px;height:16px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.12) inset}
+.palbtn i[data-sw=graphite]{background:linear-gradient(135deg,#93b9ec,#6f9bd4 50%,#202327 50%)}
+.palbtn i[data-sw=teal]{background:linear-gradient(135deg,#7dd3c6,#4fb3a6 50%,#1d2324 50%)}
+.palbtn i[data-sw=oxide]{background:linear-gradient(135deg,#eaa985,#d08a5c 50%,#25201e 50%)}
+/* The brand mark follows the palette. */
+.mark stop{stop-color:var(--accent-hi)}.mark stop+stop{stop-color:var(--accent)}.mark .tri{fill:var(--accent-ink)}
 .zrow .btn{height:38px;width:38px;padding:0;font-size:17px;border-radius:10px}
 .zrow .zval{min-width:52px;text-align:center;font-weight:500;color:var(--ink)}
 /* online episodes (ani-cli, v0.2): loading/unavailable tiles, "Wrong episodes?" dialog, downloads popover */

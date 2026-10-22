@@ -97,6 +97,7 @@ def settings_payload():
         "tools": {t: shutil.which(t) for t in ("mpv", "ani-cli", "upscayl")},
         # ani-cli bridge preferences: quality + default audio for new links.
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
+                   "check": anicli.anicli_check(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
     }
 
