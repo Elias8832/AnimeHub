@@ -106,44 +106,88 @@ def entry_of_episode(ep_id):
     return (unit["media_id"], n) if unit else None
 
 
-def next_episode(ep_id):
-    """The episode id to play after ep_id, on its franchise page: the next
-    episode of the same entry, else the first of the next main season.
-    Files and online episodes chain into each other (the last file of a
-    season → the first episode not on disk, played online). An episode that
-    can't play (not available online) ends the chain rather than skipping
-    ahead. A file that maps to no entry walks its folder instead. None at
-    the end."""
+def next_up(ep_id):
+    """What plays after ep_id, on its franchise page: {"id", "source"} with
+    source "local" / "online", "missing" when the next episode exists but
+    can't play (not on disk, not available online — id None), or None at
+    the end. The next episode of the same entry, else the first of the next
+    main season. Files and online episodes chain into each other (the last
+    file of a season → the first episode not on disk, played online). An
+    episode that can't play ends the chain rather than skipping ahead. A
+    file that maps to no entry walks its folder instead."""
+    end = {"id": None, "source": None}
     at = entry_of_episode(ep_id)
     if at:
         mid, n = at
-        entries = pages.franchise_view(mid, background=False)["entries"]
+        page = pages.franchise_view(mid, background=False)
+        entries = page["entries"]
         e = next((x for x in entries if x["id"] == mid), None)
         if e:
-            def playable(entry, x):
-                return x and (x["local"] or (x["online"] and entry["online"]["available"])) and x["id"]
+            missing = {"id": None, "source": "missing"}
 
+            def playable(entry, x):
+                if x["local"] and x["id"]:
+                    return {"id": x["id"], "source": "local"}
+                if x["online"] and entry["online"]["available"] and x["id"]:
+                    return {"id": x["id"], "source": "online",
+                            "show": page.get("title"), "label": f'{entry["label"]} · E{x["number"]}'}
+                return missing
+
+            # Aired on AniList but no slot (no ani-cli, nothing on disk):
+            # it exists, it just can't play.
             nxt = next((x for x in e["slots"] if x["number"] > n), None)
-            if nxt or e["group"] != "main":
-                return playable(e, nxt) or None
+            if nxt:
+                return playable(e, nxt)
+            if isinstance(n, int) and n < (e.get("aired") or 0):
+                return missing
+            if e["group"] != "main":
+                return end
             mains = [x for x in entries if x["group"] == "main"]
             later = mains[mains.index(e) + 1:]
-            return (playable(later[0], later[0]["slots"][0]) or None) if later and later[0]["slots"] else None
+            if not later:
+                return end
+            if later[0]["slots"]:
+                return playable(later[0], later[0]["slots"][0])
+            return missing if later[0].get("aired") else end
     s, ep = library.episode_by_id(ep_id)
     if not ep:
-        return None
+        return end
     sea = next((x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"])), None)
     if not sea:
-        return None
+        return end
     after = [e for e in sea["episodes"] if e["number"] > ep["number"]]
     if after:
-        return min(after, key=lambda e: e["number"])["id"]
+        return {"id": min(after, key=lambda e: e["number"])["id"], "source": "local"}
     seasons = ordered_seasons(s)
     for nxt in seasons[seasons.index(sea) + 1:]:
         eps = sorted(nxt["episodes"], key=lambda e: e["number"])
         if eps:
-            return eps[0]["id"]
-    return None
+            return {"id": eps[0]["id"], "source": "local"}
+    return end
+
+
+def next_episode(ep_id):
+    """The episode id to play after ep_id (next_up), None at the end or
+    when the next episode can't play."""
+    return next_up(ep_id)["id"]
+
+
+# Next-episode prompt (TODO 10, Decision 2): when a file finishes and the
+# next episode is online only, autoplay waits — the hub asks (with the VPN
+# state) instead of silently fetching through ani-cli. Answered by playing
+# it (start_play clears it) or POST /api/next-prompt/dismiss; served
+# additively in /api/now for NEXT_PROMPT_TTL seconds.
+NEXT_PROMPT_TTL = 1800
+_next_prompt = {"id": None}
+
+
+def next_prompt():
+    p = dict(_next_prompt)
+    return p if p["id"] and time.time() - p["ts"] < NEXT_PROMPT_TTL else None
+
+
+def dismiss_next_prompt():
+    _next_prompt["id"] = None
 
 
 def autoplay_next(ep_id, version=0):
@@ -151,11 +195,15 @@ def autoplay_next(ep_id, version=0):
     (TODO 24): the same index into the next episode's parallel file list
     keeps the user's picked variant instead of resetting to the first one;
     start_play clamps it to what exists. Files and online episodes chain
-    into each other along the franchise page (next_episode)."""
+    into each other along the franchise page (next_up) — but a file
+    chaining into an online episode waits for the user (next-episode
+    prompt)."""
     try:
-        nxt = next_episode(ep_id)
-        if nxt:
-            start_play(nxt, version)
+        nxt = next_up(ep_id)
+        if nxt["source"] == "online" and not ep_id.startswith("stream:"):
+            _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"), ts=time.time())
+        elif nxt["id"]:
+            start_play(nxt["id"], version)
     except Exception as e:
         print(f"Autoplay: {e}", file=sys.stderr, flush=True)
 
@@ -197,6 +245,15 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
             break
         except (FileNotFoundError, ConnectionRefusedError, socket.error):
             time.sleep(0.25)
+    if connected:
+        try:
+            nxt = next_up(ep_id)
+            with _active_lock:
+                entry = _active.get(ep_id)
+                if entry is not None and entry.get("proc") is proc:
+                    entry["next"] = {"source": nxt["source"]}
+        except Exception as exc:
+            util.log("next-episode check failed: %s" % exc)
     if not connected and proc.poll() is not None and _owns_session(ep_id, proc):
         # mpv died before playback started (bad file, missing decoder…):
         # record it so the UI can explain the dead play click (TODO 24).
@@ -338,6 +395,7 @@ def retire_session(proc):
 
 
 def start_play(ep_id, version=0):
+    dismiss_next_prompt()  # playing anything answers the prompt
     if ep_id.startswith("stream:"):
         return streaming.start_stream(ep_id)
     s, ep = library.episode_by_id(ep_id)

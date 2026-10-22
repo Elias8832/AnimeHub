@@ -186,6 +186,7 @@ class Handler(BaseHTTPRequestHandler):
             downloads = downloader.downloads_payload()
             notice = (dict(streaming._session_notice) if streaming._session_notice["msg"]
                       and time.time() - streaming._session_notice["ts"] < 30 else None)
+            vpn = settings.vpn_status()
             with player._active_lock:
                 if not player._active:
                     payload = {"playing": False}
@@ -198,6 +199,11 @@ class Handler(BaseHTTPRequestHandler):
                     pending = progress._pending_completion()
                     if pending:
                         payload["completed"] = pending
+                    # Additive (TODO 10): a file finished, the next episode
+                    # is online only — the hub asks before ani-cli fetches.
+                    ask = player.next_prompt()
+                    if ask:
+                        payload["next_prompt"] = {k: ask.get(k) for k in ("id", "label", "show")}
                     if outbox_n:
                         # Quiet sync chip (TODO 14, Decision 3).
                         payload["outbox"] = outbox_n
@@ -205,12 +211,17 @@ class Handler(BaseHTTPRequestHandler):
                         payload["downloads"] = downloads
                     if notice:
                         payload["notice"] = notice
+                    # Additive: the VPN chip follows the connection live.
+                    payload["vpn"] = vpn
                     self.send_json(payload)
                     return
                 a = next(iter(player._active.values()))
                 payload = {"playing": True, "show": a["show_title"], "label": a["label"],
                            "percent": a.get("percent") or 0, "episode_id": a["ep_id"],
-                           "loading": bool(a.get("loading"))}
+                           "loading": bool(a.get("loading")), "vpn": vpn}
+                # Additive (TODO 10): where the next episode comes from.
+                if a.get("next"):
+                    payload["next"] = a["next"]
                 if notice:
                     payload["notice"] = notice
                 if outbox_n:
@@ -286,6 +297,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._bad("'mode' must be one of: %s" % ", ".join(anicli.STREAM_MODES))
                 elif mode and body["id"].startswith("stream:"):
                     # An online episode in the other language ("Play dubbed").
+                    player.dismiss_next_prompt()
                     self.send_json(streaming.start_stream(body["id"], mode))
                 else:
                     self.send_json(player.start_play(body["id"], body.get("version", 0)))
@@ -426,6 +438,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(r, 200 if r.get("ok") else 400)
         elif route == "/api/auth/logout":
             self.send_json(anilist.auth_disconnect())
+        elif route == "/api/next-prompt/dismiss":
+            player.dismiss_next_prompt()
+            self.send_json({"ok": True})
         elif route == "/api/completion-seen":
             if self._fields(body, ints=("media_id", "count")):
                 progress._dismiss_completion(body["media_id"], body["count"])

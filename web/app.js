@@ -1339,6 +1339,17 @@ function vpnChip() {
   if (!v?.known || !S.data.stream_ready || S.settings?.vpn_icon === false) return "";
   return `<span class="chip vpn ${v.active ? "on" : "off"}" title="${v.active ? `VPN active (${esc(v.iface)})` : "No VPN detected"}">${ico("shield")}${v.active ? "VPN" : "No VPN"}</span>`;
 }
+/* Next-episode source warning (TODO 10, Decision 2): beside the
+   now-playing chip when the next episode comes from somewhere else (or
+   can't play) — online carries the VPN state, since autoplay won't ask. */
+function nextChip(now) {
+  const src = now?.next?.source, here = now?.episode_id?.startsWith("stream:") ? "online" : "local";
+  if (!src || now.loading || (src !== "missing" && src === here)) return "";
+  if (src === "missing") return `<span class="chip nx warn" title="The next episode isn't on disk or online — autoplay stops here">Next: not available</span>`;
+  if (src === "local") return `<span class="chip nx" title="The next episode plays from your files">Next: from disk</span>`;
+  const v = S.data?.vpn, vpn = !v?.known ? "" : v.active ? " · VPN" : " · No VPN";
+  return `<span class="chip nx${v?.known && !v.active ? " warn" : ""}" title="The next episode plays online through ani-cli">Next: online${vpn}</span>`;
+}
 function vpnGate(go) {
   if (vpnOn() || !S.data?.vpn?.known || S.settings?.vpn_warn === false) return go();
   openModal({ t: "vpn", go });
@@ -1348,6 +1359,26 @@ function VpnDlg() {
   <p class="sub">Online episodes and downloads are fetched by ani-cli over your normal connection. Turn on your VPN first, or continue anyway.</p>
   <p class="sub" style="margin-top:10px;font-size:13px">You can turn this question off in Settings → Online episodes.</p>
   <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="vpngo">Continue anyway</button></div>`;
+}
+/* Next-episode prompt (TODO 10): the last file finished and the next
+   episode is online only — autoplay waits for Continue / Stop here. */
+let lastNextPrompt = null;
+function maybeNextPrompt(p) {
+  if (p.id === lastNextPrompt || S.modal) return;
+  lastNextPrompt = p.id;
+  openModal({ t: "nxt", p });
+}
+function nxVpn() {
+  const v = S.data?.vpn;
+  if (!v?.known) return `<span class="dim">VPN status unknown</span>`;
+  return `<span class="chip vpn ${v.active ? "on" : "off"}">${ico("shield")}${v.active ? `VPN on (${esc(v.iface)})` : "No VPN detected"}</span>`;
+}
+function NextDlg() {
+  const p = S.modal.p;
+  return `<h2 id="dt">Next episode is online only</h2>
+  <p class="sub">${p.show ? `${esc(p.show)} · ` : ""}${esc(p.label || "The next episode")} isn't on disk. ani-cli streams it over your connection.</p>
+  <p id="nx-vpn" style="margin-top:12px">${nxVpn()}</p>
+  <div class="actions"><button class="btn" data-a="nxstop">Stop</button><button class="btn pri" data-a="nxgo">Continue</button></div>`;
 }
 function paintNav() {
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view;
@@ -1361,7 +1392,7 @@ function paintNav() {
   if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
   const now = S.data?.now, ctx = now && findEpContext(now.episode_id), pct = now ? Math.round(now.percent) : 0;
   const nr = $("#nr"), dlHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued").length;
-  const html = `${now ? `<button class="chip np" style="--pct:@P@%" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><span class="eq"><i></i><i></i><i></i></span><span class="npt">${esc(now.show)} · ${esc(now.label)}</span><span class="pc">${now.loading ? "Loading" : "@P@%"}</span></button>` : ""}
+  const html = `${now ? `<button class="chip np" style="--pct:@P@%" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><span class="eq"><i></i><i></i><i></i></span><span class="npt">${esc(now.show)} · ${esc(now.label)}</span><span class="pc">${now.loading ? "Loading" : "@P@%"}</span></button>${nextChip(now)}` : ""}
     ${vpnChip()}
     ${S.outbox ? `<div class="rel"><button class="chip sync" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : ""}
     <div class="rel"><button class="chip ib${dlActive ? " dl-on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive ? `<span class="pc">${dlActive}</span>` : ""}</button>${S.menu === "dl" ? dlPop() : ""}</div>`;
@@ -1455,7 +1486,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, pin: PinDlg }[m.t]();
+  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, pin: PinDlg, nxt: NextDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -1814,6 +1845,11 @@ async function pollNow() {
     if (now.error && now.error !== lastNowError) { lastNowError = now.error; toast(now.error); } else if (!now.error) lastNowError = null;
     const was = !!S.data?.now, prevEp = S.data?.now?.episode_id;
     const outbox = typeof now.outbox === "number" ? now.outbox : 0;
+    if (now.vpn && S.data) {
+      const vpnMoved = JSON.stringify(now.vpn) !== JSON.stringify(S.data.vpn);
+      S.data.vpn = now.vpn; // the VPN chip follows the connection, not only reloads
+      if (vpnMoved && S.modal?.t === "nxt") { const el = $("#nx-vpn"); if (el) el.innerHTML = nxVpn(); }
+    }
     if (now.notice && now.notice.ts !== lastNotice) { lastNotice = now.notice.ts; toast(now.notice.msg); }
     if (!S.playBusy) {
       const nl = now.playing && now.loading ? now.episode_id : null;
@@ -1822,7 +1858,7 @@ async function pollNow() {
     if (was !== now.playing) await reload();
     else if (now.playing) {
       const wasLoading = !!S.data.now?.loading;
-      S.data.now = { episode_id: now.episode_id, show: now.show, label: now.label, percent: now.percent, loading: !!now.loading };
+      S.data.now = { episode_id: now.episode_id, show: now.show, label: now.label, percent: now.percent, loading: !!now.loading, next: now.next };
       if (wasLoading !== !!now.loading) pagePatch();
       if (prevEp && prevEp !== now.episode_id) await reload(); // autoplay moved on: refresh ticks / next-up
     }
@@ -1834,9 +1870,11 @@ async function pollNow() {
     S.dl = dls;
     if (finished) await reload(); // a finished download is a new file on disk
     else if (dlChanged) pagePatch(); // progress on the tiles
-    const sig = JSON.stringify([S.data?.now, S.outbox, S.dl]);
+    const sig = JSON.stringify([S.data?.now, S.outbox, S.dl, S.data?.vpn]);
     if (sig !== navSig) { navSig = sig; paintNav(); }
     if (now.completed) maybeCompletion(now.completed);
+    if (now.next_prompt) maybeNextPrompt(now.next_prompt);
+    else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
   pollSoon(S.dl.some((j) => j.status === "running") ? 2000 : 4000);
 }
@@ -2085,6 +2123,8 @@ const A = {
     if (e && xs.length) download(e.id, xs.map((x) => x.online.token));
     selEnd();
   },
+  nxgo: () => { const id = S.modal?.p?.id; closeModal(); if (id) play(id, 0, undefined, true); },
+  nxstop: () => { closeModal(); api("/api/next-prompt/dismiss", {}).catch(() => {}); },
   vpngo: () => { const go = S.modal?.go; closeModal(); go?.(); },
   folder: (v) => api("/api/open-folder", { show_id: v }).then((r) => { if (!r.ok) toast(r.error || "Could not open the folder"); }).catch(() => toast("Could not open the folder — is the hub running?")),
   efav: () => { if (S.entry?.f) entryPatch(undefined, !S.entry.f.favourite); },
@@ -2285,7 +2325,9 @@ if (SHELL) {
 }
 /* Images fade in once decoded; a 404 keeps the title placeholder. */
 document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); } }, true);
-document.addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) t.remove(); }, true);
+document.// Back on the window (e.g. after toggling the VPN elsewhere): refresh now.
+addEventListener("focus", () => pollSoon(0));
+addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) t.remove(); }, true);
 $("#brand").addEventListener("click", () => nav("home"));
 /* ripple on primary controls */
 document.addEventListener("pointerdown", (e) => {
