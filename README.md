@@ -88,8 +88,8 @@ is a full reset.
 Roadmap is only to show whats still planned in big releases. Nothing is set in stone and everything can change anytime.
 
 - **v0.1** (done)— local library, AniList sync, stats, desktop wrapper.
-- **v0.2 (done)** — streaming and downloads delegated to your own installed [ani-cli](https://github.com/pystardust/ani-cli) (the app contains no provider code and fetches no video itself) and a unified local/streaming episode list are in; better tools for unmatched shows are next.
-- **v0.3** (in progress) Focus on Quality of Life changes and bug fixes.
+- **v0.2** (done) — streaming and downloads delegated to your own installed [ani-cli](https://github.com/pystardust/ani-cli) (the app contains no provider code and fetches no video itself) and a unified local/streaming episode list are in; better tools for unmatched shows are next.
+- **v0.25** (done) Focus on Quality of Life changes and bug fixes.
 - **Later** — multiple library roots
 
 ## AI-notice
