@@ -399,8 +399,10 @@ class Handler(BaseHTTPRequestHandler):
                 aid = body.get("anilist_id")
                 if aid is not None and (isinstance(aid, bool) or not isinstance(aid, int)):
                     self._bad("'anilist_id' must be an integer")
+                elif "query" in body and (not isinstance(body["query"], str) or not body["query"].strip()):
+                    self._bad("'query' must be a non-empty string")
                 else:
-                    self.send_json(metadata.set_match(body["show_id"], aid, body.get("query")))
+                    self.send_json(metadata.set_match(body["show_id"], aid, body["query"].strip() if "query" in body else None))
         elif route == "/api/season-match":
             # One season of a folder → a chosen entry ("wrong entry?"),
             # none: true = no entry, neither = back to the automatic mapping.
@@ -411,10 +413,21 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.send_json(mapping.set_season_pin(body["show_id"], body["season"], aid,
                                                   none=body.get("none") is True))
+        elif route == "/api/keep-local":
+            # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
+            if self._fields(body, strings=("show_id",)):
+                if "keep" in body and not isinstance(body["keep"], bool):
+                    self._bad("'keep' must be a boolean")
+                else:
+                    res = metadata.set_kept_local(body["show_id"], body.get("keep", True))
+                    self.send_json(res, 200 if res.get("ok") else 400)
         elif route == "/api/match-candidates":
             if self._fields(body, strings=("query",)):
+                if "fresh" in body and not isinstance(body["fresh"], bool):
+                    self._bad("'fresh' must be a boolean")
+                    return
                 try:
-                    self.send_json(metadata.fetch_media_candidates(body["query"])[:10])
+                    self.send_json(metadata.fetch_media_candidates(body["query"], body.get("fresh") is True)[:10])
                 except Exception as e:
                     self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/auth/start":

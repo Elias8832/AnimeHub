@@ -44,7 +44,7 @@ Exec=$BIN/anime-hub
 TryExec=$BIN/anime-hub
 Icon=$ICON/anime-hub.png
 Categories=AudioVideo;Video;
-StartupWMClass=co.animehub.desktop
+StartupWMClass=AnimeHub
 EOF
 
 chmod +x "$BIN/anime-hub" "$APP/anime-hub.desktop"
