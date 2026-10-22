@@ -375,18 +375,22 @@ def set_match(show_id, anilist_id=None, query=None):
     id (or raw search query) for a show and refetch its metadata. The
     manual answer bypasses confidence scoring (it IS the confidence), so
     the surface stays usable even where the automatic matcher stays silent.
-    anilist_id=None clears the match."""
+    A query alone matches AniList's top hit for it; neither clears the
+    match. The override is keyed by folder path — two folders sharing a
+    name no longer share a match (TODO 52e)."""
     show = next((s for s in library.scan_library() if s["id"] == show_id), None)
     if not show:
         return {"error": "unknown show"}
-    if anilist_id is None:
+    if anilist_id is None and not query:
         clear_match(show_id)
         return {"ok": True, "cleared": True}
-    m = fetch_media_full(id=anilist_id)
+    m = fetch_media_full(id=anilist_id) if anilist_id is not None else fetch_media_full(search=query)
     if not m:
-        return {"error": f"AniList has no media with id {anilist_id}"}
+        return {"error": f"AniList has no media with id {anilist_id}" if anilist_id is not None
+                else f"AniList has nothing for “{query}”"}
+    anilist_id = m["id"]
     overrides = load_overrides()
-    overrides[show["title"]] = {"anilistId": anilist_id}
+    overrides[show.get("path") or show["title"]] = {"anilistId": anilist_id}
     (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
     with database.db() as c:
         c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
@@ -423,7 +427,7 @@ def refresh_meta():
         for s in missing:
             try:
                 _meta_status["current"] = s["title"]
-                fetch_show_meta(s, overrides.get(s["title"]) or overrides.get(s["path"]))
+                fetch_show_meta(s, overrides.get(s["path"]) or overrides.get(s["title"]))
             except Exception:
                 pass
             _meta_status["pending"] -= 1

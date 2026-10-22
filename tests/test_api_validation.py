@@ -145,6 +145,11 @@ class ApiValidationTests(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertIn("boolean", payload["error"])
 
+    def test_match_query_must_be_text(self):
+        status, payload = self.post("/api/match", b'{"show_id":"x","query":"  "}')
+        self.assertEqual(status, 400)
+        self.assertIn("query", payload["error"])
+
     def test_play_version_must_be_an_integer(self):
         status, payload = self.post("/api/play", b'{"id":"x","version":"2"}')
         self.assertEqual(status, 400)

@@ -1,7 +1,12 @@
 """TODO 12 (Decisions 7–8): the To match tab. Suggestions load for every
 unmatched folder on each library load, not only the first five once the tab
 opens (a); each folder can ask AniList again past the cache (b); "Not on
-AniList — keep local" is remembered (c)."""
+AniList — keep local" is remembered (c). Plus TODO 52's match leftovers:
+/api/match honours `query` (e), matches are keyed by folder path (e), and
+the desktop entry names the window class the wrapper sets (f)."""
+
+import json
+import re
 
 import shutil
 import unittest
@@ -48,6 +53,39 @@ class KeepLocal(unittest.TestCase):
         self.assertEqual(metadata.kept_local(), set())
 
 
+class ManualMatch(unittest.TestCase):
+    def setUp(self):
+        self.show = support.use_library(support.case("apothecary"))[0]
+        self.media = {"id": 161645, "title": {"english": "The Apothecary Diaries"}}
+
+    def overrides(self):
+        return json.loads((support.config.DATA / "overrides.json").read_text())
+
+    def test_query_matches_the_top_hit(self):
+        with mock.patch.object(metadata, "fetch_media_full", return_value=self.media) as fetch, \
+             mock.patch.object(metadata, "store_show_meta"):
+            out = metadata.set_match(self.show["id"], query="Kusuriya no Hitorigoto")
+        fetch.assert_called_once_with(search="Kusuriya no Hitorigoto")
+        self.assertEqual(out["anilist_id"], 161645)
+        self.assertEqual(self.overrides(), {self.show["path"]: {"anilistId": 161645}})
+
+    def test_query_without_hits_keeps_the_match(self):
+        with mock.patch.object(metadata, "fetch_media_full", return_value=None), \
+             mock.patch.object(metadata, "clear_match") as clear:
+            self.assertIn("error", metadata.set_match(self.show["id"], query="zzz"))
+        clear.assert_not_called()
+
+    def test_path_override_beats_a_title_one(self):
+        (support.config.DATA / "overrides.json").write_text(json.dumps(
+            {self.show["title"]: {"anilistId": 1}, self.show["path"]: {"anilistId": 2}}))
+        with mock.patch.object(metadata, "fetch_show_meta") as fetch, \
+             mock.patch.object(metadata.time, "sleep"), \
+             mock.patch.object(metadata.franchise, "refresh_franchises"), \
+             mock.patch.object(metadata.mapping, "refresh_entry_art"):
+            metadata.refresh_meta()
+        self.assertEqual(fetch.call_args.args[1], {"anilistId": 2})
+
+
 class FreshSearch(unittest.TestCase):
     def setUp(self):
         support.use_library(support.case("apothecary"))
@@ -82,3 +120,9 @@ class Tab(unittest.TestCase):
         self.assertIn('data-a="mrefresh"', APP)
         self.assertIn("runSearch(v, m.q || showById(v)?.title || \"\", true)", APP)
         self.assertIn('api("/api/keep-local", { show_id: v, keep })', APP)
+
+
+class Desktop(unittest.TestCase):
+    def test_desktop_entry_names_the_window_class(self):
+        cls = re.search(r'"--class=(\w+)"', (support.ROOT / "desktop/src/main.rs").read_text()).group(1)
+        self.assertIn(f"StartupWMClass={cls}\n", (support.ROOT / "desktop/install.sh").read_text())

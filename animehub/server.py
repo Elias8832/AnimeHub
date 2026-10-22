@@ -399,8 +399,10 @@ class Handler(BaseHTTPRequestHandler):
                 aid = body.get("anilist_id")
                 if aid is not None and (isinstance(aid, bool) or not isinstance(aid, int)):
                     self._bad("'anilist_id' must be an integer")
+                elif "query" in body and (not isinstance(body["query"], str) or not body["query"].strip()):
+                    self._bad("'query' must be a non-empty string")
                 else:
-                    self.send_json(metadata.set_match(body["show_id"], aid, body.get("query")))
+                    self.send_json(metadata.set_match(body["show_id"], aid, body["query"].strip() if "query" in body else None))
         elif route == "/api/season-match":
             # One season of a folder → a chosen entry ("wrong entry?"),
             # none: true = no entry, neither = back to the automatic mapping.
