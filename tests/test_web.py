@@ -1,6 +1,7 @@
 """TODO 48: the Decision 28 palettes, the genre filter, the home airing
 countdown and the Hiatus/Cancelled airing filters stay in the UI. The pure
-parts of web/app.js (the @pure / @lists / @lib regions) run under node."""
+parts of web/app.js (the @pure / @lists / @lib regions) run under node, and
+so do the node:test scripts next to this file (*.cjs)."""
 
 import json
 import re
@@ -73,6 +74,16 @@ class Frontend(unittest.TestCase):
             self.assertEqual(self.filtered(air=air), ids, air)
         self.assertIn('fsel("air", "Airing", [["all", "any"], ...Object.entries(AIR)])', APP)
 
+    def test_season_tab_counts_every_episode(self):
+        # TODO 7: the tab shows the entry's size, not what's left to watch
+        slots = json.dumps([{"watched": True}, {"watched": False}, {"watched": False}])
+        self.assertEqual(run_js(f"return entryCount({{ episodes: 12, slots: {slots} }});"), 12)
+        self.assertEqual(run_js(f"return entryCount({{ episodes: null, aired: 5, slots: {slots} }});"), 5)
+        self.assertEqual(run_js(f"return entryCount({{ episodes: null, aired: 0, slots: {slots} }});"), 3)
+        self.assertEqual(run_js("return entryCount({ episodes: 1, slots: [{ watched: false }] });"), 0)
+        self.assertIn("const n = entryCount(x);", APP)
+        self.assertNotIn("!y.watched).length", APP)
+
     def test_countdown(self):
         now = 1_700_000_000_000
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 + 90000} }}, {now});"), "E5 in 1d 1h")
@@ -122,6 +133,20 @@ class NextAiringAt(unittest.TestCase):
             out = anilist.anilist_user_data(force=True)
         self.assertEqual(out["entries"][0]["next_episode"], {"number": 5, "in_seconds": 3600, "at": 1_800_000_000})
         self.assertEqual(out["entries"][0]["genres"], ["Drama"])
+
+
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class NodeChecks(unittest.TestCase):
+    """The node:test scripts next to this file (*.cjs: home hero, episode
+    tiles, shell zoom) — one subtest per script, so a new .cjs needs no
+    wrapper."""
+    def test_scripts(self):
+        scripts = sorted((support.ROOT / "tests").glob("*.cjs"))
+        self.assertTrue(scripts, "no .cjs checks found")
+        for script in scripts:
+            with self.subTest(script=script.name):
+                out = subprocess.run(["node", "--test", str(script)], capture_output=True, text=True, timeout=30)
+                self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
 
 
 if __name__ == "__main__":
