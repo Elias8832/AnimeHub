@@ -210,6 +210,44 @@ class EntrySaveUnitTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn("ToggleFavourite", calls[0])
 
+    def test_favourite_toggle_trusts_its_own_answer_over_a_stale_read(self):
+        """Found live 2026-10-22: right after ToggleFavourite AniList still
+        reads the old flag. The toggle's own favourites list decides, and
+        the corrected state is what gets cached for the next click."""
+        before = self.canned_state()  # not a favourite
+        def fake_mutation(query, variables):
+            return {"ToggleFavourite": {"anime": {"pageInfo": {"hasNextPage": False},
+                                                  "nodes": [{"id": 5}, {"id": 11061}]}}}
+        with patch.object(anilist, "anilist_mutation", side_effect=fake_mutation), \
+             patch.object(anilist, "anilist_entry_state", side_effect=[before, dict(before)]):
+            out = anilist.anilist_favourite_set(11061, True)
+        self.assertNotIn("error", out)
+        self.assertTrue(out["is_favourite"])
+        self.assertTrue(database.cache_get("entry-state:v1:11061", ttl=30)["is_favourite"])
+
+    def test_unfavouriting_the_last_favourite_confirms(self):
+        before = dict(self.canned_state(), is_favourite=True)
+        with patch.object(anilist, "anilist_mutation", return_value={"ToggleFavourite": {
+                    "anime": {"pageInfo": {"hasNextPage": False}, "nodes": []}}}), \
+             patch.object(anilist, "anilist_entry_state", side_effect=[before, dict(before)]):
+            out = anilist.anilist_favourite_set(11061, False)
+        self.assertNotIn("error", out)
+        self.assertFalse(out["is_favourite"])
+
+    def test_entry_state_reads_the_viewer_favourites_not_the_media_flag(self):
+        """is_favourite comes from the Viewer's list, walking later pages
+        only while the id is not found."""
+        page1 = {"Media": {"id": 11061, "isFavourite": True, "mediaListEntry": None},
+                 "Viewer": {"mediaListOptions": {"scoreFormat": "POINT_10"},
+                            "favourites": {"anime": {"pageInfo": {"hasNextPage": True},
+                                                     "nodes": [{"id": 1}]}}}}
+        page2 = {"Viewer": {"favourites": {"anime": {"pageInfo": {"hasNextPage": False},
+                                                     "nodes": [{"id": 2}]}}}}
+        with patch.object(anilist, "_score_format", return_value="POINT_10"), \
+             patch.object(anilist, "anilist_mutation", side_effect=[page1, page2]):
+            out = anilist.anilist_entry_state(11061)
+        self.assertFalse(out["is_favourite"])
+
     def test_favourite_already_in_desired_state_never_toggles(self):
         before = self.canned_state()  # is_favourite False, want False
         with patch.object(anilist, "anilist_mutation",

@@ -62,13 +62,20 @@ def anilist_cache_stale():
 
 ENTRY_STATE_QUERY = """query($id:Int,$fmt:ScoreFormat){
 Media(id:$id,type:ANIME){
- id format episodes popularity favourites isFavourite
+ id format episodes popularity favourites
  nextAiringEpisode{ airingAt episode timeUntilAiring }
  studios(isMain:true){ nodes{ name } }
  mediaListEntry{ status score(format:$fmt) progress repeat startedAt{year month day} completedAt{year month day} }
 }
-Viewer{ mediaListOptions{scoreFormat} }
+Viewer{ mediaListOptions{scoreFormat} favourites{ anime(perPage:50){ pageInfo{hasNextPage} nodes{id} } } }
 }"""
+
+# Media.isFavourite is unreliable: AniList keeps serving the old value for
+# minutes after a ToggleFavourite (found live 2026-10-22), so the panel and
+# the toggle's verify read it wrong. The Viewer's own favourites list is
+# current — is_favourite is read from it instead.
+FAVOURITES_PAGE_QUERY = """query($page:Int){ Viewer{ favourites{
+ anime(page:$page,perPage:50){ pageInfo{hasNextPage} nodes{id} } } } }"""
 
 ENTRY_STATUS = ("CURRENT", "PLANNING", "COMPLETED", "DROPPED", "PAUSED",
                 "REPEATING")
@@ -134,7 +141,8 @@ def anilist_entry_state(media_id):
         "episodes": m.get("episodes"),
         "popularity": m.get("popularity"),
         "favourites": m.get("favourites"),
-        "is_favourite": bool(m.get("isFavourite")),
+        "is_favourite": _in_favourites(m["id"], ((data.get("Viewer") or {})
+                                                 .get("favourites") or {}).get("anime")),
         "studios": [n.get("name") for n in
                     ((m.get("studios") or {}).get("nodes") or [])
                     if n.get("name")],
@@ -154,6 +162,25 @@ def anilist_entry_state(media_id):
     }
     database.cache_put(key, out)
     return out
+
+
+def _fav_page(conn):
+    """A favourites page → (ids, has_next)."""
+    conn = conn or {}
+    return ({n.get("id") for n in conn.get("nodes") or []},
+            bool((conn.get("pageInfo") or {}).get("hasNextPage")))
+
+
+def _in_favourites(media_id, first):
+    """Is media_id on the Viewer's favourites? Starts from the page the
+    caller already has and walks the rest only while it is not found."""
+    ids, more = _fav_page(first)
+    page = 1
+    while media_id not in ids and more and page < 20:
+        page += 1
+        data = anilist_mutation(FAVOURITES_PAGE_QUERY, {"page": page}) or {}
+        ids, more = _fav_page(((data.get("Viewer") or {}).get("favourites") or {}).get("anime"))
+    return media_id in ids
 
 
 def _fuzzy_date_frag(s):
@@ -225,8 +252,11 @@ def anilist_entry_save(media_id, patch):
 
 def anilist_favourite_set(media_id, want):
     """ToggleFavourite is not idempotent (Decision 18.4): read the current
-    flag, toggle only when it differs from the desired boolean, verify by
-    re-reading. Returns fresh state, or an {"error": ...} dict."""
+    flag, toggle only when it differs from the desired boolean, verify.
+    The toggle answers with the favourites list itself — that is the
+    verify when it is decisive; a fresh read covers the rest. Returns
+    fresh state, or an {"error": ...} dict."""
+    _cache_del("entry-state:v1:%d" % media_id)  # never decide on a 30 s old flag
     try:
         state = anilist_entry_state(media_id)
     except AniListAuthError as e:
@@ -235,15 +265,26 @@ def anilist_favourite_set(media_id, want):
         return {"error": "AniList has no such media"}
     if state["is_favourite"] == bool(want):
         return state
-    q = "mutation($id:Int){ToggleFavourite(animeId:$id){anime(perPage:1){pageInfo{total}}}}"
+    q = ("mutation($id:Int){ToggleFavourite(animeId:$id){"
+         "anime(perPage:50){pageInfo{hasNextPage} nodes{id}}}}")
     # Same contract as anilist_entry_save: auth/validation errors raise.
-    if anilist_mutation(q, {"id": media_id}) is None:
+    res = anilist_mutation(q, {"id": media_id})
+    if res is None:
         return {"error": "AniList rejected the update"}
+    toggled = (res.get("ToggleFavourite") or {}) if isinstance(res, dict) else {}
+    now = None  # undecided: the id may sit on a later page
+    if "anime" in toggled:
+        ids, more = _fav_page(toggled["anime"])
+        if media_id in ids or not more:
+            now = media_id in ids
     _cache_del("entry-state:v1:%d" % media_id)
     try:
         fresh = anilist_entry_state(media_id)
     except AniListAuthError as e:
         return {"error": e.reason}
+    if fresh and now is not None and fresh["is_favourite"] != now:
+        fresh = {**fresh, "is_favourite": now}
+        database.cache_put("entry-state:v1:%d" % media_id, fresh)
     if fresh and fresh["is_favourite"] != bool(want):
         return {"error": "AniList did not confirm the change"}
     return fresh
