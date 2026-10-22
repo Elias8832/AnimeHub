@@ -169,6 +169,10 @@ function applyWatch(shows, ids, watched, reset) {
    in shell mode ctrl+scroll / ctrl± / ctrl+0 drive it. */
 const ZOOM_MIN = 50, ZOOM_MAX = 200, ZOOM_STEP = 10;
 function zoomStep(cur, dir) { return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur + dir * ZOOM_STEP)); }
+/* A season tab's count (TODO 7): how many episodes the entry has — its
+   AniList total, else the aired ones, else what the page lists — never
+   what's left to watch. One-episode entries (movies) show none. */
+function entryCount(x) { const n = x.episodes || x.aired || x.slots.length; return n > 1 ? n : 0; }
 /* @pure:end */
 
 /* @lists:start */
@@ -782,8 +786,8 @@ function Fran() {
   const folders = [...new Map(e.slots.filter((x) => x.local).map((x) => [x.local.show_id + "|" + x.local.season, x.local])).values()];
   const folderBtn = folders.length ? `<button class="pill" data-a="folder" data-v="${esc(folders[0].show_id)}">${ico("folder")}<span>Local</span></button>` : "";
   const main = p.entries.filter((x) => x.group === "main"), extra = p.entries.filter((x) => x.group === "extra");
-  const chip = (x, fmt) => { const uw = x.slots.filter((y) => playableSlot(x, y) && !y.watched).length;
-    return `<button class="${x.id === e.id ? "on" : ""}" data-a="frsel" data-v="${x.id}" title="${esc(x.title || x.label)}">${fmt ? `<small>${esc(x.format_label)}</small>` : ""}${esc(x.label)}${uw ? ` · ${uw}` : ""}</button>`; };
+  const chip = (x, fmt) => { const n = entryCount(x);
+    return `<button class="${x.id === e.id ? "on" : ""}" data-a="frsel" data-v="${x.id}" title="${esc(x.title || x.label)}">${fmt ? `<small>${esc(x.format_label)}</small>` : ""}${esc(x.label)}${n ? ` · ${n}` : ""}</button>`; };
   const switcher = p.entries.length > 1 ? `${main.length ? `<div class="rels" data-glide="frmain">${main.map((x) => chip(x)).join("")}</div>` : ""}${extra.length ? `<div class="rels extra" data-glide="frextra">${extra.map((x) => chip(x, true)).join("")}</div>` : ""}` : "";
   const ready = !!S.data.stream_ready, linked = e.online.linked, picking = S.sel?.show === frSelKey();
   const seen = e.slots.filter((x) => playableSlot(e, x)), allW = seen.length > 0 && seen.every((x) => x.watched);
@@ -875,8 +879,8 @@ function Det() {
   <div class="body"><section>
     ${matched ? "" : `<h2 style="font-size:26px;margin-bottom:6px">Match this show</h2>${(autoSuggest([s]), matchUI(s))}<div style="height:34px"></div>`}
     ${s.seasons.length > 1 ? `<div class="rels" data-glide="seasons">${s.seasons.map((x, i) => {
-      const uw = x.episodes.filter((e) => !e.watched).length;
-      return `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${uw ? ` · ${uw}` : ""}</button>`;
+      const n = x.episodes.length;
+      return `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${n ? ` · ${n}` : ""}</button>`;
     }).join("")}</div>` : ""}
     <div class="eps-head"><h2>${movie ? "Movie" : "Episodes"}</h2><div class="ctl">${flat.length ? `<button class="btn${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}${S.sel?.show === s.id ? "Done" : "Select"}</button>` : ""}${bulk}</div></div>
     ${sea && sea.episodes.length ? `<div class="eps">${sea.episodes.map((ep, i) => epTile(s, sea, ep, tg && tg.ep.id, i)).join("")}</div>` : '<p class="sub">No episodes.</p>'}

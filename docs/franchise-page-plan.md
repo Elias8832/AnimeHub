@@ -1,6 +1,6 @@
 # Franchise page: plan
 
-Replaces the uncommitted `multi-season-rework` (main checkout). Built fresh
+Replaces the abandoned multi-season rework (Decision 33). Built fresh
 from `master`; only the parts of the rework that worked get ported.
 
 ## Goal
