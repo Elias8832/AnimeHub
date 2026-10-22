@@ -71,7 +71,7 @@ with `--config FILE`). All keys optional, a broken file only warns:
 | `port` | server port (default `8787`) |
 | `data_dir` | database and cache location (default `~/.local/share/anime-hub`, honours `XDG_DATA_HOME`) |
 | `window` | `"app"` (default, standalone Chromium window), `"browser"` (tab), `"none"` (server only; `--no-browser` forces it for one run) |
-| `remote_hosts` | extra host names the hub answers, for reaching it from your phone through a proxy such as `tailscale serve --bg 8787` (e.g. `["pc.tailnet.ts.net"]`; default none, so only this PC) |
+| `remote_hosts` | extra host names the hub answers, for reaching it from your phone through a proxy such as `tailscale serve --bg --https=8443 8787` (e.g. `["pc.tailnet.ts.net"]`; default none, so only this PC) |
 
 Changing `library_root` never deletes anything: the app reports the
 different folder and waits for you to connect it explicitly.
