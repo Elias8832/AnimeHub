@@ -116,6 +116,20 @@ class Discovery(unittest.TestCase):
         self.assertIn('eadd: (v, t) => { t.disabled = true; entryPatch({ status: "PLANNING" }); }', APP)
 
 
+class NextSource(unittest.TestCase):
+    """TODO 10: the now-playing chip names where the next episode comes
+    from; the VPN chip follows /api/now's live status, not only reloads."""
+    def test_next_chip_and_live_vpn(self):
+        self.assertIn("${nextChip(now)}", APP)
+        self.assertIn("next: now.next", APP)
+        self.assertIn("S.data.vpn = now.vpn;", APP)
+        self.assertIn("S.data?.vpn]);", APP)  # a VPN change repaints the nav
+        self.assertIn('addEventListener("focus", () => pollSoon(0));', APP)
+        self.assertIn("if (now.next_prompt) maybeNextPrompt(now.next_prompt);", APP)
+        self.assertIn('data-a="nxstop">Stop</button><button class="btn pri" data-a="nxgo">Continue</button>', APP)
+        self.assertIn("play(id, 0, undefined, true)", APP)  # the popup already showed the VPN state
+
+
 class NextAiringAt(unittest.TestCase):
     def test_cache_keeps_airing_at(self):
         media = {"id": 7, "status": "RELEASING", "episodes": 12, "format": "TV", "genres": ["Drama"],

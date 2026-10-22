@@ -516,20 +516,32 @@ class OutboxRouteTests(unittest.TestCase):
         with database.db() as c:
             c.execute("DELETE FROM outbox")
 
+    def test_now_carries_the_next_prompt(self):
+        """TODO 10: the online-only next episode waits in /api/now until
+        dismissed."""
+        player._next_prompt.update(id="stream:1:2", label="Season 1 · E2", show="X", ts=time.time())
+        code, body = self.request("GET", "/api/now")
+        self.assertEqual(body.get("next_prompt"), {"id": "stream:1:2", "label": "Season 1 · E2", "show": "X"})
+        self.request("POST", "/api/next-prompt/dismiss", {})
+        code, body = self.request("GET", "/api/now")
+        self.assertNotIn("next_prompt", body)
+
     def test_now_while_playing_reports_the_session(self):
         """Regression: the playing branch read an unbound `a` and every
         /api/now poll during playback died with a NameError."""
         sync.outbox_enqueue(11061, patch={"status": "COMPLETED"})
         session = {"ep_id": "e1", "show_title": "Frieren", "label": "E3",
                    "percent": 42}
-        with mock.patch.dict(player._active, {"e1": session}, clear=True):
+        vpn = {"active": False, "iface": None, "known": True}
+        with mock.patch.dict(player._active, {"e1": session}, clear=True), \
+                mock.patch.object(settings, "vpn_status", return_value=vpn):
             code, body = self.request("GET", "/api/now")
         with database.db() as c:
             c.execute("DELETE FROM outbox")
         self.assertEqual(code, 200)
         self.assertEqual(body, {"playing": True, "show": "Frieren", "label": "E3",
                                 "percent": 42, "episode_id": "e1", "loading": False,
-                                "outbox": 1})
+                                "vpn": vpn, "outbox": 1})
 
     def test_completion_popup_writes_queue_too(self):
         """The completion popup saves through the same route — an offline

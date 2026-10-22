@@ -553,6 +553,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .rt input:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 35%,transparent)}
 .pop.sr .mi>em{margin-left:auto;font-style:normal;flex:none}
 .chip.vpn{font-weight:600}.chip.vpn .ico{width:14px;height:14px}.chip.vpn.on{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}.chip.vpn.on .ico{fill:color-mix(in srgb,var(--ok) 25%,transparent)}
+.chip.nx{font-size:12px;color:var(--mute)}.chip.nx.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
 .chip.vpn.off{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
 
 /* franchise page: every season, movie and special of an anime on one page */

@@ -184,6 +184,37 @@ class View(unittest.TestCase):
         with mock.patch.object(anicli, "anicli_path", return_value=None):
             self.assertIsNone(player.next_episode(support.season(show, "Season 2")["episodes"][-1]["id"]))
 
+    def test_next_up_names_the_source(self):
+        """TODO 10: what plays next and from where — a file, online, or
+        nothing playable (the chain stops)."""
+        show = support.folder(self.scan, "The Apothecary Diaries")
+        s1, s2 = (support.season(show, f"Season {i}")["episodes"] for i in (1, 2))
+        self.assertEqual(player.next_up(s1[-1]["id"]), {"id": s2[0]["id"], "source": "local"})
+        self.assertEqual(player.next_up(s2[-1]["id"]), {"id": "stream:176301:11", "source": "online",
+                                                       "show": "The Apothecary Diaries", "label": "Season 2 · E11"})
+        with mock.patch.object(anicli, "anicli_path", return_value=None):
+            self.assertEqual(player.next_up(s2[-1]["id"]), {"id": None, "source": "missing"})
+
+    def test_file_into_online_waits_for_the_user(self):
+        """TODO 10: the last file finishing never starts ani-cli by itself —
+        it leaves a prompt for the hub; Continue (any play) clears it."""
+        show = support.folder(self.scan, "The Apothecary Diaries")
+        s1, s2 = (support.season(show, f"Season {i}")["episodes"] for i in (1, 2))
+        player.dismiss_next_prompt()
+        with mock.patch.object(player, "start_play") as play:
+            player.autoplay_next(s2[-1]["id"])
+            play.assert_not_called()
+            ask = player.next_prompt()
+            self.assertEqual((ask["id"], ask["label"], ask["show"]),
+                             ("stream:176301:11", "Season 2 · E11", "The Apothecary Diaries"))
+            player.autoplay_next(s1[-1]["id"])  # file → file: no question
+            play.assert_called_once_with(s2[0]["id"], 0)
+            player.autoplay_next("stream:176301:11")  # online → online: no question
+            play.assert_called_with("stream:176301:12", 0)
+        with mock.patch.object(streaming, "start_stream", return_value={"ok": True}):
+            player.start_play("stream:176301:11")
+        self.assertIsNone(player.next_prompt())
+
     def test_downloads_join_the_season_folder(self):
         eps, home = streaming.entry_files(self.scan, 176301)
         self.assertEqual(sorted(eps), list(range(1, 11)))
