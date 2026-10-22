@@ -127,6 +127,53 @@ def anicli_env(link=None, capture=None, **extra):
     return env
 
 
+# What the bridge needs from ani-cli (TODO 18): its settings and the two
+# menu prompts the helper answers. ani-cli is a shell script, so the check
+# reads its text instead of trusting a version number — a release that
+# renames a setting fails here, not as an empty search or an untracked mpv.
+ANICLI_NEEDS = (
+    (r"\bANI_CLI_MENU\b", "ANI_CLI_MENU (menu helper)"),
+    (r"\bANI_CLI_PLAYER_FLAGS\b", "ANI_CLI_PLAYER_FLAGS (the hub's mpv flags)"),
+    (r"\bANI_CLI_PLAYER\b", "ANI_CLI_PLAYER (player choice)"),
+    (r"\bANI_CLI_MODE\b", "ANI_CLI_MODE (sub/dub)"),
+    (r"\bANI_CLI_QUALITY\b", "ANI_CLI_QUALITY (quality)"),
+    (r"Select anime", "the “Select anime” menu"),
+    (r"Select episode", "the “Select episode” menu"),
+)
+_anicli_checks = {}
+
+
+def anicli_check():
+    """{"ok": True/False, "missing": [...]} for the ani-cli on PATH; ok is
+    None when it can't be read as a script (no verdict). None without ani-cli."""
+    exe = anicli_path()
+    if not exe:
+        return None
+    try:
+        st = os.stat(exe)
+        key = (exe, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return {"ok": None, "missing": []}
+    if key not in _anicli_checks:
+        try:
+            raw = Path(exe).read_bytes()[:4_000_000]
+        except OSError:
+            raw = b""
+        if not raw.startswith(b"#!"):
+            result = {"ok": None, "missing": []}
+        else:
+            text = raw.decode(errors="replace")
+            missing = [label for pat, label in ANICLI_NEEDS if not re.search(pat, text)]
+            result = {"ok": not missing, "missing": missing}
+        _anicli_checks[key] = result
+    return _anicli_checks[key]
+
+
+def anicli_unsupported_message(check):
+    return ("This ani-cli doesn't support what Anime Hub needs (" + ", ".join(check["missing"])
+            + ") — update ani-cli.")
+
+
 def anicli_spawn(args, env, stdout, stderr):
     """Start ani-cli in its own process group with a pty as stdin: without a
     terminal on stdin, ani-cli swaps ANI_CLI_MENU for rofi/dmenu whenever
@@ -134,6 +181,9 @@ def anicli_spawn(args, env, stdout, stderr):
     exe = anicli_path()
     if not exe:
         raise AniCliError("ani-cli was not found — install ani-cli and make sure it is on PATH.")
+    check = anicli_check()
+    if check and check["ok"] is False:
+        raise AniCliError(anicli_unsupported_message(check))
     master, slave = pty.openpty()
     try:
         proc = subprocess.Popen([exe, *args], stdin=slave, stdout=stdout, stderr=stderr,
