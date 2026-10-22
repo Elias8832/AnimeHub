@@ -74,11 +74,18 @@ class Handler(BaseHTTPRequestHandler):
         header (DNS rebinding) or a non-JSON POST body is never ours. The
         accepted port follows the configured one — a hardcoded value rejects
         every request from an alternate-port instance (TODO 22, hit live
-        during the config work). The JSON content-type gate lives in do_POST."""
-        if self.headers.get("Host", "") not in (f"127.0.0.1:{config.PORT}", f"localhost:{config.PORT}"):
-            self.send_error(403)
-            return False
-        return True
+        during the config work). The JSON content-type gate lives in do_POST.
+        Config `remote_hosts` adds names a proxy forwards to us, e.g.
+        `tailscale serve` (Decision 36); those match on any port, since the
+        proxy, not this server, owns it."""
+        host = self.headers.get("Host", "")
+        if host in (f"127.0.0.1:{config.PORT}", f"localhost:{config.PORT}"):
+            return True
+        name = host.rsplit(":", 1)[0] if ":" in host else host
+        if name and name.lower() in config.REMOTE_HOSTS:
+            return True
+        self.send_error(403)
+        return False
 
     def send_json(self, obj, code=200):
         body = json.dumps(obj).encode()

@@ -18,7 +18,8 @@ MPV = APP_DIR / "mpv"
 SKIP_CREDITS_LUA = MPV / "skip-credits.lua"
 DEFAULT_PORT = 8787
 
-CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners")
+CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners",
+               "remote_hosts")
 
 # AnimeHub's public AniList OAuth client (redirect: http://localhost:8787/
 # auth/callback). Client ids are public by design — no secret involved;
@@ -71,6 +72,9 @@ def read_config(path=None):
       anilist_client_id int|None  — OAuth client id (Decision 20 implicit grant)
       data_dir         Path|None   — where hub.db/cache live (default: XDG)
       window           str         — "app" | "browser" | "none" (Decision 26)
+      remote_hosts     list[str]   — extra Host names the hub answers, e.g. a
+                                     Tailscale name proxied by `tailscale
+                                     serve` (Decision 36); default none
 
     anilist_username was removed (found live 2026-10-17: the README's
     example value pinned a stranger's public lists over Elias's connected
@@ -80,7 +84,7 @@ def read_config(path=None):
     path = Path(path).expanduser() if path else _default_config_path()
     cfg = {"library_root": None, "port": DEFAULT_PORT,
            "data_dir": None, "window": "app", "anilist_client_id": None,
-           "upscale_banners": False}
+           "upscale_banners": False, "remote_hosts": []}
     warnings = []
     try:
         raw = json.loads(path.read_text())
@@ -134,6 +138,12 @@ def read_config(path=None):
             cfg["upscale_banners"] = u
         else:
             warn("upscale_banners", "true or false")
+    if raw.get("remote_hosts") not in (None, ""):
+        h = raw["remote_hosts"]
+        if isinstance(h, list) and all(isinstance(x, str) and x.strip() for x in h):
+            cfg["remote_hosts"] = [x.strip().lower().rstrip(".") for x in h]
+        else:
+            warn("remote_hosts", "a list of host names")
     if "open_browser" in raw:
         # TODO 34's boolean was replaced by 'window' the same day it was
         # added (never released) — point the user at the new key instead of
@@ -173,6 +183,7 @@ def apply_config(cfg):
     config.LIBRARY = cfg["library_root"]
     config.PORT = cfg["port"]
     config.WINDOW = cfg["window"]
+    config.REMOTE_HOSTS = tuple(cfg.get("remote_hosts") or ())
     config.ANILIST_CACHE = config.DATA / "anilist_cache.json"
     # OAuth token lives with the other per-user state — outside the repo
     # (Decision 20 / READINESS A5); permissions tightened on every write.
