@@ -488,6 +488,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .dlj-t{flex:1;min-width:0}.dlj-t b{display:block;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dlj-t small{display:block;color:var(--mute);font-size:12px}.dlj.failed small{color:var(--bad)}.dlj.done small{color:var(--ok)}
 .dlj .bar{margin:7px 0 2px;height:3px}
+.pop.dl.ob{width:420px}.dlj-t small.obc{color:var(--ink-2)}
 .chip.dl-on{color:var(--online);border-color:color-mix(in srgb,var(--online) 45%,var(--line))}.chip.dl-on .pc{font-size:12px;font-weight:650;font-variant-numeric:tabular-nums}
 .chip.ib.dl-on{width:auto;padding:0 10px;gap:6px}
 /* Entry date fields: typed, with an in-app calendar */

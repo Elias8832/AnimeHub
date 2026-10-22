@@ -39,7 +39,7 @@ fn default_hub_py() -> PathBuf {
     base.join("anime-hub").join("hub.py")
 }
 
-/// Mirror of hub.py's APP_BROWSERS preference order.
+/// Mirror of animehub/config.py's APP_BROWSERS preference order.
 const CHROMIUM_FAMILY: [&str; 6] = [
     "chromium",
     "chromium-browser",

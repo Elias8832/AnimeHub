@@ -5,18 +5,19 @@ fixtures cover every franchise the cases walk."""
 import unittest
 
 from tests import support
-from tests.support import hub
+from animehub import anilist, franchise
+from animehub.config import config
 
 
 class Isolation(unittest.TestCase):
     def test_database_is_temporary(self):
         support.use_library(support.case("frieren"))
-        self.assertTrue(hub.DB.is_relative_to(support.TMP))
-        self.assertTrue(hub.LIBRARY.is_relative_to(support.TMP))
+        self.assertTrue(config.DB.is_relative_to(support.TMP))
+        self.assertTrue(config.LIBRARY.is_relative_to(support.TMP))
 
     def test_network_is_blocked(self):
         with self.assertRaises(AssertionError):
-            hub.anilist_request({"query": "{Viewer{id}}"})
+            anilist.anilist_request({"query": "{Viewer{id}}"})
 
 
 class Scan(unittest.TestCase):
@@ -48,9 +49,9 @@ class Fixtures(unittest.TestCase):
                             node = e["node"]
                             if node["type"] != "ANIME":
                                 continue
-                            if e["relationType"] in hub.FRANCHISE_RELATIONS:
+                            if e["relationType"] in franchise.FRANCHISE_RELATIONS:
                                 todo.append(node["id"])
-                            elif e["relationType"] == "OTHER" and node["format"] in hub.FRANCHISE_OTHER_FORMATS:
+                            elif e["relationType"] == "OTHER" and node["format"] in franchise.FRANCHISE_OTHER_FORMATS:
                                 self.assertEqual(support.anilist(node["id"])["id"], node["id"])
 
 
