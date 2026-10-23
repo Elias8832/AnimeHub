@@ -172,21 +172,29 @@ fn kill_hub(hub: &mut Option<Child>) {
     }
 }
 
+/// The window's class on native Wayland: chromium ignores --class there
+/// and names an app window chrome-<host>__-<profile> (tested 2026-10-22,
+/// Chromium 155). desktop/install.sh writes the same into StartupWMClass.
+pub const WAYLAND_CLASS: &str = "chrome-127.0.0.1__-Default";
+
+/// Native Wayland when the session has it (TODO 61: XWayland scrolled
+/// choppily on NVIDIA + a 240 Hz screen; Wayland is smooth), else X11.
+fn ozone_platform() -> &'static str {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() { "wayland" } else { "x11" }
+}
+
 fn app_window(exe: &str, port: u16) -> Child {
     let result = unsafe {
         Command::new(exe)
             .arg(format!("--app=http://127.0.0.1:{port}/?shell=1"))
             .arg(format!("--user-data-dir={}", wrapper_profile().display()))
+            // X11: WM_CLASS "AnimeHub". Wayland ignores it (WAYLAND_CLASS).
             .arg("--class=AnimeHub")
             .arg("--window-size=1440,900")
             .arg("--new-window")
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
-            // X11 backend: --class (WM_CLASS) is honored there, giving the
-            // window a clean "AnimeHub" identity for docks/window rules. On
-            // native Wayland chromium ignores --class and reports a generic
-            // chrome-<host>__-<profile> app_id instead.
-            .arg("--ozone-platform=x11")
+            .arg(format!("--ozone-platform={}", ozone_platform()))
             // Same kernel leash as the hub: when the wrapper dies, the
             // window must die with it — a leftover app window otherwise
             // hands off to the profile singleton on the next launch and

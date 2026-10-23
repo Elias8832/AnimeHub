@@ -18,6 +18,11 @@ coverImage{extraLarge} bannerImage description
 relations{edges{relationType node{id type format status startDate{year month day} title{romaji english}}}}
 streamingEpisodes{title thumbnail}"""
 FRANCHISE_QUERY_ID = "query($id:Int){Media(id:$id,type:ANIME){" + FRANCHISE_FIELDS + "}}"
+# Many entries in one request (TODO 61): a franchise walk asks for every
+# entry it just found at once instead of one request each — One Piece took
+# two minutes at one request per entry under the rate limit.
+FRANCHISE_QUERY_MANY = ("query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){"
+                        + FRANCHISE_FIELDS + "}}}")
 # Relations that keep two entries on one franchise page. SPIN_OFF,
 # ALTERNATIVE (FMA vs Brotherhood) and CHARACTER do not. OTHER joins only
 # an entry of these formats whose title is this one's plus a season number
@@ -83,6 +88,32 @@ def media_entry(mid, pause=0):
     return m
 
 
+def prefetch_media(ids):
+    """Fetch the entries of `ids` the `media` table lacks (or holds stale)
+    in batches of 50 and store them, so media_entry answers from the table.
+    Best effort: whatever this misses, media_entry fetches on its own."""
+    ids = sorted(set(ids))
+    if not ids:
+        return
+    q = ",".join("?" * len(ids))
+    with database.db() as c:
+        rows = c.execute(f"SELECT id, data, ts FROM media WHERE id IN ({q})", ids).fetchall()
+    fresh = {r[0] for r in rows if time.time() - r[2] < _media_ttl(json.loads(r[1]))}
+    want = [i for i in ids if i not in fresh]
+    for k in range(0, len(want), 50):
+        try:
+            data = anilist.anilist_request({"query": FRANCHISE_QUERY_MANY, "variables": {"ids": want[k:k + 50]}})
+        except Exception as e:
+            util.log("franchise prefetch failed: %s" % e)
+            return
+        got = (((data or {}).get("data") or {}).get("Page") or {}).get("media") or []
+        now = time.time()
+        with database.db() as c:
+            c.executemany("INSERT INTO media(id, data, ts) VALUES(?,?,?) ON CONFLICT(id)"
+                          " DO UPDATE SET data=excluded.data, ts=excluded.ts",
+                          [(m["id"], json.dumps(m), now) for m in got if m and m.get("id")])
+
+
 def _titles(m):
     t = m.get("title") or {}
     return [x.strip() for x in (t.get("english"), t.get("romaji")) if x and x.strip()]
@@ -107,25 +138,36 @@ def _franchise_order(m):
     return (d.get("year") or 9999, d.get("month") or 99, d.get("day") or 99, m["id"])
 
 
-def build_franchise(start_id, fetch):
+def _candidates(m, skip):
+    """The related entries of m a franchise walk would follow: (id, OTHER?)."""
+    for e in (m.get("relations") or {}).get("edges") or []:
+        node, rel = e.get("node") or {}, e.get("relationType")
+        nid = node.get("id")
+        if node.get("type") != "ANIME" or node.get("format") not in FRANCHISE_FORMATS or nid in skip:
+            continue
+        other = rel == "OTHER" and node.get("format") in FRANCHISE_OTHER_FORMATS
+        if rel in FRANCHISE_RELATIONS or other:
+            yield nid, other
+
+
+def build_franchise(start_id, fetch, prefetch=None):
     """Every entry of start_id's franchise, in page order (release date;
     undated entries last). fetch(id) returns one entry or None. A link
     counts when neither side names it FRANCHISE_SEPARATE, so the same
-    franchise comes back whichever of its entries it starts from."""
+    franchise comes back whichever of its entries it starts from.
+    `prefetch(ids)`, when given, is handed every entry the walk is about to
+    fetch, ahead of time (prefetch_media: one request for all of them)."""
     start = fetch(start_id)
     if not start:
         return []
     found, todo, gone = {start["id"]: start}, [start], set()
     while todo and len(found) < FRANCHISE_LIMIT:
+        if prefetch:
+            skip = set(found) | gone
+            prefetch({nid for t in todo for nid, _ in _candidates(t, skip)})
         m = todo.pop(0)
-        for e in (m.get("relations") or {}).get("edges") or []:
-            node, rel = e.get("node") or {}, e.get("relationType")
-            nid = node.get("id")
-            if node.get("type") != "ANIME" or node.get("format") not in FRANCHISE_FORMATS \
-                    or nid in found or nid in gone:
-                continue
-            other = rel == "OTHER" and node.get("format") in FRANCHISE_OTHER_FORMATS
-            if rel not in FRANCHISE_RELATIONS and not other:
+        for nid, other in _candidates(m, ()):
+            if nid in found or nid in gone:
                 continue
             n = fetch(nid)
             if not n:
@@ -220,11 +262,23 @@ def _background_fetch(mid):
     return media_entry(mid, pause=2.2)
 
 
+def _background_prefetch(ids):
+    """prefetch_media for background walks, with _background_fetch's manners:
+    a page someone opened is built first. One request per walk step instead
+    of one per entry (TODO 61) leaves the rate limit to the user's clicks."""
+    for _ in range(180):
+        if not pages._building:
+            break
+        time.sleep(0.5)
+    prefetch_media(ids)
+
+
 def refresh_franchises(seeds, fetch=None):
     """Build and store the franchise of every seed whose stored one is
     missing or stale (a day while any entry airs or is announced, else a
     week). One build covers all seeds in that franchise. Returns how many
     franchises were built; 0 when another pass is already running."""
+    prefetch = None if fetch else _background_prefetch
     fetch = fetch or _background_fetch
     if not _franchise_lock.acquire(blocking=False):
         return 0
@@ -238,7 +292,7 @@ def refresh_franchises(seeds, fetch=None):
                 done.update(m["id"] for m in known[1])
                 continue
             try:
-                entries = build_franchise(mid, fetch)
+                entries = build_franchise(mid, fetch, prefetch)
             except Exception as e:
                 failed, last = failed + 1, e
                 continue
@@ -263,7 +317,7 @@ def franchise_refresh_loop():
             library.merge_db(scan)
             if refresh_franchises(franchise_seeds(scan)):
                 library.merge_db(scan)
-            pages.drop_premature_links()
+            pages.drop_premature_links(force=True)
             mapping.refresh_entry_art(scan)
         except Exception as e:
             util.log("franchise refresh loop: %s" % e)

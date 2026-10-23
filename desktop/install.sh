@@ -35,6 +35,12 @@ else
   printf '%s\n' "$REPO/hub.py" > "$HOME/.config/anime-hub/hub.path"
 fi
 
+# The window's class, for docks and window rules: the wrapper runs native
+# Wayland when the session has it, where Chromium names the window
+# chrome-<host>__-<profile> (WAYLAND_CLASS in src/main.rs); on X11 it is
+# --class=AnimeHub.
+if [ -n "$WAYLAND_DISPLAY" ]; then WMCLASS="chrome-127.0.0.1__-Default"; else WMCLASS="AnimeHub"; fi
+
 cat > "$APP/anime-hub.desktop" <<EOF
 [Desktop Entry]
 Type=Application
@@ -44,7 +50,7 @@ Exec=$BIN/anime-hub
 TryExec=$BIN/anime-hub
 Icon=$ICON/anime-hub.png
 Categories=AudioVideo;Video;
-StartupWMClass=AnimeHub
+StartupWMClass=$WMCLASS
 EOF
 
 chmod +x "$BIN/anime-hub" "$APP/anime-hub.desktop"

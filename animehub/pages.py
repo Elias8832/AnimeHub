@@ -187,7 +187,7 @@ def franchise_build_async(mid):
 
     def run():
         try:
-            entries = franchise.build_franchise(mid, franchise.media_entry)  # paced by _anilist_slot
+            entries = franchise.build_franchise(mid, franchise.media_entry, franchise.prefetch_media)  # paced by _anilist_slot
             if entries:
                 franchise.store_franchise(entries)
             _build_failed.pop(mid, None)
@@ -230,17 +230,22 @@ def entry_watched(mid, watched, numbers=None):
     return {"ok": True, "episodes": len(slots), "ids": ids, "watched": bool(watched), "synced": synced}
 
 
-_freshening = set()
+_PREMATURE = """FROM stream_links WHERE COALESCE(matched_by, 'auto') = 'auto' AND media_id IN
+                 (SELECT id FROM media WHERE json_extract(data, '$.status') = 'NOT_YET_RELEASED')"""
 
 
-def drop_premature_links():
+def drop_premature_links(force=False):
     """An automatic ani-cli link for an entry that hasn't aired is another
     show's episodes (older versions made them: the announced "Chainsaw Man:
     Shikaku-hen" played Chainsaw Man's season 1): drop them. Links the user
-    chose stay."""
+    chose stay. Looks before it deletes: the franchise page asks every
+    1.5 s while it resolves, and a read takes no write lock (TODO 61)."""
     with database.db() as c:
-        c.execute("""DELETE FROM stream_links WHERE COALESCE(matched_by, 'auto') = 'auto' AND media_id IN
-                     (SELECT id FROM media WHERE json_extract(data, '$.status') = 'NOT_YET_RELEASED')""")
+        if force or c.execute("SELECT 1 " + _PREMATURE + " LIMIT 1").fetchone():
+            c.execute("DELETE " + _PREMATURE)
+
+
+_freshening = set()
 
 
 def stream_freshen_async(media_id):
@@ -261,18 +266,19 @@ def stream_freshen_async(media_id):
     threading.Thread(target=run, daemon=True).start()
 
 
-def franchise_view(mid, background=True):
+def franchise_view(mid, background=True, peek=False):
     """GET /api/franchise?id=<entry>: the page holding this entry, with it
     selected. Never waits on the network: a franchise not built yet comes
     back as the entry alone with "building" (stored facts, when there are
     any), and the selected entry's online episode list and stills are
     fetched in the background ("resolving"). An entry with nothing stored
-    whose build just failed comes back "unavailable" (the reason)."""
+    whose build just failed comes back "unavailable" (the reason).
+    `peek`: the same answer, but nothing is started (a hover prefetch)."""
     fr = franchise.franchise_of(mid)
     if fr:
         fid, entries = fr
     else:
-        if background:
+        if background and not peek:
             franchise_build_async(mid)
         with database.db() as c:
             row = c.execute("SELECT data FROM media WHERE id=?", (mid,)).fetchone()
@@ -289,11 +295,13 @@ def franchise_view(mid, background=True):
     if not background:
         return dict(page, id=fid, selected=mid)
     sel = next((m for m in entries if m["id"] == mid), None)
-    if sel and mid not in links and sel.get("status") != "NOT_YET_RELEASED":
+    if peek:
+        pass
+    elif sel and mid not in links and sel.get("status") != "NOT_YET_RELEASED":
         streaming.stream_resolve_async(mid)
     elif mid in links and time.time() - links[mid]["episodes_ts"] > anicli.STREAM_EPISODES_TTL:
         stream_freshen_async(mid)
-    if entries and mid not in arts:
+    if entries and mid not in arts and not peek:
         threading.Thread(target=mapping.refresh_entry_art, kwargs={"ids": {mid}}, daemon=True).start()
     failed = _build_failed.get(mid) if building and not entries and mid not in _building else None
     return dict(page, id=fid, selected=mid, building=building or mid in _building,

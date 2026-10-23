@@ -315,6 +315,35 @@ def cache_get(key, ttl):
     return None
 
 
+def cache_get_ts(key):
+    """(payload, ts) at any age, or None — for stale-while-refreshing reads."""
+    with db() as c:
+        row = c.execute("SELECT payload, ts FROM catalog_cache WHERE key=?", (key,)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row[0]), row[1]
+    except Exception:
+        return None
+
+
+def cache_del(key):
+    with db() as c:
+        c.execute("DELETE FROM catalog_cache WHERE key=?", (key,))
+
+
+# Longest any reader keeps a row is 12 h (EPISODE_META_TTL); stale panel
+# reads (anilist_entry_state_quick) take any age, so a week is plenty.
+CACHE_KEEP = 7 * 24 * 3600
+
+
+def cache_prune(now=None):
+    """Drop catalog rows nobody reads any more (TODO 61: it never pruned)."""
+    with db() as c:
+        return c.execute("DELETE FROM catalog_cache WHERE ts < ?",
+                         ((now or time.time()) - CACHE_KEEP,)).rowcount
+
+
 def cache_put(key, payload):
     with db() as c:
         c.execute("INSERT INTO catalog_cache(key,payload,ts) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, ts=excluded.ts",

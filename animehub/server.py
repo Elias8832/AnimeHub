@@ -1,5 +1,7 @@
 """The HTTP server, its API routes and app startup."""
 
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -87,11 +89,32 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(403)
         return False
 
-    def send_json(self, obj, code=200):
+    def send_json(self, obj, code=200, etag=False):
+        """JSON out. Gzipped when the browser takes it (TODO 61: the library
+        payload is ~800 KB raw, ~120 KB gzipped — it matters on the phone).
+        `etag`: a body the browser already has is a bodiless 304."""
         body = json.dumps(obj).encode()
+        tag = None
+        if etag and code == 200:
+            tag = '"%s"' % hashlib.sha1(body).hexdigest()[:20]
+            if self.headers.get("If-None-Match") == tag:
+                self.send_response(304)
+                self.send_header("ETag", tag)
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                return
+        zipped = len(body) > 2048 and "gzip" in (self.headers.get("Accept-Encoding") or "")
+        if zipped:
+            body = gzip.compress(body, compresslevel=4)
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if zipped:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+        if tag:
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
 
@@ -119,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         route = urlparse(self.path).path
         if route == "/api/library":
-            self.send_json(library.full_library())
+            self.send_json(library.full_library(), etag=True)
         elif route == "/api/anilist":
             try:
                 self.send_json(anilist.anilist_user_data())
@@ -154,10 +177,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 # pending (additive): a queued outbox intent for this media
-                # drives the panel's "Waiting to sync" chip.
-                self.send_json({"state": anilist.anilist_entry_state(mid),
-                                "score_format": anilist._score_format(),
-                                "pending": bool(sync.outbox_pending_for(mid))})
+                # drives the panel's "Waiting to sync" chip. A queued edit
+                # isn't in any stored read yet, so that panel reads live.
+                # Otherwise the panel never waits (TODO 61): a known state
+                # comes back at once, "stale" (additive) while a live read
+                # runs — the page asks again — and a live read waits at
+                # most a few seconds for an AniList slot.
+                pending = bool(sync.outbox_pending_for(mid))
+                with anilist.quick():
+                    state = anilist.anilist_entry_state(mid) if pending else anilist.anilist_entry_state_quick(mid)
+                out = {"state": state, "score_format": anilist._score_format(), "pending": pending}
+                if state and state.pop("stale", False):
+                    out["stale"] = True
+                self.send_json(out)
             except anilist.AniListAuthError as e:
                 self.send_json({"error": e.reason, "auth": True}, 401)
             except Exception as e:
@@ -187,6 +219,11 @@ class Handler(BaseHTTPRequestHandler):
             notice = (dict(streaming._session_notice) if streaming._session_notice["msg"]
                       and time.time() - streaming._session_notice["ts"] < 30 else None)
             vpn = settings.vpn_status()
+            # Additive (TODO 61): the metadata pass's progress while it runs,
+            # so the library note follows it without refetching the library.
+            meta = ({"running": True, "pending": metadata._meta_status["pending"],
+                     "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"]}
+                    if metadata._meta_status["running"] else None)
             with player._active_lock:
                 if not player._active:
                     payload = {"playing": False}
@@ -213,12 +250,16 @@ class Handler(BaseHTTPRequestHandler):
                         payload["notice"] = notice
                     # Additive: the VPN chip follows the connection live.
                     payload["vpn"] = vpn
+                    if meta:
+                        payload["meta"] = meta
                     self.send_json(payload)
                     return
                 a = next(iter(player._active.values()))
                 payload = {"playing": True, "show": a["show_title"], "label": a["label"],
                            "percent": a.get("percent") or 0, "episode_id": a["ep_id"],
                            "loading": bool(a.get("loading")), "vpn": vpn}
+                if meta:
+                    payload["meta"] = meta
                 # Additive (TODO 10): where the next episode comes from.
                 if a.get("next"):
                     payload["next"] = a["next"]
@@ -241,7 +282,10 @@ class Handler(BaseHTTPRequestHandler):
             if mid <= 0:
                 self._bad("'id' must be a positive integer")
             else:
-                self.send_json(pages.franchise_view(mid))
+                # peek (additive, TODO 61): the page as stored, starting no
+                # background work — a card's hover prefetch.
+                peek = parse_qs(urlparse(self.path).query).get("peek", ["0"])[0] == "1"
+                self.send_json(pages.franchise_view(mid, peek=peek))
         elif route.startswith("/img/"):
             name = os.path.basename(route)
             p = config.POSTERS / name
@@ -719,6 +763,10 @@ def main():
     for d in (config.DATA, config.CACHE, config.POSTERS, config.EPIMGS):
         d.mkdir(parents=True, exist_ok=True)
     database.init_db()
+    try:
+        database.cache_prune()
+    except Exception as e:
+        print(f"anime-hub: cache prune skipped — {e}", file=sys.stderr, flush=True)
     try:
         server = ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler)
     except OSError as e:
