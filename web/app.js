@@ -67,8 +67,13 @@ function hueOf(str) {
 }
 const cssUrl = (u) => `url("${String(u).replace(/[\s"'()\\]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))}")`;
 const bgStyle = (url, hue) => `--h:${hue};` + (url ? `background-image:${cssUrl(url)}` : "");
-const poster = (title, url, o = {}) =>
-  `<div class="poster${o.c ? " " + o.c : ""}${o.wait ? " wait" : ""}" style="--h:${hueOf(title)}">${url ? `<img loading="lazy" alt="" src="${esc(url)}">` : ""}<span>${esc(title)}</span></div>`;
+/* Posters shown before are drawn ready (TODO 61): their fade-in plays once,
+   not again on every page that shows them. */
+const imgSeen = new Set();
+const poster = (title, url, o = {}) => {
+  const seen = !!url && imgSeen.has(url);
+  return `<div class="poster${url ? " hasimg" : ""}${seen ? " ready" : ""}${o.c ? " " + o.c : ""}${o.wait ? " wait" : ""}" style="--h:${hueOf(title)}">${url ? `<img loading="lazy"${seen ? ' class="ready"' : ' decoding="async"'} alt="" src="${esc(url)}">` : ""}<span>${esc(title)}</span></div>`;
+};
 
 function fmtTime(s) {
   if (!s) return "";
@@ -525,8 +530,10 @@ function paintWall(fade) {
   if (m.cold) html = S.data.shows.map(showCard).join("");
   else if (S.lib.tab === "UNTRACKED") html = m.untracked.map(showCard).join("");
   else html = oneCardPerFranchise(libFiltered(m)).map(entryCard).join("");
-  w.className = "wall" + (fade && !reduceMotion() ? " fade" : "");
-  w.innerHTML = html || `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
+  const empty = `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
+  const fx = fade && !reduceMotion();
+  w.className = "wall" + (fx ? " fade" : "");
+  if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
 }
 
 /* ---------- detail ---------- */
@@ -673,14 +680,41 @@ function frEntryOfShow(s) {
   const r = t && (t.sea.releases || []).find((r) => r.first_ep <= n && (r.last_ep == null || n <= r.last_ep));
   return r ? r.id : s.meta.anilist_id;
 }
+/* Pages seen or prefetched (TODO 61), by every entry they hold: a page
+   opens drawn from here at once, and frLoad brings it up to date in place. */
+const frMemo = new Map();
+function frRemember(p) { if (p && !p.error && p.entries?.length) for (const e of p.entries) frMemo.set(e.id, p); }
+const frKnown = (mid) => (S.fr?.page?.entries.some((e) => e.id === mid) ? S.fr.page : frMemo.get(mid) || null);
+const frPeeking = new Set();
+function frPeek(mid) {
+  if (!mid || frMemo.has(mid) || frPeeking.has(mid)) return Promise.resolve();
+  frPeeking.add(mid);
+  return api(`/api/franchise?id=${mid}&peek=1`).then(frRemember).catch(() => {}).finally(() => frPeeking.delete(mid));
+}
+let frOpenTok = 0;
 function openFranchise(mid, fromShow = null) {
-  nav("fr", (prev) => {
+  const tok = ++frOpenTok;
+  const go = () => tok === frOpenTok && nav("fr", (prev) => {
     if (prev !== "fr" && prev !== "show") S.showBack = prev;
-    const keep = S.fr?.page?.entries.some((e) => e.id === mid) ? S.fr.page : null;
-    S.fr = { eid: mid, page: keep, err: null, fromShow };
+    S.fr = { eid: mid, page: frKnown(mid), err: null, fromShow };
     frLoad(mid); // after the view switched: an answer for another view is dropped
   });
+  /* Not seen yet: wait a moment for it, so the page opens drawn instead of on a spinner. */
+  if (frKnown(mid)) go(); else Promise.race([frPeek(mid), sleep(250)]).then(go);
 }
+/* Hovering a card prefetches its page (stored data only — the hub starts nothing). */
+let peekTimer = 0;
+document.addEventListener("pointerover", (e) => {
+  const t = e.target.closest?.("[data-a=entry],[data-a=open],[data-a=catpick]");
+  if (!t || e.pointerType === "touch") return;
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => {
+    const v = t.dataset.v, a = t.dataset.a;
+    const mid = a === "entry" ? (aniMode() ? +v : S.data?.spine?.entries.find((x) => String(x.id) === v)?.media_id)
+      : a === "catpick" ? S.alres?.[+v]?.id : frEntryOfShow(showById(v));
+    if (mid) frPeek(mid);
+  }, 60);
+}, { passive: true });
 /* Fetch the page; while the hub is still building the franchise or
    finding the selected entry's online episodes, ask again. Episode stills
    of an entry nobody opened before arrive a moment later: one more look. */
@@ -694,13 +728,13 @@ async function frLoad(mid) {
     if (!p || p.error) { if (!S.fr.page) { S.fr.err = p?.error || "Could not reach the hub."; softRender(); } return; }
     if (p.unavailable && !p.entries.length) return frUnavailable(p.unavailable);
     const first = !S.fr.page;
-    S.fr.page = p; S.fr.err = null;
+    S.fr.page = p; S.fr.err = null; frRemember(p);
     first ? softRender() : frRepaint();
     const e = p.entries.find((x) => x.id === S.fr.eid);
     let wait = p.building || p.resolving.includes(S.fr.eid);
     if (!wait && artLook && e && e.slots.length && !e.slots.some((x) => x.thumb)) { artLook = false; wait = true; await sleep(3500); }
     if (!wait) return;
-    await sleep(1500);
+    await sleep(400); // building (batched) and finding online episodes both take a second or so now
   }
 }
 /* AniList unreachable and nothing stored for this entry (TODO 57): a page
@@ -946,11 +980,14 @@ function entryDraw(res) {
   const prev = S.entry.f, f = entryFields(res);
   S.entry.f = f; S.entry.res = res;
   entryPaint(f, !!(res.pending || res.queued), prev);
+  box._own = true; // filled here: an in-place page update leaves it alone
   const m = f.media || {}, next = m.next_episode;
   const air = $("#airline");
+  if (air) air._own = true;
   if (air && (next || S.view !== "fr")) air.textContent = next ? (next.in_seconds > 0 ? `Airing · E${next.number} in ${fmtIn(next.in_seconds)}` : `E${next.number} has aired`) : "";
   const ib = $("#infobox");
   if (ib && !f.local) {
+    ib._own = true;
     const fe = S.view === "fr" ? frEntry() : null, meta = fe ? { format: fe.format, year: fe.year } : showById(S.showId)?.meta || {};
     ib.innerHTML = infoDl([["Format", meta.format ? FMT[meta.format] || meta.format : "—"], ["Year", meta.year || "—"],
       ...(fe ? [["Episodes", fe.episodes || (fe.aired ? fe.aired + " so far" : "—")], ["Status", MEDIA_STATUS[fe.status] || "—"]] : []),
@@ -959,18 +996,32 @@ function entryDraw(res) {
       ...(next ? [["Next airing", `E${next.number} in ${fmtIn(Math.max(0, next.in_seconds))}`]] : [])]);
   }
 }
+/* The panel never sits on "Loading…" for a page it has shown before
+   (TODO 61): the last answer per entry draws at once, the fresh one
+   replaces it when it differs. A "stale" answer (the hub's stored read
+   while it asks AniList) is asked for again shortly. */
 let entryTok = 0;
-function loadEntry(mid) {
-  const tok = ++entryTok;
-  S.entry = { mid, f: null, res: null };
+const entryMemo = {};
+function loadEntry(mid, tries = 0) {
+  const tok = ++entryTok, box = $("#entrybox");
+  if (S.entry?.mid !== mid || !S.entry.f) {
+    S.entry = { mid, f: null, res: null };
+    if (entryMemo[mid]) entryDraw(entryMemo[mid]);
+  } else if (box && !box._own && S.entry.res) entryDraw(S.entry.res); // a fresh page: same entry, new box
   api("/api/entry?id=" + mid).then((res) => {
     if (tok !== entryTok || !$("#entrybox")) return;
     if (res && res.error) {
+      if (S.entry?.f) return; // keep what is on screen
       $("#entrybox").innerHTML = `<span class="chip warn">${esc(res.error)}</span>${res.auth ? ' <button class="btn" data-a="ani" style="margin-left:8px">Connect</button>' : ""}`;
       return;
     }
+    entryMemo[mid] = res;
+    if (res.stale && tries < 4) setTimeout(() => { if (tok === entryTok && S.entry?.mid === mid) loadEntry(mid, tries + 1); }, 900);
+    if (entryPend || entryFlight) return; // the user's edits are on screen and on their way
+    if (document.activeElement?.closest?.("#entrybox")) return; // typing: don't redraw under the cursor
+    if (S.entry?.f && JSON.stringify(res) === JSON.stringify(S.entry.res)) return;
     entryDraw(res);
-  }).catch(() => { if (tok === entryTok && $("#entrybox")) $("#entrybox").innerHTML = '<span class="chip warn">Could not reach the hub.</span>'; });
+  }).catch(() => { if (tok === entryTok && $("#entrybox") && !S.entry?.f) $("#entrybox").innerHTML = '<span class="chip warn">Could not reach the hub.</span>'; });
 }
 /* One write path for every edit. Favourite travels beside the patch — never
    instead of it — so a combined save (the completion popup) keeps both. */
@@ -1007,6 +1058,7 @@ function entryFlush() {
     if (res && res.error) { toast(res.error); if (here) loadEntry(job.mid); return; }
     toast(res && res.queued ? "Saved — will sync when AniList is reachable" : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
     if (res && res.queued) res.patch = patch;
+    if (!res.queued) entryMemo[job.mid] = res; else delete entryMemo[job.mid];
     if (here && !entryPend) entryDraw(res); // newer edits are still on screen: keep them
     if (patch.status || job.fav !== undefined) refreshData();
   }).catch(() => { toast("Could not save — is the hub running?"); if (S.entry?.mid === job.mid) loadEntry(job.mid); })
@@ -1595,12 +1647,16 @@ function applyBg(el) {
   if (!u) return;
   el.style.backgroundImage = cssUrl(u);
   el.style.backgroundPosition = el.dataset.bp || "center";
+  el._bg = u; bgSeen.add(u);
 }
+/* Art the page has shown before goes on at once (it is in the browser's
+   memory); new art waits until its tile is near the screen. */
+const bgSeen = new Set();
 function lazyBg() {
-  const els = $$("[data-bg]");
+  const els = $$("[data-bg]").filter((el) => el._bg !== el.dataset.bg);
   if (!("IntersectionObserver" in window)) { els.forEach(applyBg); return; }
   io ||= new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) { io.unobserve(en.target); applyBg(en.target); } }), { rootMargin: "300px 0px" });
-  els.forEach((el) => io.observe(el));
+  els.forEach((el) => (bgSeen.has(el.dataset.bg) ? applyBg(el) : io.observe(el)));
 }
 const saveLib = () => lsSet("hubLib", S.lib);
 let fIdx = -1;
@@ -1629,7 +1685,8 @@ function strips() {
       st.classList.toggle("ml", x > 4); st.classList.toggle("mr", x < max - 4);
       if (arrows[0]) { arrows[0].hidden = arrows[1].hidden = max <= 4; arrows[0].disabled = x <= 4; arrows[1].disabled = x >= max - 4; }
     };
-    st.addEventListener("scroll", upd, { passive: true }); upd();
+    if (!st._strip) { st._strip = true; st.addEventListener("scroll", upd, { passive: true }); }
+    upd();
   });
 }
 /* The detail page is lit by its artwork: sample a mid-tone from the poster and feed it to --amb
@@ -1679,7 +1736,65 @@ function countUp() {
   });
 }
 const VIEW_TITLE = { home: "", library: "Library", history: "History", stats: "Stats", settings: "Settings" };
-function render() {
+/* ---------- in-place updates (TODO 61) ----------
+   A background refresh brings the open page up to date without rebuilding
+   it: the new HTML is matched against the live nodes (by data-a/data-v or
+   id, else by position) and only what really changed moves. Images keep
+   their element (no reload, no fade replay), tiles keep their art, strips
+   their scroll. Runtime state the HTML doesn't carry survives: the image
+   "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
+   and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
+const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr"];
+const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
+const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
+function morphAttrs(a, b) {
+  for (const { name } of [...a.attributes]) if (name !== "style" && !b.hasAttribute(name)) a.removeAttribute(name);
+  for (const { name, value } of [...b.attributes]) {
+    if (name === "class") {
+      const keep = LIVE_CLASSES.filter((c) => a.classList.contains(c) && !b.classList.contains(c));
+      const want = keep.length ? value + " " + keep.join(" ") : value;
+      if (a.getAttribute("class") !== want) a.setAttribute("class", want);
+    } else if (name === "style") {
+      if (a.classList.contains("tilting")) continue;
+      if (a.getAttribute("style") !== value) a.setAttribute("style", value);
+    } else if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  }
+}
+function morphNode(a, b) {
+  if (a.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  if (a.dataset.bg !== undefined && a.dataset.bg !== b.dataset.bg) { a.removeAttribute("style"); a._bg = null; }
+  morphAttrs(a, b);
+  if (a._own || a.id === "wall") return;
+  morphChildren(a, b);
+  if ((a.tagName === "INPUT" || a.tagName === "SELECT") && a !== document.activeElement && a.value !== b.value) a.value = b.value;
+}
+function morphChildren(a, b) {
+  const old = [...a.childNodes], byKey = new Map(), used = new Set();
+  for (const n of old) { const k = morphKey(n); if (k && !byKey.has(k)) byKey.set(k, n); }
+  const newKeys = new Set([...b.childNodes].map(morphKey).filter(Boolean));
+  let cur = a.firstChild;
+  for (const nb of [...b.childNodes]) {
+    while (cur && (liveOnly(cur) || used.has(cur))) cur = cur.nextSibling;
+    const k = morphKey(nb);
+    let m = k ? byKey.get(k) : cur && !morphKey(cur) ? cur : null;
+    if (m && (used.has(m) || m.nodeName !== nb.nodeName)) m = null;
+    /* A control whose target changed (Play E3 → Rewatch) is the same node
+       with new attributes, not a new one — a new one replays its entrance. */
+    if (!m && k && cur && cur.nodeName === nb.nodeName && !newKeys.has(morphKey(cur))) m = cur;
+    if (!m) { a.insertBefore(nb, cur); continue; }
+    used.add(m);
+    if (m === cur) cur = cur.nextSibling; else a.insertBefore(m, cur);
+    morphNode(m, nb);
+  }
+  for (const n of old) if (!used.has(n) && !liveOnly(n) && n.parentNode === a) a.removeChild(n);
+}
+function morphHTML(el, html) {
+  const t = document.createElement("template"); // inert: nothing loads until a node joins the page
+  t.innerHTML = html;
+  morphChildren(el, t.content);
+}
+const viewKey = () => S.view + "|" + (S.view === "fr" ? S.fr?.eid : S.view === "show" ? S.showId : "");
+function render(inPlace = false) {
   if (S.view === "show" && !showById(S.showId)) S.view = "home";
   if (S.view === "show") {
     const mid = !S.frDown[S.showId] && frEntryOfShow(showById(S.showId));
@@ -1690,10 +1805,13 @@ function render() {
   paintNav();
   io && io.disconnect();
   const app = $("#app");
-  app.classList.toggle("nav-in", fresh && !reduceMotion());
-  app.innerHTML = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran }[S.view]();
+  const html = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran }[S.view]();
+  const morph = inPlace === true && !fresh && app._view === viewKey();
+  /* An in-place update leaves the entrance animation running. */
+  if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !reduceMotion()); app.innerHTML = html; }
+  app._view = viewKey();
   if (S.view === "fr") frLastSig = frSig();
-  if (S.view === "library") { paintWall(S.fadeNext); S.fadeNext = false; startMetaWatch(); }
+  if (S.view === "library") { paintWall(!morph && S.fadeNext); S.fadeNext = false; startMetaWatch(); }
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
   strips(); ambient();
@@ -1711,17 +1829,19 @@ function render() {
 function softRender() {
   const a = document.activeElement;
   if (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest("#app")) { S.stale = true; return; }
-  render();
+  render(true);
 }
 document.addEventListener("focusout", () => setTimeout(() => {
   const a = document.activeElement;
-  if (S.stale && !(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest("#app"))) { S.stale = false; render(); }
+  if (S.stale && !(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest("#app"))) { S.stale = false; render(true); }
 }, 80));
+/* Page switch (TODO 61): the new page draws at once and fades in — no
+   fade-out wait first (that was 200 ms on every click). */
 function dip(f) {
   const a = $("#app");
-  if (reduceMotion()) return f();
-  a.classList.add("out");
-  setTimeout(() => { f(); a.classList.remove("out"); a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter"); }, 200);
+  f();
+  if (reduceMotion()) return;
+  a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter");
 }
 function clearSearch() { S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
 function nav(view, fn) {
@@ -1759,11 +1879,22 @@ function offlineNote(on, msg) {
 }
 /* Fetching and drawing fail for different reasons, so they are reported
    separately: only a failed fetch means "can't reach the hub". */
+/* The library payload is big: an unchanged one comes back as a bodiless
+   304 (TODO 61) and the copy in hand stays. */
+let libTag = null;
+async function libFetch() {
+  const res = await fetch("/api/library", { cache: "no-store", headers: libTag && S.data ? { "If-None-Match": libTag } : {} });
+  if (res.status === 304 && S.data) return S.data;
+  let d;
+  try { d = await res.json(); } catch { throw new Error(`HTTP ${res.status} from /api/library`); }
+  libTag = res.headers.get("ETag");
+  return d;
+}
 async function reload() {
   if (reloading) return;
   reloading = true;
   let d;
-  try { d = await api("/api/library"); }
+  try { d = await libFetch(); }
   catch (e) { return retryLoad(`Can't reach the hub (${e.message}) — retrying…`); }
   if (!d || d.error || !Array.isArray(d.shows)) return retryLoad(`The hub answered, but not with a library${d && d.error ? ": " + d.error : ""} — retrying…`);
   S.data = d; offlineNote(false);
@@ -1780,14 +1911,17 @@ function retryLoad(msg) { offlineNote(true, msg); setTimeout(() => { reloading =
    <img> reloads — just to flip a tick (Elias, 2026-10-17). Only text/state
    bits move; artwork DOM nodes stay where they are. */
 function patchShow(build = Det) {
-  const cur = $("#app"), fresh = document.createElement("div");
-  fresh.innerHTML = build();
-  /* State-bearing, image-free subtrees swap wholesale. */
+  const cur = $("#app"), tpl = document.createElement("template"); // inert: no image loads for the throwaway copy
+  tpl.innerHTML = build();
+  const fresh = tpl.content;
+  /* State-bearing, image-free subtrees update in place: a swapped-in
+     button would replay its entrance animation (Play → Rewatch after
+     marking a season, Elias 2026-10-22). */
   for (const sel of [".hero .cta", ".eps-head .ctl", ".rels"]) {
     const as = cur.querySelectorAll(sel), bs = fresh.querySelectorAll(sel);
-    as.forEach((a, k) => (bs[k] ? a.replaceWith(bs[k]) : a.remove()));
+    as.forEach((a, k) => (bs[k] ? morphNode(a, bs[k]) : a.remove()));
   }
-  cur.querySelectorAll(".rels").forEach(glide); // the glide indicator is re-created on swap
+  cur.querySelectorAll(".rels").forEach(glide); // the glide indicator follows the new active chip
   /* The now-playing badge (Loading → Playing) sits beside the art-free
      chips; only it moves — #airline keeps the text entryDraw put there. */
   const pa = cur.querySelector(".hero .meta .playing"), pb = fresh.querySelector(".hero .meta .playing");
@@ -1829,18 +1963,20 @@ function watchPatch(ids, watched, reset) {
   }
   reload();
 }
-async function refreshData() { try { S.data = await api("/api/library"); paintNav(); } catch {} }
+async function refreshData() { try { S.data = await libFetch(); paintNav(); } catch {} }
 function startMetaWatch() {
   if (metaWatch || !S.data?.meta_running) return;
   metaWatch = setTimeout(metaTick, 2500);
 }
+/* The pass's progress rides /api/now (TODO 61: it used to refetch the
+   whole library every 2.5 s); the library is fetched once it is done. */
 function metaTick() {
-  api("/api/library").then((d) => {
-    if (!d) { metaWatch = null; return; }
-    S.data = d;
-    if (S.view === "library") { const n = $(".metanote span"); if (n && d.meta_running) n.textContent = metaText(d); }
-    if (d.meta_running) metaWatch = setTimeout(metaTick, 2500);
-    else { metaWatch = null; softRender(); } // final settle: posters flip in
+  api("/api/now").then((now) => {
+    const m = now && now.meta;
+    if (!m) { metaWatch = null; reload(); return; } // final settle: posters flip in
+    Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_current: m.current, meta_phase: m.phase });
+    if (S.view === "library") { const n = $(".metanote span"); if (n) n.textContent = metaText(S.data); }
+    metaWatch = setTimeout(metaTick, 2500);
   }).catch(() => { metaWatch = null; });
 }
 function pollSoon(ms) { if (nowTimer) clearTimeout(nowTimer); nowTimer = setTimeout(pollNow, ms); }
@@ -2234,6 +2370,7 @@ const A = {
   dnskip: () => { const c = S.modal.c; api("/api/completion-seen", { media_id: c.media_id, count: c.count }).catch(() => {}); closeModal(); },
   dnsave: (v, t) => {
     const c = S.modal.c, patch = { status: $("#dn-status").value }, sc = $("#dn-score").value;
+    delete entryMemo[c.media_id];
     if (sc !== "") patch.score = parseFloat(sc);
     t.disabled = true;
     entrySave(c.media_id, patch, $("#dn-fav").classList.contains("on")).then((res) => {
@@ -2339,10 +2476,10 @@ if (SHELL) {
   addEventListener("drop", (e) => e.preventDefault());
 }
 /* Images fade in once decoded; a 404 keeps the title placeholder. */
-document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); } }, true);
+document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); imgSeen.add(t.getAttribute("src")); } }, true);
 document.// Back on the window (e.g. after toggling the VPN elsewhere): refresh now.
 addEventListener("focus", () => pollSoon(0));
-addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) t.remove(); }, true);
+addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) { t.parentElement.classList.remove("hasimg"); t.remove(); } }, true);
 $("#brand").addEventListener("click", () => nav("home"));
 /* ripple on primary controls */
 document.addEventListener("pointerdown", (e) => {
@@ -2465,7 +2602,7 @@ function pushNav() {
 }
 function applyNav(h) {
   S.navIn = true; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";
-  if (S.view === "fr") S.fr = { eid: h.fr, page: S.fr?.page?.entries.some((e) => e.id === h.fr) ? S.fr.page : null, err: null };
+  if (S.view === "fr") S.fr = { eid: h.fr, page: frKnown(h.fr), err: null };
   clearSearch(); render();
   if (S.view === "fr") frLoad(h.fr);
   history.replaceState(h, "", navUrl());

@@ -124,5 +124,12 @@ class Tab(unittest.TestCase):
 
 class Desktop(unittest.TestCase):
     def test_desktop_entry_names_the_window_class(self):
-        cls = re.search(r'"--class=(\w+)"', (support.ROOT / "desktop/src/main.rs").read_text()).group(1)
-        self.assertIn(f"StartupWMClass={cls}\n", (support.ROOT / "desktop/install.sh").read_text())
+        """X11 honours --class; native Wayland (TODO 61) names the window
+        WAYLAND_CLASS — install.sh writes whichever the session gets."""
+        rs = (support.ROOT / "desktop/src/main.rs").read_text()
+        sh = (support.ROOT / "desktop/install.sh").read_text()
+        cls = re.search(r'"--class=(\w+)"', rs).group(1)
+        wl = re.search(r'WAYLAND_CLASS: &str = "([^"]+)"', rs).group(1)
+        self.assertIn('WMCLASS="%s"; else WMCLASS="%s"' % (wl, cls), sh)
+        self.assertIn("StartupWMClass=$WMCLASS\n", sh)
+        self.assertIn('if std::env::var_os("WAYLAND_DISPLAY").is_some() { "wayland" } else { "x11" }', rs)

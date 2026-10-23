@@ -437,7 +437,7 @@ def refresh_meta():
         _meta_status["current"] = None
         try:
             franchise.refresh_franchises(franchise.franchise_seeds(scan))
-            pages.drop_premature_links()
+            pages.drop_premature_links(force=True)
         except Exception as e:
             util.log("franchise refresh failed: %s" % e)
         # Missing episode art is a normal poster fallback, retried later.

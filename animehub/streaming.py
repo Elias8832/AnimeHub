@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 import unicodedata
 from pathlib import Path
@@ -283,13 +284,21 @@ def stream_match(m):
             add(q, results)
         if any(c[1] == 1.0 for c in cands.values()):
             break  # an exact title: no need to search the other names
-    for _, _, query, title, idx in sorted(cands.values(), key=lambda c: (-c[0], -c[1]))[:4]:
+    # The top candidates' episode lists are fetched side by side (TODO 61:
+    # one after another they added ~0.3 s each); the best-ranked one that
+    # fits wins, exactly as before.
+    top = sorted(cands.values(), key=lambda c: (-c[0], -c[1]))[:4]
+
+    def episodes_of(c):
         try:
-            episodes = anicli.anicli_episodes({"query": query, "title": title, "idx": idx})
+            return anicli.anicli_episodes({"query": c[2], "title": c[3], "idx": c[4]})
         except anicli.AniCliError as e:
             failures.append(str(e))
-            continue
-        if _count_fits(episodes, m):
+            return None
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        lists = list(pool.map(episodes_of, top)) if len(top) > 1 else [episodes_of(c) for c in top]
+    for (_, _, query, title, idx), episodes in zip(top, lists):
+        if episodes is not None and _count_fits(episodes, m):
             return query, title, idx, episodes
     if not cands and failures and len(failures) == len(tried):
         # Every search failed (offline, site down): that is no verdict.

@@ -20,7 +20,7 @@ ANILIST_URL = "https://graphql.anilist.co"
 ANILIST_USER_QUERY = """query($name:String){
 User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
 MediaListCollection(userName:$name, type:ANIME){
-lists{ entries{ status progress score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge} bannerImage title{english romaji} } } }
+lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge} bannerImage title{english romaji} } } }
 }}"""
 MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
 coverImage{extraLarge} bannerImage description
@@ -113,8 +113,77 @@ def _fuzzy_date_str(fd):
 
 
 def _cache_del(key):
-    with database.db() as c:
-        c.execute("DELETE FROM catalog_cache WHERE key=?", (key,))
+    database.cache_del(key)
+
+
+ENTRY_STATE_FRESH = 30
+_entry_refreshing = set()
+
+
+def anilist_entry_state_quick(media_id):
+    """The panel's read (GET /api/entry, TODO 61): never waits on AniList
+    when something is known. Fresh (< 30 s) is served as is; an older read,
+    or — first open — the entry as the cached lists have it, is served with
+    "stale": True while a live read runs in the background (the page asks
+    again). Nothing known (not on the cached lists) is the live read."""
+    key = "entry-state:v1:%d" % media_id
+    row = database.cache_get_ts(key)
+    if row and time.time() - row[1] < ENTRY_STATE_FRESH:
+        return row[0]
+    known = row[0] if row else entry_state_from_lists(media_id)
+    if not known:
+        return anilist_entry_state(media_id)
+    entry_state_refresh_async(media_id)
+    return dict(known, stale=True)
+
+
+def entry_state_refresh_async(media_id):
+    if media_id in _entry_refreshing:
+        return
+    _entry_refreshing.add(media_id)
+
+    def run():
+        try:
+            database.cache_del("entry-state:v1:%d" % media_id)
+            anilist_entry_state(media_id)
+        except Exception as e:
+            util.log("entry %s not refreshed: %s" % (media_id, e))
+        finally:
+            _entry_refreshing.discard(media_id)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def entry_state_from_lists(media_id):
+    """The panel's state as the cached lists know it (same shape as the live
+    read; the read-only extras — popularity, studios — stay empty until it
+    answers). None when the entry isn't on the cached lists or the cache
+    predates the list fields the panel needs."""
+    cached = anilist_cache_stale()
+    e = next((x for x in (cached or {}).get("entries") or [] if x.get("id") == media_id), None)
+    if not e or "started_at" not in e:
+        return None
+    from . import library  # library imports this module
+    fmt = cached.get("score_format") or "POINT_10"
+    s100 = e.get("score100")
+    score = None
+    if s100 is not None and fmt in _SCORE_MAX:
+        score = round(float(s100) * _SCORE_MAX[fmt] / 100.0, 1 if fmt == "POINT_10_DECIMAL" else 0)
+        if fmt != "POINT_10_DECIMAL":
+            score = int(score)
+    nxt = e.get("next_episode")
+    if nxt and nxt.get("at"):
+        nxt = {"number": nxt["number"], "in_seconds": int(nxt["at"] - time.time())}
+    elif nxt:
+        nxt = {"number": nxt["number"], "in_seconds": nxt.get("in_seconds")}
+    return {"media_id": media_id, "format": e.get("format"), "episodes": e.get("episodes"),
+            "popularity": None, "favourites": None,
+            "is_favourite": media_id in library.spine_favourites(cached),
+            "studios": [], "next_episode": nxt,
+            "score_format": fmt, "score_max": _SCORE_MAX.get(fmt, 10),
+            "entry": {"status": e.get("status"), "score": score, "progress": e.get("progress") or 0,
+                      "repeat": e.get("repeat") or 0, "started_at": e.get("started_at"),
+                      "completed_at": e.get("completed_at")}}
 
 
 def anilist_entry_state(media_id):
@@ -124,7 +193,7 @@ def anilist_entry_state(media_id):
     countdown). Authenticated — mediaListEntry/isFavourite need the Viewer.
     Cached ~30 s so panel re-renders don't hammer the API."""
     key = "entry-state:v1:%d" % media_id
-    cached = database.cache_get(key, ttl=30)
+    cached = database.cache_get(key, ttl=ENTRY_STATE_FRESH)
     if cached:
         return cached
     fmt = _score_format()
@@ -296,9 +365,27 @@ def anilist_favourite_set(media_id, want):
 # so a page someone just opened is fetched at once.
 ANILIST_PER_MIN = 28
 ANILIST_BACKGROUND_PER_MIN = 20
+# A request the user waits on (not background work) in the last
+# FOREGROUND_QUIET seconds holds background work back (TODO 61: one panel
+# read waited 47 s behind the window), and `quick()` caps how long a page
+# read may wait for a slot before it answers "busy" instead.
+FOREGROUND_QUIET = 8
+QUICK_WAIT = 3
 _al_gate = threading.Lock()
 _al_times = []
 _al_ctx = threading.local()
+_last_foreground = 0.0
+
+
+class quick:
+    """`with anilist.quick():` — AniList reads in this block wait at most
+    QUICK_WAIT seconds for a request slot (or a 429's Retry-After), then
+    raise AniListTransientError."""
+    def __enter__(self):
+        _al_ctx.deadline = time.time() + QUICK_WAIT
+
+    def __exit__(self, *exc):
+        _al_ctx.deadline = None
 
 
 def _anilist_try(limit, now):
@@ -313,11 +400,22 @@ def _anilist_try(limit, now):
 
 
 def _anilist_slot():
-    limit = ANILIST_BACKGROUND_PER_MIN if getattr(_al_ctx, "background", False) else ANILIST_PER_MIN
+    global _last_foreground
+    background = getattr(_al_ctx, "background", False)
+    limit = ANILIST_BACKGROUND_PER_MIN if background else ANILIST_PER_MIN
+    deadline = getattr(_al_ctx, "deadline", None)
     while True:
-        wait = _anilist_try(limit, time.time())
+        now = time.time()
+        if background and now - _last_foreground < FOREGROUND_QUIET:
+            time.sleep(min(FOREGROUND_QUIET - (now - _last_foreground) + 0.05, 2))
+            continue
+        if not background:
+            _last_foreground = now
+        wait = _anilist_try(limit, now)
         if not wait:
             return
+        if deadline and now + min(wait, 2) > deadline:
+            raise AniListTransientError("AniList is busy — try again in a moment", status=429)
         time.sleep(min(max(wait, 0.05), 2))
 
 
@@ -359,6 +457,9 @@ def anilist_request(payload, token=None):
                     wait = int(e.headers.get("Retry-After"))
                 except (AttributeError, TypeError, ValueError):
                     wait = 62
+                deadline = getattr(_al_ctx, "deadline", None)
+                if deadline and time.time() + wait > deadline:
+                    raise AniListTransientError("AniList is busy — try again in a moment", status=429)
                 time.sleep(min(max(wait, 1), 62))
                 continue
             raise
@@ -682,6 +783,11 @@ def anilist_user_data(force=False):
                     "poster": (e["media"].get("coverImage") or {}).get("extraLarge"),
                     "banner": e["media"].get("bannerImage"),
                     "updated": e.get("updatedAt"),
+                    # Additive (TODO 61): the panel draws from these at once,
+                    # before the live entry read answers.
+                    "repeat": e.get("repeat") or 0,
+                    "started_at": _fuzzy_date_str(e.get("startedAt")),
+                    "completed_at": _fuzzy_date_str(e.get("completedAt")),
                 }
     out = {
         "user": {

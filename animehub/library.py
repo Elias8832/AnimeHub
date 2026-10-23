@@ -45,7 +45,50 @@ def parse_ep_number(name):
     return None
 
 
+# The last scan, keyed by the library's folder layout (TODO 61): every
+# library, franchise and episode lookup scans, and a folder's mtime moves
+# whenever a file in it is added, removed or renamed — the only changes a
+# scan reads. Callers mutate what they get, so each hit is a fresh copy.
+_scan_memo = {"sig": None, "json": None, "state": None}
+
+
+def _library_sig(root):
+    """Every walked folder (os.walk's rules: no dot-folders, no symlinked
+    folders) with its mtime; an unreadable folder signs as None."""
+    sig, stack = [], [str(root)]
+    while stack:
+        d = stack.pop()
+        try:
+            mtime = os.stat(d).st_mtime_ns
+            with os.scandir(d) as it:
+                for e in it:
+                    try:
+                        if not e.name.startswith(".") and e.is_dir() and not e.is_symlink():
+                            stack.append(e.path)
+                    except OSError:
+                        pass
+            sig.append((d, mtime))
+        except OSError:
+            sig.append((d, None))
+    return (str(root), tuple(sorted(sig)))
+
+
 def scan_library():
+    if config.LIBRARY is not None and config.LIBRARY.is_dir():
+        sig = _library_sig(config.LIBRARY)
+        if sig == _scan_memo["sig"]:
+            scan_state.update(_scan_memo["state"])
+            stored_root = settings.get_setting("library_root")
+            scan_state["root"] = "changed" if stored_root and stored_root != str(config.LIBRARY) else "ok"
+            return json.loads(_scan_memo["json"])
+        shows = _scan_library()
+        _scan_memo.update(sig=sig, json=json.dumps(shows), state=dict(scan_state))
+        return shows
+    _scan_memo["sig"] = None
+    return _scan_library()
+
+
+def _scan_library():
     shows = {}
     scan_state.update(state="ok", walk_errors=0, root="ok")
     if config.LIBRARY is None:
@@ -238,7 +281,10 @@ def ep_label(sea, ep):
 
 def merge_db(scan):
     with database.db() as c:
-        rows = {r[0]: r[1:] for r in c.execute("SELECT id, watched, position, duration, last_played FROM episodes")}
+        rows, stamped = {}, {}
+        for r in c.execute("SELECT id, watched, position, duration, last_played, show_id, label FROM episodes"):
+            rows[r[0]] = r[1:5]
+            stamped[r[0]] = (r[5], r[6])
         meta = {r[0]: r for r in c.execute(
             "SELECT show_id, anilist_id, title, year, score, overview, poster, banner, episodes_meta, format, fetched_at, episode_thumbs FROM shows_meta")}
         season_rows = {r[0] for r in c.execute("SELECT DISTINCT show_id FROM season_thumbs")}
@@ -267,16 +313,20 @@ def merge_db(scan):
                 ins = ("INSERT INTO tombstones(kind,key,ts) VALUES(?,?,?) "
                        "ON CONFLICT(kind,key) DO NOTHING")
                 scan_ids = {s["id"] for s in scan}
-                c.executemany(ins, [("episode", eid, now) for eid in stale])
-                c.executemany(ins, [("show", sid, now) for sid in gone_shows])
-                c.executemany(ins, [("season", sid, now) for sid in set(season_rows) - scan_ids])
+                # Only rows not tombstoned yet: an unchanged library writes
+                # nothing (TODO 61 — this runs on every library read).
+                have = set(c.execute("SELECT kind, key FROM tombstones").fetchall())
+                new_marks = [(kind, key, now) for kind, keys in
+                             (("episode", stale), ("show", gone_shows), ("season", set(season_rows) - scan_ids))
+                             for key in keys if (kind, key) not in have]
+                if new_marks:
+                    c.executemany(ins, new_marks)
                 # IDs that are back in the scan clear their tombstone again —
                 # only the ones actually tombstoned, not one DELETE per episode.
                 back = {("episode", eid) for eid in known & set(rows)} | \
                        {("show", sid) for sid in scan_ids & set(meta)}
-                have = set(c.execute("SELECT kind, key FROM tombstones "
-                                     "WHERE kind IN ('episode','show')").fetchall())
-                c.executemany("DELETE FROM tombstones WHERE kind=? AND key=?", have & back)
+                if have & back:
+                    c.executemany("DELETE FROM tombstones WHERE kind=? AND key=?", have & back)
     for s in scan:
         m = meta.get(s["id"])
         if m:
@@ -300,15 +350,18 @@ def merge_db(scan):
                     # Identity stamp (TODO 25): a played episode learns which
                     # show/label it belongs to, so its history row stays
                     # human-readable even after the file leaves the disk.
-                    stamps.append((ep["id"], s["id"], ep_label(sea, ep)))
+                    stamp = (s["id"], ep_label(sea, ep))
+                    if stamped.get(ep["id"]) != stamp:
+                        stamps.append((ep["id"], *stamp))
     # Which entry each season is, and its stills (phase 3): needs the match
     # (meta) set above.
     mapping.attach_releases(scan)
-    with database.db() as c:
-        c.executemany(
-            """INSERT INTO episodes(id,show_id,label) VALUES(?,?,?)
-               ON CONFLICT(id) DO UPDATE SET show_id=excluded.show_id, label=excluded.label""",
-            stamps)
+    if stamps:
+        with database.db() as c:
+            c.executemany(
+                """INSERT INTO episodes(id,show_id,label) VALUES(?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET show_id=excluded.show_id, label=excluded.label""",
+                stamps)
 
 
 def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozenset(), favs=frozenset()):
