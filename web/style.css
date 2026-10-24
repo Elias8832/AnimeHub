@@ -1166,3 +1166,68 @@ body.srch #app,body.srch #status{filter:blur(6px) brightness(.55);transition:fil
 .dialog .found{font:400 12px var(--mono);color:var(--accent);margin-top:14px;display:flex;gap:8px;align-items:center}
 .dialog .rr .seg button.on{background:var(--accent);color:#111}
 .dialog .choice:before{display:none}.dialog .choice{display:block}
+
+/* ───────── Phone + narrow windows (TODO 60 step 8) ───────── */
+@media (max-width:1000px){
+  .jcols{grid-template-columns:minmax(0,1fr)}
+  .jside{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+  .agenda{grid-template-columns:minmax(0,1fr)}
+  .setg{grid-template-columns:minmax(0,1fr);gap:16px}
+  .snav{position:static;flex-direction:row;flex-wrap:wrap;gap:4px}
+  .snav button{height:36px;padding:0 14px;font-size:13px}
+  .snav .hint{display:none}
+  .mgrid{grid-template-columns:minmax(0,1fr)}
+  .search .pop.sr.pal2{grid-template-columns:minmax(0,1fr)}
+  .pal2 .pview{display:none}
+}
+@media (max-width:700px){
+  #nav{padding:0 14px;gap:2px}
+  .search{display:block!important}
+  .brand span{display:none}.brand{margin-right:4px}
+  .link{padding:0 10px;font-size:14px}.link kbd{display:none}
+  .search{width:40px}.search:focus-within{position:fixed;left:12px;right:12px;width:auto;z-index:10}
+  .search input{padding:0 0 0 34px;color:transparent}.search:focus-within input{color:inherit;padding:0 14px 0 34px}
+  .search input::placeholder{color:transparent}.search:focus-within input::placeholder{color:rgba(243,243,241,.5)}
+  .search kbd{display:none}
+  .search .pop.sr.pal2{top:64px;width:calc(100vw - 24px);height:calc(100vh - 140px)}
+  .pal2 .pfoot span:not(:last-child){display:none}
+  #status{padding:0 14px}#nr{gap:14px;overflow:hidden}#nr .rgt,#nr .sync{display:none}
+  .home2,.lib2,.jr2,.set2,.sp2{padding-left:16px;padding-right:16px}
+  .home2 .hello,.lib2 .hello,.jr2 .hello,.set2 .hello{flex-direction:column;align-items:flex-start;gap:10px;margin:14px 0 20px}
+  .home2 .sum,.lib2 .sum,.jr2 .sum,.set2 .sum{padding:0;font-size:12px}
+  .upn{min-height:0;border-radius:22px}.upn .upc{padding:24px 20px}
+  .upn h1{font-size:40px}.upn .sub{font-size:16px}
+  .upn .cta{flex-wrap:wrap}.upn .btn.big{height:44px;font-size:14px}
+  .hsec{margin-top:34px}.hsec .sh{flex-wrap:wrap}
+  .hsec .mut{display:none}
+  .ruler{display:none}
+  .hc{width:230px}
+  .rc{width:104px}.rc .pw .poster{width:104px}
+  .sp2 h1{font-size:44px}.sp2 .hero.framed{grid-template-columns:minmax(0,1fr)}.sp2 .hp{display:none}
+  .st2{flex-wrap:wrap;gap:12px 0}.st2>button{padding:2px 16px}.st2 .v{font-size:28px}
+  .sp2 .cta .btn.big{height:44px;font-size:14px;padding:0 16px}
+  .sp2 .eps-head{flex-direction:column;align-items:stretch}.sp2 .ctl{margin-left:0;flex-wrap:wrap}
+  .sp2 .ep{width:200px}
+  .lib2 .filters{gap:6px}.lib2 .filters .fill{display:none}
+  .lib2 .rng .rt{width:90px}
+  .lib2 .wall{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:24px 14px}
+  .lib2 .tabs .vs{display:none}
+  .match.mc{grid-template-columns:minmax(0,1fr)}.mc .guess .poster{width:150px}
+  .jband{flex-wrap:wrap;gap:16px 0;padding:20px}
+  .jband .n{padding:0 18px}.jband .v{font-size:40px}
+  .jbars{width:100%;margin:6px 0 0;padding:0;justify-content:space-between}
+  .jbars i{width:22px}.jbars.many i{width:6px}
+  .jside{grid-template-columns:minmax(0,1fr)}
+  .tl .ev .th{width:84px;height:47px}.tl .ev .t{display:none}
+  .set2 .group{padding:6px 18px}
+  .set2 .srow{flex-direction:column;align-items:flex-start;gap:12px}
+  .set2 .srow .ctl{width:100%;justify-content:flex-start;flex-wrap:wrap}
+  .looks{justify-content:flex-start}
+  .dialog{padding:22px 20px;width:calc(100vw - 20px)!important}
+  .dn{grid-template-columns:minmax(0,1fr)}.dnp{display:none}.dn h2{font-size:40px}
+  .score{flex-wrap:wrap}
+  .nx2{grid-template-columns:minmax(0,1fr)}.nxa{width:100%}
+  .dialog .choices{grid-template-columns:minmax(0,1fr)}
+  .dialog .actions{flex-wrap:wrap}.dialog .actions .note2{flex-basis:100%}
+  .dialog.entry .edb{padding:16px 18px}#entrybox .ef.two{grid-template-columns:minmax(0,1fr);gap:16px}
+}
