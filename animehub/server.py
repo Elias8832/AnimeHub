@@ -298,6 +298,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file(WEB / "style.css", "text/css")
         elif route == "/app.js":
             self.send_file(WEB / "app.js", "text/javascript")
+        elif route.startswith("/fonts/") and route.endswith(".woff2"):
+            # TODO 60 (Decision 38): the UI fonts ship with the app, so it
+            # looks the same offline. Basename only — no path walking.
+            self.send_file(WEB / "fonts" / os.path.basename(route), "font/woff2", cache=True)
         else:
             self.send_error(404)
 

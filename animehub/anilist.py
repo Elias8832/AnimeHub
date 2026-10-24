@@ -20,10 +20,10 @@ ANILIST_URL = "https://graphql.anilist.co"
 ANILIST_USER_QUERY = """query($name:String){
 User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
 MediaListCollection(userName:$name, type:ANIME){
-lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge} bannerImage title{english romaji} } } }
+lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }
 }}"""
 MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
-coverImage{extraLarge} bannerImage description
+coverImage{extraLarge color} bannerImage description
 relations{edges{relationType node{id format}}}
 streamingEpisodes{title thumbnail}"""
 MEDIA_QUERY_SEARCH = "query($search:String){Media(search:$search,type:ANIME){" + MEDIA_FIELDS + "}}"
@@ -782,6 +782,9 @@ def anilist_user_data(force=False):
                     "season": e["media"].get("season"),
                     "poster": (e["media"].get("coverImage") or {}).get("extraLarge"),
                     "banner": e["media"].get("bannerImage"),
+                    # Additive (TODO 60): AniList's own colour for the show — the
+                    # accent follows it (canvas sampling is blocked in some browsers).
+                    "color": (e["media"].get("coverImage") or {}).get("color"),
                     "updated": e.get("updatedAt"),
                     # Additive (TODO 61): the panel draws from these at once,
                     # before the live entry read answers.

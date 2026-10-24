@@ -59,7 +59,7 @@ def _stream_miss(media_id, missed):
 
 RELEASE_QUERY = """query($id:Int){Media(id:$id,type:ANIME){id title{romaji english native} synonyms
 format status episodes averageScore seasonYear startDate{year} nextAiringEpisode{episode}
-coverImage{extraLarge} bannerImage description streamingEpisodes{title thumbnail}}}"""
+coverImage{extraLarge color} bannerImage description streamingEpisodes{title thumbnail}}}"""
 
 
 def release_meta(media_id):

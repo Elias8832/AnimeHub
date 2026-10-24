@@ -68,7 +68,8 @@ def _entry_facts(m):
             "year": (m.get("startDate") or {}).get("year") or m.get("seasonYear"),
             "season": m.get("season"), "score": m.get("averageScore"),
             "duration": m.get("duration"), "overview": anilist.strip_html(m.get("description")),
-            "poster": (m.get("coverImage") or {}).get("extraLarge"), "banner": m.get("bannerImage")}
+            "poster": (m.get("coverImage") or {}).get("extraLarge"), "banner": m.get("bannerImage"),
+            "color": (m.get("coverImage") or {}).get("color")}  # additive (TODO 60): the accent
 
 
 def _watch(src):

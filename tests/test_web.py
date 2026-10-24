@@ -1,4 +1,4 @@
-"""TODO 48: the Decision 28 palettes, the genre filter, the home airing
+"""TODO 48 / 60: the Decision 38 appearance + shell, the genre filter, the home airing
 countdown and the Hiatus/Cancelled airing filters stay in the UI. The pure
 parts of web/app.js (the @pure / @lists / @lib regions) run under node, and
 so do the node:test scripts next to this file (*.cjs)."""
@@ -91,18 +91,72 @@ class Frontend(unittest.TestCase):
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 - 5} }}, {now});"), "E5 is out")
         self.assertIn("airText(e.next_episode)", APP)
 
-    def test_palettes(self):
-        keys = run_js("return PALS.map(([k]) => k);")
-        self.assertEqual(keys, ["graphite", "teal", "oxide"])
-        for k in keys[1:]:
-            self.assertRegex(CSS, r":root\[data-pal=%s\] \{[^}]*--accent:" % k)
-        for k in keys:
-            self.assertIn(f"i[data-sw={k}]", CSS)
-        self.assertEqual(run_js("return palGet();", {"pal": "teal"}), "teal")
-        self.assertEqual(run_js("return palGet();", {"pal": "nope"}), "graphite")
-        self.assertIn('data-a="pal"', APP)
-        # Applied before the stylesheet loads: no flash of the default palette.
-        self.assertLess(HTML.index('dataset.pal'), HTML.index('style.css'))
+    def test_appearance_prefs(self):
+        # Decision 38 replaced the Decision 28 palettes with device preferences.
+        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"]})
+        self.assertEqual(run_js("return lookGet('motion');", {"motion": "calm"}), "calm")
+        self.assertEqual(run_js("return lookGet('motion');", {"motion": "nope"}), "full")
+        self.assertEqual(run_js("return lookGet('art');"), "full")
+        self.assertEqual(run_js("return accentGet();"), "follow")
+        self.assertEqual(run_js("return accentGet();", {"accent": "#9ccbe8"}), "#9ccbe8")
+        self.assertEqual(run_js("return accentGet();", {"accent": "red"}), "follow")
+        self.assertEqual(run_js("return grainGet();", {"grain": False}), False)
+        self.assertNotIn("data-pal", CSS + HTML + APP)
+        # Applied before the stylesheet loads: no flash of the wrong look.
+        self.assertLess(HTML.index("dataset.motion"), HTML.index("style.css"))
+        self.assertIn(":root[data-motion=off] *", CSS)
+        self.assertIn(":root[data-art=off] .cv-blur", CSS)
+        self.assertIn('data-a="look" data-k="accent"', APP)
+
+    def test_accent_from_anilist_colour(self):
+        # Privacy browsers block reading colours from images, so AniList's colour comes first.
+        self.assertEqual(run_js("return hexAccent('#e4a15d');"), "hsl(30 72% 70%)")
+        self.assertEqual(run_js("return hexAccent('#5d5d5d');"), None)  # grey: keep the default
+        self.assertEqual(run_js("return hexAccent(null);"), None)
+        self.assertIn("if (color) return set(hexAccent(color));", APP)
+        self.assertIn("coverImage{extraLarge color}", (support.ROOT / "animehub" / "anilist.py").read_text())
+
+    def test_fonts_ship_with_the_app(self):
+        # No network at runtime: every @font-face points at /fonts/, and the files are there.
+        urls = re.findall(r"url\((/fonts/[^)]+)\)", CSS)
+        self.assertTrue(urls)
+        for u in urls:
+            self.assertTrue((WEB / u.lstrip("/")).is_file(), u)
+        self.assertNotIn("fonts.googleapis", CSS + HTML)
+        for fam in ("Hanken Grotesk", "JetBrains Mono", "Barlow Condensed"):
+            self.assertIn(f'font-family:"{fam}"', CSS)
+        for lic in ("OFL-hankengrotesk.txt", "OFL-jetbrainsmono.txt", "OFL-barlowcondensed.txt"):
+            self.assertTrue((WEB / "fonts" / lic).is_file(), lic)
+
+    def test_shell(self):
+        # The art canvas, the top bar (tabs with number keys + settings icon) and the status line.
+        for el in ('id="canvas"', 'class="cv-blur"', 'class="cv-art"', 'id="status"', 'id="nr"', 'id="setb"'):
+            self.assertIn(el, HTML)
+        self.assertEqual(run_js("return 1;"), 1)
+        self.assertIn("const TABS = [", APP)
+        self.assertIn("<kbd>${i + 1}</kbd>", APP)
+        self.assertIn('if (e.key === ",") { e.preventDefault(); nav("settings"); return; }', APP)
+        self.assertIn("function paintCanvas()", APP)
+        self.assertIn('swapLayer("cv-art", mode === "full" ? art?.sharp : null);', APP)
+
+
+class ShowPage(unittest.TestCase):
+    """TODO 60 step 2 (Decision 38): the show page — your entry as a row
+    (score · watched · status · ♥), Edit entry as a dialog, actions with
+    their keys, rare ones behind ⋯, the episode strip."""
+    def test_layout_and_keys(self):
+        fran = APP[APP.index("function Fran() {"):APP.index("function frMore(")]
+        for bit in ('id="entrystats"', 'data-a="edit"', 'data-a="frmore"', 'kb("↵")', 'kb("E")', 'kb("D")', 'kb("⇧W")', 'class="eps strip"', 'id="airline"'):
+            self.assertIn(bit, fran)
+        self.assertNotIn('class="banner"', fran)  # the canvas shows the art now
+        self.assertIn("nxt: NextDlg, entry: EntryDlg }[m.t]();", APP)
+        self.assertIn("if (e.key === \"e\" && hit('[data-a=\"edit\"]')) return;", APP)
+        self.assertIn('const entryHost = () => $("#entrybox") || $("#entrystats");', APP)
+
+    def test_tile_keeps_art_node(self):
+        # The art node lives inside .epa now; a watch patch must still keep it (no blanking).
+        self.assertIn('const art = tile.querySelector(".epimg");', APP)
+        self.assertIn('<div class="epa"><span class="epimg" data-bg=', APP)
 
 
 class Discovery(unittest.TestCase):

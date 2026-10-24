@@ -174,5 +174,24 @@ class ApiValidationTests(unittest.TestCase):
         self.assertEqual(self.episode_rows(), [("ep1", 0)])
 
 
+    def get(self, path):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.bound}{path}", headers={"Host": f"127.0.0.1:{self.PORT}"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as res:
+                return res.status, res.headers.get("Content-Type"), res.read()
+        except urllib.error.HTTPError as e:
+            e.close()
+            return e.code, None, b""
+
+    def test_fonts_are_served_from_the_app(self):
+        # TODO 60: the UI fonts ship in web/fonts; only .woff2 basenames, no path walking.
+        status, ctype, body = self.get("/fonts/hanken-grotesk-latin.woff2")
+        self.assertEqual((status, ctype), (200, "font/woff2"))
+        self.assertEqual(body[:4], b"wOF2")
+        self.assertEqual(self.get("/fonts/OFL-hankengrotesk.txt")[0], 404)
+        self.assertEqual(self.get("/fonts/../app.js")[0], 404)
+        self.assertEqual(self.get("/fonts/%2e%2e%2fapp.woff2")[0], 404)
+
+
 if __name__ == "__main__":
     unittest.main()

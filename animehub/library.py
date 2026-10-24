@@ -411,6 +411,7 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
                     "genres": e.get("genres") or [],
                     "next_episode": e.get("next_episode"),
                     "poster": e.get("poster"), "banner": e.get("banner"),
+                    "color": e.get("color"),  # additive (TODO 60): the accent
                     "updated": e.get("updated"),
                     "favourite": e["id"] in favs,
                     "capability": cap,
