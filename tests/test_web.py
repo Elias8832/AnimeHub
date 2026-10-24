@@ -183,6 +183,18 @@ class Journal(unittest.TestCase):
         self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings"];', APP)
 
 
+class SearchPalette(unittest.TestCase):
+    """TODO 60 step 6: one search for library, AniList, settings (switch
+    right there) and commands; Settings show one section at a time."""
+    def test_palette(self):
+        self.assertIn('["VPN in the status line", "online", "vpn status icon", "vpn_icon"]', APP)
+        self.assertIn('data-a="srsw" data-v="${key}"', APP)
+        self.assertIn('if (S.menu === "sr") srPreview(', APP)
+        self.assertIn('q.addEventListener("focus", () => { S.menu = "sr"; paintNav(); });', APP)
+        self.assertIn('<nav class="snav">${SET_TABS.map(', APP)
+        self.assertIn("r.classList.add(\"flash\")", APP)
+
+
 class Discovery(unittest.TestCase):
     """TODO 11 (Decision 9): one search bar over library + AniList; a hit off
     the lists opens its page, which says so and offers the add."""

@@ -1381,21 +1381,26 @@ function Sett() {
   if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
   const stateTxt = { ok: "Watching this folder.", unconfigured: "No library folder is configured yet.", missing: "The folder is not accessible right now.", partial: "Some folders could not be read — part of the library may be missing." };
   const changed = s.scan?.root === "changed", conn = !!ani.connected, off = !conn;
-  return `<div class="wrap page"><div class="settings"><div class="sec first"><h2>Settings</h2></div>
-  <div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
-      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}</div>
-  <div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — upscales banners when the config enables it.")}</div>
-  ${streamGroup(s)}
-  <div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
+  /* Settings (Decision 38): one section at a time; every setting is also in the search. */
+  const tab = SET_TABS.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
+  const sec = {
+    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "How much of the show's art fills the screen. Off: a calm dark background.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
+    library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
+      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}</div><div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — upscales banners when the config enables it.")}</div>`,
+    online: `${streamGroup(s)}`,
+    anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
       conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}
-  <details class="adv${off ? " dis" : ""}" data-k="anilist" ${S.advOpen.anilist ? "open" : ""}><summary>${ico("chevr")}Advanced</summary>${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
+  <div class="adv2${off ? " dis" : ""}">${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
     ${srow("Track episodes", "After playback marks an episode watched, publish the highest watched episode to AniList (single-season releases).", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}
     ${srow("Watched marks from AniList", "Episodes up to your AniList progress show as watched, the rest as unwatched. Off: the marks saved on this device. Switching back loses nothing.", tgl("anilist_watched", "Watched marks from AniList", s.anilist_watched))}
     ${srow("Add shows automatically", "A first watch of a matched show that isn't on your lists adds it to Watching. Off by default.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}
-    ${srow(`Sync ratings<span class="soon">not built yet</span>`, "Keep scores in step between AniList and this device.", tgl("ratings", "Sync ratings", false, true))}</details></div>
-  <div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "How much of the show's art fills the screen. Off: a calm dark background.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>
-  <div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div>
-  <div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div></div></div>`;
+    ${srow(`Sync ratings<span class="soon">not built yet</span>`, "Keep scores in step between AniList and this device.", tgl("ratings", "Sync ratings", false, true))}</div></div>`,
+    keys: `<div class="group"><h3>Keys</h3><p class="sub">Press <kbd class="kb">?</kbd> anywhere for this list.</p><div class="keys big">${KEYS.map(([n, k]) => `<span>${esc(n)}</span><kbd class="kb">${esc(k)}</kbd>`).join("")}</div></div>`,
+    data: `<div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div><div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div>`,
+  };
+  return `<div class="set2"><div class="hello"><h1 class="hd">Settings</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
+  <div class="setg"><nav class="snav">${SET_TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
+  <div class="settings scol" data-sec="${tab}">${sec[tab]}</div></div></div>`;
 }
 /* A segmented control for one Appearance preference. */
 function lookSeg(k, opts) {
@@ -1502,24 +1507,64 @@ const VIEWS = ["home", "library", "history", "stats", "settings"];
    shows once, as the library show. AniList results follow the typing
    (debounced) and the last ones stay up while the next search runs. */
 const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.indexOf(ql); return i === 0 ? 0 : i > 0 && /[^a-z0-9]/.test(l[i - 1]) ? 1 : i > 0 ? 2 : 3; };
+/* The search is a command line (Decision 38): your library, AniList,
+   every setting (switches flip right here) and commands — grouped, with a
+   preview of the picked row and its keys. */
+const SETTINGS_INDEX = [
+  ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"],
+  ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
+  ["Library folder", "library", "folder path library directory browse"], ["Rescan", "library", "rescan scan refresh metadata"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
+  ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
+  ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"],
+  ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
+  ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
+  ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
+];
+const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["online", "Online episodes"], ["anilist", "AniList"], ["keys", "Keys"], ["data", "Data & setup"]];
+const COMMANDS = [
+  ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
+  ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
+  ["Show downloads", "downloads queue", () => { S.menu = "dl"; paintNav(); }, ""], ["Show keys", "keys keyboard shortcuts", () => { S.menu = "keys"; paintNav(); }, "?"],
+];
+const srMatch = (hay, ql) => ql.split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+let srPv = [];
 function srHTML() {
   const q = S.q.trim(), ql = q.toLowerCase();
-  if (!q) return "";
-  const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
-    .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), local: true, s }));
-  const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
-  const remote = (alSearchable() && S.alres || []).map((x, i) => ({ r: srRank(candLabel(x), ql), x, i })).filter((y) => !have.has(y.x.id));
-  const rows = [...local, ...remote].sort((a, b) => a.r - b.r || (b.local ? 1 : 0) - (a.local ? 1 : 0)).slice(0, 8);
-  let h = rows.map((y, i) => {
-    if (y.local) return `<button style="--i:${i}" class="mi" data-a="open" data-v="${esc(y.s.id)}">${poster(y.s.title, y.s.poster, { c: "t" })}<span><b>${hl(y.s.title, q)}</b><small>${esc(y.s.collection || `${epTotal(y.s)} episodes`)}</small></span><em class="src installed">library</em></button>`;
-    const x = y.x, e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
-    const sub = e ? "On your list · " + statusLabel(e.status) : [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · ");
-    return `<button style="--i:${i}" class="mi" data-a="catpick" data-v="${y.i}">${poster(candLabel(x), x.coverImage?.extraLarge, { c: "t" })}<span><b>${hl(candLabel(x), q)}</b><small>${esc(sub)}</small></span><em class="src online">AniList</em></button>`;
-  }).join("");
-  const busy = alSearchable() && (S.alBusy || (S.alq !== q && q.length >= 2));
-  if (!rows.length && !busy) h += `<p class="cap">No matches${alSearchable() ? " in your library or on AniList" : " in your library"}</p>`;
-  if (busy) h += '<div class="cap"><i class="spin"></i> Searching AniList…</div>';
-  return `<div class="pop sr">${h}</div>`;
+  srPv = [];
+  let i = 0, h = "";
+  const row = (attrs, inner, pv) => { srPv.push(pv); return `<div class="mi" style="--i:${i}" data-i="${i++}" ${attrs}>${inner}</div>`; };
+  if (q) {
+    const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
+      .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), local: true, s }));
+    const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
+    const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, i: k })).filter((y) => !have.has(y.x.id));
+    const L = local.sort((a, b) => a.r - b.r).slice(0, 5), R = remote.sort((a, b) => a.r - b.r).slice(0, 5);
+    if (L.length) h += `<div class="psec">your library</div>` + L.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s);
+      return row(`data-a="open" data-v="${esc(s.id)}"`, `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, q)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span><span class="r"><kbd class="kb">↵</kbd></span>`,
+        { art: s.banner || s.poster, t: s.title, m: [sp ? statusLabel(sp.status) : "", `${epWatched(s)} / ${epTotal(s)} watched`, t ? `up next ${epCode(t.sea, t.ep)}` : ""].filter(Boolean).join(" · "), k: [["Open", "↵"]] }); }).join("");
+    if (R.length) h += `<div class="psec">on anilist</div>` + R.map(({ x, i: k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+      const sub = e ? "on your list · " + statusLabel(e.status) : [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · ") + " · not on your list";
+      return row(`data-a="catpick" data-v="${k}"`, `${poster(candLabel(x), x.coverImage?.extraLarge, { c: "t" })}<span class="tx"><b>${hl(candLabel(x), q)}</b><small>${esc(sub)}</small></span>${e ? "" : '<span class="r"><span class="tag">+ planning</span></span>'}`,
+        { art: x.bannerImage || x.coverImage?.extraLarge, t: candLabel(x), m: sub, k: [["Open", "↵"]] }); }).join("");
+  }
+  const sets = q ? SETTINGS_INDEX.filter(([t, tab, w]) => srMatch(`${t} ${w} ${tab}`.toLowerCase(), ql)).slice(0, 5) : [];
+  if (sets.length) h += `<div class="psec">settings</div>` + sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
+    return row(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, `<span class="ic">⚙</span><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<span class="r"><button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button></span>` : ""}`,
+      { t, m: `Settings → ${tl}`, k: key ? [["Switch", "click"], ["Open in Settings", "↵"]] : [["Open in Settings", "↵"]] }); }).join("");
+  const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => !q || srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, q ? 4 : 7);
+  if (cmds.length) h += `<div class="psec">commands</div>` + cmds.map(([[t, , , key], k]) => row(`data-a="cmd" data-v="${k}"`, `<span class="ic">›</span><span class="tx"><b>${esc(t)}</b></span>${key ? `<span class="r"><kbd class="kb">${key}</kbd></span>` : ""}`, { t, m: "command", k: [["Run", "↵"]] })).join("");
+  const busy = q && alSearchable() && (S.alBusy || (S.alq !== q && q.length >= 2));
+  if (busy) h += '<div class="psec"><i class="spin"></i> searching AniList…</div>';
+  if (!h) h = `<p class="cap">No matches${alSearchable() ? " in your library, on AniList or in settings" : " in your library or settings"}</p>`;
+  return `<div class="pop sr pal2"><div class="plist">${h}</div><div class="pview" id="srpv"></div>
+    <div class="pfoot"><span>open <kbd class="kb">↵</kbd></span><span>move <kbd class="kb">↑</kbd><kbd class="kb">↓</kbd></span><span class="fill"></span><span>library · anilist · settings · commands</span><span>close <kbd class="kb">esc</kbd></span></div></div>`;
+}
+/* The preview pane follows the picked row (arrows or pointer). */
+function srPreview(i) {
+  const pv = $("#srpv"), x = srPv[+i];
+  $$("#sr .mi").forEach((m) => m.classList.toggle("sel", m.dataset.i === String(i)));
+  if (!pv) return;
+  pv.innerHTML = !x ? "" : `${x.art ? `<span class="pa" style="background-image:${esc(cssUrl(x.art))}"></span>` : ""}<h3>${esc(x.t)}</h3><p>${esc(x.m || "")}</p><div class="pk">${(x.k || []).map(([l, k]) => `<span>${esc(l)} <kbd class="kb">${esc(k)}</kbd></span>`).join("")}</div>`;
 }
 /* AniList's catalog search needs no account: offered in AniList mode, and to
    anyone with ani-cli (finding something to stream). */
@@ -1630,8 +1675,11 @@ function paintNav() {
   $("#setb").classList.toggle("on", cur === "settings");
   $("#q").placeholder = alSearchable() ? "search library or AniList" : "search your library";
   const sr = $("#sr"), srHad = !!sr.firstElementChild;
+  const keep = $("#sr .mi.sel")?.dataset.i;
   sr.innerHTML = S.menu === "sr" ? srHTML() : "";
   if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
+  if (S.menu === "sr") srPreview(keep != null && srPv[keep] ? keep : 0);
+  document.body.classList.toggle("srch", S.menu === "sr");
   const now = S.data?.now, ctx = now && findEpContext(now.episode_id), pct = now ? Math.round(now.percent) : 0;
   const nr = $("#nr"), popHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued");
   const dlPct = dlActive.find((j) => j.status === "running")?.percent;
@@ -2048,6 +2096,7 @@ function render(inPlace = false) {
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
   strips(); ambient();
+  if (S.view === "settings" && S.setFlash) { const t = S.setFlash; S.setFlash = null; const r = $$("#app .srow").find((x) => x.querySelector("b")?.textContent.startsWith(t)); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }
   /* The strip opens on the next episode, with the one before it in view — whole tiles, never a cut one. */
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
   if (fresh || S.countNext) { S.countNext = false; countUp(); }
@@ -2531,6 +2580,10 @@ const A = {
   },
   /* settings + account */
   adv: (v) => { if (S.settings) setToggle(v, !S.settings[v]); },
+  srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
+  setgo: (v, t) => { const tab = t.dataset.t; clearSearch(); q.blur(); S.setTab = tab; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
+  cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
+  settab: (v) => { S.setTab = v; render(true); },
   ani: () => openModal({ t: "ani" }),
   aniout: async () => {
     await api("/api/auth/logout", {}).catch(() => {});
@@ -2755,32 +2808,30 @@ document.addEventListener("pointerout", (e) => {
   if (t && !t.contains(e.relatedTarget)) { t.classList.remove("tilting"); t.style.setProperty("--rx", "0deg"); t.style.setProperty("--ry", "0deg"); }
 });
 addEventListener("resize", () => $$("[data-glide]").forEach(glide));
+document.addEventListener("pointerover", (e) => { const m = e.target.closest?.("#sr .mi[data-i]"); if (m && !m.classList.contains("sel")) srPreview(m.dataset.i); }, { passive: true });
 const q = $("#q");
 let alTimer = 0;
 q.addEventListener("input", () => {
-  S.q = q.value; S.menu = S.q.trim() ? "sr" : null;
+  S.q = q.value; S.menu = "sr";
   if (!S.q.trim()) { S.alres = null; S.alq = null; }
   paintNav();
   clearTimeout(alTimer);
   if (alSearchable() && S.q.trim().length >= 2) alTimer = setTimeout(() => { if (S.q.trim() !== S.alq) A.alsearch(); }, 350);
 });
-q.addEventListener("focus", () => { if (S.q.trim()) { S.menu = "sr"; paintNav(); } });
+q.addEventListener("focus", () => { S.menu = "sr"; paintNav(); });
 q.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     const items = $$("#sr .mi");
     if (!items.length) return;
     e.preventDefault();
     let i = items.findIndex((x) => x.classList.contains("sel"));
-    items.forEach((x) => x.classList.remove("sel"));
     i = e.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
-    items[i].classList.add("sel"); items[i].scrollIntoView({ block: "nearest" });
+    srPreview(items[i].dataset.i); items[i].scrollIntoView({ block: "nearest" });
     return;
   }
   if (e.key !== "Enter") return;
   const picked = $("#sr .mi.sel");
   if (picked) { e.preventDefault(); q.blur(); picked.click(); return; }
-  const t = S.q.trim().toLowerCase();
-  if (!t) return;
   const first = $("#sr .mi");
   if (first) { e.preventDefault(); q.blur(); first.click(); }
 });
