@@ -1573,7 +1573,8 @@ const DL_STATE = { queued: "Waiting", running: "Downloading", done: "Downloaded"
 function dlPop() {
   const rows = S.dl.slice().reverse().map((j) => {
     const live = j.status === "running" || j.status === "queued";
-    return `<div class="dlj ${j.status}"><div class="dlj-t"><b>${esc(j.show)} · E${esc(j.token)}</b><small>${esc(DL_STATE[j.status] || j.status)}${j.status === "running" ? ` · ${Math.floor(j.percent)}%` : ""}${j.error ? " — " + esc(j.error) : ""}</small>
+    const pst = S.data?.spine?.entries?.find((x) => x.id === j.media_id)?.poster;
+    return `<div class="dlj ${j.status}">${pst ? `<span class="dlth" style="background-image:${esc(cssUrl(pst))}"></span>` : ""}<div class="dlj-t"><b>${esc(j.show)} · E${esc(j.token)}</b><small>${esc(DL_STATE[j.status] || j.status)}${j.status === "running" ? ` · ${Math.floor(j.percent)}%` : ""}${j.error ? " — " + esc(j.error) : ""}</small>
       ${j.status === "running" ? `<div class="bar"><i style="width:${j.percent}%"></i></div>` : ""}</div>${live ? `<button class="chip ib" aria-label="Cancel download" title="Cancel" data-a="dlcancel" data-v="${j.id}">${ico("close")}</button>` : ""}</div>`;
   }).join("");
   const over = S.dl.some((j) => j.status !== "running" && j.status !== "queued");
@@ -1636,11 +1637,12 @@ function vpnGate(go) {
   if (vpnOn() || !S.data?.vpn?.known || S.settings?.vpn_warn === false) return go();
   openModal({ t: "vpn", go });
 }
+const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/><path d="M12 8v4M12 15.5v.01"/></svg>';
+const vpnWait = () => `<div class="warn2"><span class="wi">${SHIELD}</span><div><b>No VPN is on</b><span>Turn it on and this starts by itself — or go ahead without it.</span><div class="watching"><i class="spin"></i>watching for a VPN…</div></div></div>`;
 function VpnDlg() {
   return `<h2 id="dt">No VPN detected</h2>
-  <p class="sub">Online episodes and downloads are fetched by ani-cli over your normal connection. Turn on your VPN first, or continue anyway.</p>
-  <p class="sub" style="margin-top:10px;font-size:13px">You can turn this question off in Settings → Online episodes.</p>
-  <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="vpngo">Continue anyway</button></div>`;
+  <p class="sub">Online episodes and downloads are fetched by ani-cli over your normal connection.</p>${vpnWait()}
+  <div class="actions"><span class="note2 mono">this question can be switched off in Settings → Online episodes</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button><button class="btn pri" data-a="vpngo">Continue anyway</button></div>`;
 }
 /* Next-episode prompt (TODO 10): the last file finished and the next
    episode is online only — autoplay waits for Continue / Stop here. */
@@ -1652,15 +1654,16 @@ function maybeNextPrompt(p) {
 }
 function nxVpn() {
   const v = S.data?.vpn;
-  if (!v?.known) return `<span class="dim">VPN status unknown</span>`;
-  return `<span class="chip vpn ${v.active ? "on" : "off"}">${ico("shield")}${v.active ? `VPN on (${esc(v.iface)})` : "No VPN detected"}</span>`;
+  if (!v?.known) return `<span class="dim mono">vpn status unknown</span>`;
+  return v.active ? `<span class="okv mono">vpn on · ${esc(v.iface)}</span>` : vpnWait();
 }
 function NextDlg() {
-  const p = S.modal.p;
-  return `<h2 id="dt">Next episode is online only</h2>
-  <p class="sub">${p.show ? `${esc(p.show)} · ` : ""}${esc(p.label || "The next episode")} isn't on disk. ani-cli streams it over your connection.</p>
-  <p id="nx-vpn" style="margin-top:12px">${nxVpn()}</p>
-  <div class="actions"><button class="btn" data-a="nxstop">Stop</button><button class="btn pri" data-a="nxgo">Continue</button></div>`;
+  const p = S.modal.p, c = p.id && findEpContext(p.id), art = c ? (homeThumb(c.sea, c.ep) || c.s.banner || c.s.poster) : null, v = S.data?.vpn;
+  return `<div class="nx2">${art ? `<span class="nxa" style="background-image:${esc(cssUrl(art))}"><span class="lab">${esc(p.label || "")} · online</span></span>` : ""}<div>
+    <h2 id="dt">${esc(p.label || "Next episode")}${p.show ? ` <small>${esc(p.show)}</small>` : ""}</h2>
+    <p class="sub">This one isn't on your disk — ani-cli would stream it.</p>
+    <div id="nx-vpn">${nxVpn()}</div></div></div>
+  <div class="actions"><span class="note2 mono">${v?.known && !v.active ? "starts by itself when a VPN comes on" : ""}</span><button class="btn" data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button><button class="btn pri" data-a="nxgo">${v?.known && !v.active ? "Stream anyway" : "Continue"}<kbd class="kb">↵</kbd></button></div>`;
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
@@ -1761,14 +1764,22 @@ function Rec() {
       <span class="seg" role="group" aria-label="Keep for ${esc(c.title)}"><button class="${k === "anilist" ? "on" : ""}" aria-pressed="${k === "anilist"}" data-a="recset" data-m="${c.media_id}" data-v="anilist">AniList</button><button class="${k === "local" ? "on" : ""}" aria-pressed="${k === "local"}" data-a="recset" data-m="${c.media_id}" data-v="local">Local</button></span></div>`; }).join("")}` : ""}
   <div class="actions"><button class="btn" data-a="recclose">Skip</button><button class="btn pri" data-a="recapply">${n ? `Apply ${n} choice${n === 1 ? "" : "s"}` : "Close"}</button></div>`;
 }
+/* You finished a show (Decision 25 → 38): poster, the big title, rate it
+   (1–10 pills) with ♥ beside, and what comes next in its franchise. */
 function Done() {
-  const c = S.modal.c;
-  return `<div class="doneico"><svg viewBox="0 0 68 68" aria-hidden="true"><circle class="ring" cx="34" cy="34" r="28"/><path class="tick2" d="M22 35l8 8 16-17"/></svg></div>
-  <h2 id="dt">You finished ${esc(c.title || "a show")}</h2><p class="sub">That was the last episode. ${S.ani?.connected ? "This updates your AniList entry." : "Saved on this device only."}</p>
-  <dl class="form big"><dt>Status</dt><dd><select id="dn-status" aria-label="Status">${LISTS.map(([v, l]) => `<option value="${v}" ${v === "COMPLETED" ? "selected" : ""}>${l}</option>`).join("")}</select></dd>
-  <dt>Score</dt><dd><input id="dn-score" type="number" min="0" max="10" step="1" placeholder="–" aria-label="Score" style="width:90px"> <span class="dim" id="dn-max">/ 10</span></dd>
-  <dt>Favourite</dt><dd><button class="heart" id="dn-fav" aria-label="Favourite" aria-pressed="false" data-a="dnfav">${ico("heart")}</button></dd></dl>
-  <div class="actions"><button class="btn" data-a="dnskip">Skip</button><button class="btn pri" data-a="dnsave">Save</button></div>`;
+  const c = S.modal.c, e = S.data?.spine?.entries?.find((x) => x.id === c.media_id) || null;
+  const p = frMemo.get(c.media_id), nx = p ? p.entries.filter((x) => x.group === "main").find((x, i, all) => all[i - 1]?.id === c.media_id) || p.entries.find((x) => x.group === "extra" && !S.data.spine?.entries?.some((y) => y.id === x.id)) : null;
+  const nxOn = nx && S.data.spine?.entries?.find((y) => y.id === nx.id);
+  return `<div class="dn"><div class="dnp">${poster(c.title || "", e?.poster || null)}</div><div class="dnb">
+    <span class="cap">you finished</span><h2 id="dt">${esc(c.title || "a show")}</h2>
+    <div class="facts">${[e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on AniList" : "saved on this device"].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
+    <span class="cap" style="margin-top:22px">how was it?</span>
+    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div><i class="vs"></i>
+      <button class="heart" id="dn-fav" aria-label="Favourite" aria-pressed="false" data-a="dnfav">${ico("heart")}</button></div>
+    <input type="hidden" id="dn-score" value=""><input type="hidden" id="dn-status" value="COMPLETED"><span id="dn-max" hidden></span>
+    ${nx ? `<div class="dnnext">${poster(nx.title || nx.label, nx.poster || null, { c: "t" })}<span class="tx"><b>${esc(nx.title || nx.label)}</b><small>${esc([nx.format_label, "next in this franchise", nxOn ? "on your list" : "not on your list"].filter(Boolean).join(" · "))}</small></span>${nxOn ? "" : `<button class="btn sm" data-a="dnplan" data-v="${nx.id}">+ Planning</button>`}</div>` : ""}
+  </div></div>
+  <div class="actions"><span class="note2 mono">the score saves when you close</span><button class="btn" data-a="dnskip">Skip</button><button class="btn pri" data-a="dnsave">Done<kbd class="kb">↵</kbd></button></div>`;
 }
 /* The overlay is built once per dialog; later paints (tour steps, option picks) swap only the dialog body
    so the backdrop and entrance don't replay. Closing fades out before the node is removed. */
@@ -1833,6 +1844,7 @@ function maybeReconcile() {
 }
 function recDone() { api("/api/reconcile/dismiss", {}).catch(() => {}); S.rec = null; closeModal(); reload(); }
 let lastCompletionKey = null;
+function dnPills(n) { $$("#dn-pills button").forEach((b, i) => { b.className = i + 1 < n ? "lo" : i + 1 === n ? "pick" : ""; b.setAttribute("aria-checked", i + 1 === n); }); }
 function maybeCompletion(c) {
   const key = `${c.media_id}:${c.count}`;
   if (key === lastCompletionKey || S.modal) return;
@@ -1843,8 +1855,7 @@ function maybeCompletion(c) {
     if (!res || res.error || !res.state || S.modal?.t !== "done") return;
     const st = res.state, e = st.entry || {}, max = st.score_max || 10;
     const sc = $("#dn-score");
-    sc.max = max; sc.step = (st.score_format || "").includes("DECIMAL") ? 0.1 : 1; $("#dn-max").textContent = "/ " + max;
-    if (e.score != null) sc.value = e.score;
+    if (e.score != null && e.score > 0) { sc.value = max === 10 ? Math.round(e.score) : e.score; dnPills(max === 10 ? Math.round(e.score) : 0); }
     if (LISTS.some(([v]) => v === e.status)) $("#dn-status").value = e.status;
     if (st.is_favourite) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
   }).catch(() => {});
@@ -2275,6 +2286,9 @@ async function pollNow() {
       const vpnMoved = JSON.stringify(now.vpn) !== JSON.stringify(S.data.vpn);
       S.data.vpn = now.vpn; // the VPN chip follows the connection, not only reloads
       if (vpnMoved && S.modal?.t === "nxt") { const el = $("#nx-vpn"); if (el) el.innerHTML = nxVpn(); }
+      /* "Turn it on and this starts by itself": a VPN coming up continues what waited for it. */
+      if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();
+      else if (vpnMoved && now.vpn.active && S.modal?.t === "vpn") A.vpngo();
     }
     if (now.notice && now.notice.ts !== lastNotice) { lastNotice = now.notice.ts; toast(now.notice.msg); }
     if (!S.playBusy) {
@@ -2658,6 +2672,8 @@ const A = {
       S.rec = null; S.alData = null; closeModal(); reload(); setTimeout(reload, 3000);
     }).catch(() => toast("Could not apply — is the hub running?"));
   },
+  dnscore: (v) => { $("#dn-score").value = v; dnPills(+v); },
+  dnplan: (v, t) => { t.disabled = true; entrySave(+v, { status: "PLANNING" }).then((r) => { t.textContent = r && !r.error ? "✓ On Planning" : "Could not add"; refreshData(); }).catch(() => { t.textContent = "Could not add"; }); },
   dnfav: (v, t) => { const on = !t.classList.contains("on"); t.classList.toggle("on", on); t.classList.add("pop1"); if (on) burstAt(t); t.setAttribute("aria-pressed", on); },
   dnskip: () => { const c = S.modal.c; api("/api/completion-seen", { media_id: c.media_id, count: c.count }).catch(() => {}); closeModal(); },
   dnsave: (v, t) => {
