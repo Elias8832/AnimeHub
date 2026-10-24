@@ -72,7 +72,7 @@ class Frontend(unittest.TestCase):
                          ["RELEASING", "FINISHED", "NOT_YET_RELEASED", "HIATUS", "CANCELLED"])
         for air, ids in (("FINISHED", [2]), ("HIATUS", [3]), ("CANCELLED", [4])):
             self.assertEqual(self.filtered(air=air), ids, air)
-        self.assertIn('fsel("air", "Airing", [["all", "any"], ...Object.entries(AIR)])', APP)
+        self.assertIn('fsel("air", "airing", [["all", "any"], ...Object.entries(AIR)])', APP)
 
     def test_season_tab_counts_every_episode(self):
         # TODO 7: the tab shows the entry's size, not what's left to watch
@@ -157,6 +157,19 @@ class ShowPage(unittest.TestCase):
         # The art node lives inside .epa now; a watch patch must still keep it (no blanking).
         self.assertIn('const art = tile.querySelector(".epimg");', APP)
         self.assertIn('<div class="epa"><span class="epimg" data-bg=', APP)
+
+
+class Library(unittest.TestCase):
+    """TODO 60 step 4: list tabs + side places, glass filter chips, poster
+    cards with source/score tags, Needs a look match cards, calm hover art."""
+    def test_library_shape(self):
+        self.assertIn('l: "On disk only"', APP)
+        self.assertIn('l: "Needs a look"', APP)
+        self.assertIn('<div class="match mc" data-show=', APP)
+        self.assertIn('data-a="match" data-v="${esc(s.id)}">This one</button>', APP)
+        # The background waits for a rest on the poster; the accent follows at once.
+        self.assertIn('accentFrom(art.blur, art.color);', APP)
+        self.assertIn('}, 450) };', APP)
 
 
 class Discovery(unittest.TestCase):

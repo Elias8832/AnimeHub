@@ -375,8 +375,8 @@ function libModel() {
   if (sp.entries.length) tabs.unshift({ k: "ALL", l: "All", n: new Set(sp.entries.map(franchiseKey)).size });
   const untracked = sp.untracked.map(showById).filter((s) => s && (s.meta?.anilist_id || s.kept_local));
   const unmatched = unmatchedShows();
-  if (untracked.length) tabs.push({ k: "UNTRACKED", l: "Untracked", n: untracked.length });
-  if (unmatched.length) tabs.push({ k: "MATCH", l: "To match", n: unmatched.length, attn: true });
+  if (untracked.length) tabs.push({ k: "UNTRACKED", l: "On disk only", n: untracked.length, side: true });
+  if (unmatched.length) tabs.push({ k: "MATCH", l: "Needs a look", n: unmatched.length, attn: true, side: true });
   return { tabs, entries: sp.entries, untracked, unmatched };
 }
 function fixTab(m) {
@@ -403,25 +403,29 @@ function genreCounts(m) {
   return [...c].map(([g, set]) => [g, set.size]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 /* @lib:end */
+/* A poster card (Decision 38): source + score tags on the art, progress at
+   its foot, the title and a mono fact line below. */
+const CAPW = { installed: "disk", partial: "partial", online: "online", none: "" };
 function entryCard(e, i) {
   const s = e.local_show_id ? showById(e.local_show_id) : null;
   const tg = s ? pickTarget(s) : null;
   const res = tg && tg.kind === "resume" && inProg(e.status) ? tg : null;
   const prog = e.progress || 0, pct = e.episodes ? Math.min(100, Math.round((100 * prog) / e.episodes)) : 0;
-  const hint = [FMT[e.format] || e.format, AIR[e.airing]].filter(Boolean).join(" · ");
-  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}">
-    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${hint ? `<span class="hint">${esc(hint)}</span>` : ""}${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}
+  const facts = [e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "", FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
+  const src = e.capability === "none" ? capLabel("none") : CAPW[e.capability] || "";
+  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}">
+    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${src ? `<span class="tg src ${esc(e.capability)}">${esc(src)}</span>` : ""}${e.score ? `<span class="tg sc">★ ${Math.round(e.score * 10) / 10}</span>` : ""}${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}
     ${res ? `<span class="resume-tag">${ico("play")}${esc(epCode(res.sea, res.ep))}${res.ep.position ? " · " + fmtTime(res.ep.position) : ""}</span>` : ""}
     ${inProg(e.status) && pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
     <h3>${esc(e.title)}</h3>
-    <div class="m"><span>${prog}/${e.episodes || "?"}</span><span class="src ${esc(e.capability)}">${capLabel(e.capability)}</span>${e.more ? `<span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}${e.score ? `<span class="sc">${ico("star")}${Math.round(e.score * 10) / 10}</span>` : ""}</div></button>`;
+    <div class="m">${esc(facts)}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
 }
 function showCard(s, i) {
   const total = epTotal(s), w = epWatched(s), pct = total ? Math.round((100 * w) / total) : 0;
-  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="open" data-v="${esc(s.id)}">
-    <div class="pw">${poster(s.title, s.poster, { wait: S.data.meta_running && !s.poster })}${s.collection ? `<span class="hint">${esc(s.collection)}</span>` : ""}
+  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="open" data-v="${esc(s.id)}" data-poster="${esc(s.poster || "")}">
+    <div class="pw">${poster(s.title, s.poster, { wait: S.data.meta_running && !s.poster })}<span class="tg src installed">disk</span>
     ${pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
-    <h3>${esc(s.title)}</h3><div class="m"><span>${w}/${total}</span><span class="src installed">installed</span></div></button>`;
+    <h3>${esc(s.title)}</h3><div class="m">${w} / ${total}${s.collection ? " · " + esc(s.collection) : ""}</div></button>`;
 }
 
 /* AniList match repair (TODO 28): suggestions come from the same search the
@@ -429,14 +433,22 @@ function showCard(s, i) {
 const mst = (id) => (S.match[id] ||= { cands: null, pick: 0, busy: false, err: "", q: "", tried: false });
 const candLabel = (x) => x.title?.english || x.title?.romaji || `#${x.id}`;
 function matchUI(s) {
-  const m = mst(s.id), c = (m.cands || []).slice(0, 5), n = epTotal(s);
-  return `<div class="match" data-show="${esc(s.id)}"><div class="match-head"><b>${esc(s.title)}</b><span class="sub">${n} episode${n === 1 ? "" : "s"} on disk · no AniList match yet</span></div>
-    ${m.busy ? '<div class="found"><i class="spin"></i>Searching AniList…</div>' : ""}
-    ${c.length ? `<div class="cands">${c.map((x, i) => `<button class="cand ${i === m.pick ? "on" : ""}" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), null)}<b>${esc(candLabel(x))}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format, x.episodes ? x.episodes + " eps" : ""].filter(Boolean).join(" · "))}</small>${i === m.pick ? "<em>selected</em>" : ""}</button>`).join("")}</div>`
-      : m.cands && !m.busy ? '<p class="sub">No AniList results for that title.</p>' : ""}
-    <div class="row"><input id="mq-${esc(s.id)}" aria-label="Search AniList" placeholder="Search AniList, or paste an ID or anilist.co URL" value="${esc(m.q)}"><button class="btn" data-a="msearch" data-v="${esc(s.id)}">Search</button><button class="btn" data-a="mrefresh" data-v="${esc(s.id)}" title="Ask AniList again instead of using the saved suggestions"${m.busy ? " disabled" : ""}>${ico("refresh")}Refresh</button></div>
-    ${m.err ? `<div class="msg">${esc(m.err)}</div>` : ""}
-    <div class="row">${c.length ? `<button class="btn pri" data-a="match" data-v="${esc(s.id)}">Match to “${esc(candLabel(c[m.pick] || c[0]))}”</button>` : ""}<button class="btn" data-a="keeplocal" data-v="${esc(s.id)}" data-k="${!s.kept_local}">${s.kept_local ? "Back to To match" : "Not on AniList — keep local"}</button></div></div>`;
+  const m = mst(s.id), c = (m.cands || []).slice(0, 5), n = epTotal(s), best = c[m.pick] || c[0];
+  const files = s.seasons.flatMap((x) => x.episodes), mins = files.find((x) => x.duration)?.duration;
+  const facts = [n > 1 ? `${n} episodes` : n ? "1 file" : "", mins ? `${Math.round(mins / 60)} min${n > 1 ? " each" : ""}` : "", s.seasons.length > 1 ? `${s.seasons.length} seasons` : ""].filter(Boolean);
+  const meta = (x) => [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format, x.episodes ? x.episodes + " ep" : "", x.duration ? x.duration + " min" : ""].filter(Boolean).join(" · ");
+  return `<div class="match mc" data-show="${esc(s.id)}"><div class="mcl">
+      <span class="cap2">${ico("folder")} folder on disk</span>
+      <h3>${esc(s.title)}</h3>${s.path && s.path !== s.title ? `<div class="raw">${esc(s.path)}</div>` : ""}
+      ${facts.length ? `<div class="facts">${facts.map((f, i) => `<span${i === 1 ? ' class="len"' : ""}>${esc(f)}</span>`).join("")}</div>` : ""}
+      ${m.busy ? '<div class="found"><i class="spin"></i>Searching AniList…</div>' : ""}
+      ${c.length > 1 ? `<div class="others"><span class="cap2">other guesses</span>${c.map((x, i) => i === m.pick ? "" : `<button class="oth" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge || null, { c: "t" })}<span>${esc(candLabel(x))}</span><small>${esc(meta(x))}</small></button>`).join("")}</div>` : ""}
+      <div class="mrow"><input id="mq-${esc(s.id)}" aria-label="Search AniList" placeholder="search AniList, or paste an ID / anilist.co link" value="${esc(m.q)}"><button class="btn sm" data-a="msearch" data-v="${esc(s.id)}">Search</button><button class="btn sm ic" data-a="mrefresh" data-v="${esc(s.id)}" aria-label="Ask AniList again" title="Ask AniList again instead of using the saved suggestions"${m.busy ? " disabled" : ""}>${ico("refresh")}</button></div>
+      ${m.err ? `<div class="msg">${esc(m.err)}</div>` : ""}
+      <div class="mrow"><button class="btn sm" data-a="keeplocal" data-v="${esc(s.id)}" data-k="${!s.kept_local}">${s.kept_local ? "Back to Needs a look" : "Not on AniList — keep local"}</button>${s.path ? `<button class="btn sm ic" data-a="folder" data-v="${esc(s.id)}" aria-label="Open the folder" title="Open the folder">${ico("folder")}</button>` : ""}</div>
+    </div>
+    ${best ? `<div class="guess">${poster(candLabel(best), best.coverImage?.extraLarge || null)}<b>${esc(candLabel(best))}</b><small>${esc(meta(best))}</small><button class="btn pri" data-a="match" data-v="${esc(s.id)}">This one</button></div>`
+      : `<div class="guess none"><span>${m.cands && !m.busy ? "No AniList results for that title — search with another name, or keep it local." : m.busy ? "" : "Looking for a match…"}</span></div>`}</div>`;
 }
 function paintMatch(id) {
   const el = document.querySelector(`.match[data-show="${CSS.escape(id)}"]`), s = showById(id);
@@ -531,24 +543,28 @@ function Lib() {
   else if (d.meta_running && d.meta_pending > 0) notes.push(`<div class="note-bar metanote"><i class="spin"></i><span>${esc(metaText(d))}</span></div>`);
   if (m.cold && S.ani?.connected) notes.push('<div class="note-bar">Your AniList lists are still loading — showing what is on disk.</div>');
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
-  const tabs = m.tabs.length ? `<div class="tabs" data-glide="libtabs">${m.tabs.map((t) => `<button class="${S.lib.tab === t.k ? "on" : ""}${t.attn ? " attn" : ""}" data-a="tab" data-v="${t.k}">${t.l}<sup>${t.n}</sup></button>`).join("")}</div>` : `<div class="sec first"><h2>Library</h2><span class="sub">${d.shows.length} shows</span></div>`;
+  const files = d.shows.reduce((a, x) => a + epTotal(x), 0);
+  const sum = [`<span><b>${m.entries.length ? new Set(m.entries.map(franchiseKey)).size : d.shows.length}</b> shows</span>`, files ? `<span><b>${files.toLocaleString()}</b> files on disk</span>` : "",
+    m.unmatched.length ? `<span><b>${m.unmatched.length}</b> folder${m.unmatched.length === 1 ? "" : "s"} need a look</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+  const tab = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}${t.attn ? " attn" : ""}" data-a="tab" data-v="${t.k}">${t.l}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
+  const tabs = m.tabs.length ? `<div class="tabs" data-glide="libtabs">${m.tabs.filter((t) => !t.side).map(tab).join("")}${m.tabs.some((t) => t.side) ? '<i class="vs"></i>' : ""}${m.tabs.filter((t) => t.side).map(tab).join("")}</div>` : "";
   let main;
   if (isMatch) {
     autoSuggest(m.unmatched);
-    main = `<p class="sub" style="margin-top:22px">On disk, but not matched to AniList yet. Pick the right entry, or keep it local.</p>${m.unmatched.map(matchUI).join("")}`;
+    main = `<p class="intro">On disk, but not matched to AniList yet. Pick the right show and it joins your library — or keep it local.</p><div class="mgrid">${m.unmatched.map(matchUI).join("")}</div>`;
   } else {
     const filters = (m.cold || isUn) ? "" : `<div class="filters">
-      ${fsel("src", "Source", [["all", "any"], ["installed", "installed"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]], srcLocked())}
-      ${fsel("fmt", "Format", [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]])}
-      ${fsel("air", "Airing", [["all", "any"], ...Object.entries(AIR)])}
-      ${frng("year", "Year", ...yearBounds(), 1, String)}
-      ${frng("score", "Score", 0, 10, 0.5, (x) => String(x))}
+      ${fsel("src", "source", [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]], srcLocked())}
+      ${fsel("fmt", "format", [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]])}
+      ${fsel("air", "airing", [["all", "any"], ...Object.entries(AIR)])}
+      ${frng("year", "year", ...yearBounds(), 1, String)}
+      ${frng("score", "score", 0, 10, 0.5, (x) => String(x))}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${fsel("sort", "Sort by", [["updated", "Recently updated"], ["score", "Score"], ["year", "Year"], ["title", "Title"]])}
-      <button class="btn" data-a="rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}Rescan</button></div>`;
+      <span class="fill"></span>${fsel("sort", "sort", [["updated", "recently updated"], ["score", "score"], ["year", "year"], ["title", "title"]])}
+      <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button></div>`;
     main = `${filters}${(m.cold || isUn) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
-  return `<div class="wrap">${notes.join("")}${tabs}${main}</div>`;
+  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}${main}</div>`;
 }
 function genreTray(m) {
   const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
@@ -557,7 +573,7 @@ function genreTray(m) {
   if (!all.length) return "";
   return `<div class="gtray" role="group" aria-label="Genres">${all.map(([g, n]) => {
     const on = S.lib.genres.includes(g);
-    return `<button class="gchip${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}">${esc(g)}<sup>${n}</sup></button>`;
+    return `<button class="gchip${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}">${esc(g)}<span class="n">${n}</span></button>`;
   }).join("")}</div>`;
 }
 function paintWall(fade) {
@@ -748,6 +764,17 @@ function openFranchise(mid, fromShow = null) {
   /* Not seen yet: wait a moment for it, so the page opens drawn instead of on a spinner. */
   if (frKnown(mid)) go(); else Promise.race([frPeek(mid), sleep(250)]).then(go);
 }
+/* Library (Decision 38): the accent follows the poster you point at at once;
+   the background only after you rest on it (~0.45 s), so sweeping is calm. */
+let libRest = 0;
+document.addEventListener("pointerover", (e) => {
+  const c = e.target.closest?.("#app .lib2 .card");
+  if (!c || e.pointerType === "touch" || c === libRest.el) return;
+  clearTimeout(libRest.t);
+  const art = { blur: c.dataset.poster || null, sharp: null, color: c.dataset.color || colorOfId(+c.dataset.v) || null };
+  accentFrom(art.blur, art.color);
+  libRest = { el: c, t: setTimeout(() => { if (S.view === "library") { S.libHover = art; swapLayer("cv-blur", lookGet("art") === "off" ? null : art.blur); } }, 450) };
+}, { passive: true });
 /* Hovering a card prefetches its page (stored data only — the hub starts nothing). */
 let peekTimer = 0;
 document.addEventListener("pointerover", (e) => {
@@ -1819,6 +1846,7 @@ function canvasArt() {
   if (S.view === "fr") { const e = frEntry(), p = S.fr?.page; return { blur: e?.poster || p?.poster, sharp: e?.banner || p?.banner, color: e?.color || colorOfId(e?.id) }; }
   if (S.view === "show") { const s = showById(S.showId); return s && { blur: s.poster || s.banner, sharp: s.banner, color: showColor(s) }; }
   if (S.view === "home") { const s = nextUpInfo()?.s; return s && { blur: s.banner || s.poster, sharp: null, color: showColor(s) }; } // Home: a full blur of the up-next show
+  if (S.view === "library" && S.libHover) return S.libHover;
   const s = lastShow();
   return s && { blur: s.poster || s.banner, sharp: null, color: showColor(s) };
 }
