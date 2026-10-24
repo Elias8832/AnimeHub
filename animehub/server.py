@@ -350,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "request body must be a JSON object"}, 400)
             return
         if route == "/api/play":
-            if self._fields(body, strings=("id",), ints=("version",)):
+            if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
                 start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
                 if not isinstance(start, bool):
@@ -475,6 +475,17 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.send_json(mapping.set_season_pin(body["show_id"], body["season"], aid,
                                                   none=body.get("none") is True))
+        elif route == "/api/episode-numbers":
+            # Needs a look: the user's numbers for files their names give none
+            # for ({episode id: number}; sending the shown ones confirms them).
+            if self._fields(body, strings=("show_id",)):
+                nums = body.get("numbers")
+                if not isinstance(nums, dict) or not nums or not all(
+                        isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 9999 for v in nums.values()):
+                    self._bad("'numbers' must map episode ids to numbers 0–9999")
+                else:
+                    res = library.set_episode_numbers(body["show_id"], nums)
+                    self.send_json(res, 200 if res.get("ok") else 400)
         elif route == "/api/keep-local":
             # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
             if self._fields(body, strings=("show_id",)):
@@ -693,7 +704,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self._fields(body, strings=("query",)):
                     self.send_json(anicli.anicli_search(body["query"]))
             elif route == "/api/stream/link":
-                if not self._fields(body, strings=("query",), ints=("media_id", "index")):
+                if not self._fields(body, strings=("query",), ints=("media_id",), opt_ints=("index",)):
                     return
                 title, mode, display = body.get("title"), body.get("mode"), body.get("display")
                 if body["media_id"] <= 0:
@@ -736,16 +747,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": msg}, 400)
         return False
 
-    def _fields(self, body, strings=(), ints=(), bools=()):
+    def _fields(self, body, strings=(), ints=(), bools=(), opt_ints=()):
         """Typed request fields (TODO 22): structured 400s instead of
         silent empty-string writes. Strings must be non-empty; ints reject
-        bools; bools must actually be booleans."""
+        bools and must be present (opt_ints may be left out); bools must
+        actually be booleans."""
         for name in strings:
             v = body.get(name)
             if not isinstance(v, str) or not v:
                 return self._bad(f"missing or invalid '{name}'")
-        for name in ints:
-            v = body.get(name, 0)
+        for name in (*ints, *opt_ints):
+            if name not in body and name in opt_ints:
+                continue
+            v = body.get(name)
             if isinstance(v, bool) or not isinstance(v, int):
                 return self._bad(f"'{name}' must be an integer")
         for name in bools:

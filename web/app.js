@@ -15,7 +15,7 @@ const S = {
          air: air === "FINISHED_AIRING" ? "FINISHED" : air || "all", genres: Array.isArray(genres) ? genres : [],
          year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all" }))(lsGet("hubLib", {})),
   histRange: lsGet("histRange", "7d"), histMax: 120,
-  match: {}, advOpen: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, countNext: false, opener: null,
+  match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, opener: null,
   slink: {}, dl: [], loadingEp: null, frDown: {},
 };
 
@@ -282,7 +282,7 @@ function keepWatching(skipId) {
     if (seen.has(x.ctx.s.id)) continue;
     seen.add(x.ctx.s.id);
     const t = pickTarget(x.ctx.s);
-    if (t) out.push({ s: x.ctx.s, t });
+    if (t && t.kind !== "rewatch") out.push({ s: x.ctx.s, t });
     if (out.length >= 8) break;
   }
   return out;
@@ -381,6 +381,9 @@ const SORT = {
 const inProg = (st) => ["CURRENT", "REPEATING", "PAUSED"].includes(st);
 /* "Keep local" (TODO 12c) moves a folder from To match to Untracked. */
 const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id && !s.kept_local);
+/* Folders with files their names give no episode number for: numbered in
+   file order until you check them (Needs a look). */
+const unclearShows = () => S.data.shows.filter((s) => (s.seasons || []).some((sea) => sea.episodes.some((e) => e.guessed)));
 
 /* One card per franchise, where its first entry sorts; the rest are
    counted on it ("+2"). It shows the entry last active in, else the
@@ -400,16 +403,16 @@ function oneCardPerFranchise(list) {
 }
 function libModel() {
   const d = S.data, sp = d.spine;
-  if (!sp) return { cold: true, tabs: [], entries: [], untracked: [], unmatched: unmatchedShows() };
+  if (!sp) return { cold: true, tabs: [], entries: [], untracked: [], unmatched: unmatchedShows(), unclear: unclearShows() };
   const counts = {};
   for (const e of sp.entries) (counts[e.status] ||= new Set()).add(franchiseKey(e));
   const tabs = LISTS.filter(([k]) => counts[k]).map(([k, l]) => ({ k, l, n: counts[k].size }));
   if (sp.entries.length) tabs.unshift({ k: "ALL", l: "All", n: new Set(sp.entries.map(franchiseKey)).size });
   const untracked = sp.untracked.map(showById).filter((s) => s && (s.meta?.anilist_id || s.kept_local));
-  const unmatched = unmatchedShows();
+  const unmatched = unmatchedShows(), unclear = unclearShows(), look = new Set([...unmatched, ...unclear]).size;
   if (untracked.length) tabs.push({ k: "UNTRACKED", l: "On disk only", n: untracked.length, side: true });
-  if (unmatched.length) tabs.push({ k: "MATCH", l: "Needs a look", n: unmatched.length, attn: true, side: true });
-  return { tabs, entries: sp.entries, untracked, unmatched };
+  if (look) tabs.push({ k: "MATCH", l: "Needs a look", n: look, attn: true, side: true });
+  return { tabs, entries: sp.entries, untracked, unmatched, unclear };
 }
 function fixTab(m) {
   if (m.cold || !m.tabs.length) return;
@@ -481,6 +484,18 @@ function matchUI(s) {
     </div>
     ${best ? `<div class="guess">${poster(candLabel(best), best.coverImage?.extraLarge || null)}<b>${esc(candLabel(best))}</b><small>${esc(meta(best))}</small><button class="btn pri" data-a="match" data-v="${esc(s.id)}">This one</button></div>`
       : `<div class="guess none"><span>${m.cands && !m.busy ? "No AniList results for that title — search with another name, or keep it local." : m.busy ? "" : "Looking for a match…"}</span></div>`}</div>`;
+}
+/* Needs a look: a folder's guessed episode numbers, one field per file. */
+function numUI(s) {
+  const seas = s.seasons.filter((sea) => sea.episodes.some((e) => e.guessed));
+  const name = (e) => (e.rel || "").split("/").pop();
+  return `<div class="match mc nums" data-show="${esc(s.id)}"><div class="mcl">
+      <span class="cap2">${ico("folder")} episode numbers</span><h3>${esc(s.title)}</h3>${s.path && s.path !== s.title ? `<div class="raw">${esc(s.path)}</div>` : ""}
+      ${seas.map((sea) => `${s.seasons.length > 1 ? `<span class="cap2 nsea">${esc(sea.label)}</span>` : ""}<div class="nlist">${sea.episodes.map((e) =>
+        `<label class="nrow${e.guessed ? " guess" : ""}"><input type="number" min="0" max="9999" value="${e.number}" data-ep="${esc(e.id)}" aria-label="Episode number for ${esc(name(e))}"><span title="${esc(name(e))}">${esc(name(e))}</span>${e.guessed ? '<small>guessed</small>' : ""}</label>`).join("")}</div>`).join("")}
+      <div class="msg"></div>
+      <div class="mrow"><button class="btn pri sm" data-a="numsave" data-v="${esc(s.id)}">Save numbers</button>${s.path ? `<button class="btn sm ic" data-a="folder" data-v="${esc(s.id)}" aria-label="Open the folder" title="Open the folder">${ico("folder")}</button>` : ""}</div>
+    </div></div>`;
 }
 function paintMatch(id) {
   const el = document.querySelector(`.match[data-show="${CSS.escape(id)}"]`), s = showById(id);
@@ -578,13 +593,14 @@ function Lib() {
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
   const files = d.shows.reduce((a, x) => a + epTotal(x), 0);
   const sum = [`<span><b>${m.entries.length ? new Set(m.entries.map(franchiseKey)).size : d.shows.length}</b> shows</span>`, files ? `<span><b>${files.toLocaleString()}</b> files on disk</span>` : "",
-    m.unmatched.length ? `<span><b>${m.unmatched.length}</b> folder${m.unmatched.length === 1 ? "" : "s"} need a look</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+    (() => { const n = new Set([...m.unmatched, ...m.unclear]).size; return n ? `<span><b>${n}</b> folder${n === 1 ? "" : "s"} need a look</span>` : ""; })()].filter(Boolean).join('<i class="sep"></i>');
   const tab = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}${t.attn ? " attn" : ""}" data-a="tab" data-v="${t.k}">${t.l}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
   const tabs = m.tabs.length ? `<div class="tabs" data-glide="libtabs">${m.tabs.filter((t) => !t.side).map(tab).join("")}${m.tabs.some((t) => t.side) ? '<i class="vs"></i>' : ""}${m.tabs.filter((t) => t.side).map(tab).join("")}</div>` : "";
   let main;
   if (isMatch) {
     autoSuggest(m.unmatched);
-    main = `<p class="intro">On disk, but not matched to AniList yet. Pick the right show and it joins your library — or keep it local.</p><div class="mgrid">${m.unmatched.map(matchUI).join("")}</div>`;
+    main = `${m.unmatched.length ? `<p class="intro">On disk, but not matched to AniList yet. Pick the right show and it joins your library — or keep it local.</p><div class="mgrid">${m.unmatched.map(matchUI).join("")}</div>` : ""}
+      ${m.unclear.length ? `<p class="intro">Episode numbers to check: these file names don't say which episode they are, so they're numbered in file order. Fix any that are wrong, then save. Your files aren't renamed.</p><div class="mgrid">${m.unclear.map(numUI).join("")}</div>` : ""}`;
   } else {
     const filters = (m.cold || isUn) ? "" : `<div class="filters">
       ${fsel("src", "source", [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]], srcLocked())}
@@ -1440,12 +1456,12 @@ function jTotals() {
     mean: scored.length ? (scored.reduce((a, e) => a + e.score, 0) / scored.length).toFixed(1) : "—" };
 }
 function Stats(embed) {
-  const d = S.data, E = statsEntries(), u = aniMode() ? S.alData?.user : null;
-  const minutes = u ? u.minutes_watched : d.stats.minutes, eps = u ? u.episodes_watched : d.stats.episodes_watched;
+  if (!embed) return Hist();
+  const E = statsEntries(), u = aniMode() ? S.alData?.user : null;
   const scored = E.filter((e) => e.score > 0), done = E.filter((e) => e.status === "COMPLETED").length;
   /* from the list scores (1–10), not AniList's meanScore: that one comes in the account's own score format (showed "1.8") */
   const mean = scored.length ? (scored.reduce((a, e) => a + e.score, 0) / scored.length).toFixed(1) : "—";
-  /* hours per month: from the real watch history (episodes finished on this device) */
+  /* episodes per month: AniList activity when connected, else this device's history */
   const MN = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" "), month = {};
   for (const e of jEvents() || []) if (e.eps) { // AniList activity when connected, else this device
     const k = e.at.getFullYear() * 12 + e.at.getMonth();
@@ -1461,7 +1477,6 @@ function Stats(embed) {
   const ys = Object.keys(years).map(Number), yItems = ys.length ? Array.from({ length: Math.max(...ys) - Math.min(...ys) + 1 }, (_, i) => [String(Math.min(...ys) + i), years[Math.min(...ys) + i] || 0]) : [];
   const dist = Array.from({ length: 10 }, (_, i) => [String(i + 1), scored.filter((e) => Math.round(e.score) === i + 1).length]);
   const note = aniMode() && !u ? '<p class="stat-note">Loading your full AniList totals…</p>' : "";
-  if (!embed) return Hist();
   const fmts2 = Object.entries(fmts).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const curY = new Date().getFullYear();
   const card = (cls, head, body) => `<div class="jcard${cls ? " " + cls : ""}"><div class="sh">${head}</div>${body}</div>`;
@@ -1477,7 +1492,7 @@ function loadAlData() {
   if (!aniMode() || S.alData || loadAlData.busy) return;
   loadAlData.busy = true;
   api("/api/anilist").then((res) => {
-    if (res && res.user) { S.alData = res; if (S.view === "stats" || S.view === "history") { S.countNext = true; render(true); } }
+    if (res && res.user) { S.alData = res; if (S.view === "stats" || S.view === "history") render(true); }
   }).catch(() => {}).finally(() => { loadAlData.busy = false; });
 }
 
@@ -1500,7 +1515,7 @@ function Sett() {
     anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
       conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}
   <div class="adv2${off ? " dis" : ""}">${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
-    ${srow("Track episodes", "After playback marks an episode watched, publish the highest watched episode to AniList (single-season releases).", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}
+    ${srow("Track episodes", "After playback marks an episode watched, publish the highest watched episode to AniList.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}
     ${srow("Watched marks from AniList", "Episodes up to your AniList progress show as watched, the rest as unwatched. Off: the marks saved on this device. Switching back loses nothing.", tgl("anilist_watched", "Watched marks from AniList", s.anilist_watched))}
     ${srow("Add shows automatically", "A first watch of a matched show that isn't on your lists adds it to Watching. Off by default.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}
     ${srow(`Sync ratings<span class="soon">not built yet</span>`, "Keep scores in step between AniList and this device.", tgl("ratings", "Sync ratings", false, true))}</div></div>`,
@@ -1560,8 +1575,6 @@ function DirPick(ctx) {
 /* Edge fades replace the list's scrollbar: shown only where more folders hide. */
 function dirFade(l) { l.classList.toggle("ft", l.scrollTop > 2); l.classList.toggle("fb", l.scrollTop + l.clientHeight < l.scrollHeight - 2); }
 document.addEventListener("scroll", (e) => e.target.classList?.contains("dp-list") && dirFade(e.target), true);
-/* Settings fold-outs stay open across re-renders. */
-document.addEventListener("toggle", (e) => { if (e.target.matches?.("details.adv")) S.advOpen[e.target.dataset.k] = e.target.open; }, true);
 function paintDir(ctx = S.dir?.ctx) {
   const el = $("#dirpick-" + ctx);
   if (!el) return;
@@ -1976,7 +1989,6 @@ function maybeCompletion(c) {
     const st = res.state, e = st.entry || {}, max = st.score_max || 10;
     const sc = $("#dn-score");
     if (e.score != null && e.score > 0) { sc.value = max === 10 ? Math.round(e.score) : e.score; dnPills(max === 10 ? Math.round(e.score) : 0); }
-    if (LISTS.some(([v]) => v === e.status)) $("#dn-status").value = e.status;
     if (st.is_favourite) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
   }).catch(() => {});
 }
@@ -2150,18 +2162,6 @@ function accentFrom(url, color) {
   img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
 }
 const ambient = paintCanvas;
-function countUp() {
-  if (reduceMotion()) return;
-  $$("#app .tile b[data-n]").forEach((b, k) => {
-    const to = +b.dataset.n, dec = +b.dataset.d || 0, suf = b.dataset.s || "", t0 = performance.now() + k * 90;
-    const step = (now) => {
-      const p = Math.min(1, Math.max(0, (now - t0) / 1000));
-      b.textContent = (to * (1 - Math.pow(1 - p, 4))).toFixed(dec) + suf;
-      if (p < 1) requestAnimationFrame(step);
-    };
-    b.textContent = (0).toFixed(dec) + suf; requestAnimationFrame(step);
-  });
-}
 const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
@@ -2245,7 +2245,6 @@ function render(inPlace = false) {
   if (S.view === "settings" && S.setFlash) { const t = S.setFlash; S.setFlash = null; const r = $$("#app .srow").find((x) => x.querySelector("b")?.textContent.startsWith(t)); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }
   /* The strip opens on the next episode, with the one before it in view — whole tiles, never a cut one. */
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
-  if (fresh || S.countNext) { S.countNext = false; countUp(); }
   const t = S.view === "show" ? showById(S.showId)?.title : S.view === "fr" ? S.fr?.page?.title || frEntry()?.title : VIEW_TITLE[S.view];
   document.title = t ? `${t} · Anime Hub` : "Anime Hub";
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
@@ -2720,6 +2719,19 @@ const A = {
     hit ? commitMatch(v, +hit[1]) : runSearch(v, text);
   },
   match: (v) => { const m = mst(v), c = (m.cands || [])[m.pick]; if (c) commitMatch(v, c.id); },
+  numsave: (v, t) => {
+    const card = t.closest(".nums"), numbers = {};
+    for (const i of card.querySelectorAll("input[data-ep]")) {
+      const n = Number(i.value);
+      if (!Number.isInteger(n) || n < 0 || n > 9999) { card.querySelector(".msg").textContent = "Episode numbers are whole numbers from 0."; i.focus(); return; }
+      numbers[i.dataset.ep] = n;
+    }
+    t.disabled = true;
+    api("/api/episode-numbers", { show_id: v, numbers }).then((r) => {
+      if (!r || r.error) { t.disabled = false; card.querySelector(".msg").textContent = r?.error || "Could not save — is the hub running?"; return; }
+      toast("Episode numbers saved"); reload();
+    }).catch(() => { t.disabled = false; card.querySelector(".msg").textContent = "Could not save — is the hub running?"; });
+  },
   mrefresh: (v) => { const m = mst(v); if (!m.busy) runSearch(v, m.q || showById(v)?.title || "", true); },
   keeplocal: (v, t) => {
     const keep = t.dataset.k === "true";
@@ -3012,7 +3024,7 @@ if (SHELL) {
 }
 /* Images fade in once decoded; a 404 keeps the title placeholder. */
 document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); imgSeen.add(t.getAttribute("src")); } }, true);
-document.// Back on the window (e.g. after toggling the VPN elsewhere): refresh now.
+// Back on the window (e.g. after toggling the VPN elsewhere): refresh now.
 addEventListener("focus", () => pollSoon(0));
 addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) { t.parentElement.classList.remove("hasimg"); t.remove(); } }, true);
 $("#brand").addEventListener("click", () => nav("home"));
@@ -3079,7 +3091,7 @@ q.addEventListener("keydown", (e) => {
 addEventListener("scroll", () => document.body.classList.toggle("sc", scrollY > 8), { passive: true });
 
 /* keyboard: / search · Esc back · j/k/h/l or arrows move focus · Enter opens */
-const focusables = () => $$("#app .hhero .pill, #app .cont, #app .card, #app .ep, #app .hr").filter((el) => el.offsetParent);
+const focusables = () => $$("#app .hc, #app .ag, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
 function applyFocus() {
   const els = focusables();
   if (fIdx >= 0 && els[fIdx]) { els.forEach((e, i) => e.classList.toggle("focused", i === fIdx)); els[fIdx].scrollIntoView({ block: "nearest" }); } else fIdx = -1;

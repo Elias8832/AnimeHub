@@ -986,6 +986,14 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .mc .oth span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mc .oth small{font:400 11px var(--mono);color:var(--mute);white-space:nowrap}
 .mc .mrow{display:flex;gap:8px;margin-top:14px;align-items:center}
+.match.mc.nums{grid-template-columns:minmax(0,1fr)}
+.nums .nsea{margin:16px 0 6px}
+.nums .nlist{display:grid;gap:4px;margin-top:12px;max-height:340px;overflow:auto}
+.nums .nrow{display:flex;align-items:center;gap:10px;font:400 12px var(--mono);color:var(--ink-2)}
+.nums .nrow input{width:64px;flex:none}
+.nums .nrow span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nums .nrow small{color:var(--warn);flex:none}
+.nums .nrow.guess span{color:var(--ink)}
 .mc .mrow input{flex:1;min-width:0;height:36px;font:400 12px var(--mono)}
 .btn.sm{height:36px;padding:0 14px;font-size:12px}.btn.sm.ic{width:36px;padding:0}.btn.sm .ico{width:15px;height:15px}
 .mc .guess{display:flex;flex-direction:column}

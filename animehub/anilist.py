@@ -93,6 +93,15 @@ def _score_norm(value, fmt):
     return float(value) * 100.0 / _SCORE_MAX[fmt]
 
 
+def score_from100(s100, fmt):
+    """A 0-100 score (the list's score100) in the user's own format: 85 →
+    8.5 (POINT_10_DECIMAL), 9 (POINT_10), 4 (POINT_5). None when unknown."""
+    if s100 is None or fmt not in _SCORE_MAX:
+        return None
+    score = round(float(s100) * _SCORE_MAX[fmt] / 100.0, 1 if fmt == "POINT_10_DECIMAL" else 0)
+    return score if fmt == "POINT_10_DECIMAL" else int(score)
+
+
 def _score_format():
     # Any age: the user's scoring format rarely changes, and falling back to
     # POINT_10 after 15 min offline would save an 8/10 as 8/100.
@@ -165,12 +174,7 @@ def entry_state_from_lists(media_id):
         return None
     from . import library  # library imports this module
     fmt = cached.get("score_format") or "POINT_10"
-    s100 = e.get("score100")
-    score = None
-    if s100 is not None and fmt in _SCORE_MAX:
-        score = round(float(s100) * _SCORE_MAX[fmt] / 100.0, 1 if fmt == "POINT_10_DECIMAL" else 0)
-        if fmt != "POINT_10_DECIMAL":
-            score = int(score)
+    score = score_from100(e.get("score100"), fmt)
     nxt = e.get("next_episode")
     if nxt and nxt.get("at"):
         nxt = {"number": nxt["number"], "in_seconds": int(nxt["at"] - time.time())}
