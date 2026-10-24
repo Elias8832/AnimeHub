@@ -980,7 +980,7 @@ function frCm(id, x0, y0) {
   return true;
 }
 
-function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" ? "History" : S.showBack === "stats" ? "Stats" : "Home"; }
+function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" || S.showBack === "stats" ? "Journal" : "Home"; }
 
 /* A folder with no AniList match yet: its files, and the way to match it.
    Matched folders and online episodes open their franchise page (Fran),
@@ -1227,20 +1227,86 @@ function dayLabel(d) {
   if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
   return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: d.getFullYear() === t0.getFullYear() ? undefined : "numeric" });
 }
+/* Journal (Decision 38): History + Stats on one page — a range, your
+   numbers for it as a band, the timeline by day, and on the side a month
+   heat map, top genres and most watched. The all-time charts follow below. */
+const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];
+const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+function streaks(hist) {
+  const days = new Set(hist.filter((e) => e.last_played).map((e) => dayKey(parseStamp(e.last_played))));
+  let cur = 0, best = 0, run = 0;
+  const d = new Date(); d.setHours(12, 0, 0, 0);
+  if (!days.has(dayKey(d))) d.setDate(d.getDate() - 1); // today not watched yet: the streak runs to yesterday
+  for (let k = 0; days.has(dayKey(d)); k++) { cur++; d.setDate(d.getDate() - 1); }
+  const sorted = [...days].map((k) => { const [y, m, dd] = k.split("-").map(Number); return new Date(y, m, dd).getTime(); }).sort((a, b) => a - b);
+  for (let i = 0; i < sorted.length; i++) { run = i && Math.round((sorted[i] - sorted[i - 1]) / 864e5) === 1 ? run + 1 : 1; best = Math.max(best, run); }
+  return { cur, best };
+}
+const spineOf = (s) => (s?.meta?.anilist_id && S.data?.spine?.entries?.find((e) => e.id === s.meta.anilist_id)) || null;
 function Hist() {
-  const rows = historyRows(), shown = rows.slice(0, S.histMax);
+  if (!J_RANGES.some(([k]) => k === S.histRange)) S.histRange = "7d";
+  const rows = historyRows(), shown = rows.slice(0, S.histMax), hist = S.data.history || [];
+  const secs = rows.reduce((a, { ep }) => a + (ep.watched ? ep.duration || 0 : ep.position || 0), 0);
+  const shows = new Map();
+  for (const { ep, ctx } of rows) { const g = shows.get(ctx.s.id) || { s: ctx.s, n: 0 }; g.n++; shows.set(ctx.s.id, g); }
+  const { cur, best } = streaks(hist);
+  /* bars: days for a week/month, months for a year, years for all time */
+  const now = new Date(), bars = [];
+  const count = (from, to) => rows.filter(({ ep }) => { const t = parseStamp(ep.last_played).getTime(); return t >= from && t < to; }).length;
+  if (S.histRange === "7d" || S.histRange === "1mo") {
+    const n = S.histRange === "7d" ? 7 : 30;
+    for (let i = n - 1; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i); bars.push([i ? (n === 7 ? DAYS[(d.getDay() + 6) % 7] : String(d.getDate())) : "today", count(d.getTime(), d.getTime() + 864e5), !i]); }
+  } else if (S.histRange === "1y") {
+    for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1), e = new Date(d.getFullYear(), d.getMonth() + 1, 1); bars.push([d.toLocaleDateString(undefined, { month: "short" }), count(d.getTime(), e.getTime()), !i]); }
+  } else {
+    const ys = hist.filter((e) => e.last_played).map((e) => parseStamp(e.last_played).getFullYear()), y0 = ys.length ? Math.min(...ys) : now.getFullYear();
+    for (let y = y0; y <= now.getFullYear(); y++) bars.push([String(y), count(new Date(y, 0, 1).getTime(), new Date(y + 1, 0, 1).getTime()), y === now.getFullYear()]);
+  }
+  const bmax = Math.max(1, ...bars.map((b) => b[1]));
+  const band = `<div class="jband"><div class="n"><b class="v" data-n="${rows.length}">${rows.length}</b><span class="k">episodes</span></div>
+    <div class="n"><b class="v">${Math.floor(secs / 3600)}<small>h</small> ${Math.round((secs % 3600) / 60)}<small>m</small></b><span class="k">watched</span></div>
+    <div class="n"><b class="v" data-n="${shows.size}">${shows.size}</b><span class="k">shows</span></div>
+    <div class="n"><b class="v">${cur}<small>day${cur === 1 ? "" : "s"}</small></b><span class="k">streak · <em>best ${best}</em></span></div>
+    <div class="jbars${bars.length > 12 ? " many" : ""}">${bars.map(([l, v, on], i) => `<div title="${esc(l)}: ${v}"><i style="--i:${i};height:${Math.max(4, (v / bmax) * 64)}px" class="${on ? "on" : ""}"></i><span class="${on ? "on" : ""}">${bars.length > 12 && i % 5 && !on ? "" : esc(l)}</span></div>`).join("")}</div></div>`;
+  /* the timeline: by day; the last episode of a show stands out as "Finished" */
   let last = null, out = "";
   for (const [idx, { ep, ctx }] of shown.entries()) {
     const d = parseStamp(ep.last_played), key = dayLabel(d);
-    if (key !== last) { out += `<h3 class="day">${esc(key)}</h3>`; last = key; }
-    const st = ep.watched ? "Finished" : ep.position ? `Stopped at ${fmtTime(ep.position)}` : "Started";
+    if (key !== last) { out += `<div class="dh"><b>${esc(key)}</b>${key === "Today" || key === "Yesterday" ? `<span>${esc(d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }))}</span>` : ""}<i></i></div>`; last = key; }
+    const all = ctx.s.seasons.flatMap((x) => x.episodes), fin = ep.watched && all[all.length - 1]?.id === ep.id && all.every((x) => x.watched);
+    const t = epTitle(ctx.s, ctx.sea, ep), art = homeThumb(ctx.sea, ep) || ctx.s.banner || ctx.s.poster;
     const prg = !ep.watched && ep.duration && ep.position ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
-    const t = epTitle(ctx.s, ctx.sea, ep);
-    out += `<button class="hr" style="--i:${Math.min(idx, 12)}" data-a="open" data-v="${esc(ctx.s.id)}">${poster(ctx.s.title, ctx.s.poster, { c: "t" })}<span><b>${esc(ctx.s.title)}</b><br><span class="sub">${esc(epCode(ctx.sea, ep))}${t ? " · " + esc(t) : ""}</span></span><span class="hs sub"><span>${ep.watched ? ico("check") : ""}${esc(st)}</span>${prg ? `<span class="hp"><i style="width:${prg}%"></i></span>` : ""}</span><span class="src ${streamEp(ep) ? "online" : "installed"}" style="justify-self:start">${streamEp(ep) ? "online" : "installed"}</span><span class="sub" style="text-align:right">${esc(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</span></button>`;
+    const meta = [ep.watched ? "" : ep.position ? `stopped at ${fmtTime(ep.position)}` : "started", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
+    const sc = fin ? spineOf(ctx.s)?.score : 0;
+    out += fin
+      ? `<button class="ev fin" style="--i:${Math.min(idx, 12)}" data-a="open" data-v="${esc(ctx.s.id)}"><span class="th p" ${ctx.s.poster ? `style="background-image:${esc(cssUrl(ctx.s.poster))}"` : ""}></span><span class="tx"><b>Finished ${esc(ctx.s.title)}${sc ? `<span class="badge">★ ${esc(sc)}</span>` : ""}</b><small>${all.length} episode${all.length === 1 ? "" : "s"} · ${esc(epCode(ctx.sea, ep))}${t ? " " + esc(t) : ""}</small></span><span class="t">${esc(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</span></button>`
+      : `<button class="ev" style="--i:${Math.min(idx, 12)}" data-a="open" data-v="${esc(ctx.s.id)}"><span class="th" ${art ? `style="background-image:${esc(cssUrl(art))}"` : ""}>${prg ? `<i class="pb"><i style="width:${prg}%"></i></i>` : ""}</span><span class="tx"><b>${esc(ctx.s.title)}</b><small>${esc(epCode(ctx.sea, ep))}${t ? " " + esc(t) : ""}${meta ? " · " + esc(meta) : ""}</small></span><span class="t">${esc(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</span></button>`;
   }
-  return `<div class="wrap page"><div class="sec first"><h2>History</h2><label class="fl" style="display:inline-grid">Show<select data-a="hrange">${HIST_RANGES.map(([k, l]) => `<option value="${k}" ${k === S.histRange ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
-    ${out || `<p class="empty" style="padding:40px 0">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"}.</p>`}
-    ${rows.length > shown.length ? `<div class="eps-more"><button class="btn" data-a="histmore">Show more (${rows.length - shown.length} left)</button></div>` : ""}</div>`;
+  /* side: this month's heat map, top genres and most watched in the range */
+  const first = new Date(now.getFullYear(), now.getMonth(), 1), lead = (first.getDay() + 6) % 7, dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const perDay = {};
+  for (const e of hist) if (e.last_played) { const d = parseStamp(e.last_played); if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) perDay[d.getDate()] = (perDay[d.getDate()] || 0) + 1; }
+  const hmax = Math.max(1, ...Object.values(perDay));
+  const lvl = (n) => !n ? "" : n / hmax > 0.66 ? "l3" : n / hmax > 0.33 ? "l2" : "l1";
+  const heat = `<div class="jcard"><div class="sh"><b>${esc(now.toLocaleDateString(undefined, { month: "long" }))}</b><span>episodes per day</span></div><div class="heat">${["M", "T", "W", "T", "F", "S", "S"].map((x) => `<span class="h">${x}</span>`).join("")}${"<i class=\"pad\"></i>".repeat(lead)}${Array.from({ length: dim }, (_, i) => `<i class="${lvl(perDay[i + 1])}${i + 1 === now.getDate() ? " today" : ""}" title="${i + 1}: ${perDay[i + 1] || 0}"></i>`).join("")}</div>
+    <div class="legend">less <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i> more</div></div>`;
+  const gen = {};
+  for (const { ctx } of rows) for (const g of spineOf(ctx.s)?.genres || []) gen[g] = (gen[g] || 0) + 1;
+  const gtop = Object.entries(gen).sort((a, b) => b[1] - a[1]).slice(0, 5), gmax = gtop[0]?.[1] || 1;
+  const genres = gtop.length ? `<div class="jcard gen"><div class="sh"><b>Top genres</b><span>${esc((J_RANGES.find(([k]) => k === S.histRange) || [0, ""])[1].toLowerCase())}</span></div>${gtop.map(([g, n], i) => `<div class="r"><span>${esc(g)}</span><span class="bar"><i style="--i:${i};width:${(n / gmax) * 100}%"></i></span><span class="c">${n}</span></div>`).join("")}</div>` : "";
+  const top = [...shows.values()].sort((a, b) => b.n - a.n).slice(0, 3);
+  const most = top.length ? `<div class="jcard"><div class="sh"><b>Most watched</b></div><div class="tops">${top.map(({ s, n }) => `<button data-a="open" data-v="${esc(s.id)}"><span class="cv" ${s.poster ? `style="background-image:${esc(cssUrl(s.poster))}"` : ""}><span>${n} ep</span></span><b>${esc(s.title)}</b></button>`).join("")}</div></div>` : "";
+  const since = hist.filter((e) => e.last_played).map((e) => parseStamp(e.last_played).getFullYear());
+  const life = S.data.stats || {};
+  const sum = [life.episodes_watched != null ? `<span><b>${life.episodes_watched.toLocaleString()}</b> episodes</span>` : "", life.minutes ? `<span><b>${Math.round(life.minutes / 60).toLocaleString()}</b> hours</span>` : "",
+    since.length ? `<span>since ${Math.min(...since)}</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+  return `<div class="jr2"><div class="hello"><h1 class="hd">Journal</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>
+    <div class="jrange"><div class="tabs" data-glide="jrange">${J_RANGES.map(([k, l]) => `<button class="${k === S.histRange ? "on" : ""}" data-a="hrange" data-v="${k}">${l}</button>`).join("")}</div></div>
+    ${band}
+    <div class="jcols"><div class="jcard tl">${out || `<p class="empty">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"}.</p>`}
+      ${rows.length > shown.length ? `<div class="more"><button class="btn sm" data-a="histmore">Show earlier (${rows.length - shown.length} left)</button></div>` : ""}</div>
+      <div class="jside">${heat}${genres}${most}</div></div>
+    <div class="jall"><h2>All time</h2>${Stats(true)}</div></div>`;
 }
 
 /* ---------- stats ---------- */
@@ -1265,7 +1331,7 @@ function donut(segs) {
   }
   return `<svg class="donut" viewBox="0 0 120 120" role="img" aria-label="Distribution"><circle cx="60" cy="60" r="46" fill="none" stroke="var(--s2)" stroke-width="16"/>${arcs}<text x="60" y="66" text-anchor="middle" fill="var(--ink)" font-size="20" font-weight="700">${segs.reduce((a, s) => a + s.v, 0)}</text></svg>`;
 }
-function Stats() {
+function Stats(embed) {
   const d = S.data, E = statsEntries(), u = aniMode() ? S.alData?.user : null;
   const minutes = u ? u.minutes_watched : d.stats.minutes, eps = u ? u.episodes_watched : d.stats.episodes_watched;
   const scored = E.filter((e) => e.score > 0), done = E.filter((e) => e.status === "COMPLETED").length;
@@ -1289,19 +1355,20 @@ function Stats() {
   const lmax = Math.max(...byList.map((x) => x[1]), 1), ftot = fseg.reduce((a, s) => a + s.v, 0) || 1;
   const hb = (k, c, i, mx) => `<div class="hb" title="${esc(k)}" tabindex="0"><span>${esc(k)}</span><div><i style="width:${(c / mx) * 100}%;animation-delay:${i * 60}ms"></i></div><span class="sub">${c}</span></div>`;
   const note = aniMode() && !u ? '<p class="stat-note">Loading your full AniList totals…</p>' : "";
-  return `<div class="wrap page"><div class="sec first"><h2>Stats</h2><span class="sub">${aniMode() ? `AniList${u ? " · " + esc(u.name) : ""}` : "Based on progress stored on this device"}</span></div>
+  if (!embed) return Hist();
+  return `<p class="sub">${aniMode() ? `From AniList${u ? " · " + esc(u.name) : ""}` : "Based on progress stored on this device"}</p>
   <div class="tiles"><div class="tile">${ico("clock")}<b data-n="${Math.round(minutes / 60)}" data-s=" h">${Math.round(minutes / 60)} h</b><span>Time watched</span></div><div class="tile">${ico("tv")}<b data-n="${eps}">${eps}</b><span>Episodes</span></div><div class="tile">${ico("checkc")}<b data-n="${done}">${done}</b><span>Shows completed</span></div><div class="tile">${ico("star")}<b ${mean !== "—" ? `data-n="${mean}" data-d="1"` : ""}>${mean}</b><span>Mean score</span></div></div>${note}
   <div class="pgrid"><div class="panel wide2"><h3>Hours watched per month <span class="sub" style="font-weight:400;font-size:13px">on this device</span></h3>${barCols(months, (v) => v + " h")}</div>
   <div class="panel"><h3>Shows by list</h3>${byList.map(([k, c], i) => hb(k, c, i, lmax)).join("") || '<p class="sub">No list data yet.</p>'}</div>
   <div class="panel"><h3>Formats</h3><div class="fmt-split">${donut(fseg)}<div class="legend">${fseg.map((s, i) => `<span data-k="${i}"><i style="background:${s.c}"></i>${esc(s.l)} · ${s.v} (${Math.round((s.v / ftot) * 100)}%)</span>`).join("")}</div></div></div>
   <div class="panel"><h3>Release year</h3>${yItems.length ? barCols(yItems, (v) => v + " shows") : '<p class="sub">No year data yet.</p>'}</div>
-  <div class="panel"><h3>Scores you give</h3>${scored.length ? barCols(dist, (v) => v + " shows") : '<p class="sub">No scores yet.</p>'}</div></div></div>`;
+  <div class="panel"><h3>Scores you give</h3>${scored.length ? barCols(dist, (v) => v + " shows") : '<p class="sub">No scores yet.</p>'}</div></div>`;
 }
 function loadAlData() {
   if (!aniMode() || S.alData || loadAlData.busy) return;
   loadAlData.busy = true;
   api("/api/anilist").then((res) => {
-    if (res && res.user) { S.alData = res; if (S.view === "stats") { S.countNext = true; render(true); } }
+    if (res && res.user) { S.alData = res; if (S.view === "stats" || S.view === "history") { S.countNext = true; render(true); } }
   }).catch(() => {}).finally(() => { loadAlData.busy = false; });
 }
 
@@ -1552,11 +1619,11 @@ function NextDlg() {
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
-const TABS = [["home", "Home"], ["library", "Library"], ["history", "History"], ["stats", "Stats"]];
-const KEYS = [["Search or run a command", "/"], ["Home · Library · History · Stats", "1 2 3 4"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
+const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];
+const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal", "1 2 3"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
 const keysPop = () => `<div class="pop keyp"><div class="cap">Keys</div><div class="keys">${KEYS.map(([n, k]) => `<span>${n}</span><kbd class="kb">${k}</kbd>`).join("")}</div></div>`;
 function paintNav() {
-  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view;
+  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   const links = $("#links");
   links.innerHTML = TABS.map(([k, n], i) => `<button class="link ${cur === k ? "on" : ""}" ${cur === k ? 'aria-current="page"' : ""} data-a="go" data-v="${k}">${n}<kbd>${i + 1}</kbd></button>`).join("");
   glide(links);
@@ -1847,6 +1914,11 @@ function canvasArt() {
   if (S.view === "show") { const s = showById(S.showId); return s && { blur: s.poster || s.banner, sharp: s.banner, color: showColor(s) }; }
   if (S.view === "home") { const s = nextUpInfo()?.s; return s && { blur: s.banner || s.poster, sharp: null, color: showColor(s) }; } // Home: a full blur of the up-next show
   if (S.view === "library" && S.libHover) return S.libHover;
+  if (S.view === "history" || S.view === "stats") {
+    const n = new Map(); for (const { ctx } of historyRows()) n.set(ctx.s, (n.get(ctx.s) || 0) + 1);
+    const top = [...n].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (top) return { blur: top.poster || top.banner, sharp: null, color: showColor(top) };
+  }
   const s = lastShow();
   return s && { blur: s.poster || s.banner, sharp: null, color: showColor(s) };
 }
@@ -1896,7 +1968,7 @@ function countUp() {
     b.textContent = (0).toFixed(dec) + suf; requestAnimationFrame(step);
   });
 }
-const VIEW_TITLE = { home: "", library: "Library", history: "History", stats: "Stats", settings: "Settings" };
+const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
    it: the new HTML is matched against the live nodes (by data-a/data-v or
@@ -1985,7 +2057,7 @@ function render(inPlace = false) {
   if (S.view === "fr" && frEntry()) loadEntry(frEntry().id);
   if (S.sel && S.sel.show !== selKey()) S.sel = null;
   paintSel();
-  if (S.view === "stats") loadAlData();
+  if (S.view === "stats" || S.view === "history") loadAlData();
   applyFocus();
 }
 /* Background refreshes must not clobber a field the user is typing in. */

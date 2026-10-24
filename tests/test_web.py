@@ -172,6 +172,17 @@ class Library(unittest.TestCase):
         self.assertIn('}, 450) };', APP)
 
 
+class Journal(unittest.TestCase):
+    """TODO 60 step 5: History + Stats are one page (Journal, key 3); the old
+    #history / #stats links still open it."""
+    def test_journal(self):
+        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];', APP)
+        self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
+        self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
+        self.assertIn('<div class="jall"><h2>All time</h2>${Stats(true)}</div>', APP)
+        self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings"];', APP)
+
+
 class Discovery(unittest.TestCase):
     """TODO 11 (Decision 9): one search bar over library + AniList; a hit off
     the lists opens its page, which says so and offers the add."""
