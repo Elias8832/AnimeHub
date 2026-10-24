@@ -79,7 +79,7 @@ test("missing artwork does not exclude the latest show", () => {
     continue: [], history: [recent] });
   const html = app.Home();
   assert.match(html, /<h1>No artwork<\/h1>/);
-  assert.match(html, /<div class="hhero" style="--h:/); // hue placeholder, no art URL
+  assert.match(html, /<div class="upn" style="--h:[^"]*"><div class="upc">/); // hue placeholder, no art layer
 });
 
 test("empty activity and removed episodes do not crash the hero picker", () => {
@@ -104,10 +104,10 @@ test("homepage renders the new hero, excludes its duplicate tile, and targets it
   const app = homepage({ shows: [show("Older", [older]), show("Recent", [preview])],
     continue: [older], history: [preview, older] });
   const html = app.Home();
-  assert.match(html, /^<div class="hhero"/); // the hero is the first thing painted
+  assert.match(html, /^<div class="home2"><div class="hello">.*?<\/div><div class="upn"/s); // headline, then the up-next card
   assert.match(html, /<h1>Recent<\/h1>/);
   assert.match(html, /\/img\/Recent\.banner\.jpg/);
-  assert.doesNotMatch(html, /<h3>Recent<\/h3>/); // the hero show is skipped in Keep watching
+  assert.doesNotMatch(html, /<h3>Recent<\/h3>/); // the up-next show is skipped in Continue watching
   assert.match(html, /<h3>Older<\/h3>/);
   assert.match(html, /data-a="play" data-v="preview"/); // hero buttons target the hero episode
   assert.match(html, /data-a="open" data-v="Recent"/);

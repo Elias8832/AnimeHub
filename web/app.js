@@ -240,20 +240,32 @@ function isPlayingShow(id) {
   const n = S.data.now, c = n && findEpContext(n.episode_id);
   return !!c && c.s.id === id;
 }
+/* Home (Decision 38): an overview, one section per row with room —
+   headline + a one-line summary, the up-next show as one big card (its art
+   inside), continue watching, this week's airings, ready to start. */
+const kbH = (k) => `<kbd class="kb">${k}</kbd>`;
+const homeThumb = (sea, ep) => { const t = sea?.thumbs; return !t ? null : Array.isArray(t) ? t[ep.number - 1] || null : t[String(ep.number)] || null; };
+/* One tick per episode of the season: seen · partly seen · on disk · online. */
+function seasonTicks(sea) {
+  const eps = (sea?.episodes || []).slice(0, 60);
+  return `<div class="ticks">${eps.map((x, i) => { const p = x.duration ? x.position / x.duration : 0;
+    return `<i style="--i:${i};--pp:${Math.round(p * 100)}%" class="${x.watched ? "s" : p > 0.01 ? "p" : streamEp(x) ? "o" : "d"}"></i>`; }).join("")}</div>`;
+}
+function dayWord(h) { return h < 5 ? "Tonight" : h < 12 ? "This morning" : h < 18 ? "This afternoon" : "Tonight"; }
 function heroHTML(up) {
-  const s = up.s, m = s.meta || {}, ep = up.ep, art = s.banner || s.poster;
+  const s = up.s, ep = up.ep, sea = up.sea, art = homeThumb(sea, ep) && !s.banner ? homeThumb(sea, ep) : s.banner || s.poster;
   const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
-  const left = pct >= 1 && !ep.watched ? ` · ${fmtLeft(ep.duration, ep.position)} left` : "";
-  const chips = [m.score ? `<span class="mchip">${ico("star", "star")}${esc(m.score)}</span>` : "", m.format ? `<span class="mchip">${esc(fmtName(m.format))}</span>` : "", m.year ? `<span class="mchip">${esc(m.year)}</span>` : ""].join("");
-  const desc = m.overview ? (m.overview.length > 260 ? m.overview.slice(0, 260) + "…" : m.overview) : "";
-  return `<div class="hhero" style="--h:${hueOf(s.title)}"><div class="hbg"${art ? ` style="--art:${esc(cssUrl(art))}"` : ""}></div><div class="wrap">
-    <div class="eyebrow">${esc(up.label)}${esc(left)}</div>
+  const left = pct >= 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : ep.duration ? `${Math.round(ep.duration / 60)} min` : "";
+  const src = streamEp(ep) ? "online" : "on disk";
+  const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
+  const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
+  return `<div class="upn" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
+    <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
-    <div class="hl"><span class="ecode">${esc(epCode(up.sea, ep))}</span><span class="etitle">${esc(epTitle(s, up.sea, ep) || "Episode " + ep.number)}</span>${isPlayingShow(s.id) ? '<span class="playing"><span class="eq"><i></i><i></i><i></i></span>Playing in mpv</span>' : ""}</div>
-    ${pct >= 1 && !ep.watched ? `<div class="bar" style="width:min(420px,100%)"><i style="width:${pct}%"></i></div>` : ""}
-    ${chips ? `<div class="hmeta">${chips}</div>` : ""}
-    ${desc ? `<p class="desc">${esc(desc)}</p>` : ""}
-    <div class="cta"><button class="pill solid" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play"}</span></button><button class="pill" data-a="open" data-v="${esc(s.id)}">Details</button></div>
+    <div class="sub">${esc(epCode(sea, ep))} · ${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</div>
+    <div class="facts">${[left, src].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
+    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
+    <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span>${kbH("↵")}</button><button class="btn big" data-a="open" data-v="${esc(s.id)}">Open show${kbH("O")}</button></div>
   </div></div>`;
 }
 /* One tile per show you actually played, newest first, each pointing at the
@@ -273,41 +285,51 @@ function keepWatching(skipId) {
 }
 function contCard({ s, t }, k) {
   const ep = t.ep, p = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
-  const total = epTotal(s), w = epWatched(s), pct = total ? Math.round((100 * w) / total) : 0;
-  const lead = `${KIND_WORD[t.kind]} ${epCode(t.sea, ep)}`, art = s.banner || s.poster;
-  const sub = p > 1 && !ep.watched ? `${lead} · ${fmtLeft(ep.duration, ep.position)} left` : lead;
-  return `<button class="cont" style="--h:${hueOf(s.title)};--i:${k}" data-a="open" data-v="${esc(s.id)}">
-    ${art ? `<span class="cbg" style="background-image:${esc(cssUrl(art))}"></span>` : ""}
-    <div class="cont-top">${isPlayingShow(s.id) ? '<span class="playing"><span class="eq"><i></i><i></i><i></i></span>Now playing</span>' : "<span></span>"}</div>
-    <div><h3>${esc(s.title)}</h3><div class="cont-meta"><b>${esc(sub)}</b><span>${w}/${total}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div></button>`;
+  const art = homeThumb(t.sea, ep) || s.banner || s.poster;
+  const meta = [epTitle(s, t.sea, ep), p > 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
+  return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}" data-a="open" data-v="${esc(s.id)}" tabindex="0">
+    <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:${homeThumb(t.sea, ep) ? "50% 50%" : "50% 30%"}"></span>` : ""}
+    <span class="enum">${esc(epCode(t.sea, ep))}</span>${p > 1 && !ep.watched ? `<i class="eprog"><i style="width:${p}%"></i></i>` : ""}
+    <span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="${esc(KIND_WORD[t.kind])}">${ico("play")}</span></div>
+    <h3>${esc(s.title)}</h3><small>${esc(meta)}</small></div>`;
+}
+/* This week: the next airings on your lists, in order, as cards; a Mon–Sun ruler marks the days. */
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function weekHTML(list, now = Date.now()) {
+  const at = (e) => e.next_episode?.at ? e.next_episode.at * 1000 : now + (airsIn(e.next_episode, now) || 0) * 1000;
+  const soon = list.filter((e) => { const t = at(e); return t > now - 3600e3 && t < now + 7 * 864e5; }).slice(0, 3);
+  if (!soon.length) return "";
+  const today = new Date(now), dow = (today.getDay() + 6) % 7, monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow).getTime();
+  const has = new Set(list.map((e) => Math.floor((at(e) - monday) / 864e5)).filter((d) => d >= 0 && d < 7));
+  const when = (t) => { const d = new Date(t), same = d.toDateString() === today.toDateString(), tm = d.toTimeString().slice(0, 5);
+    return [same ? "Today" : DAYS[(d.getDay() + 6) % 7], tm]; };
+  return `<section class="hsec"><div class="sh"><h2>This week</h2><span class="mut">airing on your lists</span><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
+    <div class="agenda">${soon.map((e) => { const t = at(e), [d, tm] = when(t), sec = (t - now) / 1000;
+      return `<button class="ag${d === "Today" ? " today" : ""}" data-a="entry" data-v="${esc(e.id)}">${e.poster ? `<i class="agb" style="background-image:${esc(cssUrl(e.poster))}"></i><i class="agp" style="background-image:${esc(cssUrl(e.poster))}"></i>` : ""}
+        <span class="agt"><span class="when">${d} <small>${tm}</small></span><b>${esc(e.title)}</b><span class="m">episode ${esc(e.next_episode?.number ?? "")}</span></span><span class="cdn">${sec > 0 ? "in " + fmtIn(sec) : "out now"}</span></button>`; }).join("")}</div></section>`;
 }
 function Home() {
   const d = S.data, up = nextUpInfo();
   const L = keepWatching(up && up.s.id);
   const touched = new Set((d.history || []).map((e) => e.show_id));
-  const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 6);
-  const airing = aniMode() ? d.spine.entries.filter((e) => e.airing === "RELEASING" && (e.local_show_id || e.capability === "online") && inProg(e.status))
-    .sort((a, b) => (airsIn(a.next_episode) ?? Infinity) - (airsIn(b.next_episode) ?? Infinity)).slice(0, 5) : [];
+  const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
+  const airing = aniMode() ? d.spine.entries.filter((e) => e.airing === "RELEASING" && e.next_episode && inProg(e.status))
+    .sort((a, b) => (airsIn(a.next_episode) ?? Infinity) - (airsIn(b.next_episode) ?? Infinity)) : [];
+  const next = airing[0], inprog = L.length + (up ? 1 : 0);
+  const sum = [inprog ? `<span><b>${inprog}</b> in progress</span>` : "", next ? `<span><b>${esc(next.title)}</b> ${(airsIn(next.next_episode) ?? 0) > 0 ? "airs in " + esc(fmtIn(airsIn(next.next_episode))) : "is out"}</span>` : "",
+    fresh.length ? `<span><b>${fresh.length}</b> ready to start</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
   let body = "";
-  if (L.length) body += `<div class="sec first"><h2>Keep watching</h2><div class="sec-r"><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button><button class="link-btn" data-a="go" data-v="history">History${ico("arrowr")}</button></div></div><div class="strip">${L.map(contCard).join("")}</div>`;
-  if (fresh.length || airing.length) {
-    body += `<div class="two ${airing.length ? "" : "one"}">
-      <div>${fresh.length ? `<div class="sec"><h2>Ready to start</h2><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="mini">${fresh.map((s) =>
-        `<button class="card" data-a="open" data-v="${esc(s.id)}"><div class="pw">${poster(s.title, s.poster)}</div><h3>${esc(s.title)}</h3><div class="m"><span class="src installed">${epTotal(s)} ep</span></div></button>`).join("")}</div>` : ""}</div>
-      ${airing.length ? `<div><div class="sec"><h2>Airing</h2></div>${airing.map((e) => {
-        const s = showById(e.local_show_id), p = e.episodes ? Math.min(100, ((e.progress || 0) / e.episodes) * 100) : 0;
-        const n = e.next_episode?.number, have = s ? s.seasons.flatMap((x) => x.episodes).filter((x) => !streamEp(x)).length : 0;
-        const art = e.banner || s?.banner;
-        return `<button class="airing${art ? " art" : ""}" data-a="entry" data-v="${esc(e.id)}">${art ? `<span class="cbg" style="background-image:${esc(cssUrl(art))}"></span>` : ""}<div class="al-top"><i class="live"></i><b>${esc(e.title)}</b>${e.next_episode ? `<span class="al-in">${esc(airText(e.next_episode))}</span>` : ""}</div><div class="al-bar"><i style="width:${p}%"></i></div><div class="al-meta"><span>${e.progress || 0}/${e.episodes || "?"} watched</span><small>${have ? `${have} on disk` : n ? `E${n - 1} is out` : "Online"}</small></div></button>`;
-      }).join("")}</div>` : ""}</div>`;
-  }
-  if (!up && !body) {
+  if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
+  body += weekHTML(airing);
+  if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="mut">on disk, not started</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
+    `<button class="rc" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
+  if (!up && !L.length) {
     body = `<div class="emptyx"><div class="eico">${ico("tv")}</div>${d.shows.length
       ? `<b>Nothing watched yet</b><span>Your library is waiting.</span><button class="btn pri" data-a="go" data-v="library">Browse library</button>`
       : d.stream_ready ? `<b>Nothing watched yet</b><span>Search for a show to start watching — or add your anime folder in Settings → Library.</span>`
-      : `<b>Your library is empty</b><span>Choose your anime folder in Settings → Library.</span>`}</div>`;
+      : `<b>Your library is empty</b><span>Choose your anime folder in Settings → Library.</span>`}</div>` + body;
   }
-  return `${up ? heroHTML(up) : ""}<div class="wrap page" style="padding-top:${up ? 0 : 20}px">${body}</div>`;
+  return `<div class="home2"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${up ? heroHTML(up) : ""}${body}</div>`;
 }
 /* @home:end */
 
@@ -2704,6 +2726,10 @@ document.addEventListener("keydown", (e) => {
     if (e.key === ",") { e.preventDefault(); nav("settings"); return; }
     if (e.key === "?") { e.preventDefault(); S.menu = S.menu === "keys" ? null : "keys"; paintNav(); return; }
     /* The show page's keys (shown on its buttons): E edit, D download, ⇧W mark all, ↵ play. */
+    if (S.view === "home") {
+      const b = e.key === "o" ? $('#app .upn [data-a="open"]') : e.key === "Enter" && fIdx < 0 && !document.activeElement.closest?.("#app [data-a]") ? $('#app .upn [data-a="play"]') : null;
+      if (b) { e.preventDefault(); b.click(); return; }
+    }
     if (S.view === "fr" || S.view === "show") {
       const hit = (sel) => { const b = $(`#app ${sel}`); if (!b || b.disabled) return false; e.preventDefault(); b.click(); return true; };
       if (e.key === "e" && hit('[data-a="edit"]')) return;
