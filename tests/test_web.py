@@ -93,7 +93,11 @@ class Frontend(unittest.TestCase):
 
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
-        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"]})
+        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["classic", "tabs", "line", "capsule", "island"]})
+        self.assertEqual(run_js("return lookGet('bar');", {"bar": "island"}), "island")  # Settings → Appearance → Top bar
+        self.assertIn('d.dataset.bar=g("bar")||"classic";', HTML)
+        for bar in ("tabs", "line", "capsule", "island"):
+            self.assertIn(":root[data-bar=%s]" % bar, CSS)
         self.assertEqual(run_js("return lookGet('motion');", {"motion": "calm"}), "calm")
         self.assertEqual(run_js("return lookGet('motion');", {"motion": "nope"}), "full")
         self.assertEqual(run_js("return lookGet('art');"), "full")
@@ -179,7 +183,7 @@ class Journal(unittest.TestCase):
         self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];', APP)
         self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
         self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
-        self.assertIn('<div class="jall"><h2>All time</h2>${Stats(true)}</div>', APP)
+        self.assertIn('<div class="jside">${most}${genres}${heat}${st.side}</div>', APP)  # all time in the same two columns
         self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings"];', APP)
 
 
@@ -190,9 +194,72 @@ class SearchPalette(unittest.TestCase):
         self.assertIn('["VPN in the status line", "online", "vpn status icon", "vpn_icon"]', APP)
         self.assertIn('data-a="srsw" data-v="${key}"', APP)
         self.assertIn('if (S.menu === "sr") srPreview(', APP)
-        self.assertIn('q.addEventListener("focus", () => { S.menu = "sr"; paintNav(); });', APP)
+        # the palette opens centred with its own line; the top bar only holds the button
+        self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } q.focus(); }', APP)
+        self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)
+        self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
+        self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
         self.assertIn('<nav class="snav">${SET_TABS.map(', APP)
         self.assertIn("r.classList.add(\"flash\")", APP)
+
+
+class Polish(unittest.TestCase):
+    """Elias's notes on the redesign (2026-10-24)."""
+    def test_dropdowns_use_the_apps_list(self):
+        self.assertIn('<div id="ddm" role="listbox"></div>', HTML)
+        self.assertIn('sel.dispatchEvent(new Event("change", { bubbles: true }));', APP)  # actions stay on the <select>
+
+    def test_show_page_says_all_on_disk(self):
+        self.assertIn('allDisk ? (local.length === 1 ? "on disk" : `all ${local.length} on disk`)', APP)
+
+    def test_show_page_blurs_its_banner(self):
+        self.assertIn("blur: e?.banner || p?.banner || e?.poster || p?.poster", APP)
+
+    def test_range_pills_keep_their_width(self):
+        self.assertIn('data-w="${esc(`${W} – ${W}`)}"', APP)
+
+    def test_library_hover_skips_the_colour_fade(self):
+        self.assertIn('document.documentElement.classList.add("amb-now")', APP)
+        self.assertIn("html.amb-now{transition:none}", CSS)
+
+    def test_episode_menu(self):
+        self.assertIn('res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"', APP)
+        self.assertIn('cmRow("playstart", id, "undo", "Play from the start")', APP)
+        self.assertIn('cmRow("srcfix", "", "search", "Wrong episode? Find it")', APP)
+        self.assertIn("if (fromStart) body.from_start = true;", APP)
+
+    def test_rewatch_tiles_show_the_stop_point(self):
+        self.assertIn("(!ep.watched || ep.position / ep.duration < 0.92)", APP)  # mirrors player.resume_args
+        self.assertIn("watched: x.watched && !part", APP)
+
+    def test_downloads_list(self):
+        self.assertIn('j.status === "queued" ? "waiting · next in line"', APP)
+        self.assertIn('data-a="dlclear">clear finished</button>', APP)
+
+    def test_journal(self):
+        # built on AniList activity when connected (what you watched anywhere), else this device
+        self.assertIn('api("/api/journal")', APP)
+        self.assertIn('"watched episode": "watch", "rewatched episode": "watch", completed: "finish"', APP)
+        self.assertIn('if (e.kind === "watch" && g && g.kind === "watch" && g.day === key && g.key === e.key) { g.more.push(e); continue; }', APP)
+        self.assertIn('${jBars(bars, "days")}', APP)  # the band's day bars, as before
+        self.assertIn('const eps = kind === "watch" && a.from != null ? a.to - a.from + 1 : 0;', APP)  # only what AniList says, never estimated
+        self.assertNotIn("e.mins", APP)
+        self.assertIn('<div class="tlg">', APP)  # history as a two-column grid (uses the width)
+        self.assertIn("const T = jTotals()", APP)  # an AniList journal first: the big numbers are your AniList totals
+        self.assertIn("#status:before{", CSS)  # the bar isn't a backdrop root: its pop-ups blur what's behind them
+        self.assertIn("align-items:center}", CSS.split(".jr2 .tabs button{", 1)[1].split("\n", 1)[0])
+
+    def test_library_hover_fades_in_steps(self):
+        self.assertIn("if (root.classList.contains(\"amb-now\")) return ambFade(c);", APP)
+
+    def test_tour_lists_what_it_found(self):
+        self.assertIn('<div class="sum2">${tourFound(s, a, n, ok)}</div>', APP)
+        self.assertIn('`mpv${s.mpv_version ? " " + s.mpv_version : ""} found`', APP)
+
+    def test_home_recommendations(self):
+        self.assertIn('api("/api/recommendations")', APP)
+        self.assertIn('<h2>Recommended for you</h2>', APP)
+        self.assertIn('entrySave(+v, { status: "PLANNING" })', APP)
 
 
 class Discovery(unittest.TestCase):
