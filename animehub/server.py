@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import anicli, anilist, database, downloader, franchise, library, mapping, metadata, pages, player, progress, settings, streaming, sync
+from . import anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -194,6 +194,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": e.reason, "auth": True}, 401)
             except Exception as e:
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
+        elif route == "/api/journal":
+            # Additive (Elias, 2026-10-24): the Journal from your AniList activity.
+            try:
+                since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+            except ValueError:
+                self._bad("'since' must be an integer (unix seconds)")
+                return
+            self.send_json(journal.journal(since))
+        elif route == "/api/recommendations":
+            # TODO 65 (additive): Home's "Recommended for you" row.
+            self.send_json(recommend.recommendations())
         elif route == "/api/outbox":
             # TODO 14: the sync chip's list of queued changes (additive).
             self.send_json({"items": sync.outbox_items()})
@@ -341,14 +352,17 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/play":
             if self._fields(body, strings=("id",), ints=("version",)):
                 mode = body.get("mode")
-                if mode is not None and mode not in anicli.STREAM_MODES:
+                start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
+                if not isinstance(start, bool):
+                    self._bad("'from_start' must be a boolean")
+                elif mode is not None and mode not in anicli.STREAM_MODES:
                     self._bad("'mode' must be one of: %s" % ", ".join(anicli.STREAM_MODES))
                 elif mode and body["id"].startswith("stream:"):
                     # An online episode in the other language ("Play dubbed").
                     player.dismiss_next_prompt()
-                    self.send_json(streaming.start_stream(body["id"], mode))
+                    self.send_json(streaming.start_stream(body["id"], mode, from_start=start))
                 else:
-                    self.send_json(player.start_play(body["id"], body.get("version", 0)))
+                    self.send_json(player.start_play(body["id"], body.get("version", 0), from_start=start))
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.

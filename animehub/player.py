@@ -368,7 +368,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
         pass
 
 
-def resume_args(ep_id):
+def resume_args(ep_id, from_start=False):
     """mpv's --start for an episode, or nothing. Resume rule (TODO 24), the
     one authoritative rule the UI mirrors: a saved position is a resume
     point whenever it is non-trivial (> 1 % of the episode — the frontend's
@@ -376,6 +376,8 @@ def resume_args(ep_id):
     92 % strip cutoff, and for watched rows still below the cutoff; a
     finished row restarts. The old 60 s floor disagreed with the UI's
     Resume label in the 1–60 s zone."""
+    if from_start:  # the episode menu's "Play from the start"; the saved point stays until playback moves past it
+        return []
     with database.db() as c:
         row = c.execute("SELECT position, duration, watched FROM episodes WHERE id=?", (ep_id,)).fetchone()
     pos = row[0] if row else 0
@@ -394,10 +396,10 @@ def retire_session(proc):
     anicli.stop_process_group(proc)
 
 
-def start_play(ep_id, version=0):
+def start_play(ep_id, version=0, from_start=False):
     dismiss_next_prompt()  # playing anything answers the prompt
     if ep_id.startswith("stream:"):
-        return streaming.start_stream(ep_id)
+        return streaming.start_stream(ep_id, from_start=from_start)
     s, ep = library.episode_by_id(ep_id)
     if not ep:
         return {"error": "unknown episode"}
@@ -407,7 +409,7 @@ def start_play(ep_id, version=0):
     if not path.exists():
         return {"error": "file missing"}
     sock = ipc_socket_path()
-    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id)]
+    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start)]
     # No --save-position-on-quit (TODO 24): the hub's IPC loop is the only
     # resume store. mpv's watch-later state would otherwise fight an
     # intentional restart/reset — a stale mpv-side position can override

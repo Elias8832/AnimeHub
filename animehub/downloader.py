@@ -180,8 +180,14 @@ def _dl_run(job):
                 line = raw.decode(errors="replace")
                 m = anicli.DL_PERCENT_RE.search(line)
                 if m:
+                    size, eta = anicli.DL_SIZE_RE.search(line), anicli.DL_ETA_RE.search(line)
                     with _dl_cv:
                         job["percent"] = float(m.group(1))
+                        # additive: "412 MB", "02:03" for the downloads list
+                        if size:
+                            job["size"] = "%d %sB" % (round(float(size.group(1))), size.group(2))
+                        if eta:
+                            job["eta"] = eta.group(1)
                 elif line.strip():
                     tail = (tail + [line])[-40:]
         rc = proc.wait()

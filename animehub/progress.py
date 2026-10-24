@@ -200,8 +200,9 @@ def bulk_watched(show_id, season=None, watched=True, ids=None):
     with database.db() as c:
         for ep in eps:
             c.execute(
+                # a mark means done: a half-watched episode drops its stop point
                 "INSERT INTO episodes(id,watched) VALUES(?,?)"
-                " ON CONFLICT(id) DO UPDATE SET watched=excluded.watched",
+                " ON CONFLICT(id) DO UPDATE SET watched=excluded.watched, position=CASE WHEN excluded.watched=1 THEN 0 ELSE position END",
                 (ep["id"], int(bool(watched))))
     synced = None
     if watched:
@@ -247,7 +248,7 @@ def completion_for_episode(ep_id):
 
 def set_watched(eid, watched):
     with database.db() as c:
-        c.execute("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched",
+        c.execute("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched, position=CASE WHEN excluded.watched=1 THEN 0 ELSE position END",
                   (eid, int(watched)))
 
 

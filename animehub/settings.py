@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from . import anicli, database, library
@@ -95,11 +96,32 @@ def settings_payload():
         "window": config.WINDOW,
         "scan": dict(library.scan_state),
         "tools": {t: shutil.which(t) for t in ("mpv", "ani-cli", "upscayl")},
+        # additive: the tour's last page says "mpv 0.39 found"
+        "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
                    "check": anicli.anicli_check(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
     }
+
+
+_mpv_versions = {}
+
+
+def mpv_version():
+    """"0.39.0" from `mpv --version` (asked once per mpv path), or None."""
+    exe = shutil.which("mpv")
+    if not exe:
+        return None
+    if exe not in _mpv_versions:
+        try:
+            out = subprocess.run([exe, "--version"], stdin=subprocess.DEVNULL, capture_output=True,
+                                 text=True, timeout=10).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        m = re.match(r"mpv\s+v?(\d[\w.+-]*)", out.strip())
+        _mpv_versions[exe] = m.group(1) if m else None
+    return _mpv_versions[exe]
 
 
 def adopt_root():

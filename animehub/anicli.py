@@ -52,6 +52,9 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 ANICLI_DIE_RE = re.compile(r"\x1b\[1;31m(.*?)\x1b\[0m")
 STREAM_EP_RE = re.compile(r"^\d{1,4}(?:\.\d{1,2})?$")
 DL_PERCENT_RE = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
+# The same line's size and time left ("of ~ 412.34MiB … ETA 02:03"): the downloads list shows them.
+DL_SIZE_RE = re.compile(r"\bof\s+~?\s*(\d+(?:\.\d+)?)\s*([KMGT])i?B")
+DL_ETA_RE = re.compile(r"\bETA\s+(\d+(?::\d+)+)")
 STREAM_QUALITIES = ("best", "1080", "720", "480", "360", "worst")
 STREAM_MODES = ("sub", "dub")
 # Airing shows gain episodes; the show page re-asks ani-cli after this long.
