@@ -264,6 +264,46 @@ class SettingsRouteTests(unittest.TestCase):
         code, body = self.post({})
         self.assertEqual(code, 400)
 
+    def test_skip_settings(self):
+        """Decision 39: skip modes are a closed vocabulary; AniSkip is a
+        boolean and starts off."""
+        self.assertFalse(self.get("/api/settings")["aniskip"])
+        code, body = self.post({"skip_op": "auto", "skip_ed": "off", "aniskip": True})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["skip"], {"op": "auto", "ed": "off"})
+        self.assertTrue(body["aniskip"])
+        for bad in ({"skip_op": "always"}, {"skip_ed": None}, {"aniskip": "yes"}):
+            self.assertEqual(self.post(bad)[0], 400, bad)
+        self.assertTrue(self.get("/api/settings")["aniskip_vpn_warn"])
+        code, body = self.post({"aniskip_vpn_warn": False})
+        self.assertFalse(body["aniskip_vpn_warn"])
+        self.post({"skip_op": "prompt", "skip_ed": "prompt", "aniskip": False, "aniskip_vpn_warn": True})
+
+    def test_play_carries_the_aniskip_yes(self):
+        """Decision 39: `aniskip` on /api/play is the user's answer for that
+        episode; anything but a boolean is a 400."""
+        from animehub import player
+
+        def post_play(body):
+            req = urllib.request.Request(f"http://127.0.0.1:{self.bound}/api/play", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json", "Host": "127.0.0.1:8787"})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as res:
+                    return res.status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        self.addCleanup(player._aniskip_answers.clear)
+        with patch.object(player, "start_play", return_value={"ok": True}):
+            self.assertEqual(post_play({"id": "ep1"}), 200)
+            self.assertNotIn("ep1", player._aniskip_answers)
+            self.assertEqual(post_play({"id": "ep1", "aniskip": "yes"}), 400)
+            self.assertNotIn("ep1", player._aniskip_answers)
+            self.assertEqual(post_play({"id": "ep1", "aniskip": True}), 200)
+            self.assertTrue(player._aniskip_answers["ep1"][0])
+            self.assertEqual(post_play({"id": "ep1", "aniskip": False}), 200)
+            self.assertFalse(player._aniskip_answers["ep1"][0])
+
     def test_unknown_keys_are_ignored(self):
         code, body = self.post({"tour_done": True, "evil": True})
         self.assertEqual(code, 200)

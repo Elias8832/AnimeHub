@@ -26,7 +26,7 @@ This app is early in development — expect bugs and breaking changes.
 
 ![Settings](docs/screenshots/settings.png)
 
-- **Playback** - episodes open in mpv with resume, auto-play next, progress tracking and a skip-credits hotkey. Your mpv config still works.
+- **Playback** - episodes open in mpv with resume, auto-play next, progress tracking and a skip-credits hotkey. Openings and endings can be skipped with Enter or automatically, using the file's chapters when they're named ("Opening", "ED"…). Optional and off by default: times other viewers submitted to [AniSkip](https://aniskip.com) for files without such chapters (AniSkip then sees which show and episode you start). Your mpv config still works.
 - **AniList** - Matches all your animes against AniList to acquire metadata, coverart, etc. and supports rating, progress, etc. editing.
 - **Online episodes (optional)** - with [ani-cli](https://github.com/pystardust/ani-cli) installed, every show lists the episodes you don't have as online episodes: click one and it plays in mpv with the same resume, progress tracking, AniList sync and auto-play as local files, or download it straight into your library folder. Shows are matched automatically; "Wrong episodes?" on a show page fixes a bad match.
 

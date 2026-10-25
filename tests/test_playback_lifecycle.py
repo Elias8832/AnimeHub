@@ -133,6 +133,8 @@ class RetiredWatcherTests(LifecycleBase):
                 return {}
             if cmd[:2] == ["get_property", "duration"]:
                 return {"data": 1440.0}
+            if cmd[:2] != ["get_property", "time-pos"]:
+                return {}  # the skip ranges' chapter-list read
             reads["n"] += 1
             if reads["n"] == 2:
                 # The replacement takes the slot between the two polls.

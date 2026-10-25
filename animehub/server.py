@@ -251,7 +251,9 @@ class Handler(BaseHTTPRequestHandler):
                     # is online only — the hub asks before ani-cli fetches.
                     ask = player.next_prompt()
                     if ask:
-                        payload["next_prompt"] = {k: ask.get(k) for k in ("id", "label", "show")}
+                        payload["next_prompt"] = {**{k: ask.get(k) for k in ("id", "label", "show")},
+                                                 # additive (D39): "online" or "aniskip"
+                                                 "kind": ask.get("kind") or "online"}
                     if outbox_n:
                         # Quiet sync chip (TODO 14, Decision 3).
                         payload["outbox"] = outbox_n
@@ -353,22 +355,31 @@ class Handler(BaseHTTPRequestHandler):
             if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
                 start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
+                # additive: the user's answer to AniSkip without a VPN (Decision 39)
+                aniskip_ok = body.get("aniskip")
                 if not isinstance(start, bool):
                     self._bad("'from_start' must be a boolean")
+                elif aniskip_ok is not None and not isinstance(aniskip_ok, bool):
+                    self._bad("'aniskip' must be a boolean")
                 elif mode is not None and mode not in anicli.STREAM_MODES:
                     self._bad("'mode' must be one of: %s" % ", ".join(anicli.STREAM_MODES))
                 elif mode and body["id"].startswith("stream:"):
+                    if aniskip_ok is not None:
+                        player.answer_aniskip(body["id"], aniskip_ok)
                     # An online episode in the other language ("Play dubbed").
                     player.dismiss_next_prompt()
                     self.send_json(streaming.start_stream(body["id"], mode, from_start=start))
                 else:
+                    if aniskip_ok is not None:
+                        player.answer_aniskip(body["id"], aniskip_ok)
                     self.send_json(player.start_play(body["id"], body.get("version", 0), from_start=start))
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
-            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "tour_done")
+            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done")
             # ani-cli bridge preferences: closed vocabularies.
-            choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES}
+            choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
+                       "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
                     self._bad("'%s' must be a boolean" % key)

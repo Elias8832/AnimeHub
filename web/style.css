@@ -1184,7 +1184,9 @@ body.srch #pal{display:grid}
 .warn2 span{font-size:13px;color:var(--ink-2)}
 .warn2 .watching{display:flex;gap:10px;align-items:center;margin-top:10px;font:400 12px var(--mono);color:var(--mute)}
 .okv{display:inline-block;margin-top:14px;color:var(--accent);font-size:12px}
-.overlay[data-t=nxt] .actions,.overlay[data-t=vpn] .actions{margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
+.overlay[data-t=nxt] .actions,.overlay[data-t=vpn] .actions,.overlay[data-t=skp] .actions{margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
+/* Three buttons (the AniSkip answer, Decision 39): the note gets its own line. */
+.dialog .actions.three{flex-wrap:wrap;justify-content:flex-end}.dialog .actions.three .note2{flex-basis:100%}.dialog .actions.three .btn{white-space:nowrap}
 /* downloads popover */
 .pop.dl .dlj{display:flex;align-items:center;gap:12px;padding:10px;border-radius:14px}
 .pop.dl .dlth{width:44px;height:62px;border-radius:9px;background:var(--s2) center/cover;flex:none;box-shadow:var(--edge)}

@@ -1511,6 +1511,7 @@ function Sett() {
     appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}</div><div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — upscales banners when the config enables it.")}</div>`,
+    playback: `${skipGroup(s)}`,
     online: `${streamGroup(s)}`,
     anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
       conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}
@@ -1530,6 +1531,17 @@ function Sett() {
 function lookSeg(k, opts) {
   const cur = k === "grain" ? (grainGet() ? "on" : "off") : lookGet(k);
   return `<span class="seg" role="group" aria-label="${k}">${opts.map(([v, l]) => `<button class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" data-a="look" data-k="${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
+}
+/* Opening/ending skipping in mpv (Decision 39). AniSkip is opt-in: it would learn what you watch. */
+const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
+function skipGroup(s) {
+  const sk = s.skip || {};
+  const seg = (k, label) => `<span class="seg" role="group" aria-label="${label}">${SKIPMODES.map(([m, l]) => `<button class="${sk[k] === m ? "on" : ""}" aria-pressed="${sk[k] === m}" data-a="spref" data-k="skip_${k}" data-v="${m}">${l}</button>`).join("")}</span>`;
+  return `<div class="group"><h3>Playback</h3>
+    ${srow("Skip openings", "Ask: shows a skip button. Auto: skips right away.", seg("op", "Skip openings"))}
+    ${srow("Skip endings", "Anything after the ending still plays.", seg("ed", "Skip endings"))}
+    ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees which episode you start and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
+    ${srow("Ask without VPN", "Asks before AniSkip is used without a VPN.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}</div>`;
 }
 const QLABEL = { best: "Best available", worst: "Smallest" };
 function streamGroup(s) {
@@ -1636,13 +1648,14 @@ const SETTINGS_INDEX = [
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse"], ["Rescan", "library", "rescan scan refresh metadata"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
+  ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
   ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"],
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
 ];
-const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["online", "Online episodes"], ["anilist", "AniList"], ["keys", "Keys"], ["data", "Data & setup"]];
+const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["online", "Online episodes"], ["anilist", "AniList"], ["keys", "Keys"], ["data", "Data & setup"]];
 const COMMANDS = [
   ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
@@ -1759,16 +1772,32 @@ function nextChip(now) {
   const v = S.data?.vpn, vpn = !v?.known ? "" : v.active ? " · vpn" : " · no vpn";
   return `<span class="st nx${v?.known && !v.active ? " warn" : ""}" title="The next episode plays online through ani-cli">next: online${vpn}</span>`;
 }
-function vpnGate(go) {
+/* skp: the play would also use AniSkip (Decision 39), so the dialog asks
+   that too; go(true/false) carries the answer. */
+function vpnGate(go, skp = false) {
   if (vpnOn() || !S.data?.vpn?.known || S.settings?.vpn_warn === false) return go();
-  openModal({ t: "vpn", go });
+  openModal({ t: "vpn", go, skp });
+}
+/* AniSkip without a VPN (Decision 39): asked on play like online episodes.
+   The server only uses AniSkip then if the play says yes (`aniskip`). */
+/* Who would see the IP address without a VPN: the streaming site
+   (ani-cli fetches online episodes and downloads), AniSkip, or both. */
+const ipLine = (online, skp) => `Without a VPN, ${online && skp ? "the streaming site and AniSkip see" : online ? "the streaming site sees" : "AniSkip sees"} your IP address.`;
+/* Use AniSkip / Without AniSkip in place of one Continue button. */
+const skpBtns = (yes, no, key = "") => `<button class="btn" data-a="${no}">Without AniSkip</button><button class="btn pri" data-a="${yes}">Use AniSkip${key}</button>`;
+const aniskipAsk = () => S.settings?.aniskip === true && S.settings?.aniskip_vpn_warn !== false && !!S.data?.vpn?.known && !vpnOn();
+function SkpDlg() {
+  return `<h2 id="dt">No VPN detected</h2>
+  <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
+  <div class="actions three"><span class="note2 mono">switch this off in Settings → Playback</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skpBtns("skpgo", "skpno")}</div>`;
 }
 const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/><path d="M12 8v4M12 15.5v.01"/></svg>';
-const vpnWait = () => `<div class="warn2"><span class="wi">${SHIELD}</span><div><b>No VPN is on</b><span>Turn it on and this starts by itself — or go ahead without it.</span><div class="watching"><i class="spin"></i>watching for a VPN…</div></div></div>`;
+const vpnWait = () => `<div class="warn2"><span class="wi">${SHIELD}</span><div><b>No VPN is on</b><span>Turn it on and this starts by itself.</span><div class="watching"><i class="spin"></i>watching for a VPN…</div></div></div>`;
 function VpnDlg() {
+  const skp = S.modal.skp;
   return `<h2 id="dt">No VPN detected</h2>
-  <p class="sub">Online episodes and downloads are fetched by ani-cli over your normal connection.</p>${vpnWait()}
-  <div class="actions"><span class="note2 mono">this question can be switched off in Settings → Online episodes</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button><button class="btn pri" data-a="vpngo">Continue anyway</button></div>`;
+  <p class="sub">${ipLine(true, skp)}</p>${vpnWait()}
+  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">switch this off in Settings → Online episodes${skp ? " / Playback" : ""}</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skp ? skpBtns("vpngo", "vpnno") : '<button class="btn pri" data-a="vpngo">Continue anyway</button>'}</div>`;
 }
 /* Next-episode prompt (TODO 10): the last file finished and the next
    episode is online only — autoplay waits for Continue / Stop here. */
@@ -1785,11 +1814,16 @@ function nxVpn() {
 }
 function NextDlg() {
   const p = S.modal.p, c = p.id && findEpContext(p.id), art = c ? (homeThumb(c.sea, c.ep) || c.s.banner || c.s.poster) : null, v = S.data?.vpn;
-  return `<div class="nx2">${art ? `<span class="nxa" style="background-image:${esc(cssUrl(art))}"><span class="lab">${esc(p.label || "")} · online</span></span>` : ""}<div>
-    <h2 id="dt">${esc(p.label || "Next episode")}${p.show ? ` <small>${esc(p.show)}</small>` : ""}</h2>
-    <p class="sub">This one isn't on your disk — ani-cli would stream it.</p>
+  /* kind "aniskip" (Decision 39): autoplay found no VPN and has no AniSkip
+     answer for this chain yet; an online next episode asks it too. */
+  const ask = p.kind === "aniskip", online = String(p.id).startsWith("stream:"), noVpn = v?.known && !v.active, skp = noVpn && (ask || aniskipAsk());
+  const label = p.label || (c ? epCode(c.sea, c.ep) : "Next episode"), show = p.show || c?.s?.title;
+  const go = skp ? skpBtns("nxgo", "nxno", '<kbd class="kb">↵</kbd>') : `<button class="btn pri" data-a="nxgo">${noVpn ? "Stream anyway" : "Continue"}<kbd class="kb">↵</kbd></button>`;
+  return `<div class="nx2">${art ? `<span class="nxa" style="background-image:${esc(cssUrl(art))}"><span class="lab">${esc(label)}${online ? " · online" : ""}</span></span>` : ""}<div>
+    <h2 id="dt">${esc(label)}${show ? ` <small>${esc(show)}</small>` : ""}</h2>
+    <p class="sub">${online ? "Not on your disk, so it streams online. " : ""}${noVpn ? ipLine(online, skp) : ""}</p>
     <div id="nx-vpn">${nxVpn()}</div></div></div>
-  <div class="actions"><span class="note2 mono">${v?.known && !v.active ? "starts by itself when a VPN comes on" : ""}</span><button class="btn" data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button><button class="btn pri" data-a="nxgo">${v?.known && !v.active ? "Stream anyway" : "Continue"}<kbd class="kb">↵</kbd></button></div>`;
+  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">${noVpn ? "starts by itself when a VPN comes on" : ""}</span><button class="btn" data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button>${go}</div>`;
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
@@ -1923,7 +1957,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -2423,6 +2457,7 @@ async function pollNow() {
       /* "Turn it on and this starts by itself": a VPN coming up continues what waited for it. */
       if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();
       else if (vpnMoved && now.vpn.active && S.modal?.t === "vpn") A.vpngo();
+      else if (vpnMoved && now.vpn.active && S.modal?.t === "skp") A.skpgo();
     }
     if (now.notice && now.notice.ts !== lastNotice) { lastNotice = now.notice.ts; toast(now.notice.msg); }
     if (!S.playBusy) {
@@ -2463,14 +2498,18 @@ function markLoading(id) {
   S.loadingEp = id;
   pagePatch();
 }
-async function play(id, version = 0, mode, asked, fromStart) {
+/* skipOk: undefined = not asked yet, true/false = the AniSkip answer
+   (yes to the online VPN dialog counts as yes). */
+async function play(id, version = 0, mode, asked, fromStart, skipOk) {
   const online = id.startsWith("stream:");
-  if (online && !asked) return vpnGate(() => play(id, version, mode, true, fromStart));
+  if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
+  if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
   S.playBusy = true;
   if (online) markLoading(id);
   const body = { id, version };
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
+  if (skipOk !== undefined) body.aniskip = skipOk;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
   if (res.error) { markLoading(null); toast(res.error); }
@@ -2702,9 +2741,13 @@ const A = {
     if (e && xs.length) download(e.id, xs.map((x) => x.online.token));
     selEnd();
   },
-  nxgo: () => { const id = S.modal?.p?.id; closeModal(); if (id) play(id, 0, undefined, true); },
+  nxgo: () => { const id = S.modal?.p?.id; closeModal(); if (id) play(id, 0, undefined, true, undefined, true); },
+  nxno: () => { const id = S.modal?.p?.id; closeModal(); if (id) play(id, 0, undefined, true, undefined, false); },
   nxstop: () => { closeModal(); api("/api/next-prompt/dismiss", {}).catch(() => {}); },
-  vpngo: () => { const go = S.modal?.go; closeModal(); go?.(); },
+  vpngo: () => { const go = S.modal?.go; closeModal(); go?.(true); },
+  vpnno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
+  skpgo: () => { const go = S.modal?.go; closeModal(); go?.(true); },
+  skpno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
   folder: (v) => api("/api/open-folder", { show_id: v }).then((r) => { if (!r.ok) toast(r.error || "Could not open the folder"); }).catch(() => toast("Could not open the folder — is the hub running?")),
   edit: () => { if (S.view === "fr" || S.view === "show") openModal({ t: "entry" }); },
   frmore: (v, t) => { const r = t.getBoundingClientRect(); frMore(r.left, r.bottom + 6); },

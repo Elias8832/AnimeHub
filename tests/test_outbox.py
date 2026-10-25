@@ -521,7 +521,7 @@ class OutboxRouteTests(unittest.TestCase):
         dismissed."""
         player._next_prompt.update(id="stream:1:2", label="Season 1 · E2", show="X", ts=time.time())
         code, body = self.request("GET", "/api/now")
-        self.assertEqual(body.get("next_prompt"), {"id": "stream:1:2", "label": "Season 1 · E2", "show": "X"})
+        self.assertEqual(body.get("next_prompt"), {"id": "stream:1:2", "label": "Season 1 · E2", "show": "X", "kind": "online"})
         self.request("POST", "/api/next-prompt/dismiss", {})
         code, body = self.request("GET", "/api/now")
         self.assertNotIn("next_prompt", body)

@@ -283,9 +283,11 @@ class NextSource(unittest.TestCase):
         self.assertIn("S.data?.vpn]);", APP)  # a VPN change repaints the nav
         self.assertIn('addEventListener("focus", () => pollSoon(0));', APP)
         self.assertIn("if (now.next_prompt) maybeNextPrompt(now.next_prompt);", APP)
-        self.assertIn('data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button><button class="btn pri" data-a="nxgo">', APP)
+        self.assertIn('data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button>${go}', APP)
+        self.assertIn('<button class="btn pri" data-a="nxgo">${noVpn ? "Stream anyway" : "Continue"}', APP)
+        self.assertIn('skpBtns("nxgo", "nxno"', APP)  # with AniSkip on: Use / Without AniSkip (D39)
         self.assertIn('if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();', APP)  # starts by itself once a VPN is up
-        self.assertIn("play(id, 0, undefined, true)", APP)  # the popup already showed the VPN state
+        self.assertIn("play(id, 0, undefined, true, undefined, true)", APP)  # the popup already showed the VPN state (also the AniSkip yes, D39)
 
 
 class NextAiringAt(unittest.TestCase):
