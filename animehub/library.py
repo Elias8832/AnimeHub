@@ -20,6 +20,11 @@ SE_EP_RE = re.compile(r"\bS\d{1,3}\s*E(\d{1,4})\b", re.I)
 SEP_NUM_RE = re.compile(r"^(?:ep(?:isode)?)\.?\s*(\d{1,4})", re.I)
 # "<title> Episode 5.mp4" — the name ani-cli gives its downloads.
 EPISODE_WORD_RE = re.compile(r"\bEpisode\s*(\d{1,4})\b", re.I)
+# "[Group] Title - 05v2 (1080p).mkv" — the usual release naming: the number
+# after a spaced dash, once [..] / (..) tags are gone (group, resolution,
+# checksum, year). The last one wins: "86 - 01", "Mob Psycho 100 - 03".
+TAGS_RE = re.compile(r"\[[^\]]*\]|\([^)]*\)")
+DASH_NUM_RE = re.compile(r"(?:^|\s)-\s+(\d{1,4})(?:v\d+)?(?=$|[\s\-_.])", re.I)
 MIN_VALID_SCAN = 10
 # Last scan's health (TODO 23): "ok", "missing" (root not a directory),
 # "partial" (some directories unreadable). "root" is "changed" when the configured
@@ -42,7 +47,39 @@ def parse_ep_number(name):
     m = EPISODE_WORD_RE.search(name)
     if m:
         return int(m.group(1))
+    found = DASH_NUM_RE.findall(TAGS_RE.sub(" ", Path(name).stem))
+    if found:
+        return int(found[-1])
     return None
+
+
+def episode_overrides():
+    """The user's own episode numbers (Needs a look): file path → number."""
+    with database.db() as c:
+        return dict(c.execute("SELECT path, number FROM episode_numbers"))
+
+
+def set_episode_numbers(show_id, numbers):
+    """Store the user's numbers for a show's episodes ({episode id: number});
+    every file of an episode gets it. Two episodes of one season can't share
+    a number (they would merge into one). Files on disk are never touched."""
+    show = next((s for s in scan_library() if s["id"] == show_id), None)
+    if not show:
+        return {"error": "unknown show"}
+    rows = []
+    for sea in show["seasons"]:
+        final = {ep["id"]: numbers.get(ep["id"], ep["number"]) for ep in sea["episodes"]}
+        dup = next((n for n in set(final.values()) if list(final.values()).count(n) > 1), None)
+        if dup is not None:
+            return {"error": f"Two files in {sea['label']} can't both be episode {dup}."}
+        rows += [(f["path"], final[ep["id"]]) for ep in sea["episodes"] if ep["id"] in numbers for f in ep["files"]]
+    if len({r[0] for r in rows}) == 0 and numbers:
+        return {"error": "no such episode"}
+    with database.db() as c:
+        c.executemany("INSERT INTO episode_numbers(path, number) VALUES(?,?)"
+                      " ON CONFLICT(path) DO UPDATE SET number=excluded.number", rows)
+    _scan_memo["sig"] = None  # numbers live in the scan: rescan
+    return {"ok": True, "episodes": len(numbers)}
 
 
 # The last scan, keyed by the library's folder layout (TODO 61): every
@@ -105,6 +142,8 @@ def _scan_library():
         # a different root. Flag it — the config flow (step 3) must adopt a
         # root explicitly; a scan never silently tombstones the old one.
         scan_state["root"] = "changed"
+
+    overrides = episode_overrides()
 
     def walk_error(err):
         scan_state["walk_errors"] += 1
@@ -196,18 +235,30 @@ def _scan_library():
         if sea is None:
             sea = {"key": season_key, "season": season, "label": season_label, "episodes": []}
             entry["seasons"].append(sea)
-        for idx, v in enumerate(videos):
-            n = parse_ep_number(v)
-            if n is None:
-                n = idx + 1
+        # Files whose name gives no number are numbered in file order over
+        # the numbers left free (never merged into a read one as a "version")
+        # and flagged `guessed` for Needs a look, until the user confirms.
+        read, unread = [], []
+        for v in videos:
             ep_rel = str(rel / v)
+            n = overrides.get(ep_rel)
+            if n is None:
+                n = parse_ep_number(v)
+            (read if n is not None else unread).append((v, ep_rel, n))
+        taken = {e["number"] for e in sea["episodes"]} | {n for _, _, n in read}
+        free = (n for n in range(1, 100000) if n not in taken)
+        for v, ep_rel, n in read + [(v, r, None) for v, r, _ in unread]:
+            guessed = n is None
+            if guessed:
+                n = next(free)
             vm = re.search(r"\(([^)]+)\)", v)
             ver = {"path": ep_rel, "label": vm.group(1) if vm else "default"}
             existing = next((e for e in sea["episodes"] if e["number"] == n), None)
             if existing is None:
                 sea["episodes"].append(
                     {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel, "number": n,
-                     "files": [ver], "season": season, "season_label": season_label}
+                     "files": [ver], "season": season, "season_label": season_label,
+                     **({"guessed": True} if guessed else {})}
                 )
             else:
                 existing["files"].append(ver)
@@ -229,6 +280,10 @@ def _scan_library():
                     ep["number"] += 1
                 seen.add(ep["number"])
             sea["episodes"].sort(key=lambda x: x["number"])
+            if len(sea["episodes"]) < 2 or s["kind"] != "show":
+                # One file (a movie, a lone special) has nothing to mix up.
+                for ep in sea["episodes"]:
+                    ep.pop("guessed", None)
     show_list.sort(key=lambda x: (x["collection"] or x["title"]).lower())
     if scan_state["walk_errors"]:
         scan_state["state"] = "partial"
@@ -324,7 +379,8 @@ def merge_db(scan):
                 # IDs that are back in the scan clear their tombstone again —
                 # only the ones actually tombstoned, not one DELETE per episode.
                 back = {("episode", eid) for eid in known & set(rows)} | \
-                       {("show", sid) for sid in scan_ids & set(meta)}
+                       {("show", sid) for sid in scan_ids & set(meta)} | \
+                       {("season", sid) for sid in scan_ids & season_rows}
                 if have & back:
                     c.executemany("DELETE FROM tombstones WHERE kind=? AND key=?", have & back)
     for s in scan:
@@ -411,6 +467,7 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
                     "genres": e.get("genres") or [],
                     "next_episode": e.get("next_episode"),
                     "poster": e.get("poster"), "banner": e.get("banner"),
+                    "color": e.get("color"),  # additive (TODO 60): the accent
                     "updated": e.get("updated"),
                     "favourite": e["id"] in favs,
                     "capability": cap,

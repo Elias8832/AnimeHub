@@ -12,7 +12,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import anicli, database, library, mapping, pages, progress, streaming, util
+from . import anicli, database, library, mapping, pages, progress, settings, skips, streaming, util
 from .config import config, SKIP_CREDITS_LUA
 
 
@@ -201,9 +201,16 @@ def autoplay_next(ep_id, version=0):
     try:
         nxt = next_up(ep_id)
         if nxt["source"] == "online" and not ep_id.startswith("stream:"):
-            _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"), ts=time.time())
+            _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"),
+                                kind="online", ts=time.time())
         elif nxt["id"]:
-            start_play(nxt["id"], version)
+            carry_aniskip(ep_id, nxt["id"])
+            if aniskip_question(nxt["id"]):
+                # No VPN and nobody answered yet: wait and ask, as above.
+                _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"),
+                                    kind="aniskip", ts=time.time())
+            else:
+                start_play(nxt["id"], version)
     except Exception as e:
         print(f"Autoplay: {e}", file=sys.stderr, flush=True)
 
@@ -219,6 +226,81 @@ def _record_session_error(ep_id, msg):
     _session_error.update(ep_id=ep_id, error=msg, ts=time.time())
 
 
+# AniSkip without a VPN (Decision 39): the hub asks before a play click
+# uses it. The answer is kept per episode: a yes for a while at the start
+# (an online episode can take 90 s to start), and autoplay passes it on
+# down the chain, yes or no. A chain with no answer yet that finds no VPN
+# waits for one (the next-episode prompt, kind "aniskip").
+_aniskip_answers = {}
+GRANT_TTL = 600
+# How old an answer may be when its episode ends and autoplay carries it
+# on (a long movie still counts).
+CHAIN_TTL = 4 * 3600
+
+
+def answer_aniskip(ep_id, yes):
+    _aniskip_answers[ep_id] = (bool(yes), time.time())
+
+
+def carry_aniskip(from_id, to_id):
+    yes, ts = _aniskip_answers.get(from_id, (None, 0))
+    if yes is not None and time.time() - ts < CHAIN_TTL:
+        answer_aniskip(to_id, yes)
+
+
+def _vpn_missing():
+    vpn = settings.vpn_status()
+    return vpn["known"] and not vpn["active"]
+
+
+def aniskip_question(ep_id):
+    """Whether playing ep_id now needs the user's AniSkip answer first: on,
+    the question switched on, no VPN, and no answer for this episode."""
+    if not settings.automation_enabled("aniskip") or not settings.automation_enabled("aniskip_vpn_warn"):
+        return False
+    yes, ts = _aniskip_answers.get(ep_id, (None, 0))
+    return (yes is None or time.time() - ts >= GRANT_TTL) and _vpn_missing()
+
+
+def aniskip_allowed(ep_id):
+    if not settings.automation_enabled("aniskip"):
+        return False
+    if not settings.automation_enabled("aniskip_vpn_warn") or not _vpn_missing():
+        return True
+    yes, ts = _aniskip_answers.get(ep_id, (False, 0))
+    return yes and time.time() - ts < GRANT_TTL
+
+
+def send_skips(proc, ep_id, sock_path, duration):
+    """Hand mpv's skip script this episode's opening/ending ranges
+    (Decision 39). Runs on its own thread: reading chapters and asking
+    AniSkip must never hold up tracking. Best effort: a failure only means
+    no ranges, and Enter keeps finishing the episode."""
+    prefs = settings.skip_prefs()
+    if all(mode == "off" for mode in prefs.values()):
+        return
+    threading.Thread(target=_send_skips, args=(proc, ep_id, sock_path, duration, prefs), daemon=True).start()
+
+
+def _send_skips(proc, ep_id, sock_path, duration, prefs):
+    try:
+        chapters = (mpv_ipc(sock_path, ["get_property", "chapter-list"]) or {}).get("data")
+        segs = skips.chapter_segments(chapters, duration, prefs)
+        missing = [k for k in ("op", "ed") if prefs[k] != "off" and all(x["kind"] != k for x in segs)]
+        # AniSkip only when the user switched it on (and, without a VPN, said
+        # yes for this play), and only for a kind the chapters don't cover.
+        hit = entry_of_episode(ep_id) if missing and aniskip_allowed(ep_id) else None
+        if hit and isinstance(hit[1], int):
+            mal = skips.mal_id(hit[0])
+            segs = segs + skips.aniskip_segments(skips.aniskip_times(mal, hit[1]) if mal else None,
+                                                 duration, prefs, missing)
+        # The session may have ended or been replaced while AniSkip answered.
+        if segs and _owns_session(ep_id, proc):
+            mpv_ipc(sock_path, ["script-message", "anime-hub-segments", json.dumps({"segments": segs})])
+    except Exception as exc:
+        util.log("skip ranges not sent: %s" % exc)
+
+
 def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     """Track one playback session over mpv's IPC socket. `startup` bounds
     the wait for the socket; `failure(rc)` words a session that ended
@@ -229,6 +311,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     # file) answers on the socket while still buffering, and writing the
     # initial 0 then would erase the resume point if the user quits early.
     seen = False
+    skips_sent = False
     deadline = time.time() + startup
     connected = False
     while time.time() < deadline and proc.poll() is None:
@@ -285,6 +368,9 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                         break
                     except subprocess.TimeoutExpired:
                         continue
+                if not skips_sent and duration:
+                    skips_sent = True
+                    send_skips(proc, ep_id, sock_path, duration)
                 now = util.utc_stamp()
                 with database.db() as c:
                     c.execute(
@@ -368,7 +454,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
         pass
 
 
-def resume_args(ep_id):
+def resume_args(ep_id, from_start=False):
     """mpv's --start for an episode, or nothing. Resume rule (TODO 24), the
     one authoritative rule the UI mirrors: a saved position is a resume
     point whenever it is non-trivial (> 1 % of the episode — the frontend's
@@ -376,6 +462,8 @@ def resume_args(ep_id):
     92 % strip cutoff, and for watched rows still below the cutoff; a
     finished row restarts. The old 60 s floor disagreed with the UI's
     Resume label in the 1–60 s zone."""
+    if from_start:  # the episode menu's "Play from the start"; the saved point stays until playback moves past it
+        return []
     with database.db() as c:
         row = c.execute("SELECT position, duration, watched FROM episodes WHERE id=?", (ep_id,)).fetchone()
     pos = row[0] if row else 0
@@ -394,10 +482,10 @@ def retire_session(proc):
     anicli.stop_process_group(proc)
 
 
-def start_play(ep_id, version=0):
+def start_play(ep_id, version=0, from_start=False):
     dismiss_next_prompt()  # playing anything answers the prompt
     if ep_id.startswith("stream:"):
-        return streaming.start_stream(ep_id)
+        return streaming.start_stream(ep_id, from_start=from_start)
     s, ep = library.episode_by_id(ep_id)
     if not ep:
         return {"error": "unknown episode"}
@@ -407,7 +495,7 @@ def start_play(ep_id, version=0):
     if not path.exists():
         return {"error": "file missing"}
     sock = ipc_socket_path()
-    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id)]
+    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start)]
     # No --save-position-on-quit (TODO 24): the hub's IPC loop is the only
     # resume store. mpv's watch-later state would otherwise fight an
     # intentional restart/reset — a stale mpv-side position can override

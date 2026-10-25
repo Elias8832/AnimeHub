@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from . import anicli, database, library
@@ -32,7 +33,24 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # Not writes, just switches kept beside them:
                        # watched marks read from AniList progress, and the
                        # VPN status icon / no-VPN warning for online episodes.
-                       "anilist_watched": False, "vpn_icon": True, "vpn_warn": True}
+                       "anilist_watched": False, "vpn_icon": True, "vpn_warn": True,
+                       # Opening/ending times from AniSkip (Decision 39): it
+                       # would learn what you watch and when, so opt-in; and
+                       # without a VPN, ask before an episode uses it.
+                       "aniskip": False, "aniskip_vpn_warn": True}
+
+
+# Opening/ending skipping in mpv (Decision 39): off, a prompt (Enter skips)
+# or automatic, one choice for openings and one for endings.
+SKIP_MODES = ("off", "prompt", "auto")
+
+
+def skip_prefs():
+    out = {}
+    for kind in ("op", "ed"):
+        v = get_setting("skip_" + kind)
+        out[kind] = v if v in SKIP_MODES else "prompt"
+    return out
 
 
 def automation_enabled(key):
@@ -87,7 +105,11 @@ def settings_payload():
         "anilist_watched": automation_enabled("anilist_watched"),
         "vpn_icon": automation_enabled("vpn_icon"),
         "vpn_warn": automation_enabled("vpn_warn"),
+        "aniskip": automation_enabled("aniskip"),
+        "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
         "tour_done": get_setting("tour_done") == "1",
+        # additive: opening/ending skip modes, {"op": …, "ed": …}
+        "skip": skip_prefs(),
         "library_root": str(config.LIBRARY) if config.LIBRARY else None,
         "data_dir": str(config.DATA),
         "config_path": str(CONFIG_PATH),
@@ -95,11 +117,32 @@ def settings_payload():
         "window": config.WINDOW,
         "scan": dict(library.scan_state),
         "tools": {t: shutil.which(t) for t in ("mpv", "ani-cli", "upscayl")},
+        # additive: the tour's last page says "mpv 0.39 found"
+        "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
                    "check": anicli.anicli_check(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
     }
+
+
+_mpv_versions = {}
+
+
+def mpv_version():
+    """"0.39.0" from `mpv --version` (asked once per mpv path), or None."""
+    exe = shutil.which("mpv")
+    if not exe:
+        return None
+    if exe not in _mpv_versions:
+        try:
+            out = subprocess.run([exe, "--version"], stdin=subprocess.DEVNULL, capture_output=True,
+                                 text=True, timeout=10).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        m = re.match(r"mpv\s+v?(\d[\w.+-]*)", out.strip())
+        _mpv_versions[exe] = m.group(1) if m else None
+    return _mpv_versions[exe]
 
 
 def adopt_root():

@@ -374,7 +374,10 @@ def reconcile_analyze():
             # opinion — a never-touched show has no local values to defend.
             cur = library.curation_get("aid:%d" % aid) or {}
             r_status, l_status = e.get("status"), cur.get("status")
-            r_score = anilist._score_norm(e.get("score100"), fmt)
+            # score100 is already on the 0-100 scale; `score` is POINT_10
+            # (old caches carry only that one).
+            r_score = (float(e["score100"]) if e.get("score100") is not None
+                       else anilist._score_norm(e.get("score"), "POINT_10"))
             l_score = anilist._score_norm(cur.get("score"), fmt)
             status_diff = l_status and r_status and l_status != r_status
             score_diff = l_score is not None and r_score is not None and \
@@ -382,13 +385,20 @@ def reconcile_analyze():
             if status_diff or score_diff:
                 conflicts.append({
                     "media_id": aid, "show_id": s["id"], "title": label,
-                    "remote": {"status": r_status, "score": e.get("score")},
+                    "remote": {"status": r_status, "score": _user_score(e, fmt)},
                     "local": {"status": l_status, "score": cur.get("score")},
                     "diff": ("status" if status_diff else "") +
                             ("+score" if status_diff and score_diff else
                              ("score" if score_diff else "")),
                 })
     return {"pending": True, "facts": facts, "conflicts": conflicts}
+
+
+def _user_score(e, fmt):
+    """A cached list entry's score in the user's own format — the scale the
+    local overlay keeps (the list's `score` is always POINT_10)."""
+    s = anilist.score_from100(e.get("score100"), fmt)
+    return e.get("score") if s is None else s
 
 
 def outbox_pending_for(media_id):
@@ -426,10 +436,11 @@ def reconcile_apply(decisions):
     the overlay and pushes its values to AniList through the outbox (rate
     -limit friendly, and it survives a post-connect connection drop)."""
     applied = 0
-    remote_known = {}
+    remote_known, fmt = {}, "POINT_10"
     try:
         data = anilist.anilist_user_data()
         remote_known = {e["id"]: e for e in data.get("entries", [])}
+        fmt = data.get("score_format") or fmt
     except Exception:
         pass
     for d in decisions or []:
@@ -445,7 +456,7 @@ def reconcile_apply(decisions):
             if e.get("status"):
                 cpatch["status"] = e["status"]
             if e.get("score") is not None:
-                cpatch["score"] = e["score"]
+                cpatch["score"] = _user_score(e, fmt)
             if cpatch:
                 library.curation_set(ref, cpatch)
                 applied += 1

@@ -12,9 +12,9 @@ from . import anilist, database, library, mapping, pages, streaming, util
 # One franchise entry (docs/franchise-page-plan.md): everything the franchise
 # page draws for it, plus the typed relation edges the franchise is built
 # from. tests/record_fixtures.py records the test fixtures with this query.
-FRANCHISE_FIELDS = """id title{romaji english native} synonyms format status episodes duration averageScore
+FRANCHISE_FIELDS = """id idMal title{romaji english native} synonyms format status episodes duration averageScore
 season seasonYear startDate{year month day} nextAiringEpisode{episode airingAt}
-coverImage{extraLarge} bannerImage description
+coverImage{extraLarge color} bannerImage description
 relations{edges{relationType node{id type format status startDate{year month day} title{romaji english}}}}
 streamingEpisodes{title thumbnail}"""
 FRANCHISE_QUERY_ID = "query($id:Int){Media(id:$id,type:ANIME){" + FRANCHISE_FIELDS + "}}"

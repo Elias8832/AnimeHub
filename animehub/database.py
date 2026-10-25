@@ -256,9 +256,23 @@ def migration_17(c):
     c.execute("DELETE FROM entry_art WHERE source = 'anizip'")
 
 
+def migration_18(c):
+    """Completion popups survive a restart: the event keeps the title the
+    popup shows (unseen events are read back on boot)."""
+    _add_columns(c, "completion_events", {"title": "TEXT"})
+
+
+def migration_19(c):
+    """Episode numbers the user set or confirmed (Needs a look), keyed by
+    the file's path in the library: files the name gives no number for."""
+    c.execute("""CREATE TABLE IF NOT EXISTS episode_numbers(
+        path TEXT PRIMARY KEY, number INTEGER NOT NULL)""")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
-              migration_reserved, migration_reserved, migration_15, migration_16, migration_17]
+              migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
+              migration_18, migration_19]
 
 
 def snapshot_before(target_version):

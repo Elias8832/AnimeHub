@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import anicli, anilist, database, downloader, franchise, library, mapping, metadata, pages, player, progress, settings, streaming, sync
+from . import anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -194,6 +194,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": e.reason, "auth": True}, 401)
             except Exception as e:
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
+        elif route == "/api/journal":
+            # Additive (Elias, 2026-10-24): the Journal from your AniList activity.
+            try:
+                since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+            except ValueError:
+                self._bad("'since' must be an integer (unix seconds)")
+                return
+            self.send_json(journal.journal(since))
+        elif route == "/api/recommendations":
+            # TODO 65 (additive): Home's "Recommended for you" row.
+            self.send_json(recommend.recommendations())
         elif route == "/api/outbox":
             # TODO 14: the sync chip's list of queued changes (additive).
             self.send_json({"items": sync.outbox_items()})
@@ -240,7 +251,9 @@ class Handler(BaseHTTPRequestHandler):
                     # is online only — the hub asks before ani-cli fetches.
                     ask = player.next_prompt()
                     if ask:
-                        payload["next_prompt"] = {k: ask.get(k) for k in ("id", "label", "show")}
+                        payload["next_prompt"] = {**{k: ask.get(k) for k in ("id", "label", "show")},
+                                                 # additive (D39): "online" or "aniskip"
+                                                 "kind": ask.get("kind") or "online"}
                     if outbox_n:
                         # Quiet sync chip (TODO 14, Decision 3).
                         payload["outbox"] = outbox_n
@@ -298,6 +311,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file(WEB / "style.css", "text/css")
         elif route == "/app.js":
             self.send_file(WEB / "app.js", "text/javascript")
+        elif route.startswith("/fonts/") and route.endswith(".woff2"):
+            # TODO 60 (Decision 38): the UI fonts ship with the app, so it
+            # looks the same offline. Basename only — no path walking.
+            self.send_file(WEB / "fonts" / os.path.basename(route), "font/woff2", cache=True)
         else:
             self.send_error(404)
 
@@ -335,22 +352,34 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "request body must be a JSON object"}, 400)
             return
         if route == "/api/play":
-            if self._fields(body, strings=("id",), ints=("version",)):
+            if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
-                if mode is not None and mode not in anicli.STREAM_MODES:
+                start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
+                # additive: the user's answer to AniSkip without a VPN (Decision 39)
+                aniskip_ok = body.get("aniskip")
+                if not isinstance(start, bool):
+                    self._bad("'from_start' must be a boolean")
+                elif aniskip_ok is not None and not isinstance(aniskip_ok, bool):
+                    self._bad("'aniskip' must be a boolean")
+                elif mode is not None and mode not in anicli.STREAM_MODES:
                     self._bad("'mode' must be one of: %s" % ", ".join(anicli.STREAM_MODES))
                 elif mode and body["id"].startswith("stream:"):
+                    if aniskip_ok is not None:
+                        player.answer_aniskip(body["id"], aniskip_ok)
                     # An online episode in the other language ("Play dubbed").
                     player.dismiss_next_prompt()
-                    self.send_json(streaming.start_stream(body["id"], mode))
+                    self.send_json(streaming.start_stream(body["id"], mode, from_start=start))
                 else:
-                    self.send_json(player.start_play(body["id"], body.get("version", 0)))
+                    if aniskip_ok is not None:
+                        player.answer_aniskip(body["id"], aniskip_ok)
+                    self.send_json(player.start_play(body["id"], body.get("version", 0), from_start=start))
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
-            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "tour_done")
+            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done")
             # ani-cli bridge preferences: closed vocabularies.
-            choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES}
+            choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
+                       "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
                     self._bad("'%s' must be a boolean" % key)
@@ -457,6 +486,17 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.send_json(mapping.set_season_pin(body["show_id"], body["season"], aid,
                                                   none=body.get("none") is True))
+        elif route == "/api/episode-numbers":
+            # Needs a look: the user's numbers for files their names give none
+            # for ({episode id: number}; sending the shown ones confirms them).
+            if self._fields(body, strings=("show_id",)):
+                nums = body.get("numbers")
+                if not isinstance(nums, dict) or not nums or not all(
+                        isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 9999 for v in nums.values()):
+                    self._bad("'numbers' must map episode ids to numbers 0–9999")
+                else:
+                    res = library.set_episode_numbers(body["show_id"], nums)
+                    self.send_json(res, 200 if res.get("ok") else 400)
         elif route == "/api/keep-local":
             # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
             if self._fields(body, strings=("show_id",)):
@@ -675,7 +715,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self._fields(body, strings=("query",)):
                     self.send_json(anicli.anicli_search(body["query"]))
             elif route == "/api/stream/link":
-                if not self._fields(body, strings=("query",), ints=("media_id", "index")):
+                if not self._fields(body, strings=("query",), ints=("media_id",), opt_ints=("index",)):
                     return
                 title, mode, display = body.get("title"), body.get("mode"), body.get("display")
                 if body["media_id"] <= 0:
@@ -718,16 +758,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": msg}, 400)
         return False
 
-    def _fields(self, body, strings=(), ints=(), bools=()):
+    def _fields(self, body, strings=(), ints=(), bools=(), opt_ints=()):
         """Typed request fields (TODO 22): structured 400s instead of
         silent empty-string writes. Strings must be non-empty; ints reject
-        bools; bools must actually be booleans."""
+        bools and must be present (opt_ints may be left out); bools must
+        actually be booleans."""
         for name in strings:
             v = body.get(name)
             if not isinstance(v, str) or not v:
                 return self._bad(f"missing or invalid '{name}'")
-        for name in ints:
-            v = body.get(name, 0)
+        for name in (*ints, *opt_ints):
+            if name not in body and name in opt_ints:
+                continue
+            v = body.get(name)
             if isinstance(v, bool) or not isinstance(v, int):
                 return self._bad(f"'{name}' must be an integer")
         for name in bools:

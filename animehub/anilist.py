@@ -20,10 +20,10 @@ ANILIST_URL = "https://graphql.anilist.co"
 ANILIST_USER_QUERY = """query($name:String){
 User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
 MediaListCollection(userName:$name, type:ANIME){
-lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge} bannerImage title{english romaji} } } }
+lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }
 }}"""
 MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
-coverImage{extraLarge} bannerImage description
+coverImage{extraLarge color} bannerImage description
 relations{edges{relationType node{id format}}}
 streamingEpisodes{title thumbnail}"""
 MEDIA_QUERY_SEARCH = "query($search:String){Media(search:$search,type:ANIME){" + MEDIA_FIELDS + "}}"
@@ -91,6 +91,15 @@ def _score_norm(value, fmt):
     if value is None or fmt not in _SCORE_MAX:
         return None
     return float(value) * 100.0 / _SCORE_MAX[fmt]
+
+
+def score_from100(s100, fmt):
+    """A 0-100 score (the list's score100) in the user's own format: 85 →
+    8.5 (POINT_10_DECIMAL), 9 (POINT_10), 4 (POINT_5). None when unknown."""
+    if s100 is None or fmt not in _SCORE_MAX:
+        return None
+    score = round(float(s100) * _SCORE_MAX[fmt] / 100.0, 1 if fmt == "POINT_10_DECIMAL" else 0)
+    return score if fmt == "POINT_10_DECIMAL" else int(score)
 
 
 def _score_format():
@@ -165,12 +174,7 @@ def entry_state_from_lists(media_id):
         return None
     from . import library  # library imports this module
     fmt = cached.get("score_format") or "POINT_10"
-    s100 = e.get("score100")
-    score = None
-    if s100 is not None and fmt in _SCORE_MAX:
-        score = round(float(s100) * _SCORE_MAX[fmt] / 100.0, 1 if fmt == "POINT_10_DECIMAL" else 0)
-        if fmt != "POINT_10_DECIMAL":
-            score = int(score)
+    score = score_from100(e.get("score100"), fmt)
     nxt = e.get("next_episode")
     if nxt and nxt.get("at"):
         nxt = {"number": nxt["number"], "in_seconds": int(nxt["at"] - time.time())}
@@ -782,6 +786,9 @@ def anilist_user_data(force=False):
                     "season": e["media"].get("season"),
                     "poster": (e["media"].get("coverImage") or {}).get("extraLarge"),
                     "banner": e["media"].get("bannerImage"),
+                    # Additive (TODO 60): AniList's own colour for the show — the
+                    # accent follows it (canvas sampling is blocked in some browsers).
+                    "color": (e["media"].get("coverImage") or {}).get("color"),
                     "updated": e.get("updatedAt"),
                     # Additive (TODO 61): the panel draws from these at once,
                     # before the live entry read answers.

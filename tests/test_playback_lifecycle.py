@@ -133,6 +133,8 @@ class RetiredWatcherTests(LifecycleBase):
                 return {}
             if cmd[:2] == ["get_property", "duration"]:
                 return {"data": 1440.0}
+            if cmd[:2] != ["get_property", "time-pos"]:
+                return {}  # the skip ranges' chapter-list read
             reads["n"] += 1
             if reads["n"] == 2:
                 # The replacement takes the slot between the two polls.
@@ -353,6 +355,18 @@ class ResumeRuleTests(LifecycleBase):
         self.seed("ep1", watched=0, position=1350.0)
         player.start_play("ep1")
         self.assertEqual(self.start_arg(), "--start=22:30")
+
+    def test_play_from_the_start_skips_the_saved_point(self):
+        """The episode menu's "Play from the start" (Elias, 2026-10-24)."""
+        self.seed("ep1", watched=0, position=600.0)
+        player.start_play("ep1", from_start=True)
+        self.assertIsNone(self.start_arg())
+
+    def test_stopped_rewatch_resumes(self):
+        """A watched episode stopped under 92 % resumes — the tile shows that point too."""
+        self.seed("ep1", watched=1, position=185.0)
+        player.start_play("ep1")
+        self.assertEqual(self.start_arg(), "--start=3:5")
 
 
 class SeasonOrderTests(LifecycleBase):

@@ -14,15 +14,33 @@ def _completion_event(media_id, title):
         row = c.execute("SELECT COALESCE(MAX(count),0) FROM completion_events"
                         " WHERE media_id=?", (media_id,)).fetchone()
         count = row[0] + 1
-        c.execute("INSERT INTO completion_events(media_id,count,seen,ts)"
-                  " VALUES(?,?,0,?)", (media_id, count, util.utc_stamp()))
+        c.execute("INSERT INTO completion_events(media_id,count,seen,ts,title)"
+                  " VALUES(?,?,0,?,?)", (media_id, count, util.utc_stamp(), title))
     with _completion_lock:
+        _load_pending()
         _completion_pending.append({"media_id": media_id, "count": count,
                                     "title": title})
 
 
+def _load_pending():
+    """Once per run (under _completion_lock): unseen events of the last week
+    from the database, so a restart before the popup was answered doesn't
+    lose it. Older ones stay quiet — a month-old popup is noise."""
+    global _completion_loaded
+    if _completion_loaded:
+        return
+    _completion_loaded = True
+    with database.db() as c:
+        rows = c.execute("SELECT media_id, count, title FROM completion_events WHERE seen=0"
+                         " AND ts >= datetime('now','-7 days') ORDER BY ts").fetchall()
+    known = {(e["media_id"], e["count"]) for e in _completion_pending}
+    _completion_pending[:0] = [{"media_id": int(m), "count": n, "title": t} for m, n, t in rows
+                               if (int(m), n) not in known]
+
+
 def _pending_completion():
     with _completion_lock:
+        _load_pending()
         return dict(_completion_pending[-1]) if _completion_pending else None
 
 
@@ -38,6 +56,7 @@ def _dismiss_completion(media_id, count):
 
 _completion_lock = threading.Lock()
 _completion_pending = []
+_completion_loaded = False
 
 
 def anilist_track_show(s, manual=False, only=None):
@@ -108,6 +127,9 @@ def _track(s, manual=False, only=None):
             return _track_blind(s, only, add)
         return None
     entries = {e.get("id"): e for e in cached.get("entries", [])}
+    # Progress of listed entries is the Track episodes switch's alone: auto
+    # -add being on must not publish progress the user switched off.
+    track = manual or settings.automation_enabled("auto_progress_sync")
     patches = {}
     for u in mapping.release_units(s):
         if only is not None and not any(ep["id"] in only for ep, _ in u["eps"]):
@@ -117,7 +139,7 @@ def _track(s, manual=False, only=None):
         highest = max(watched) if watched else 0
         remote = entries.get(aid)
         if remote is not None:
-            if not mapping.unit_fits(u, remote.get("episodes")) or highest <= (remote.get("progress") or 0):
+            if not track or not mapping.unit_fits(u, remote.get("episodes")) or highest <= (remote.get("progress") or 0):
                 continue
             if sync.outbox_pending_for(aid):
                 # Offline E5 then E6: fold the newer count into the queued
@@ -200,8 +222,9 @@ def bulk_watched(show_id, season=None, watched=True, ids=None):
     with database.db() as c:
         for ep in eps:
             c.execute(
+                # a mark means done: a half-watched episode drops its stop point
                 "INSERT INTO episodes(id,watched) VALUES(?,?)"
-                " ON CONFLICT(id) DO UPDATE SET watched=excluded.watched",
+                " ON CONFLICT(id) DO UPDATE SET watched=excluded.watched, position=CASE WHEN excluded.watched=1 THEN 0 ELSE position END",
                 (ep["id"], int(bool(watched))))
     synced = None
     if watched:
@@ -247,7 +270,7 @@ def completion_for_episode(ep_id):
 
 def set_watched(eid, watched):
     with database.db() as c:
-        c.execute("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched",
+        c.execute("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched, position=CASE WHEN excluded.watched=1 THEN 0 ELSE position END",
                   (eid, int(watched)))
 
 

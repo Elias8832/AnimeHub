@@ -139,9 +139,14 @@ fn wrapper_profile() -> PathBuf {
 /// that skipped the graceful path left the hub serving).
 fn spawn_hub(hub_py: &PathBuf) -> Option<Child> {
     let result = unsafe {
-        Command::new("python3")
-            .arg(hub_py)
-            .arg("--no-browser")
+        let mut cmd = Command::new("python3");
+        cmd.arg(hub_py).arg("--no-browser");
+        // The port was read from ANIME_HUB_CONFIG's file (configured_port):
+        // the hub must read the same file, or the window waits on another port.
+        if let Ok(cfg) = std::env::var("ANIME_HUB_CONFIG") {
+            cmd.arg("--config").arg(cfg);
+        }
+        cmd
             .pre_exec(|| {
                 libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
                 Ok(())
@@ -251,6 +256,10 @@ fn main() {
         let _ = win.wait();
         kill_hub(&mut hub); // close = quit
     } else {
-        let _ = app_window(&exe, port);
+        // This chromium hands the window to the running instance's profile
+        // singleton and exits. Wait for that: returning now would fire its
+        // PR_SET_PDEATHSIG and kill it before the handoff.
+        let mut win = app_window(&exe, port);
+        let _ = win.wait();
     }
 }

@@ -68,7 +68,8 @@ def _entry_facts(m):
             "year": (m.get("startDate") or {}).get("year") or m.get("seasonYear"),
             "season": m.get("season"), "score": m.get("averageScore"),
             "duration": m.get("duration"), "overview": anilist.strip_html(m.get("description")),
-            "poster": (m.get("coverImage") or {}).get("extraLarge"), "banner": m.get("bannerImage")}
+            "poster": (m.get("coverImage") or {}).get("extraLarge"), "banner": m.get("bannerImage"),
+            "color": (m.get("coverImage") or {}).get("color")}  # additive (TODO 60): the accent
 
 
 def _watch(src):
@@ -214,7 +215,8 @@ def entry_watched(mid, watched, numbers=None):
     slots = [x for x in entry["slots"] if pick is None or x["number"] in pick]
     ids = [src["id"] for x in slots for src in (x["local"], x["online"]) if src]
     with database.db() as c:
-        c.executemany("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched",
+        # a mark means done: a half-watched episode drops its stop point (Elias, 2026-10-24)
+        c.executemany("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched, position=CASE WHEN excluded.watched=1 THEN 0 ELSE position END",
                       [(i, int(bool(watched))) for i in ids])
     synced = None
     if watched:

@@ -59,7 +59,7 @@ def _stream_miss(media_id, missed):
 
 RELEASE_QUERY = """query($id:Int){Media(id:$id,type:ANIME){id title{romaji english native} synonyms
 format status episodes averageScore seasonYear startDate{year} nextAiringEpisode{episode}
-coverImage{extraLarge} bannerImage description streamingEpisodes{title thumbnail}}}"""
+coverImage{extraLarge color} bannerImage description streamingEpisodes{title thumbnail}}}"""
 
 
 def release_meta(media_id):
@@ -620,7 +620,7 @@ def mpv_script_flag():
 _session_notice = {"msg": None, "ts": 0.0}
 
 
-def start_stream(ep_id, mode=None, sub_once=False, rematched=False):
+def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=False):
     """Play an online episode: link the release if nobody has yet, then let
     ani-cli resolve the episode and run mpv in the foreground
     (--exit-after-play) with the hub's IPC socket, resume point and
@@ -656,7 +656,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False):
     code = f"E{token}"
     play_mode = "sub" if sub_once else link["mode"]
     sock = player.ipc_socket_path()
-    flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *player.resume_args(ep_id)]
+    flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *player.resume_args(ep_id, from_start)]
     script = mpv_script_flag()
     if script:
         flags.append(script)
@@ -706,14 +706,14 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False):
         util.log("stream %s failed: %s" % (ep_id, msg or "exit code %s" % rc))
         if play_mode == "dub" and "no sources found for dub" in msg.lower():
             _session_notice.update(msg=f"{code} isn't dubbed yet — playing it subbed.", ts=time.time())
-            r = start_stream(ep_id, sub_once=True)
+            r = start_stream(ep_id, sub_once=True, from_start=from_start)
             return r.get("error")
         if "invalid anime selection" in msg.lower() and not rematched:
             try:
                 stream_autolink(mid, rematch=True)
             except anicli.AniCliError as e:
                 return str(e)
-            r = start_stream(ep_id, mode, sub_once, rematched=True)
+            r = start_stream(ep_id, mode, sub_once, rematched=True, from_start=from_start)
             return r.get("error")
         return friendly_stream_error(msg, code)
 

@@ -1,4 +1,4 @@
-"""TODO 48: the Decision 28 palettes, the genre filter, the home airing
+"""TODO 48 / 60: the Decision 38 appearance + shell, the genre filter, the home airing
 countdown and the Hiatus/Cancelled airing filters stay in the UI. The pure
 parts of web/app.js (the @pure / @lists / @lib regions) run under node, and
 so do the node:test scripts next to this file (*.cjs)."""
@@ -72,7 +72,7 @@ class Frontend(unittest.TestCase):
                          ["RELEASING", "FINISHED", "NOT_YET_RELEASED", "HIATUS", "CANCELLED"])
         for air, ids in (("FINISHED", [2]), ("HIATUS", [3]), ("CANCELLED", [4])):
             self.assertEqual(self.filtered(air=air), ids, air)
-        self.assertIn('fsel("air", "Airing", [["all", "any"], ...Object.entries(AIR)])', APP)
+        self.assertIn('fsel("air", "airing", [["all", "any"], ...Object.entries(AIR)])', APP)
 
     def test_season_tab_counts_every_episode(self):
         # TODO 7: the tab shows the entry's size, not what's left to watch
@@ -89,20 +89,177 @@ class Frontend(unittest.TestCase):
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 + 90000} }}, {now});"), "E5 in 1d 1h")
         self.assertEqual(run_js(f"return airText({{ number: 5, in_seconds: 600 }}, {now});"), "E5 in 10 min")
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 - 5} }}, {now});"), "E5 is out")
-        self.assertIn("airText(e.next_episode)", APP)
+        self.assertIn('sec > 0 ? "in " + fmtIn(sec) : "out now"', APP)  # Home → This week (Decision 38)
 
-    def test_palettes(self):
-        keys = run_js("return PALS.map(([k]) => k);")
-        self.assertEqual(keys, ["graphite", "teal", "oxide"])
-        for k in keys[1:]:
-            self.assertRegex(CSS, r":root\[data-pal=%s\] \{[^}]*--accent:" % k)
-        for k in keys:
-            self.assertIn(f"i[data-sw={k}]", CSS)
-        self.assertEqual(run_js("return palGet();", {"pal": "teal"}), "teal")
-        self.assertEqual(run_js("return palGet();", {"pal": "nope"}), "graphite")
-        self.assertIn('data-a="pal"', APP)
-        # Applied before the stylesheet loads: no flash of the default palette.
-        self.assertLess(HTML.index('dataset.pal'), HTML.index('style.css'))
+    def test_appearance_prefs(self):
+        # Decision 38 replaced the Decision 28 palettes with device preferences.
+        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["classic", "tabs", "line", "capsule", "island"]})
+        self.assertEqual(run_js("return lookGet('bar');", {"bar": "island"}), "island")  # Settings → Appearance → Top bar
+        self.assertIn('d.dataset.bar=g("bar")||"classic";', HTML)
+        for bar in ("tabs", "line", "capsule", "island"):
+            self.assertIn(":root[data-bar=%s]" % bar, CSS)
+        self.assertEqual(run_js("return lookGet('motion');", {"motion": "calm"}), "calm")
+        self.assertEqual(run_js("return lookGet('motion');", {"motion": "nope"}), "full")
+        self.assertEqual(run_js("return lookGet('art');"), "full")
+        self.assertEqual(run_js("return accentGet();"), "follow")
+        self.assertEqual(run_js("return accentGet();", {"accent": "#9ccbe8"}), "#9ccbe8")
+        self.assertEqual(run_js("return accentGet();", {"accent": "red"}), "follow")
+        self.assertEqual(run_js("return grainGet();", {"grain": False}), False)
+        self.assertNotIn("data-pal", CSS + HTML + APP)
+        # Applied before the stylesheet loads: no flash of the wrong look.
+        self.assertLess(HTML.index("dataset.motion"), HTML.index("style.css"))
+        self.assertIn(":root[data-motion=off] *", CSS)
+        self.assertIn(":root[data-art=off] .cv-blur", CSS)
+        self.assertIn('data-a="look" data-k="accent"', APP)
+
+    def test_accent_from_anilist_colour(self):
+        # Privacy browsers block reading colours from images, so AniList's colour comes first.
+        self.assertEqual(run_js("return hexAccent('#e4a15d');"), "hsl(30 72% 70%)")
+        self.assertEqual(run_js("return hexAccent('#5d5d5d');"), None)  # grey: keep the default
+        self.assertEqual(run_js("return hexAccent(null);"), None)
+        self.assertIn("if (color) return set(hexAccent(color));", APP)
+        self.assertIn("coverImage{extraLarge color}", (support.ROOT / "animehub" / "anilist.py").read_text())
+
+    def test_fonts_ship_with_the_app(self):
+        # No network at runtime: every @font-face points at /fonts/, and the files are there.
+        urls = re.findall(r"url\((/fonts/[^)]+)\)", CSS)
+        self.assertTrue(urls)
+        for u in urls:
+            self.assertTrue((WEB / u.lstrip("/")).is_file(), u)
+        self.assertNotIn("fonts.googleapis", CSS + HTML)
+        for fam in ("Hanken Grotesk", "JetBrains Mono", "Barlow Condensed"):
+            self.assertIn(f'font-family:"{fam}"', CSS)
+        for lic in ("OFL-hankengrotesk.txt", "OFL-jetbrainsmono.txt", "OFL-barlowcondensed.txt"):
+            self.assertTrue((WEB / "fonts" / lic).is_file(), lic)
+
+    def test_shell(self):
+        # The art canvas, the top bar (tabs with number keys + settings icon) and the status line.
+        for el in ('id="canvas"', 'class="cv-blur"', 'class="cv-art"', 'id="status"', 'id="nr"', 'id="setb"'):
+            self.assertIn(el, HTML)
+        self.assertEqual(run_js("return 1;"), 1)
+        self.assertIn("const TABS = [", APP)
+        self.assertIn("<kbd>${i + 1}</kbd>", APP)
+        self.assertIn('if (e.key === ",") { e.preventDefault(); nav("settings"); return; }', APP)
+        self.assertIn("function paintCanvas()", APP)
+        self.assertIn('swapLayer("cv-art", mode === "full" ? art?.sharp : null);', APP)
+
+
+class ShowPage(unittest.TestCase):
+    """TODO 60 step 2 (Decision 38): the show page — your entry as a row
+    (score · watched · status · ♥), Edit entry as a dialog, actions with
+    their keys, rare ones behind ⋯, the episode strip."""
+    def test_layout_and_keys(self):
+        fran = APP[APP.index("function Fran() {"):APP.index("function frMore(")]
+        for bit in ('id="entrystats"', 'data-a="edit"', 'data-a="frmore"', 'kb("↵")', 'kb("E")', 'kb("D")', 'kb("⇧W")', 'class="eps strip"', 'id="airline"'):
+            self.assertIn(bit, fran)
+        self.assertNotIn('class="banner"', fran)  # the canvas shows the art now
+        self.assertIn("nxt: NextDlg, entry: EntryDlg }[m.t]();", APP)
+        self.assertIn("if (e.key === \"e\" && hit('[data-a=\"edit\"]')) return;", APP)
+        self.assertIn('const entryHost = () => $("#entrybox") || $("#entrystats");', APP)
+
+    def test_tile_keeps_art_node(self):
+        # The art node lives inside .epa now; a watch patch must still keep it (no blanking).
+        self.assertIn('const art = tile.querySelector(".epimg");', APP)
+        self.assertIn('<div class="epa"><span class="epimg" data-bg=', APP)
+
+
+class Library(unittest.TestCase):
+    """TODO 60 step 4: list tabs + side places, glass filter chips, poster
+    cards with source/score tags, Needs a look match cards, calm hover art."""
+    def test_library_shape(self):
+        self.assertIn('l: "On disk only"', APP)
+        self.assertIn('l: "Needs a look"', APP)
+        self.assertIn('<div class="match mc" data-show=', APP)
+        self.assertIn('data-a="match" data-v="${esc(s.id)}">This one</button>', APP)
+        # The background waits for a rest on the poster; the accent follows at once.
+        self.assertIn('accentFrom(art.blur, art.color);', APP)
+        self.assertIn('}, 450) };', APP)
+
+
+class Journal(unittest.TestCase):
+    """TODO 60 step 5: History + Stats are one page (Journal, key 3); the old
+    #history / #stats links still open it."""
+    def test_journal(self):
+        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];', APP)
+        self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
+        self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
+        self.assertIn('<div class="jside">${most}${genres}${heat}${st.side}</div>', APP)  # all time in the same two columns
+        self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings"];', APP)
+
+
+class SearchPalette(unittest.TestCase):
+    """TODO 60 step 6: one search for library, AniList, settings (switch
+    right there) and commands; Settings show one section at a time."""
+    def test_palette(self):
+        self.assertIn('["VPN in the status line", "online", "vpn status icon", "vpn_icon"]', APP)
+        self.assertIn('data-a="srsw" data-v="${key}"', APP)
+        self.assertIn('if (S.menu === "sr") srPreview(', APP)
+        # the palette opens centred with its own line; the top bar only holds the button
+        self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } q.focus(); }', APP)
+        self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)
+        self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
+        self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
+        self.assertIn('<nav class="snav">${SET_TABS.map(', APP)
+        self.assertIn("r.classList.add(\"flash\")", APP)
+
+
+class Polish(unittest.TestCase):
+    """Elias's notes on the redesign (2026-10-24)."""
+    def test_dropdowns_use_the_apps_list(self):
+        self.assertIn('<div id="ddm" role="listbox"></div>', HTML)
+        self.assertIn('sel.dispatchEvent(new Event("change", { bubbles: true }));', APP)  # actions stay on the <select>
+
+    def test_show_page_says_all_on_disk(self):
+        self.assertIn('allDisk ? (local.length === 1 ? "on disk" : `all ${local.length} on disk`)', APP)
+
+    def test_show_page_blurs_its_banner(self):
+        self.assertIn("blur: e?.banner || p?.banner || e?.poster || p?.poster", APP)
+
+    def test_range_pills_keep_their_width(self):
+        self.assertIn('data-w="${esc(`${W} – ${W}`)}"', APP)
+
+    def test_library_hover_skips_the_colour_fade(self):
+        self.assertIn('document.documentElement.classList.add("amb-now")', APP)
+        self.assertIn("html.amb-now{transition:none}", CSS)
+
+    def test_episode_menu(self):
+        self.assertIn('res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"', APP)
+        self.assertIn('cmRow("playstart", id, "undo", "Play from the start")', APP)
+        self.assertIn('cmRow("srcfix", "", "search", "Wrong episode? Find it")', APP)
+        self.assertIn("if (fromStart) body.from_start = true;", APP)
+
+    def test_rewatch_tiles_show_the_stop_point(self):
+        self.assertIn("(!ep.watched || ep.position / ep.duration < 0.92)", APP)  # mirrors player.resume_args
+        self.assertIn("watched: x.watched && !part", APP)
+
+    def test_downloads_list(self):
+        self.assertIn('j.status === "queued" ? "waiting · next in line"', APP)
+        self.assertIn('data-a="dlclear">clear finished</button>', APP)
+
+    def test_journal(self):
+        # built on AniList activity when connected (what you watched anywhere), else this device
+        self.assertIn('api("/api/journal")', APP)
+        self.assertIn('"watched episode": "watch", "rewatched episode": "watch", completed: "finish"', APP)
+        self.assertIn('if (e.kind === "watch" && g && g.kind === "watch" && g.day === key && g.key === e.key) { g.more.push(e); continue; }', APP)
+        self.assertIn('${jBars(bars, "days")}', APP)  # the band's day bars, as before
+        self.assertIn('const eps = kind === "watch" && a.from != null ? a.to - a.from + 1 : 0;', APP)  # only what AniList says, never estimated
+        self.assertNotIn("e.mins", APP)
+        self.assertIn('<div class="tlg">', APP)  # history as a two-column grid (uses the width)
+        self.assertIn("const T = jTotals()", APP)  # an AniList journal first: the big numbers are your AniList totals
+        self.assertIn("#status:before{", CSS)  # the bar isn't a backdrop root: its pop-ups blur what's behind them
+        self.assertIn("align-items:center}", CSS.split(".jr2 .tabs button{", 1)[1].split("\n", 1)[0])
+
+    def test_library_hover_fades_in_steps(self):
+        self.assertIn("if (root.classList.contains(\"amb-now\")) return ambFade(c);", APP)
+
+    def test_tour_lists_what_it_found(self):
+        self.assertIn('<div class="sum2">${tourFound(s, a, n, ok)}</div>', APP)
+        self.assertIn('`mpv${s.mpv_version ? " " + s.mpv_version : ""} found`', APP)
+
+    def test_home_recommendations(self):
+        self.assertIn('api("/api/recommendations")', APP)
+        self.assertIn('<h2>Recommended for you</h2>', APP)
+        self.assertIn('entrySave(+v, { status: "PLANNING" })', APP)
 
 
 class Discovery(unittest.TestCase):
@@ -126,8 +283,11 @@ class NextSource(unittest.TestCase):
         self.assertIn("S.data?.vpn]);", APP)  # a VPN change repaints the nav
         self.assertIn('addEventListener("focus", () => pollSoon(0));', APP)
         self.assertIn("if (now.next_prompt) maybeNextPrompt(now.next_prompt);", APP)
-        self.assertIn('data-a="nxstop">Stop</button><button class="btn pri" data-a="nxgo">Continue</button>', APP)
-        self.assertIn("play(id, 0, undefined, true)", APP)  # the popup already showed the VPN state
+        self.assertIn('data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button>${go}', APP)
+        self.assertIn('<button class="btn pri" data-a="nxgo">${noVpn ? "Stream anyway" : "Continue"}', APP)
+        self.assertIn('skpBtns("nxgo", "nxno"', APP)  # with AniSkip on: Use / Without AniSkip (D39)
+        self.assertIn('if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();', APP)  # starts by itself once a VPN is up
+        self.assertIn("play(id, 0, undefined, true, undefined, true)", APP)  # the popup already showed the VPN state (also the AniSkip yes, D39)
 
 
 class NextAiringAt(unittest.TestCase):

@@ -98,6 +98,24 @@ class BulkWatchedTests(unittest.TestCase):
         with patch.object(library, "media_by_id", return_value=show("s", None, seasons=2)):
             self.assertEqual(progress.bulk_watched("s", season=9).get("error"), "no such season")
 
+    def test_a_mark_drops_the_stop_point(self):
+        """Marking a half-watched episode watched means done: no progress bar,
+        no "Reset progress" left (Elias, 2026-10-24). Unwatching keeps it."""
+        sh = show("s", None, eps=2)
+        e1, e2 = (ep["id"] for ep in sh["seasons"][0]["episodes"])
+        with database.db() as c:
+            c.executemany("INSERT INTO episodes(id,watched,position,duration) VALUES(?,0,?,1440)", [(e1, 600.0), (e2, 300.0)])
+        with patch.object(library, "media_by_id", return_value=sh):
+            progress.bulk_watched("s", ids=[e1])
+        progress.set_watched(e2, False)
+        with database.db() as c:
+            rows = dict(c.execute("SELECT id, position FROM episodes").fetchall())
+        self.assertEqual(rows[e1], 0)
+        self.assertEqual(rows[e2], 300.0)
+        progress.set_watched(e2, True)
+        with database.db() as c:
+            self.assertEqual(c.execute("SELECT position FROM episodes WHERE id=?", (e2,)).fetchone()[0], 0)
+
     def test_no_completion_events_fire(self):
         """Decision 25: manual/bulk marking is bookkeeping — the completion
         popup never triggers from this path."""
