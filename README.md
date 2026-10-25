@@ -1,46 +1,67 @@
 # AnimeHub
 
-A beautiful, local anime library server to display, organize and play animes in mpv.
+A beautiful, local anime library to organize your shows and play them in mpv.
+Works with your AniList account: what you watch is synced back to it.
 
 ## Important!
 This app is early in development — expect bugs and breaking changes.
 ## Features
 
-- **Main-page** - Quick resume most recently watched animes and currently airing info.
+- **Home** - Up next, continue watching, this week's new episodes and recommendations.
 
 ![Home](docs/screenshots/home.png)
 
-- **Library** - List all your animes, with extensive filter options.
+- **Library** - All your shows, with lots of filters. Anything it couldn't match lands in "Needs a look".
 
 ![Library](docs/screenshots/library.png)
 
-- **Show-page** - Detail page per anime with play button, episode list, etc.
+- **Show page** - One page per franchise: every season, movie and special, plus your AniList entry.
 
 ![Show](docs/screenshots/show.png)
 
-- **Stats-page** - Per-show time watched, formats, lists, scores and release years.
+- **Journal** - Your history and stats on one page: what you watched when, totals, most watched, genres and more.
 
-![Stats](docs/screenshots/stats.png)
+![Journal](docs/screenshots/journal.png)
 
-- **Settings** - Configure AniList integration, appearance, etc.
+- **Settings** - AniList, library, playback, online episodes and appearance.
 
 ![Settings](docs/screenshots/settings.png)
 
-- **Playback** - episodes open in mpv with resume, auto-play next, progress tracking and a skip-credits hotkey. Openings and endings can be skipped with Enter or automatically, using the file's chapters when they're named ("Opening", "ED"…). Optional and off by default: times other viewers submitted to [AniSkip](https://aniskip.com) for files without such chapters (AniSkip then sees which show and episode you start). Your mpv config still works.
-- **AniList** - Matches all your animes against AniList to acquire metadata, coverart, etc. and supports rating, progress, etc. editing.
-- **Online episodes (optional)** - with [ani-cli](https://github.com/pystardust/ani-cli) installed, every show lists the episodes you don't have as online episodes: click one and it plays in mpv with the same resume, progress tracking, AniList sync and auto-play as local files, or download it straight into your library folder. Shows are matched automatically; "Wrong episodes?" on a show page fixes a bad match.
+- **Playback** - Episodes open in mpv, with resume, auto-play next and progress tracking. Your mpv config still works.
+  - Skip openings and endings with Enter, or automatically. Uses the file's chapters ("Opening", "ED"…).
+  - Optional [AniSkip](https://aniskip.com) for files without chapters. Off by default: AniSkip sees which episode you start.
+- **Search and keys** - `/` searches your library, AniList, settings and commands. `?` lists all keyboard shortcuts.
+- **AniList** - Matches your shows to AniList for info and artwork. Edit your score, progress and status right in the app.
+- **Online episodes (optional)** - With [ani-cli](https://github.com/pystardust/ani-cli) installed, episodes you don't have show up as online episodes.
+  - They play in mpv with the same resume, tracking, AniList sync and auto-play as your files.
+  - Or download them straight into your library folder.
+  - A wrong match? "Wrong episodes?" on the show page fixes it.
 
 ## Requirements
 
 - Linux
 - Python 3.9+ (standard library only, nothing to install)
 - mpv
-- A Chromium-family browser (chromium, chrome,brave, or edge)
-- rust/cargo
+- A Chromium-family browser (chromium, chrome, brave, or edge)
+- rust/cargo (only to build the desktop app or the AppImage)
 - An AniList account (optional)
 - ani-cli (optional, for streaming and downloads)
 
 ## Run
+
+Quickest way to try it, nothing to build:
+
+```sh
+git clone https://github.com/Elias8832/AnimeHub.git
+cd AnimeHub
+python3 hub.py
+```
+
+It opens in a Chromium app window (or a browser tab). The server runs on `http://127.0.0.1:8787`.
+
+### Desktop app
+
+Its own window and an app-menu entry; closing the window quits the app. Needs rust/cargo:
 
 ```sh
 git clone https://github.com/Elias8832/AnimeHub.git
@@ -49,12 +70,51 @@ cargo build --release
 ./install.sh
 ```
 
-The server starts on `http://127.0.0.1:8787`.
+### AppImage (any distro, no building)
+
+One file that runs on any Linux distro. Download `AnimeHub-x86_64.AppImage` from the
+[Releases page](https://github.com/Elias8832/AnimeHub/releases), then:
+
+```sh
+chmod +x AnimeHub-x86_64.AppImage
+./AnimeHub-x86_64.AppImage
+```
+
+It still uses your system's Python 3.9+, mpv, Chromium-family browser and ani-cli. A tool like
+[Gear Lever](https://github.com/mijorus/gearlever) adds it to your app menu.
+`AnimeHub-x86_64.AppImage --hub` starts only the server (add `--no-browser` for no window).
+
+To build it yourself (needs rust/cargo): `desktop/appimage/build.sh`.
+
+### Updating
+
+- From git: `git pull`. Desktop app: then `cargo build --release && ./install.sh` again.
+- AppImage: download the new one.
+
+Your data is kept.
+
+## Library folders
+
+Point AnimeHub at one folder (Settings → Library). It understands the usual layouts:
+
+```
+Anime/
+├── Frieren/                     one folder per show
+│   ├── Season 1/                seasons as "Season N" (or "Part N")
+│   │   └── Frieren - 01.mkv
+│   └── Specials/                "Specials" / "OVA"
+├── Cowboy Bebop/
+│   └── [Group] Cowboy Bebop - 01 (1080p).mkv
+└── Movies/
+    └── Your Name/Your Name.mkv  movies in a "Movies" folder
+```
+
+Episode numbers are read from names like `S01E05`, `E05`, `Episode 5` or `Title - 05`.
+Files are never renamed or moved.
 
 ## Configuration
 
-`~/.config/anime-hub/config.json` (honours `XDG_CONFIG_HOME`; override
-with `--config FILE`). All keys optional, a broken file only warns:
+`~/.config/anime-hub/config.json` (or `--config FILE`). Every key is optional:
 
 ```json
 {
@@ -67,41 +127,60 @@ with `--config FILE`). All keys optional, a broken file only warns:
 
 | Key | Meaning |
 | --- | --- |
-| `library_root` | the folder anime-hub watches for video files (also set from Settings → Library) |
+| `library_root` | the folder AnimeHub watches for video files (also set from Settings → Library) |
 | `port` | server port (default `8787`) |
 | `data_dir` | database and cache location (default `~/.local/share/anime-hub`, honours `XDG_DATA_HOME`) |
-| `window` | `"app"` (default, standalone Chromium window), `"browser"` (tab), `"none"` (server only; `--no-browser` forces it for one run) |
-| `remote_hosts` | extra host names the hub answers, for reaching it from your phone through a proxy such as `tailscale serve --bg --https=8443 8787` (e.g. `["pc.tailnet.ts.net"]`; default none, so only this PC) |
+| `window` | `"app"` (own window, default), `"browser"` (tab) or `"none"` (server only) |
+| `anilist_client_id` | your own AniList app id; only needed if you change `port` |
+| `remote_hosts` | extra host names for opening it from your phone through a proxy, e.g. `["pc.tailnet.ts.net"]` with `tailscale serve --bg --https=8443 8787` |
 
-Changing `library_root` never deletes anything: the app reports the
-different folder and waits for you to connect it explicitly.
+Changing `library_root` never deletes anything. The app asks before it switches.
 
 ## Data
 
-All state lives in `data_dir` (default `~/.local/share/anime-hub`):
-`hub.db` (watch state, metadata, history), `cache/` (artwork),
-`anilist_token.json` (OAuth token). Plain files; deleting the directory
-is a full reset.
+Everything lives in `data_dir` (default `~/.local/share/anime-hub`):
+
+- `hub.db` — watch state, info, history
+- `cache/` — artwork
+- `anilist_token.json` — your AniList login
+- `anilist_activity.json` — your AniList activity, for the Journal
+- `recommendations.json`
+
+Deleting the folder is a full reset.
+
+## Privacy and security
+
+- **No tracking.** No accounts, no ads, no analytics. Your data stays on your PC.
+- **Only your PC can open it.** The server only listens locally and turns away requests from other websites.
+- **No password.** If you open it to your phone (`remote_hosts`), everyone on that network can use it.
+- **Your AniList login** is a token in `anilist_token.json`, readable only by your user.
+- **What it talks to on the internet:**
+  - [AniList](https://anilist.co) — metadata, artwork and your list (when connected)
+  - [ani.zip](https://api.ani.zip) — episode titles and pictures
+  - [AniSkip](https://aniskip.com) — only if you turn it on (off by default); it sees which episode you start
+  - with online episodes, your own ani-cli contacts the streaming site; the app warns you when no VPN is on
 
 ## Roadmap
 
-Roadmap is only to show whats still planned in big releases. Nothing is set in stone and everything can change anytime.
+Only the big releases. Nothing is set in stone.
 
 - **v0.1** (done)— local library, AniList sync, stats, desktop wrapper.
-- **v0.2** (done) — streaming and downloads delegated to your own installed [ani-cli](https://github.com/pystardust/ani-cli) (the app contains no provider code and fetches no video itself) and a unified local/streaming episode list are in; better tools for unmatched shows are next.
+- **v0.2** (done) — online episodes and downloads through your own [ani-cli](https://github.com/pystardust/ani-cli), one episode list for both.
 - **v0.25** (done) Focus on Quality of Life changes and bug fixes.
+- **v0.3** (done) — complete redesign, much faster, Journal, recommendations, skip openings/endings, AppImage.
 - **Later** — multiple library roots
 
 ## AI-notice
 
-- Anime-hub was made with a lot of help of mainly GLM 5.3 Flash and very little help of Sonnet 5.5.
-- I want to make clear that the use of LLMs did not steal anyones job in this case, Anime-hub simply wouldn't exist without it, as I would have never started this project to begin with.
-- I **DID NOT** give a large LLM 200$, a prompt and a couple hours. I made this project step by step, this is my app that I build with passion over many many hours and i want to continue working on it.
+- AnimeHub was made with a lot of help from mainly GLM 5.3 Flash, and very little help from Sonnet 5.5.
+- I want to make clear that using LLMs didn't take anyone's job here. AnimeHub simply wouldn't exist without them, because I would never have started this project.
+- I **DID NOT** give a large LLM $200, a prompt and a couple of hours. I built this project step by step. This is my app, built with passion over many, many hours, and I want to keep working on it.
 
 ## Streaming/downloading/hosting/etc.-notice
 
-- Anime-hub **does not contain any streaming, downloading or hosting of animes**, nor does it bundle any provider code or third-party content. It is a local library manager: it plays video files you already own, and pulls metadata and artwork from AniList.
-- The optional streaming and downloads are done entirely by your own installed ani-cli. Anime-hub only starts it (answering its menus itself) and hands mpv its progress-tracking socket; it never contacts a video site.
+- AnimeHub **contains no streaming, downloading or hosting of anime**, and no provider code.
+- It plays files you already own and gets info and artwork from AniList.
+- Online episodes and downloads are done by your own ani-cli. AnimeHub only starts it; it never contacts a video site itself.
 
 ## License
 
@@ -109,6 +188,7 @@ GPL-3.0. See [LICENSE](LICENSE).
 
 ## Credits
 
-- Metadata, artwork and airing times from [AniList](https://anilist.co).
-  Unofficial; not affiliated with AniList.
+- Info, artwork, airing times and recommendations from [AniList](https://anilist.co). Unofficial; not affiliated with AniList.
+- AnimeHub is a player for your files, not a list or tracking service. Your list lives on AniList.
+- AniList data is kept on your PC only to show it, never as a backup. Free and non-commercial, following the [AniList API terms](https://docs.anilist.co/guide/terms-of-use).
 - Playback by [mpv](https://mpv.io).

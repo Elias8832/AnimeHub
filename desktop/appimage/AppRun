@@ -1,0 +1,25 @@
+#!/bin/sh
+# Start script inside the AppImage. The app's code sits read-only in
+# usr/share/anime-hub; settings and data stay in the user's XDG dirs, as
+# with a normal install. Python 3.9+ comes from the system (the hub is
+# standard library only). mpv, ani-cli and Chromium come from the system
+# too — the hub and the wrapper already say when one is missing.
+#
+#   AnimeHub.AppImage           the desktop app (window + hub)
+#   AnimeHub.AppImage --hub …   the hub alone, e.g. --hub --no-browser
+HERE="$(dirname "$(readlink -f "$0")")"
+export ANIME_HUB_PY="$HERE/usr/share/anime-hub/hub.py"
+export PYTHONDONTWRITEBYTECODE=1
+
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
+  msg="Anime Hub needs Python 3.9 or newer (python3). Install it with your system's package manager."
+  echo "anime-hub: $msg" >&2
+  command -v notify-send >/dev/null && notify-send "Anime Hub" "$msg"
+  exit 1
+fi
+
+if [ "$1" = "--hub" ]; then
+  shift
+  exec python3 "$ANIME_HUB_PY" "$@"
+fi
+exec "$HERE/usr/bin/anime-hub" "$@"
