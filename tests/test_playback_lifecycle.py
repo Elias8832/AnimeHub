@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 from tests import support
-from animehub import anicli, database, library, player
+from animehub import anicli, database, library, player, system
 from animehub.config import config
 
 
@@ -44,7 +44,7 @@ class LifecycleBase(unittest.TestCase):
         database.init_db()
         # No signal ever leaves a test: a fake process's group is no real
         # group, and os.killpg(1) is kill(-1), which logs the user out (TODO 54).
-        self.killpg = patch.object(os, "killpg")
+        self.killpg = patch.object(os, "killpg", create=True)  # create: Windows has none
         self.killpg.start()
         self.addCleanup(self.killpg.stop)
 
@@ -68,6 +68,7 @@ class LifecycleBase(unittest.TestCase):
                       (ep_id, watched, position, duration))
 
 
+@unittest.skipIf(system.WINDOWS, "POSIX only (TODO 74)")
 class ProcessGroupGuardTests(LifecycleBase):
     """stop_process_group only signals a real child's group (TODO 54):
     os.killpg(1) is kill(-1) — every process the user owns — and a test's

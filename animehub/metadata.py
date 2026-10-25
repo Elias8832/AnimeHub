@@ -27,7 +27,7 @@ def load_overrides():
     f = config.DATA / "overrides.json"
     if f.exists():
         try:
-            return json.loads(f.read_text())
+            return json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             return {}
     return {}
@@ -345,7 +345,7 @@ def clear_match(show_id):
             if key and overrides.pop(key, None) is not None:
                 changed = True
     if changed:
-        (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
+        (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")
 
 
 def kept_local():
@@ -391,7 +391,7 @@ def set_match(show_id, anilist_id=None, query=None):
     anilist_id = m["id"]
     overrides = load_overrides()
     overrides[show.get("path") or show["title"]] = {"anilistId": anilist_id}
-    (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1))
+    (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")
     with database.db() as c:
         c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
     store_show_meta(show, m)

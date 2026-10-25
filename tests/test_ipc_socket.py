@@ -8,9 +8,10 @@ from pathlib import Path
 from unittest import mock
 
 from tests import support  # noqa: F401
-from animehub import player
+from animehub import player, system
 
 
+@unittest.skipIf(system.WINDOWS, "POSIX only (TODO 74)")
 class SocketPath(unittest.TestCase):
     def test_runtime_dir(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": d}):

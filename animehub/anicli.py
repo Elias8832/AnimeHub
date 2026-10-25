@@ -1,16 +1,14 @@
 """The ani-cli bridge: locating, spawning and probing ani-cli."""
 
 import os
-import pty
 import re
-import shutil
 import signal
 import subprocess
 import tempfile
 import uuid
 from pathlib import Path
 
-from . import settings
+from . import settings, system
 from .config import config
 
 
@@ -70,7 +68,7 @@ class AniCliError(Exception):
 
 
 def anicli_path():
-    return shutil.which("ani-cli")
+    return system.find_script("ani-cli")
 
 
 _anicli_versions = {}
@@ -82,8 +80,8 @@ def anicli_version():
         return None
     if exe not in _anicli_versions:
         try:
-            out = subprocess.run([exe, "-V"], stdin=subprocess.DEVNULL, capture_output=True,
-                                 text=True, timeout=10).stdout.strip()
+            out = subprocess.run([*system.script_argv(exe), "-V"], stdin=subprocess.DEVNULL, capture_output=True,
+                                 text=True, timeout=10, **system.quiet()).stdout.strip()
         except (OSError, subprocess.TimeoutExpired):
             out = ""
         _anicli_versions[exe] = out.splitlines()[-1] if out else None
@@ -98,14 +96,17 @@ def stream_prefs():
 
 def anicli_menu_helper():
     path = config.DATA / "anicli-menu.sh"
+    # Bytes, not text: on Windows text mode would write CRLF line ends,
+    # which bash (Git Bash runs ani-cli there) can't run.
+    script = ANICLI_MENU_SH.encode()
     try:
-        current = path.read_text()
+        current = path.read_bytes()
     except OSError:
         current = None
-    if current != ANICLI_MENU_SH:
+    if current != script:
         config.DATA.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-        tmp.write_text(ANICLI_MENU_SH)
+        tmp.write_bytes(script)
         tmp.chmod(0o755)
         os.replace(tmp, path)
     return path
@@ -116,11 +117,12 @@ def anicli_env(link=None, capture=None, **extra):
     stream preferences, and the link's pick (exact title, else position)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("HUB_ANICLI_")}
     prefs = stream_prefs()
-    env.update(ANI_CLI_MENU=str(anicli_menu_helper()), TERM="dumb",
+    env.update(system.script_env())
+    env.update(ANI_CLI_MENU=system.shell_path(anicli_menu_helper()), TERM="dumb",
                ANI_CLI_QUALITY=prefs["quality"],
                ANI_CLI_MODE=(link or {}).get("mode") or prefs["mode"])
     if capture:
-        env["HUB_ANICLI_CAPTURE"] = str(capture)
+        env["HUB_ANICLI_CAPTURE"] = system.shell_path(capture)
     if link:
         if link.get("title"):
             env["HUB_ANICLI_TITLE"] = link["title"]
@@ -180,22 +182,29 @@ def anicli_unsupported_message(check):
 def anicli_spawn(args, env, stdout, stderr):
     """Start ani-cli in its own process group with a pty as stdin: without a
     terminal on stdin, ani-cli swaps ANI_CLI_MENU for rofi/dmenu whenever
-    either is installed. The pty stays open until anicli_release."""
+    either is installed. The pty stays open until anicli_release. Windows
+    has no pty (and no rofi/dmenu): stdin is empty there."""
     exe = anicli_path()
     if not exe:
         raise AniCliError("ani-cli was not found — install ani-cli and make sure it is on PATH.")
     check = anicli_check()
     if check and check["ok"] is False:
         raise AniCliError(anicli_unsupported_message(check))
-    master, slave = pty.openpty()
     try:
-        proc = subprocess.Popen([exe, *args], stdin=slave, stdout=stdout, stderr=stderr,
-                                env=env, start_new_session=True)
+        argv = [*system.script_argv(exe), *args]
+    except FileNotFoundError as e:
+        raise AniCliError(str(e))
+    master, slave = system.open_pty()
+    try:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL if slave is None else slave,
+                                stdout=stdout, stderr=stderr, env=env, **system.detached())
     except OSError as e:
-        os.close(master)
+        if master is not None:
+            os.close(master)
         raise AniCliError(f"ani-cli could not be started: {e}")
     finally:
-        os.close(slave)
+        if slave is not None:
+            os.close(slave)
     proc.hub_pty = master
     return proc
 
@@ -215,12 +224,16 @@ def stop_process_group(proc, sig=signal.SIGTERM):
     pid) — an ani-cli session is a shell whose mpv / yt-dlp child would
     otherwise outlive it. Only a real child's group: os.killpg(1) is
     kill(-1), which signals every process the user owns (logs them out),
-    and a test's MagicMock pid reads as 1."""
+    and a test's MagicMock pid reads as 1. Windows has no process groups
+    to signal: taskkill ends the process tree instead."""
     pid = proc.pid
     try:
-        if type(pid) is not int or pid <= 1 or pid == os.getpgrp():
+        if type(pid) is not int or pid <= 1 or (not system.WINDOWS and pid == os.getpgrp()):
             raise OSError("not a child process group")
-        os.killpg(pid, sig)
+        if system.WINDOWS:
+            system.kill_tree(pid)
+        else:
+            os.killpg(pid, sig)
     except OSError:
         try:
             proc.send_signal(sig)
@@ -251,12 +264,12 @@ def anicli_probe(args, link=None, timeout=ANICLI_PROBE_TIMEOUT):
         try:
             _, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            stop_process_group(proc, signal.SIGKILL)
+            stop_process_group(proc, system.SIGKILL)
             proc.communicate()
             raise AniCliError(f"ani-cli did not answer within {timeout} s — is the site reachable?")
         finally:
             anicli_release(proc)
-        text = Path(capture).read_text(errors="replace")
+        text = Path(capture).read_text(encoding="utf-8", errors="replace")
     finally:
         Path(capture).unlink(missing_ok=True)
     lists = []

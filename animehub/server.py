@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import threading
@@ -14,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync
+from . import anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -28,13 +27,13 @@ def open_show_folder(show_id):
         path = path.parent
     if not path.is_dir() or not path.is_relative_to(config.LIBRARY.resolve()):
         raise ValueError("folder not found")
-    subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    system.open_external(path)
 
 
 def open_in_browser(url):
     if not re.fullmatch(r"https://anilist\.co/anime/\d+/?", url or ""):
         raise ValueError("untrusted url")
-    subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    system.open_external(url)
 
 
 AUTH_CALLBACK_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -149,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 if config.ANILIST_CACHE.exists():
                     try:
-                        stale = json.loads(config.ANILIST_CACHE.read_text())
+                        stale = json.loads(config.ANILIST_CACHE.read_text(encoding="utf-8"))
                         stale["stale"] = True
                         self.send_json(stale)
                         return
@@ -788,13 +787,12 @@ def open_ui():
     runs. Closing the window never stops the server."""
     url = f"http://127.0.0.1:{config.PORT}"
     if config.WINDOW == "app":
-        for name in APP_BROWSERS:
-            exe = shutil.which(name)
-            if exe:
-                subprocess.Popen([exe, f"--app={url}"],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 start_new_session=True)
-                return
+        exe = next(iter(system.app_browsers(APP_BROWSERS)), None)
+        if exe:
+            subprocess.Popen([exe, f"--app={url}"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             **system.detached())
+            return
     import webbrowser
     webbrowser.open(url)
 

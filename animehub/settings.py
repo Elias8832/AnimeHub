@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from . import anicli, database, library
+from . import anicli, database, library, system
 from .config import config, CONFIG, CONFIG_PATH
 
 
@@ -65,6 +65,11 @@ def set_automation(key, on):
 
 VPN_IFACE_RE = re.compile(r"^(wg|tun|tap|ppp|ipsec|proton|pvpn|nordlynx|nordtun|mullvad|expressvpn|surfshark|cscotun|gpd|utun)", re.I)
 VPN_IFACE_SKIP = re.compile(r"^(lo|tailscale|zt|docker|br-|veth|virbr|vboxnet|vmnet)", re.I)
+# Windows names adapters by product ("ProtonVPN", "Mullvad"), and
+# WireGuard/OpenVPN adapters after the user's tunnel, so the driver's
+# description counts too. Tailscale rides Wintun as well: skip wins.
+VPN_ADAPTER_RE = re.compile(r"vpn|wireguard|wintun|tap-windows|nordlynx|mullvad|proton|surfshark|cisco anyconnect|globalprotect|fortinet", re.I)
+VPN_ADAPTER_SKIP = re.compile(r"tailscale|zerotier|loopback|hyper-v|virtualbox|vmware|wsl|docker|bluetooth", re.I)
 
 
 def vpn_status():
@@ -72,6 +77,8 @@ def vpn_status():
     interface that is a tunnel — WireGuard/tun devices have no hardware
     address (ARPHRD_NONE, type 65534) or a VPN client's usual name. Mesh
     networks (Tailscale, ZeroTier) and container bridges don't count."""
+    if system.WINDOWS:
+        return _vpn_status_windows()
     try:
         names = sorted(os.listdir("/sys/class/net"))
     except OSError:
@@ -89,6 +96,20 @@ def vpn_status():
             continue
         if VPN_IFACE_RE.match(n) or kind == "65534":
             return {"active": True, "iface": n, "known": True}
+    return {"active": False, "iface": None, "known": True}
+
+
+def _vpn_status_windows():
+    """vpn_status on Windows (TODO 74): an up adapter whose name or driver
+    description reads as a VPN client's."""
+    try:
+        adapters = system.windows_adapters()
+    except OSError:
+        return {"active": False, "iface": None, "known": False}
+    for name, desc, up in adapters:
+        text = f"{name} {desc}"
+        if up and not VPN_ADAPTER_SKIP.search(text) and VPN_ADAPTER_RE.search(text):
+            return {"active": True, "iface": name, "known": True}
     return {"active": False, "iface": None, "known": True}
 
 
@@ -116,7 +137,7 @@ def settings_payload():
         "port": config.PORT,
         "window": config.WINDOW,
         "scan": dict(library.scan_state),
-        "tools": {t: shutil.which(t) for t in ("mpv", "ani-cli", "upscayl")},
+        "tools": {"mpv": shutil.which("mpv"), "ani-cli": anicli.anicli_path(), "upscayl": shutil.which("upscayl")},
         # additive: the tour's last page says "mpv 0.39 found"
         "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.
@@ -137,7 +158,7 @@ def mpv_version():
     if exe not in _mpv_versions:
         try:
             out = subprocess.run([exe, "--version"], stdin=subprocess.DEVNULL, capture_output=True,
-                                 text=True, timeout=10).stdout
+                                 text=True, timeout=10, **system.quiet()).stdout
         except (OSError, subprocess.TimeoutExpired):
             out = ""
         m = re.match(r"mpv\s+v?(\d[\w.+-]*)", out.strip())
@@ -191,14 +212,11 @@ def browse_dirs(path=None):
         raise ValueError(f"Can't open {base}: permission denied.")
     except OSError as e:
         raise ValueError(f"Can't open {base}: {e.strerror or e}.")
-    user = os.environ.get("USER") or Path.home().name
-    places = [("Home", Path.home()), ("/mnt", Path("/mnt")), ("/media", Path("/media")),
-              (f"/run/media/{user}", Path("/run/media") / user)]
     return {
         "path": str(base),
         "parent": str(base.parent) if base.parent != base else None,
         "dirs": [{"name": d, "path": str(base / d)} for d in dirs],
-        "places": [{"label": label, "path": str(p)} for label, p in places if p.is_dir()],
+        "places": [{"label": label, "path": str(p)} for label, p in system.browse_places()],
     }
 
 
@@ -209,17 +227,18 @@ def write_config_key(key, value):
     file. Written via a temp file + rename so a crash never truncates it."""
     path = CONFIG_PATH
     try:
-        raw = json.loads(path.read_text())
+        # utf-8-sig: Windows editors may start the file with a BOM.
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         raw = {}
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, ValueError) as e:  # ValueError: bad JSON or not UTF-8
         raise ValueError(f"Could not read the config file {path} ({e}) — fix or remove it first.")
     if not isinstance(raw, dict):
         raise ValueError(f"The config file {path} must contain a JSON object — fix or remove it first.")
     raw[key] = value
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(raw, indent=2) + "\n")
+    tmp.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
 
 

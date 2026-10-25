@@ -93,7 +93,7 @@ def merge(seeds, data):
 
 def _read_cache():
     try:
-        return json.loads(_cache_path().read_text())
+        return json.loads(_cache_path().read_text(encoding="utf-8"))
     except Exception:
         return None
 
@@ -101,7 +101,7 @@ def _read_cache():
 def _write_cache(payload):
     _cache_path().parent.mkdir(parents=True, exist_ok=True)
     tmp = _cache_path().with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload))
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
     os.replace(tmp, _cache_path())
 
 

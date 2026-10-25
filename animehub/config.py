@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from . import system
+
 
 # Two location roots (PLAN v0.1: config replaces hardcoded constants):
 # APP_DIR is where the code lives — bundled assets (web/, mpv/) resolve
@@ -32,21 +34,24 @@ APP_BROWSERS = ("chromium", "chromium-browser", "google-chrome-stable",
                 "google-chrome", "brave", "microsoft-edge")
 
 
-def _xdg_base(var, fallback):
+def _xdg_base(var, fallback, windows_var):
     """The XDG base directory for the given variable; a relative or unset
-    variable falls back to the standard home-relative location."""
-    v = os.environ.get(var)
-    if v and os.path.isabs(v):
-        return Path(v)
+    variable falls back to the standard home-relative location. On Windows
+    (TODO 74) an unset XDG variable means the usual Windows folder instead:
+    %APPDATA% for the config, %LOCALAPPDATA% for data and caches."""
+    for name in (var, windows_var) if system.WINDOWS else (var,):
+        v = os.environ.get(name)
+        if v and os.path.isabs(v):
+            return Path(v)
     return Path.home() / fallback
 
 
 def _default_data_dir():
-    return _xdg_base("XDG_DATA_HOME", ".local/share") / "anime-hub"
+    return _xdg_base("XDG_DATA_HOME", ".local/share", "LOCALAPPDATA") / "anime-hub"
 
 
 def _default_config_path():
-    return _xdg_base("XDG_CONFIG_HOME", ".config") / "anime-hub" / "config.json"
+    return _xdg_base("XDG_CONFIG_HOME", ".config", "APPDATA") / "anime-hub" / "config.json"
 
 
 def config_path_from_argv(argv=None):
@@ -87,10 +92,11 @@ def read_config(path=None):
            "upscale_banners": False, "remote_hosts": []}
     warnings = []
     try:
-        raw = json.loads(path.read_text())
+        # utf-8-sig: Windows editors may start the file with a BOM.
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         return cfg, warnings, path
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, ValueError) as e:  # ValueError: bad JSON or not UTF-8
         warnings.append(f"Could not read config file {path}: {e} — using defaults.")
         return cfg, warnings, path
     if not isinstance(raw, dict):

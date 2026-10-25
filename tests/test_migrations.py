@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import database, library
+from animehub import database, library, system
 from animehub.config import config
 
 
@@ -184,6 +184,7 @@ class ScanStateTests(unittest.TestCase):
             self.assertEqual(library.scan_library(), [])
         self.assertEqual(library.scan_state["state"], "missing")
 
+    @unittest.skipIf(system.WINDOWS, "POSIX only, chmod can't lock a folder (TODO 74)")
     def test_unreadable_dir_reports_partial(self):
         lib = Path(self.directory.name) / "lib"
         show = lib / "Show" / "Season 1"

@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import database, library, server, settings
+from animehub import database, library, server, settings, system
 from animehub.config import config, CONFIG
 
 
@@ -72,6 +72,7 @@ class LibraryRootTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             settings.browse_dirs(str(self.tmp / "nope"))
 
+    @unittest.skipIf(system.WINDOWS, "POSIX only, symlinks need admin (TODO 74)")
     def test_browse_normalizes_without_resolving_links(self):
         link = self.tmp / "link"
         os.symlink(self.lib, link)
