@@ -36,6 +36,7 @@ This app is early in development — expect bugs and breaking changes.
   - They play in mpv with the same resume, tracking, AniList sync and auto-play as your files.
   - Or download them straight into your library folder.
   - A wrong match? "Wrong episodes?" on the show page fixes it.
+- **Extra folders** - Anime on more than one drive? Add extra folders in Settings → Library. Their shows join your library, the same show split over two folders gets one show page, and downloads go where the show already is.
 - **Episode lengths** - Each file's length is read once in the background (with ffprobe, else mpv), so episodes show how long they are before you play them. Switch it off in Settings → Library.
 - **Sharper banners (optional)** - With [Upscayl](https://upscayl.org) installed, show banners are redrawn 4× bigger on your graphics card. Off by default (Settings → Appearance).
   - Two looks: Natural (keeps soft shading) or Digital art (crisper lines, slower).
@@ -169,6 +170,7 @@ Files are never renamed or moved.
 | Key | Meaning |
 | --- | --- |
 | `library_root` | the folder AnimeHub watches for video files (also set from Settings → Library) |
+| `library_extra` | extra folders, e.g. `[{"id": 2, "path": "/mnt/Drive2/Anime"}]` (easiest from Settings → Library). Each `id` belongs to its folder: keep it when the folder moves, so its shows keep their history |
 | `port` | server port (default `8787`) |
 | `data_dir` | database and cache location (default `~/.local/share/anime-hub`, honours `XDG_DATA_HOME`) |
 | `window` | `"app"` (own window, default), `"browser"` (tab) or `"none"` (server only) |
@@ -211,7 +213,7 @@ Only the big releases. Nothing is set in stone.
 - **v0.2** (done) — online episodes and downloads through your own [ani-cli](https://github.com/pystardust/ani-cli), one episode list for both.
 - **v0.25** (done) Focus on Quality of Life changes and bug fixes.
 - **v0.3** (done) — complete redesign, much faster, Journal, recommendations, skip openings/endings, AppImage.
-- **Later** — multiple library roots
+- **Later** — AUR package
 
 ## AI-notice
 

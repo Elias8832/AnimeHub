@@ -482,8 +482,8 @@ def start_play(ep_id, version=0, from_start=False):
         return {"error": "unknown episode"}
     files = ep.get("files") or [{"path": ep["rel"], "label": "default"}]
     version = max(0, min(version, len(files) - 1))
-    path = config.LIBRARY / files[version]["path"]
-    if not path.exists():
+    path = library.abs_path(files[version]["path"])
+    if path is None or not path.exists():
         return {"error": "file missing"}
     sock = ipc_socket_path()
     args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start)]

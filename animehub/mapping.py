@@ -106,6 +106,11 @@ def map_numbered_seasons(show, line):
                       if isinstance(e.get("number"), int) and e["number"] >= 1)
         if not nums or pos >= len(line):
             break
+        # A folder that starts past Season 1 (the rest on another drive,
+        # Decision 42, or not downloaded): start at the entry whose title
+        # names this season — only when one does, never by guessing.
+        if not pos and (sea.get("season") or 0) > 1:
+            pos = next((j for j, m in enumerate(line) if names_season(m, sea["label"])), 0)
         # AniList's air order can interleave a side arc (Owarimonogatari S1
         # → Tsukimonogatari → Owarimonogatari Second Season): when an entry
         # close ahead names this season and the next one doesn't, the

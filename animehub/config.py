@@ -21,7 +21,7 @@ SKIP_CREDITS_LUA = MPV / "skip-credits.lua"
 DEFAULT_PORT = 8787
 
 CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners",
-               "remote_hosts")
+               "remote_hosts", "library_extra")
 
 # AnimeHub's public AniList OAuth client (redirect: http://localhost:8787/
 # auth/callback). Client ids are public by design — no secret involved;
@@ -73,6 +73,8 @@ def read_config(path=None):
 
     Returns (cfg, warnings, path). cfg keys:
       library_root     Path|None   — the library folder to watch
+      library_extra    list[(int, Path)] — extra folders with their fixed
+                                     numbers (Decision 42): [{"id": 2, "path": …}]
       port             int         — server port
       anilist_client_id int|None  — OAuth client id (Decision 20 implicit grant)
       data_dir         Path|None   — where hub.db/cache live (default: XDG)
@@ -89,7 +91,7 @@ def read_config(path=None):
     path = Path(path).expanduser() if path else _default_config_path()
     cfg = {"library_root": None, "port": DEFAULT_PORT,
            "data_dir": None, "window": "app", "anilist_client_id": None,
-           "upscale_banners": False, "remote_hosts": []}
+           "upscale_banners": False, "remote_hosts": [], "library_extra": []}
     warnings = []
     try:
         # utf-8-sig: Windows editors may start the file with a BOM.
@@ -150,6 +152,15 @@ def read_config(path=None):
             cfg["remote_hosts"] = [x.strip().lower().rstrip(".") for x in h]
         else:
             warn("remote_hosts", "a list of host names")
+    if raw.get("library_extra") not in (None, ""):
+        x = raw["library_extra"]
+        ok = isinstance(x, list) and all(
+            isinstance(e, dict) and isinstance(e.get("id"), int) and not isinstance(e["id"], bool)
+            and e["id"] >= 2 and isinstance(e.get("path"), str) and e["path"].strip() for e in x)
+        if ok and len({e["id"] for e in x}) == len(x):
+            cfg["library_extra"] = [(e["id"], Path(os.path.expanduser(e["path"].strip()))) for e in x]
+        else:
+            warn("library_extra", 'a list of {"id": 2, "path": "/folder"} with different ids (2 and up)')
     if "open_browser" in raw:
         # TODO 34's boolean was replaced by 'window' the same day it was
         # added (never released) — point the user at the new key instead of
@@ -187,6 +198,7 @@ def apply_config(cfg):
     config.EPIMGS = config.CACHE / "epimgs"
     config.DB = config.DATA / "hub.db"
     config.LIBRARY = cfg["library_root"]
+    config.EXTRA = tuple(cfg.get("library_extra") or ())
     config.PORT = cfg["port"]
     config.WINDOW = cfg["window"]
     config.REMOTE_HOSTS = tuple(cfg.get("remote_hosts") or ())

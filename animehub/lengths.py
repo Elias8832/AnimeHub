@@ -28,7 +28,9 @@ def enabled():
 
 
 def _key(rel):
-    return os.path.join(str(config.LIBRARY), rel)
+    from . import library  # library imports this module
+    p = library.abs_path(rel)
+    return str(p) if p else None
 
 
 def _load():
@@ -51,7 +53,8 @@ def get(rel):
     if config.LIBRARY is None or not rel:
         return None
     _load()
-    hit = _known.get(_key(rel))
+    key = _key(rel)
+    hit = _known.get(key) if key else None
     return hit[2] if hit else None
 
 
@@ -126,6 +129,8 @@ def _todo(rels):
     out = []
     for rel in rels:
         path = _key(rel)
+        if not path:
+            continue
         try:
             st = os.stat(path)
         except OSError:

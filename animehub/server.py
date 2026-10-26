@@ -22,10 +22,13 @@ def open_show_folder(show_id):
     show = next((s for s in library.scan_library() if s["id"] == show_id), None)
     if not show or not show.get("path"):
         raise ValueError("no such show on disk")
-    path = (config.LIBRARY / show["path"]).resolve()
+    path = library.abs_path(show["path"])
+    if path is None:
+        raise ValueError("folder not found")
+    path = path.resolve()
     if path.is_file():
         path = path.parent
-    if not path.is_dir() or not path.is_relative_to(config.LIBRARY.resolve()):
+    if not path.is_dir() or not any(path.is_relative_to(r.resolve()) for _, r in library.roots()):
         raise ValueError("folder not found")
     system.open_external(path)
 
@@ -529,6 +532,17 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(settings.set_library_root(body["path"], body.get("adopt", False)))
                 except ValueError as e:
                     self._bad(str(e))
+        elif route == "/api/library-extra":
+            # Decision 42: {"path": …} adds an extra folder, {"remove": id} drops one.
+            try:
+                if isinstance(body.get("path"), str):
+                    self.send_json(settings.add_library_extra(body["path"]))
+                elif isinstance(body.get("remove"), int) and not isinstance(body["remove"], bool):
+                    self.send_json(settings.remove_library_extra(body["remove"]))
+                else:
+                    self._bad("send 'path' (a folder) or 'remove' (an extra folder's id)")
+            except ValueError as e:
+                self._bad(str(e))
         elif route == "/api/match":
             if self._fields(body, strings=("show_id",)):
                 aid = body.get("anilist_id")

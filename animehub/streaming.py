@@ -494,7 +494,7 @@ def entry_files(scan, media_id):
             for i in u["seasons"]:
                 sea = s["seasons"][i]
                 if any(r["id"] == media_id and r["offset"] == 0 and r["last_ep"] is None for r in sea["releases"]):
-                    folder = (config.LIBRARY / sea["episodes"][0]["rel"]).parent
+                    folder = library.abs_path(sea["episodes"][0]["rel"]).parent
                     homes[folder] = homes.get(folder, 0) + len(sea["episodes"])
     return eps, max(homes, key=homes.get) if homes else None
 

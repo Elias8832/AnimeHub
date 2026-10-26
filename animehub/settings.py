@@ -137,6 +137,9 @@ def settings_payload():
         # additive: opening/ending skip modes, {"op": …, "ed": …}
         "skip": skip_prefs(),
         "library_root": str(config.LIBRARY) if config.LIBRARY else None,
+        # additive (Decision 42): extra folders, [{id, path, state ok/missing}]
+        "library_extra": [{"id": n, "path": str(p), "state": "ok" if p.is_dir() else "missing"}
+                          for n, p in config.EXTRA],
         "data_dir": str(config.DATA),
         "config_path": str(CONFIG_PATH),
         "port": config.PORT,
@@ -261,6 +264,48 @@ def set_upscale(on):
         upscale.turned_on()
     else:
         threading.Thread(target=upscale.restore_originals, daemon=True).start()
+
+
+def _write_extra(extra):
+    write_config_key("library_extra", [{"id": n, "path": str(p)} for n, p in extra])
+    config.EXTRA = tuple(extra)
+    CONFIG["library_extra"] = list(extra)
+
+
+def add_library_extra(path):
+    """Decision 42: one more library folder. It gets the next unused
+    number — or its old one, when the same folder was added before — so
+    its shows keep their history. Folders inside each other are refused
+    (their files would show up twice)."""
+    if config.LIBRARY is None:
+        raise ValueError("Choose the main library folder first.")
+    p = _user_dir(path)
+    for _, other in library.roots():
+        a, b = p.resolve(), other.resolve()
+        if a == b:
+            raise ValueError("That folder is already in your library.")
+        if a.is_relative_to(b) or b.is_relative_to(a):
+            raise ValueError(f"That folder is inside {other} or holds it — pick one that isn't.")
+    try:
+        known = json.loads(get_setting("library_extra_known") or "{}")
+    except ValueError:
+        known = {}
+    used = {n for n, _ in config.EXTRA} | set(known.values())
+    n = known.get(str(p)) if known.get(str(p)) not in {m for m, _ in config.EXTRA} else None
+    n = n or max(used | {1}) + 1
+    known[str(p)] = n
+    set_setting("library_extra_known", json.dumps(known))
+    _write_extra([*config.EXTRA, (n, p)])
+    return {"ok": True, "id": n, "path": str(p)}
+
+
+def remove_library_extra(n):
+    """Stop scanning an extra folder. Its watch history stays (17.3) and
+    comes back if the folder is added again."""
+    if n not in {m for m, _ in config.EXTRA}:
+        raise ValueError("No such extra folder.")
+    _write_extra([(m, p) for m, p in config.EXTRA if m != n])
+    return {"ok": True}
 
 
 def set_library_root(path, adopt=False):
