@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system
+from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system, upscale
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -125,6 +125,35 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_file_body(body, ctype, cache)
 
+    def send_banner(self, path):
+        """A banner can be swapped for its upscaled version under the same
+        name, so the browser asks again each time (a bodiless 304 while
+        unchanged) instead of keeping the old picture for a day."""
+        try:
+            st = Path(path).stat()
+        except OSError:
+            self.send_error(404)
+            return
+        tag = '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+        if self.headers.get("If-None-Match") == tag:
+            self.send_response(304)
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        try:
+            body = Path(path).read_bytes()
+        except OSError:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("ETag", tag)
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
     def send_file_body(self, body, ctype, cache=False):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
@@ -229,6 +258,8 @@ class Handler(BaseHTTPRequestHandler):
             notice = (dict(streaming._session_notice) if streaming._session_notice["msg"]
                       and time.time() - streaming._session_notice["ts"] < 30 else None)
             vpn = settings.vpn_status()
+            # Additive: banners swapped for their upscaled version (or back).
+            art = upscale.art_payload()
             # Additive (TODO 61): the metadata pass's progress while it runs,
             # so the library note follows it without refetching the library.
             meta = ({"running": True, "pending": metadata._meta_status["pending"],
@@ -264,6 +295,8 @@ class Handler(BaseHTTPRequestHandler):
                     payload["vpn"] = vpn
                     if meta:
                         payload["meta"] = meta
+                    if art:
+                        payload["art"] = art
                     self.send_json(payload)
                     return
                 a = next(iter(player._active.values()))
@@ -281,6 +314,8 @@ class Handler(BaseHTTPRequestHandler):
                     payload["outbox"] = outbox_n
                 if downloads:
                     payload["downloads"] = downloads
+                if art:
+                    payload["art"] = art
                 self.send_json(payload)
         elif route == "/api/downloads":
             self.send_json({"jobs": downloader.downloads_payload()})
@@ -301,7 +336,10 @@ class Handler(BaseHTTPRequestHandler):
         elif route.startswith("/img/"):
             name = os.path.basename(route)
             p = config.POSTERS / name
-            self.send_file(p, "image/jpeg", cache=True)
+            if name.endswith(".banner.jpg"):
+                self.send_banner(p)
+            else:
+                self.send_file(p, "image/jpeg", cache=True)
         elif route.startswith("/epimg/"):
             self.send_file(config.EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
         elif route in ("/", "/index.html"):
@@ -388,10 +426,12 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
-            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done")
+            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done",
+                    "upscale_banners")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
-                       "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES}
+                       "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
+                       "upscale_style": tuple(upscale.STYLES)}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
                     self._bad("'%s' must be a boolean" % key)
@@ -406,11 +446,19 @@ class Handler(BaseHTTPRequestHandler):
             for key in choices:
                 if key in body:
                     settings.set_setting(key, body[key])
+            if "upscale_style" in body:
+                upscale.style_changed()
             for key in keys:
                 if key not in body:
                     continue
                 if key == "tour_done":
                     settings.set_setting("tour_done", "1" if body[key] else "0")
+                elif key == "upscale_banners":
+                    try:
+                        settings.set_upscale(body[key])
+                    except ValueError as e:
+                        self._bad(str(e))
+                        return
                 else:
                     settings.set_automation(key, body[key])
             self.send_json({"ok": True, **settings.settings_payload()})
@@ -855,6 +903,8 @@ def main():
     # background — a stale cache must never read as a disconnect.
     threading.Thread(target=anilist.background_work(sync.anilist_refresh_loop), daemon=True).start()
     threading.Thread(target=anilist.background_work(franchise.franchise_refresh_loop), daemon=True).start()
+    # Banner upscaling (opt-in): pick up banners saved while it was off.
+    threading.Thread(target=upscale.queue_all, daemon=True).start()
     print(f"Anime Hub → http://127.0.0.1:{config.PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
     print(f"  library  {config.LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)

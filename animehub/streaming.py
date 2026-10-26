@@ -10,7 +10,7 @@ import time
 import unicodedata
 from urllib.error import HTTPError
 
-from . import anicli, anilist, database, library, mapping, metadata, player, system, util
+from . import anicli, anilist, database, library, mapping, metadata, player, system, upscale, util
 from .config import config, SKIP_CREDITS_LUA
 
 
@@ -97,8 +97,17 @@ def _release_display(m, fallback_title, art):
     if art:
         name = f"stream-{m['id']}"
         poster = f"/img/{name}.jpg" if metadata.download(cover, config.POSTERS / f"{name}.jpg") else cover
-        banner = (f"/img/{name}.banner.jpg" if metadata.download(m.get("bannerImage"), config.POSTERS / f"{name}.banner.jpg")
-                  else m.get("bannerImage"))
+        # A banner saved in the last 30 days stays: links are stored again
+        # often, and each fresh copy undid its upscale (Settings → Sharper
+        # banners) and had it redone.
+        bpath = config.POSTERS / f"{name}.banner.jpg"
+        if m.get("bannerImage") and upscale.banner_age(bpath) < 30 * 86400:
+            banner = f"/img/{name}.banner.jpg"
+        else:
+            banner = (f"/img/{name}.banner.jpg" if metadata.download(m.get("bannerImage"), bpath)
+                      else m.get("bannerImage"))
+        if banner and banner.startswith("/img/"):
+            upscale.queue_banner(bpath)
         eps_art = metadata.media_episode_art(m)
     else:
         poster, banner = cover, m.get("bannerImage")

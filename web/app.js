@@ -1508,9 +1508,9 @@ function Sett() {
   /* Settings (Decision 38): one section at a time; every setting is also in the search. */
   const tab = SET_TABS.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
   const sec = {
-    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
+    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
-      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}</div><div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — upscales banners when the config enables it.")}</div>`,
+      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}</div><div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div>`,
     playback: `${skipGroup(s)}`,
     online: `${streamGroup(s)}`,
     anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
@@ -1526,6 +1526,25 @@ function Sett() {
   return `<div class="set2"><div class="hello"><h1 class="hd">Settings</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
   <div class="setg"><nav class="snav">${SET_TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
   <div class="settings scol" data-sec="${tab}">${sec[tab]}</div></div></div>`;
+}
+/* Banner upscaling (opt-in): Upscayl redraws banners on the graphics card.
+   While it works, Settings re-reads its progress every few seconds. */
+function upscaleRow(s) {
+  const u = s.upscale || {}, missing = !u.found;
+  const txt = {
+    off: "Upscayl redraws show banners 4× bigger on your graphics card.",
+    missing: "Install Upscayl to use this. It redraws show banners 4× bigger on your graphics card.",
+    idle: `On. New banners are redrawn as they arrive.${u.done ? ` ${u.done} done.` : ""}`,
+    working: `Working: ${u.done || 0} done, ${u.left || 0} left. Pauses while an episode plays.`,
+    broken: `<span class="chip warn">Stopped</span> Upscayl gave blank pictures, so your banners stay as they are. Update the graphics driver${u.flatpak ? " (for the Flatpak: run <code>flatpak update</code>)" : ""}, then switch this off and on.`,
+  }[u.state] || "";
+  if (u.state === "working" && !upscaleRow.t) upscaleRow.t = setTimeout(() => {
+    upscaleRow.t = 0;
+    if (S.view === "settings") loadSettings().then(() => S.view === "settings" && render(true));
+  }, 4000);
+  const look = [["natural", "Natural"], ["digital", "Digital art"]].map(([v, l]) => `<button class="${u.style === v ? "on" : ""}" aria-pressed="${u.style === v}" data-a="spref" data-k="upscale_style" data-v="${v}" ${u.on ? "" : "disabled"}>${l}</button>`).join("");
+  return srow("Sharper banners", txt, tgl("upscale_banners", "Sharper banners", u.on, missing && !u.on))
+    + srow("Banner look", "Natural keeps soft shading as it is. Digital art draws crisper lines and takes about 3× longer (Upscayl's Digital Art with TTA Mode).", `<span class="seg" role="group" aria-label="Banner look">${look}</span>`);
 }
 /* A segmented control for one Appearance preference. */
 function lookSeg(k, opts) {
@@ -1650,7 +1669,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
    every setting (switches flip right here) and commands — grouped, with a
    preview of the picked row and its keys. */
 const SETTINGS_INDEX = [
-  ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
+  ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse"], ["Rescan", "library", "rescan scan refresh metadata"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
   ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"],
@@ -2478,6 +2497,8 @@ async function pollNow() {
     }
     if (S.outbox > 0 && outbox === 0) toast("Waiting changes synced to AniList");
     if (outbox !== S.outbox) { S.outbox = outbox; if (S.menu === "ob") outbox ? obLoad() : (S.menu = null); }
+    S.artWorking = !!now.art?.working;
+    if (now.art && now.art.stamp !== S.artStamp) { S.artStamp = now.art.stamp; swapArt(now.art.changed); }
     const dls = now.downloads || [], done = (l) => l.filter((j) => j.status === "done").length;
     const finished = done(dls) > done(S.dl);
     const dlChanged = JSON.stringify(dls) !== JSON.stringify(S.dl);
@@ -2490,7 +2511,26 @@ async function pollNow() {
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.dl.some((j) => j.status === "running") ? 2000 : 4000);
+  pollSoon(S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000);
+}
+/* A banner was upscaled (or put back) under the same name: point every
+   copy of its URL at the new ?v= stamp — the data the page draws from and
+   what is on screen — so it shows without a reload. */
+function swapArt(changed) {
+  const fix = (u) => typeof u === "string" && u.includes(".banner.jpg")
+    ? u.replace(/\/img\/([\w.-]+?\.banner\.jpg)(\?v=\d+)?/g, (m, n) => (changed[n] ? `/img/${n}?v=${changed[n]}` : m)) : u;
+  const walk = (o, seen) => {
+    if (!o || typeof o !== "object" || seen.has(o)) return;
+    seen.add(o);
+    for (const k in o) { const v = o[k]; if (typeof v === "string") { const f = fix(v); if (f !== v) o[k] = f; } else walk(v, seen); }
+  };
+  const seen = new Set();
+  walk(S.data, seen); walk(S.fr, seen);
+  for (const p of frMemo.values()) walk(p, seen);
+  for (const el of $$('[style*=".banner.jpg"]')) { const b = fix(el.style.backgroundImage); if (b !== el.style.backgroundImage) el.style.backgroundImage = b; }
+  for (const el of $$('[data-bg*=".banner.jpg"]')) el.dataset.bg = fix(el.dataset.bg);
+  for (const el of $$('img[src*=".banner.jpg"]')) { const b = fix(el.getAttribute("src")); if (b !== el.getAttribute("src")) el.src = b; }
+  for (const cls in canvasNow) if (canvasNow[cls] && fix(canvasNow[cls]) !== canvasNow[cls]) swapLayer(cls, fix(canvasNow[cls]));
 }
 /* The open page's tiles follow loading / download / watch state. */
 function pagePatch() {

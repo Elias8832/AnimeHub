@@ -301,14 +301,11 @@ def store_show_meta(show, m):
     banner_name = f"{show['id']}.banner.jpg"
     poster = f"/img/{poster_name}" if download((m.get("coverImage") or {}).get("extraLarge"), config.POSTERS / poster_name) else None
     banner = f"/img/{banner_name}" if download(m.get("bannerImage"), config.POSTERS / banner_name) else None
-    if banner and config.UPSCALE_BANNERS:
-        # In the background: keep the metadata queue moving
-        # instead of blocking ~19s per banner on the Upscayl run.
-        # Opt-in (config 'upscale_banners', default off): on machines without
-        # working GPU Vulkan the upscaler emits all-black images — found
-        # destroying real banners 2026-10-15 — and AniList's own banners are
-        # already high-resolution.
-        upscale.upscale_banner_async(config.POSTERS / banner_name)
+    if banner:
+        # Opt-in (Settings → Appearance, config 'upscale_banners'): a
+        # background worker, one banner at a time, so the metadata queue
+        # keeps moving instead of waiting ~13 s per banner on Upscayl.
+        upscale.queue_banner(config.POSTERS / banner_name)
     seps = m.get("streamingEpisodes") or []
     eps_meta = [anilist.strip_html(e["title"]).split(" - ", 1)[-1] for e in seps] if seps else None
     thumbs = media_episode_art(m)["thumbs"]

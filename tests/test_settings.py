@@ -279,6 +279,24 @@ class SettingsRouteTests(unittest.TestCase):
         self.assertFalse(body["aniskip_vpn_warn"])
         self.post({"skip_op": "prompt", "skip_ed": "prompt", "aniskip": False, "aniskip_vpn_warn": True})
 
+    def test_upscale_setting(self):
+        """Banner upscaling: off by default, in the payload, a boolean only."""
+        body = self.get("/api/settings")
+        self.assertFalse(body["upscale_banners"])
+        self.assertEqual(body["upscale"]["state"], "off")
+        self.assertEqual(self.post({"upscale_banners": "yes"})[0], 400)
+        with patch.object(settings, "set_upscale") as switch:
+            self.assertEqual(self.post({"upscale_banners": True})[0], 200)
+        switch.assert_called_once_with(True)
+        self.assertEqual(body["upscale"]["style"], "natural")
+        self.assertEqual(self.post({"upscale_style": "anime"})[0], 400)
+        from animehub import upscale
+        with patch.object(upscale, "style_changed") as redo:
+            code, body = self.post({"upscale_style": "digital"})
+        self.assertEqual((code, body["upscale"]["style"]), (200, "digital"))
+        redo.assert_called_once()
+        self.post({"upscale_style": "natural"})
+
     def test_play_carries_the_aniskip_yes(self):
         """Decision 39: `aniskip` on /api/play is the user's answer for that
         episode; anything but a boolean is a 400."""
