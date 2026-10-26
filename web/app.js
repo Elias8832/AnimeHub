@@ -259,7 +259,7 @@ function dayWord(h) { return h < 5 ? "Tonight" : h < 12 ? "This morning" : h < 1
 function heroHTML(up) {
   const s = up.s, ep = up.ep, sea = up.sea, art = homeThumb(sea, ep) && !s.banner ? homeThumb(sea, ep) : s.banner || s.poster;
   const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
-  const left = pct >= 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : ep.duration ? `${Math.round(ep.duration / 60)} min` : "";
+  const len = ep.duration || ep.length, left = pct >= 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
   const src = streamEp(ep) ? "online" : "on disk";
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
@@ -467,14 +467,23 @@ function showCard(s, i) {
    manual field uses; picking one writes the match. */
 const mst = (id) => (S.match[id] ||= { cands: null, pick: 0, busy: false, err: "", q: "", tried: false });
 const candLabel = (x) => x.title?.english || x.title?.romaji || `#${x.id}`;
+/* The files' own lengths (played, else measured): "24 min each" only when
+   every file is known and they agree, else the range of the known ones. */
+function lensText(eps) {
+  const mins = eps.map((x) => x.duration || x.length).filter(Boolean).map((v) => Math.round(v / 60));
+  if (!mins.length) return "";
+  const lo = Math.min(...mins), hi = Math.max(...mins), hm = (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
+  if (eps.length === 1) return hm(lo);
+  return lo === hi ? `${hm(lo)}${mins.length === eps.length ? " each" : ""}` : hi < 60 ? `${lo}–${hi} min` : `${hm(lo)}–${hm(hi)}`;
+}
 function matchUI(s) {
   const m = mst(s.id), c = (m.cands || []).slice(0, 5), n = epTotal(s), best = c[m.pick] || c[0];
-  const files = s.seasons.flatMap((x) => x.episodes), mins = files.find((x) => x.duration)?.duration;
-  const facts = [n > 1 ? `${n} episodes` : n ? "1 file" : "", mins ? `${Math.round(mins / 60)} min${n > 1 ? " each" : ""}` : "", s.seasons.length > 1 ? `${s.seasons.length} seasons` : ""].filter(Boolean);
+  const files = s.seasons.flatMap((x) => x.episodes);
+  const facts = [n > 1 ? `${n} episodes` : n ? "1 file" : "", lensText(files), s.seasons.length > 1 ? `${s.seasons.length} seasons` : ""].filter(Boolean);
   const meta = (x) => [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format, x.episodes ? x.episodes + " ep" : "", x.duration ? x.duration + " min" : ""].filter(Boolean).join(" · ");
   return `<div class="match mc" data-show="${esc(s.id)}"><div class="mcl">
       <span class="cap2">${ico("folder")} folder on disk</span>
-      <h3>${esc(s.title)}</h3>${s.path && s.path !== s.title ? `<div class="raw">${esc(s.path)}</div>` : ""}
+      <h3>${esc(s.title)}</h3>${s.path && s.path !== s.title ? `<div class="raw">${esc(s.path_label || s.path)}</div>` : ""}
       ${facts.length ? `<div class="facts">${facts.map((f, i) => `<span${i === 1 ? ' class="len"' : ""}>${esc(f)}</span>`).join("")}</div>` : ""}
       ${m.busy ? '<div class="found"><i class="spin"></i>Searching AniList…</div>' : ""}
       ${c.length > 1 ? `<div class="others"><span class="cap2">other guesses</span>${c.map((x, i) => i === m.pick ? "" : `<button class="oth" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge || null, { c: "t" })}<span>${esc(candLabel(x))}</span><small>${esc(meta(x))}</small></button>`).join("")}</div>` : ""}
@@ -490,7 +499,7 @@ function numUI(s) {
   const seas = s.seasons.filter((sea) => sea.episodes.some((e) => e.guessed));
   const name = (e) => (e.rel || "").split("/").pop();
   return `<div class="match mc nums" data-show="${esc(s.id)}"><div class="mcl">
-      <span class="cap2">${ico("folder")} episode numbers</span><h3>${esc(s.title)}</h3>${s.path && s.path !== s.title ? `<div class="raw">${esc(s.path)}</div>` : ""}
+      <span class="cap2">${ico("folder")} episode numbers</span><h3>${esc(s.title)}</h3>${s.path && s.path !== s.title ? `<div class="raw">${esc(s.path_label || s.path)}</div>` : ""}
       ${seas.map((sea) => `${s.seasons.length > 1 ? `<span class="cap2 nsea">${esc(sea.label)}</span>` : ""}<div class="nlist">${sea.episodes.map((e) =>
         `<label class="nrow${e.guessed ? " guess" : ""}"><input type="number" min="0" max="9999" value="${e.number}" data-ep="${esc(e.id)}" aria-label="Episode number for ${esc(name(e))}"><span title="${esc(name(e))}">${esc(name(e))}</span>${e.guessed ? '<small>guessed</small>' : ""}</label>`).join("")}</div>`).join("")}
       <div class="msg"></div>
@@ -676,7 +685,7 @@ function epTile(s, sea, ep, tgId, i = 0) {
   const files = ep.files || [], loading = epLoading(ep.id);
   const picking = S.sel?.show === s.id, picked = picking && S.sel.ids.has(ep.id);
   const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", ep.watched ? "watched" : "", ep.id === tgId && resumable(ep) ? "resume" : "", art ? "" : "noart", loading ? "loading" : ""].filter(Boolean).join(" ");
-  const mins = minsOf(ep.duration), lang = fileLangs(ep);
+  const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep);
   const meta = loading ? "loading…" : part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}${files.length > 1 ? ` · ${files.length} versions` : ""}`;
   return tileHTML({ cls, a: "playep", v: ep.id, i, art, pos, num: "E" + String(ep.number).padStart(2, "0"), pct: part ? pct : 0, loading, watched: ep.watched && !part,
     picking, picked, title: epTitle(s, sea, ep) || "Episode " + ep.number, meta, menu: `Episode ${ep.number} menu` });
@@ -912,7 +921,7 @@ function slotTile(p, e, x, tgId, i = 0) {
   const ok = playableSlot(e, x), loading = slotIds(x).some(epLoading), job = x.online && !x.local && dlJob(x.online.id);
   const picking = S.sel?.show === frSelKey(), picked = picking && S.sel.ids.has(x.id);
   const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", x.watched ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off"].filter(Boolean).join(" ");
-  const files = x.local?.files || [], mins = minsOf(x.duration, e.duration);
+  const files = x.local?.files || [], mins = minsOf(x.duration || x.length, e.duration);
   const src = x.local ? `disk · ${fileLangs({ files })}` : ok ? `online · ${e.online.mode || S.settings?.stream?.mode || "sub"}` : "not available";
   const meta = loading ? "loading…" : job ? (job.status === "running" ? `downloading · ${Math.floor(job.percent)}%` : "waiting to download")
     : part ? `${fmtLeft(x.duration, x.position)} left · ${src}` : `${mins ? mins + " min · " : ""}${src}`;
@@ -973,6 +982,7 @@ function Fran() {
     <div class="meta"><i class="mdot"></i><span>${esc(facts.join(" · "))}</span><span class="sep">·</span>${alChip(e.id)}<span class="live-t" id="airline">${esc(airing)}</span>${playing}</div>
     <h1>${esc(e.title || p.title)}</h1>
     ${e.overview ? `<p class="desc">${esc(e.overview)}</p>` : ""}
+    <p class="mfacts" id="mediafacts"></p>
     <div class="stats2" id="entrystats"></div>
     <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span>${kb("↵")}</button>` : ""}
       ${missing.length ? `<button class="btn big" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}${esc(dlLabel)}${vpnTag}${kb("D")}</button>` : ""}
@@ -1074,7 +1084,7 @@ function Det() {
   const flat = s.seasons.flatMap((x) => x.episodes);
   const seaAll = sea && sea.episodes.length > 0 && sea.episodes.every((e) => e.watched), showAll = flat.length > 0 && flat.every((e) => e.watched);
   const playing = isPlayingShow(s.id) ? `<span class="playing"><i class="led"></i>${S.data.now.loading ? "loading" : "playing"} · ${esc(S.data.now.label)}</span>` : "";
-  const facts = [s.path || s.title, `${epTotal(s)} episodes`, matched ? "AniList unreachable — showing the folder" : s.kept_local ? "kept local" : "not matched yet"];
+  const facts = [s.path_label || s.path || s.title, `${epTotal(s)} episodes`, matched ? "AniList unreachable — showing the folder" : s.kept_local ? "kept local" : "not matched yet"];
   return `<div class="sp2">${backBtn()}
   <div class="hero${s.poster ? " framed" : " bare"}"><div class="hl2">
     <div class="meta"><i class="mdot"></i><span>${esc(facts.join(" · "))}</span>${playing}</div>
@@ -1170,6 +1180,14 @@ function entryDraw(res) {
   const air = $("#airline");
   if (air) air._own = true;
   if (air && (next || S.view !== "fr")) air.textContent = next ? (next.in_seconds > 0 ? `E${next.number} airs in ${fmtIn(next.in_seconds)}` : `E${next.number} has aired`) : "";
+  /* AniList's read-only extras (Decision 10): studio, popularity, favourites — the live read has them, the cached lists don't. */
+  const mf = $("#mediafacts");
+  if (mf) {
+    mf._own = true;
+    const bits = [m.studios?.length ? ["Studio", m.studios.join(", ")] : null, m.popularity != null ? ["On lists", m.popularity.toLocaleString()] : null,
+      m.favourites != null ? ["Favourites", m.favourites.toLocaleString()] : null].filter(Boolean);
+    mf.innerHTML = bits.map(([k, v]) => `<span><small>${k}</small>${esc(v)}</span>`).join("");
+  }
 }
 /* Edit entry (E): the editor as a dialog over the page, its art on top. */
 function EntryDlg() {
@@ -1510,7 +1528,7 @@ function Sett() {
   const sec = {
     appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
-      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}</div><div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div>`,
+      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}<div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div>`,
     playback: `${skipGroup(s)}`,
     online: `${streamGroup(s)}`,
     anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
@@ -1526,6 +1544,22 @@ function Sett() {
   return `<div class="set2"><div class="hello"><h1 class="hd">Settings</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
   <div class="setg"><nav class="snav">${SET_TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
   <div class="settings scol" data-sec="${tab}">${sec[tab]}</div></div></div>`;
+}
+/* Episode lengths read from the files (ffprobe, else mpv), once per file.
+   While it works, Settings re-reads its progress every few seconds. */
+function lengthRow(s) {
+  const l = s.lengths || {};
+  const txt = {
+    off: "Read how long each episode is from its file, so episodes show their length before you play them.",
+    missing: "Install ffprobe (part of FFmpeg) or mpv to use this.",
+    idle: `On. New files are measured as they arrive${l.tool ? ` (with ${esc(l.tool)})` : ""}.`,
+    working: `Working: ${l.done || 0} done, ${l.left || 0} left. Pauses while an episode plays.`,
+  }[l.state] || "";
+  if (l.state === "working" && !lengthRow.t) lengthRow.t = setTimeout(() => {
+    lengthRow.t = 0;
+    if (S.view === "settings") loadSettings().then(() => S.view === "settings" && render(true));
+  }, 4000);
+  return srow("Measure episode lengths", txt, tgl("measure_lengths", "Measure episode lengths", s.measure_lengths));
 }
 /* Banner upscaling (opt-in): Upscayl redraws banners on the graphics card.
    While it works, Settings re-reads its progress every few seconds. */
@@ -1638,7 +1672,7 @@ function dirClose() {
   const ctx = S.dir?.ctx;
   S.dir = null;
   const f = $("#libpath-" + ctx);
-  if (f) f.value = S.settings?.library_root || "";
+  if (f) f.value = ctx === "extra" ? "" : S.settings?.library_root || "";
   paintDir(ctx);
 }
 async function dirSet(path) {
@@ -1652,6 +1686,35 @@ async function dirSet(path) {
   await reload();
   api("/api/refresh", {}).catch(() => {});
   if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render();
+}
+/* Extra library folders (Decision 42): added through the same browser, removed from their row. */
+async function extraAdd(path) {
+  let r;
+  try { r = await api("/api/library-extra", { path }); } catch { r = { error: "Could not reach the hub." }; }
+  if (!S.dir) return;
+  if (!r.ok) { S.dir.err = r.error || "Could not use this folder."; paintDir(); return; }
+  S.dir = null;
+  toast("Folder added — scanning…");
+  await loadSettings();
+  await reload();
+  api("/api/refresh", {}).catch(() => {});
+  if (S.view === "settings") render();
+}
+async function extraRemove(id) {
+  let r;
+  try { r = await api("/api/library-extra", { remove: id }); } catch { r = { error: "Could not reach the hub." }; }
+  if (!r.ok) return toast(r.error || "Could not remove the folder.");
+  toast("Folder removed — its watch history is kept");
+  await loadSettings();
+  await reload();
+  if (S.view === "settings") render();
+}
+function extraGroup(s) {
+  const xs = s.library_extra || [], name = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
+  const rows = xs.map((x) => srow(esc(name(x.path)), `<code>${esc(x.path)}</code>${x.state === "missing" ? ' <span class="chip warn">not reachable</span>' : ""}`,
+    `<button class="btn" data-a="xremove" data-v="${x.id}">Remove</button>`)).join("");
+  return `<div class="group"><h3>Extra folders</h3><p class="sub">More folders with anime, e.g. on another drive. Their shows join your library; downloads go where a show already is.</p>${rows}
+    ${srow("Add a folder", xs.length ? "Another folder with anime." : "No extra folders yet.", `<div class="path">${libPath("extra", {})}${dirBtn("extra")}</div>`)}${DirPick("extra")}</div>`;
 }
 async function loadSettings() {
   try { S.settings = await api("/api/settings"); } catch { S.settings = null; }
@@ -1671,7 +1734,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
 const SETTINGS_INDEX = [
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
-  ["Library folder", "library", "folder path library directory browse"], ["Rescan", "library", "rescan scan refresh metadata"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
+  ["Library folder", "library", "folder path library directory browse"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
   ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
   ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"],
@@ -2874,17 +2937,19 @@ const A = {
   },
   tour: async () => { if (!S.settings) await loadSettings(); S.tour = { step: 0, choice: "connect" }; S.dir = null; openModal({ t: "tour" }); },
   dirbrowse: (v, t) => {
-    const ctx = t.closest(".dialog") ? "tour" : "settings", typed = ($("#libpath-" + ctx)?.value || "").trim(), field = t.tagName === "INPUT";
+    const ctx = (t.id || "").replace(/^(dirbtn|libpath)-/, "") || (t.closest(".dialog") ? "tour" : "settings"), typed = ($("#libpath-" + ctx)?.value || "").trim(), field = t.tagName === "INPUT";
     if (S.dir?.ctx === ctx) { if (field) dirGo(typed); else dirClose(); return; } // Browse again = Cancel; Enter in the field walks there
     S.dir = { ctx, dirs: null };
     paintDir(ctx);
-    dirGo(typed || S.settings?.library_root || "");
+    dirGo(typed || (ctx === "extra" ? "" : S.settings?.library_root) || "");
   },
   dirgo: (v) => dirGo(v),
+  xremove: (v) => extraRemove(+v),
   dirclose: () => dirClose(),
   diruse: () => {
     const p = S.dir, cur = S.settings?.library_root;
     if (!p?.path) return;
+    if (p.ctx === "extra") return extraAdd(p.path);
     if (cur && cur !== p.path) { p.confirm = true; paintDir(); return; } // switching an indexed root is a confirmed step (Decision 23.7)
     dirSet(p.path);
   },
@@ -3209,7 +3274,7 @@ document.addEventListener("keydown", (e) => {
     else if (e.key === "Enter" && document.activeElement.id === "slq") { e.preventDefault(); A.slsearch(); }
     return;
   }
-  if (e.key === "Enter" && document.activeElement.id === "libpath-settings") { e.preventDefault(); A.dirbrowse(null, document.activeElement); return; }
+  if (e.key === "Enter" && /^libpath-(settings|extra)$/.test(document.activeElement.id)) { e.preventDefault(); A.dirbrowse(null, document.activeElement); return; }
   if (e.key === "Enter" && document.activeElement.id?.startsWith("mq-")) { e.preventDefault(); A.msearch(document.activeElement.id.slice(3)); return; }
   if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }
   if (!inInput && !e.ctrlKey && !e.altKey && !e.metaKey) {

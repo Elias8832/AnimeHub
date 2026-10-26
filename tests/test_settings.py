@@ -297,6 +297,20 @@ class SettingsRouteTests(unittest.TestCase):
         redo.assert_called_once()
         self.post({"upscale_style": "natural"})
 
+    def test_measure_lengths_setting(self):
+        """Episode lengths: on by default, in the payload, a boolean only;
+        switching it on starts the worker."""
+        from animehub import lengths
+        body = self.get("/api/settings")
+        self.assertTrue(body["measure_lengths"])
+        self.assertTrue(body["lengths"]["on"])
+        self.assertEqual(self.post({"measure_lengths": "yes"})[0], 400)
+        code, body = self.post({"measure_lengths": False})
+        self.assertEqual((code, body["measure_lengths"], body["lengths"]["state"]), (200, False, "off"))
+        with patch.object(lengths, "turned_on") as on:
+            self.assertTrue(self.post({"measure_lengths": True})[1]["measure_lengths"])
+        on.assert_called_once()
+
     def test_play_carries_the_aniskip_yes(self):
         """Decision 39: `aniskip` on /api/play is the user's answer for that
         episode; anything but a boolean is a 400."""

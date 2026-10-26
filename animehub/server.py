@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system, upscale
+from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system, upscale
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -22,10 +22,13 @@ def open_show_folder(show_id):
     show = next((s for s in library.scan_library() if s["id"] == show_id), None)
     if not show or not show.get("path"):
         raise ValueError("no such show on disk")
-    path = (config.LIBRARY / show["path"]).resolve()
+    path = library.abs_path(show["path"])
+    if path is None:
+        raise ValueError("folder not found")
+    path = path.resolve()
     if path.is_file():
         path = path.parent
-    if not path.is_dir() or not path.is_relative_to(config.LIBRARY.resolve()):
+    if not path.is_dir() or not any(path.is_relative_to(r.resolve()) for _, r in library.roots()):
         raise ValueError("folder not found")
     system.open_external(path)
 
@@ -427,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done",
-                    "upscale_banners")
+                    "upscale_banners", "measure_lengths")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
@@ -461,6 +464,8 @@ class Handler(BaseHTTPRequestHandler):
                         return
                 else:
                     settings.set_automation(key, body[key])
+                    if key == "measure_lengths" and body[key]:
+                        lengths.turned_on()
             self.send_json({"ok": True, **settings.settings_payload()})
         elif route == "/api/watched":
             if self._fields(body, strings=("id",), bools=("watched",)):
@@ -527,6 +532,17 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(settings.set_library_root(body["path"], body.get("adopt", False)))
                 except ValueError as e:
                     self._bad(str(e))
+        elif route == "/api/library-extra":
+            # Decision 42: {"path": …} adds an extra folder, {"remove": id} drops one.
+            try:
+                if isinstance(body.get("path"), str):
+                    self.send_json(settings.add_library_extra(body["path"]))
+                elif isinstance(body.get("remove"), int) and not isinstance(body["remove"], bool):
+                    self.send_json(settings.remove_library_extra(body["remove"]))
+                else:
+                    self._bad("send 'path' (a folder) or 'remove' (an extra folder's id)")
+            except ValueError as e:
+                self._bad(str(e))
         elif route == "/api/match":
             if self._fields(body, strings=("show_id",)):
                 aid = body.get("anilist_id")
@@ -905,6 +921,8 @@ def main():
     threading.Thread(target=anilist.background_work(franchise.franchise_refresh_loop), daemon=True).start()
     # Banner upscaling (opt-in): pick up banners saved while it was off.
     threading.Thread(target=upscale.queue_all, daemon=True).start()
+    # Episode lengths: measure the files the scans find.
+    lengths.start()
     print(f"Anime Hub → http://127.0.0.1:{config.PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
     print(f"  library  {config.LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)

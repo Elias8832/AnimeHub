@@ -269,10 +269,18 @@ def migration_19(c):
         path TEXT PRIMARY KEY, number INTEGER NOT NULL)""")
 
 
+def migration_20(c):
+    """Episode lengths measured from the files (lengths.py), keyed by the
+    file's full path; size + mtime say when a file changed and needs
+    measuring again. seconds is NULL when the file could not be read."""
+    c.execute("""CREATE TABLE IF NOT EXISTS file_lengths(
+        path TEXT PRIMARY KEY, size INTEGER, mtime INTEGER, seconds REAL)""")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
-              migration_18, migration_19]
+              migration_18, migration_19, migration_20]
 
 
 def snapshot_before(target_version):

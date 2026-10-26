@@ -22,11 +22,12 @@ def stream_download_dir(link, scan):
     (entry_files), else a folder named after the release."""
     if config.LIBRARY is None:
         raise anicli.AniCliError("Choose a library folder in Settings first — downloads are saved there.")
+    home = streaming.entry_files(scan, link["media_id"])[1]
+    # Where the show lives — main or an extra folder (Decision 42); a new show goes to the main one.
+    if home and home not in {r for _, r in library.roots()}:
+        return home
     if not config.LIBRARY.is_dir():
         raise anicli.AniCliError(f"The library folder {config.LIBRARY} is not accessible right now.")
-    home = streaming.entry_files(scan, link["media_id"])[1]
-    if home and home != config.LIBRARY:
-        return home
     name = link["meta"].get("title") or link["title"] or link["query"]
     # Plain quotes, as people type folder names (AniList titles use ’ “ ”).
     name = name.translate(str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'}))
@@ -218,7 +219,7 @@ def _dl_adopt(media_id, dest):
     """A download that started a new folder becomes a new disk show — match
     it to the release right away instead of waiting for the matcher."""
     try:
-        rel = dest.relative_to(config.LIBRARY).as_posix()
+        rel = library.rel_of(dest)
         show = next((s for s in library.scan_library() if s["path"] == rel), None)
         if not show:
             return

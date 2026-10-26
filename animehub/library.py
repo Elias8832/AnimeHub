@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import anicli, anilist, database, franchise, mapping, metadata, player, settings, streaming, util
+from . import anicli, anilist, database, franchise, lengths, mapping, metadata, player, settings, streaming, util
 from .config import config
 
 
@@ -30,7 +30,54 @@ MIN_VALID_SCAN = 10
 # "partial" (some directories unreadable). "root" is "changed" when the configured
 # root differs from the one the database was indexed under. Surfaced in the
 # library payload so the UI can show readable states instead of nothing.
-scan_state = {"state": "ok", "walk_errors": 0, "root": "ok"}
+scan_state = {"state": "ok", "walk_errors": 0, "root": "ok",
+              # extra folders (Decision 42): number -> "ok" / "missing"
+              "extra": {}}
+
+
+EXTRA_REL = re.compile(r"^@(\d+)/(.*)$", re.S)
+
+
+def roots():
+    """(prefix, folder) for every library folder: the main one ("") first,
+    then the extra ones ("@2/", …; Decision 42). Empty without a main one."""
+    if config.LIBRARY is None:
+        return []
+    return [("", config.LIBRARY)] + [(f"@{n}/", p) for n, p in config.EXTRA]
+
+
+def abs_path(rel):
+    """A library path ("Show/E01.mkv", or "@2/Show/E01.mkv" in an extra
+    folder) as a real Path; None when its folder isn't configured."""
+    if not rel or config.LIBRARY is None:
+        return None
+    m = EXTRA_REL.match(rel)
+    if not m:
+        return config.LIBRARY / rel
+    root = dict(config.EXTRA).get(int(m.group(1)))
+    return root / m.group(2) if root else None
+
+
+def rel_of(path):
+    """abs_path's inverse: a real path inside a library folder → its library
+    path, or None."""
+    path = Path(path)
+    for prefix, root in roots():
+        try:
+            rel = path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        return prefix + ("" if rel == "." else rel)
+    return None
+
+
+def path_label(rel):
+    """How an extra folder's path reads in the UI: "<folder name>/Show"."""
+    m = EXTRA_REL.match(rel or "")
+    if not m:
+        return rel
+    root = dict(config.EXTRA).get(int(m.group(1)))
+    return f"{root.name}/{m.group(2)}" if root else m.group(2)
 
 
 def parse_ep_number(name):
@@ -112,7 +159,7 @@ def _library_sig(root):
 
 def scan_library():
     if config.LIBRARY is not None and config.LIBRARY.is_dir():
-        sig = _library_sig(config.LIBRARY)
+        sig = tuple(_library_sig(r) if r.is_dir() else (str(r), None) for _, r in roots())
         if sig == _scan_memo["sig"]:
             scan_state.update(_scan_memo["state"])
             stored_root = settings.get_setting("library_root")
@@ -120,6 +167,7 @@ def scan_library():
             return json.loads(_scan_memo["json"])
         shows = _scan_library()
         _scan_memo.update(sig=sig, json=json.dumps(shows), state=dict(scan_state))
+        lengths.scan_done(ep["rel"] for s in shows for ep in eps_of(s))
         return shows
     _scan_memo["sig"] = None
     return _scan_library()
@@ -127,7 +175,7 @@ def scan_library():
 
 def _scan_library():
     shows = {}
-    scan_state.update(state="ok", walk_errors=0, root="ok")
+    scan_state.update(state="ok", walk_errors=0, root="ok", extra={})
     if config.LIBRARY is None:
         # No library configured (PLAN v0.1 config work): a readable state,
         # not a traceback — the UI explains how to configure one.
@@ -148,120 +196,131 @@ def _scan_library():
     def walk_error(err):
         scan_state["walk_errors"] += 1
 
-    for dirpath, dirnames, filenames in os.walk(config.LIBRARY, onerror=walk_error):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
-        videos = sorted(f for f in filenames if Path(f).suffix.lower() in VIDEO_EXTS)
-        if not videos:
-            continue
-        rel = Path(dirpath).relative_to(config.LIBRARY)
-        if not rel.parts:
-            # Videos loose in the root: used to raise IndexError (parts was
-            # empty). Keep them watchable as one-file shows instead; the
-            # show id is namespaced "loose:" so it can never collide with a
-            # real folder show later claiming the same name.
+    for prefix, root in roots():
+        if prefix:
+            # An extra folder (Decision 42): a missing one is a state, not
+            # an empty folder — merge_db writes no tombstones meanwhile.
+            ok = root.is_dir()
+            scan_state["extra"][prefix[1:-1]] = "ok" if ok else "missing"
+            if not ok:
+                continue
+        for dirpath, dirnames, filenames in os.walk(root, onerror=walk_error):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            videos = sorted(f for f in filenames if Path(f).suffix.lower() in VIDEO_EXTS)
+            if not videos:
+                continue
+            rel = Path(dirpath).relative_to(root)
+            if not rel.parts:
+                # Videos loose in the root: used to raise IndexError (parts was
+                # empty). Keep them watchable as one-file shows instead; the
+                # show id is namespaced "loose:" so it can never collide with a
+                # real folder show later claiming the same name.
+                for v in videos:
+                    n = parse_ep_number(v) or 1
+                    ep_rel = prefix + str(Path(v))
+                    vm = re.search(r"\(([^)]+)\)", v)
+                    ver = {"path": ep_rel, "label": vm.group(1) if vm else "default"}
+                    show_id = hashlib.sha1(f"loose:{prefix}{v}".encode()).hexdigest()[:12]
+                    entry = shows.setdefault(
+                        show_id,
+                        {"id": show_id, "path": ep_rel, "title": Path(v).stem,
+                         "collection": None, "kind": "show", "seasons": [],
+                         **({"path_label": path_label(ep_rel)} if prefix else {})},
+                    )
+                    sea = entry["seasons"][0] if entry["seasons"] else None
+                    if sea is None:
+                        sea = {"key": 1, "season": 1, "label": "Season 1", "episodes": []}
+                        entry["seasons"].append(sea)
+                    sea["episodes"].append(
+                        {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel,
+                         "number": n, "files": [ver], "season": 1, "season_label": "Season 1"}
+                    )
+                continue
+            parts = list(rel.parts)
+            show_parts = []
+            season = None
+            label = None
+            kind = "show"
+            movie_leaf = None
+            for p in parts:
+                if MOVIE_RE.match(p):
+                    kind = "movie"
+                    continue
+                if kind == "movie":
+                    movie_leaf = p
+                    continue
+                m = re.match(r"^season\s*(\d+)$", p, re.I)
+                if m:
+                    season = int(m.group(1))
+                    label = None
+                    continue
+                m = PART_RE.match(p)
+                if m:
+                    label = f"Part {m.group(1)}"
+                    continue
+                if SPECIAL_RE.match(p):
+                    season = 0
+                    label = None
+                    continue
+                if season is not None:
+                    label = p
+                else:
+                    show_parts.append(p)
+            if kind == "movie":
+                title = movie_leaf or f"{parts[0]} Movie"
+                collection = parts[0] if len(parts) > 2 and parts[0] != title else None
+                show_rel = prefix + "/".join(parts)
+                season_key = 0
+                season = 0
+                season_label = "Movies"
+            else:
+                if not show_parts:
+                    show_parts = parts[:1]
+                show_rel = prefix + "/".join(show_parts)
+                title = show_parts[-1]
+                collection = parts[0] if len(parts) > 1 and parts[0] != title else None
+                if season is None:
+                    season = 1
+                season_key = season
+                season_label = label if label else ("Specials" if season == 0 else f"Season {season}")
+            show_id = hashlib.sha1(show_rel.encode()).hexdigest()[:12]
+            entry = shows.setdefault(
+                show_id,
+                {"id": show_id, "path": show_rel, "title": title, "collection": collection, "kind": kind, "seasons": [],
+                 # additive (Decision 42): "<extra folder>/Show" instead of "@2/Show"
+                 **({"path_label": path_label(show_rel)} if prefix else {})},
+            )
+            sea = next((s for s in entry["seasons"] if s["key"] == season_key and s["label"] == season_label), None)
+            if sea is None:
+                sea = {"key": season_key, "season": season, "label": season_label, "episodes": []}
+                entry["seasons"].append(sea)
+            # Files whose name gives no number are numbered in file order over
+            # the numbers left free (never merged into a read one as a "version")
+            # and flagged `guessed` for Needs a look, until the user confirms.
+            read, unread = [], []
             for v in videos:
-                n = parse_ep_number(v) or 1
-                ep_rel = str(Path(v))
+                ep_rel = prefix + (rel / v).as_posix()
+                n = overrides.get(ep_rel)
+                if n is None:
+                    n = parse_ep_number(v)
+                (read if n is not None else unread).append((v, ep_rel, n))
+            taken = {e["number"] for e in sea["episodes"]} | {n for _, _, n in read}
+            free = (n for n in range(1, 100000) if n not in taken)
+            for v, ep_rel, n in read + [(v, r, None) for v, r, _ in unread]:
+                guessed = n is None
+                if guessed:
+                    n = next(free)
                 vm = re.search(r"\(([^)]+)\)", v)
                 ver = {"path": ep_rel, "label": vm.group(1) if vm else "default"}
-                show_id = hashlib.sha1(f"loose:{v}".encode()).hexdigest()[:12]
-                entry = shows.setdefault(
-                    show_id,
-                    {"id": show_id, "path": ep_rel, "title": Path(v).stem,
-                     "collection": None, "kind": "show", "seasons": []},
-                )
-                sea = entry["seasons"][0] if entry["seasons"] else None
-                if sea is None:
-                    sea = {"key": 1, "season": 1, "label": "Season 1", "episodes": []}
-                    entry["seasons"].append(sea)
-                sea["episodes"].append(
-                    {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel,
-                     "number": n, "files": [ver], "season": 1, "season_label": "Season 1"}
-                )
-            continue
-        parts = list(rel.parts)
-        show_parts = []
-        season = None
-        label = None
-        kind = "show"
-        movie_leaf = None
-        for p in parts:
-            if MOVIE_RE.match(p):
-                kind = "movie"
-                continue
-            if kind == "movie":
-                movie_leaf = p
-                continue
-            m = re.match(r"^season\s*(\d+)$", p, re.I)
-            if m:
-                season = int(m.group(1))
-                label = None
-                continue
-            m = PART_RE.match(p)
-            if m:
-                label = f"Part {m.group(1)}"
-                continue
-            if SPECIAL_RE.match(p):
-                season = 0
-                label = None
-                continue
-            if season is not None:
-                label = p
-            else:
-                show_parts.append(p)
-        if kind == "movie":
-            title = movie_leaf or f"{parts[0]} Movie"
-            collection = parts[0] if len(parts) > 2 and parts[0] != title else None
-            show_rel = "/".join(parts)
-            season_key = 0
-            season = 0
-            season_label = "Movies"
-        else:
-            if not show_parts:
-                show_parts = parts[:1]
-            show_rel = "/".join(show_parts)
-            title = show_parts[-1]
-            collection = parts[0] if len(parts) > 1 and parts[0] != title else None
-            if season is None:
-                season = 1
-            season_key = season
-            season_label = label if label else ("Specials" if season == 0 else f"Season {season}")
-        show_id = hashlib.sha1(show_rel.encode()).hexdigest()[:12]
-        entry = shows.setdefault(
-            show_id,
-            {"id": show_id, "path": show_rel, "title": title, "collection": collection, "kind": kind, "seasons": []},
-        )
-        sea = next((s for s in entry["seasons"] if s["key"] == season_key and s["label"] == season_label), None)
-        if sea is None:
-            sea = {"key": season_key, "season": season, "label": season_label, "episodes": []}
-            entry["seasons"].append(sea)
-        # Files whose name gives no number are numbered in file order over
-        # the numbers left free (never merged into a read one as a "version")
-        # and flagged `guessed` for Needs a look, until the user confirms.
-        read, unread = [], []
-        for v in videos:
-            ep_rel = (rel / v).as_posix()
-            n = overrides.get(ep_rel)
-            if n is None:
-                n = parse_ep_number(v)
-            (read if n is not None else unread).append((v, ep_rel, n))
-        taken = {e["number"] for e in sea["episodes"]} | {n for _, _, n in read}
-        free = (n for n in range(1, 100000) if n not in taken)
-        for v, ep_rel, n in read + [(v, r, None) for v, r, _ in unread]:
-            guessed = n is None
-            if guessed:
-                n = next(free)
-            vm = re.search(r"\(([^)]+)\)", v)
-            ver = {"path": ep_rel, "label": vm.group(1) if vm else "default"}
-            existing = next((e for e in sea["episodes"] if e["number"] == n), None)
-            if existing is None:
-                sea["episodes"].append(
-                    {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel, "number": n,
-                     "files": [ver], "season": season, "season_label": season_label,
-                     **({"guessed": True} if guessed else {})}
-                )
-            else:
-                existing["files"].append(ver)
+                existing = next((e for e in sea["episodes"] if e["number"] == n), None)
+                if existing is None:
+                    sea["episodes"].append(
+                        {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel, "number": n,
+                         "files": [ver], "season": season, "season_label": season_label,
+                         **({"guessed": True} if guessed else {})}
+                    )
+                else:
+                    existing["files"].append(ver)
     show_list = list(shows.values())
     for s in show_list:
         # Authoritative season order (TODO 24): the same rank the UI shows,
@@ -352,7 +411,8 @@ def merge_db(scan):
         # stay intact until the new root is adopted explicitly (config flow,
         # step 3). A missing root simply produces an empty scan, which the
         # MIN_VALID_SCAN floor already shields.
-        if scan_state.get("root") != "changed":
+        # An unplugged extra folder (Decision 42) holds its shows' rows too.
+        if scan_state.get("root") != "changed" and "missing" not in scan_state.get("extra", {}).values():
             now = util.utc_stamp()
             gone_shows = set(meta) - {s["id"] for s in scan}
             with database.db() as c:
@@ -402,6 +462,11 @@ def merge_db(scan):
                 ep["position"] = r[1] if r else 0
                 ep["duration"] = r[2] if r else 0
                 ep["last_played"] = r[3] if r else None
+                # Additive: the file's own length, measured in the background
+                # (lengths.py) — known before the episode is ever played.
+                n = lengths.get(ep.get("rel"))
+                if n:
+                    ep["length"] = n
                 if r is not None:
                     # Identity stamp (TODO 25): a played episode learns which
                     # show/label it belongs to, so its history row stays

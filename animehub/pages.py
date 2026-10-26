@@ -125,7 +125,9 @@ def entry_slots(m, local, link, rows, art, online_ok):
                       "online": {"id": sid, "token": token} if sid else None,
                       "watched": any(x.get("watched") for x in srcs),
                       "position": last.get("position") or 0, "duration": last.get("duration") or 0,
-                      "last_played": last.get("last_played")})
+                      "last_played": last.get("last_played"),
+                      # additive: the file's measured length (lengths.py)
+                      **({"length": ep["length"]} if ep and ep.get("length") else {})})
     return slots
 
 

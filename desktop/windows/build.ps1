@@ -51,6 +51,15 @@ Copy-Item (Join-Path $PSScriptRoot "README.txt") "$Stage\README.txt"
 Get-Content (Join-Path $PSScriptRoot "start-menu.cmd") | Set-Content "$Stage\Add to Start menu.cmd" -Encoding Ascii
 
 if (Test-Path $Zip) { Remove-Item $Zip }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::CreateFromDirectory($Stage, $Zip, [IO.Compression.CompressionLevel]::Optimal, $true)
+# Entry by entry, named with "/": Windows PowerShell 5.1's CreateFromDirectory
+# writes "\" separators, which unzippers outside Windows warn about.
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$Base = Split-Path $Stage -Parent
+$Archive = [IO.Compression.ZipFile]::Open($Zip, [IO.Compression.ZipArchiveMode]::Create)
+try {
+    Get-ChildItem $Stage -Recurse -File | ForEach-Object {
+        $Name = $_.FullName.Substring($Base.Length).TrimStart("\", "/").Replace("\", "/")
+        [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($Archive, $_.FullName, $Name, [IO.Compression.CompressionLevel]::Optimal)
+    }
+} finally { $Archive.Dispose() }
 "Built: $Zip ({0:N1} MB)" -f ((Get-Item $Zip).Length / 1MB)
