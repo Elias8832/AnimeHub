@@ -29,9 +29,9 @@ PAUSE = 2.2  # AniList allows ~30 requests a minute while degraded
 def fetch(mid, refresh):
     path = ANILIST / f"{mid}.json"
     if path.exists() and not refresh:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     media = anilist.anilist_request({"query": franchise.FRANCHISE_QUERY_ID, "variables": {"id": mid}})["data"]["Media"]
-    path.write_text(json.dumps(media, indent=1, ensure_ascii=False) + "\n")
+    path.write_text(json.dumps(media, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"  recorded {mid} {(media.get('title') or {}).get('romaji')}", flush=True)
     time.sleep(PAUSE)
     return media
@@ -66,7 +66,7 @@ def main(argv):
     refresh = "--refresh" in argv
     names = [a for a in argv if not a.startswith("--")]
     ANILIST.mkdir(parents=True, exist_ok=True)
-    cases = json.loads((FIXTURES / "cases.json").read_text())
+    cases = json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))
     for case in cases:
         if names and case["name"] not in names:
             continue

@@ -1,6 +1,5 @@
 """Offline regression checks for the playback watch-state bookkeeping."""
 import os
-import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -8,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tests import support
-from animehub import database, library, player
+from animehub import database, library, player, system
 from animehub.config import config
 
 
@@ -66,18 +65,24 @@ class DieBelowThresholdTests(unittest.TestCase):
         self.database.start()
         self.addCleanup(self.database.stop)
         database.init_db()
+        # No skip thread outlives the test: it reads the database, and
+        # Windows can't delete a database that is still open.
+        self.skips = patch.object(player, "send_skips")
+        self.skips.start()
+        self.addCleanup(self.skips.stop)
 
     def tearDown(self):
         with player._active_lock:
             player._active.clear()
 
-    def run_session(self, ep_id, position, marker=False):
+    def run_session(self, ep_id, position, marker=False, sock=None):
         """Drive watch_process with a fake mpv: the IPC socket exists, the
         property reads report `position` of DURATION, then mpv exits. The
         session is registered in _active first — the generation guard
         (TODO 24) only lets a watcher write when it owns its slot."""
-        sock = Path(self.directory.name) / "fake.sock"
-        sock.write_text("")
+        if sock is None:
+            sock = Path(self.directory.name) / "fake.sock"
+            sock.write_text("")
 
         def fake_ipc(sock_path, cmd):
             if cmd[:2] == ["get_property", "time-pos"]:
@@ -94,13 +99,13 @@ class DieBelowThresholdTests(unittest.TestCase):
                                   "show_title": "Show", "label": "S1 · E1",
                                   "percent": 0, "version": 0}
         if marker:
-            Path(str(sock) + ".skip").write_text("")  # lua-style quit marker
+            system.ipc_marker(sock).write_text("")  # lua-style quit marker
         with patch.object(player, "mpv_ipc", side_effect=fake_ipc):
             player.watch_process(proc, ep_id, sock)
         return sock
 
     def episode_row(self, ep_id):
-        with sqlite3.connect(str(config.DB)) as c:
+        with support.sqlite(config.DB) as c:
             return c.execute(
                 "SELECT watched, position, duration, last_played FROM episodes WHERE id=?",
                 (ep_id,)).fetchone()
@@ -144,6 +149,20 @@ class DieBelowThresholdTests(unittest.TestCase):
         self.assertEqual(duration, self.DURATION)
         self.assertIsNotNone(last_played)
 
+    def test_skip_marker_on_windows_sits_in_temp_dir(self):
+        """Windows (TODO 74): mpv listens on a named pipe, which has no
+        folder beside it — the lua's marker goes to the temp dir, named
+        after the pipe, and still counts as done."""
+        with patch.object(system, "WINDOWS", True), \
+                patch.object(system.tempfile, "tempdir", self.directory.name):
+            sock = system.ipc_address("anime-hub-0badf00d")
+            marker = system.ipc_marker(sock)
+            self.assertEqual(marker, Path(self.directory.name) / "anime-hub-0badf00d.skip")
+            self.assertEqual(player.mpv_env(sock), {"ANIME_HUB_SKIP_MARKER": str(marker)})
+            self.run_session("online:sole-eater:6", 576.0, marker=True, sock=sock)
+        self.assertEqual(self.episode_row("online:sole-eater:6")[0], 1)
+        self.assertFalse(marker.exists())  # cleaned up with the session
+
 
 class ResumeThresholdTests(unittest.TestCase):
     """A stored position is a resume point, not a strip-filter verdict. The
@@ -165,7 +184,7 @@ class ResumeThresholdTests(unittest.TestCase):
         database.init_db()
         # No signal ever leaves a test (TODO 54): a superseded fake process
         # has no real process group.
-        killpg = patch.object(os, "killpg")
+        killpg = patch.object(os, "killpg", create=True)
         killpg.start()
         self.addCleanup(killpg.stop)
         self.popen = patch.object(subprocess, "Popen")

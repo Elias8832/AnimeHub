@@ -4,6 +4,8 @@ import os
 import subprocess
 import threading
 
+from . import system
+
 
 UPSCAYL_FLATPAK = "org.upscayl.Upscayl"
 UPSCAYL_BIN = "/app/upscayl/resources/bin/upscayl-bin"
@@ -60,7 +62,7 @@ def upscale_banner(path):
                "-n", UPSCAYL_MODEL, "-f", "jpg", "-c", "90"]
         if UPSCAYL_TTA:
             cmd.append("-x")
-        r = subprocess.run(cmd, capture_output=True, timeout=600)
+        r = subprocess.run(cmd, capture_output=True, timeout=600, **system.quiet())
         src = path.read_bytes()
         if r.returncode == 0 and out.exists() and upscale_looks_sane(src, out.read_bytes()):
             os.replace(out, path)

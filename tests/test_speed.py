@@ -104,7 +104,7 @@ class EntryPanelNeverWaits(Isolated):
 
     def test_score_follows_the_users_format(self):
         self.lists(score100=85)
-        cached = json.loads(config.ANILIST_CACHE.read_text())
+        cached = json.loads(config.ANILIST_CACHE.read_text(encoding="utf-8"))
         for fmt, want in (("POINT_100", 85), ("POINT_10_DECIMAL", 8.5), ("POINT_5", 4)):
             config.ANILIST_CACHE.write_text(json.dumps(dict(cached, score_format=fmt)))
             self.assertEqual(anilist.entry_state_from_lists(7)["entry"]["score"], want, fmt)

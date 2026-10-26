@@ -3,14 +3,13 @@ old-DB fixtures, preservation of facts and catalog cache, idempotence, and
 the WAL-safe pre-migration snapshot."""
 import json
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import database, library
+from animehub import database, library, system
 from animehub.config import config
 
 
@@ -20,7 +19,7 @@ def make_old_online_db(db_path, with_thumb_columns=False):
     `with_thumb_columns` models a database whose init_db added the
     episode_thumbs/episode_titles columns ad hoc (13 columns total)."""
     thumb_cols = ", episode_thumbs TEXT, episode_titles TEXT" if with_thumb_columns else ""
-    with sqlite3.connect(str(db_path)) as c:
+    with support.sqlite(db_path) as c:
         c.execute("PRAGMA user_version = 1")
         c.execute("""CREATE TABLE episodes(
             id TEXT PRIMARY KEY, watched INTEGER DEFAULT 0, position REAL DEFAULT 0,
@@ -69,7 +68,7 @@ class MigrationTests(unittest.TestCase):
     def test_old_db_migration_preserves_catalog_and_facts(self):
         make_old_online_db(self.db_path)
         database.init_db()
-        with sqlite3.connect(str(self.db_path)) as c:
+        with support.sqlite(self.db_path) as c:
             version = c.execute("PRAGMA user_version").fetchone()[0]
             media = c.execute("SELECT payload FROM catalog_cache WHERE key='media:v1:id:1'").fetchone()
             provider_key = c.execute("SELECT 1 FROM catalog_cache WHERE key='search:v2:provider'").fetchone()
@@ -88,7 +87,7 @@ class MigrationTests(unittest.TestCase):
         ad hoc) must migrate too — the archive mirrors the source's columns."""
         make_old_online_db(self.db_path, with_thumb_columns=True)
         database.init_db()
-        with sqlite3.connect(str(self.db_path)) as c:
+        with support.sqlite(self.db_path) as c:
             archived = c.execute("SELECT title, episode_thumbs, episode_titles"
                                  " FROM retired_online_shows WHERE slug='old-show'").fetchone()
             fact = c.execute("SELECT watched, position FROM episodes"
@@ -101,7 +100,7 @@ class MigrationTests(unittest.TestCase):
         database.init_db()
         database.init_db()
         database.init_db()
-        with sqlite3.connect(str(self.db_path)) as c:
+        with support.sqlite(self.db_path) as c:
             version = c.execute("PRAGMA user_version").fetchone()[0]
             archived = c.execute("SELECT COUNT(*) FROM retired_online_shows").fetchone()[0]
             cached = c.execute("SELECT COUNT(*) FROM catalog_cache").fetchone()[0]
@@ -111,7 +110,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_fresh_db_never_has_online_tables(self):
         database.init_db()
-        with sqlite3.connect(str(self.db_path)) as c:
+        with support.sqlite(self.db_path) as c:
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             version = c.execute("PRAGMA user_version").fetchone()[0]
         self.assertEqual(version, len(database.MIGRATIONS))
@@ -126,7 +125,7 @@ class MigrationTests(unittest.TestCase):
         database.init_db()
         backup = Path(self.directory.name) / "hub.db.backup-v1"
         self.assertTrue(backup.exists())
-        with sqlite3.connect(str(backup)) as c:
+        with support.sqlite(backup) as c:
             self.assertIsNotNone(
                 c.execute("SELECT 1 FROM sqlite_master WHERE name='online_shows'").fetchone())
 
@@ -184,6 +183,7 @@ class ScanStateTests(unittest.TestCase):
             self.assertEqual(library.scan_library(), [])
         self.assertEqual(library.scan_state["state"], "missing")
 
+    @unittest.skipIf(system.WINDOWS, "POSIX only, chmod can't lock a folder (TODO 74)")
     def test_unreadable_dir_reports_partial(self):
         lib = Path(self.directory.name) / "lib"
         show = lib / "Show" / "Season 1"

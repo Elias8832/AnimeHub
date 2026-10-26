@@ -39,8 +39,8 @@ This app is early in development — expect bugs and breaking changes.
 
 ## Requirements
 
-- Linux
-- Python 3.9+ (standard library only, nothing to install)
+- Linux, or Windows 10/11 (experimental, see [Windows](#windows-experimental))
+- Python 3.9+ (standard library only, nothing to install; the Windows zip brings its own)
 - mpv
 - A Chromium-family browser (chromium, chrome, brave, or edge)
 - rust/cargo (only to build the desktop app or the AppImage)
@@ -86,10 +86,40 @@ It still uses your system's Python 3.9+, mpv, Chromium-family browser and ani-cl
 
 To build it yourself (needs rust/cargo): `desktop/appimage/build.sh`.
 
+### Windows (experimental)
+
+Windows 10 or 11, 64-bit. Python comes inside the zip, and the window is a Microsoft Edge
+app window (Chrome or Brave are used first if installed).
+
+1. Download `AnimeHub-windows-x64.zip` from the
+   [Releases page](https://github.com/Elias8832/AnimeHub/releases).
+2. Unzip it anywhere (for example to your Documents). Keep the `AnimeHub` folder together:
+   `AnimeHub.exe` needs the `python` and `app` folders next to it.
+3. Install mpv, and for online episodes ani-cli. In PowerShell, install
+   [Scoop](https://scoop.sh) (skip if you have it), then the tools. ani-cli is a bash script
+   and runs in Git for Windows' bash:
+
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+   winget install Git.Git
+   scoop bucket add extras
+   scoop install ani-cli yt-dlp    # brings mpv too; only local files: scoop install extras/mpv
+   ```
+
+4. Double-click `AnimeHub.exe`. The exe isn't signed, so the first time Windows may say
+   "Windows protected your PC": click "More info", then "Run anyway".
+   Closing the window quits the app.
+
+Settings are in `%APPDATA%\anime-hub\config.json`, data in `%LOCALAPPDATA%\anime-hub`.
+If it doesn't start, `%LOCALAPPDATA%\anime-hub-wrapper\` has `hub.log` and `wrapper.log`.
+To build the zip yourself (needs rust/cargo, and binutils for the icon):
+`powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1`.
+
 ### Updating
 
 - From git: `git pull`. Desktop app: then `cargo build --release && ./install.sh` again.
-- AppImage: download the new one.
+- AppImage / Windows zip: download the new one (Windows: replace the whole folder).
 
 Your data is kept.
 
@@ -114,7 +144,7 @@ Files are never renamed or moved.
 
 ## Configuration
 
-`~/.config/anime-hub/config.json` (or `--config FILE`). Every key is optional:
+`~/.config/anime-hub/config.json` (Windows: `%APPDATA%\anime-hub\config.json`; or `--config FILE`). Every key is optional:
 
 ```json
 {
@@ -138,7 +168,7 @@ Changing `library_root` never deletes anything. The app asks before it switches.
 
 ## Data
 
-Everything lives in `data_dir` (default `~/.local/share/anime-hub`):
+Everything lives in `data_dir` (default `~/.local/share/anime-hub`, Windows: `%LOCALAPPDATA%\anime-hub`):
 
 - `hub.db` — watch state, info, history
 - `cache/` — artwork
@@ -153,7 +183,7 @@ Deleting the folder is a full reset.
 - **No tracking.** No accounts, no ads, no analytics. Your data stays on your PC.
 - **Only your PC can open it.** The server only listens locally and turns away requests from other websites.
 - **No password.** If you open it to your phone (`remote_hosts`), everyone on that network can use it.
-- **Your AniList login** is a token in `anilist_token.json`, readable only by your user.
+- **Your AniList login** is a token in `anilist_token.json`, readable only by your user (Windows: it sits in your own user profile).
 - **What it talks to on the internet:**
   - [AniList](https://anilist.co) — metadata, artwork and your list (when connected)
   - [ani.zip](https://api.ani.zip) — episode titles and pictures

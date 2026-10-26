@@ -1562,11 +1562,16 @@ function streamGroup(s) {
    to the config file. */
 const libPath = (ctx, s) => `<input id="libpath-${ctx}" aria-label="Library folder" value="${esc(s.library_root || "")}" placeholder="Choose a folder…" autocomplete="off" spellcheck="false">`;
 const dirBtn = (ctx) => `<button class="btn" id="dirbtn-${ctx}" data-a="dirbrowse" aria-expanded="${S.dir?.ctx === ctx}" aria-controls="dirpick-${ctx}">Browse…</button>`;
+/* @crumbs:start */
+/* A Windows path (C:\Users\…, TODO 74) starts at its drive and splits on "\". */
 function dirCrumbs(path) {
-  const parts = path.split("/").filter(Boolean), last = parts.length - 1;
+  const win = /^[A-Za-z]:[\\/]/.test(path), sep = win ? "\\" : "/";
+  const parts = path.split(win ? /[\\/]/ : "/").filter(Boolean), last = parts.length - 1;
   const seg = (label, to, cur) => cur ? `<b aria-current="location">${esc(label)}</b>` : `<button data-a="dirgo" data-v="${esc(to)}">${esc(label)}</button>`;
-  return seg("/", "/", last < 0) + parts.map((x, i) => `${i ? "<i>/</i>" : ""}${seg(x, "/" + parts.slice(0, i + 1).join("/"), i === last)}`).join("");
+  const to = (i) => win && !i ? parts[0] + sep : (win ? "" : sep) + parts.slice(0, i + 1).join(sep);
+  return (win ? "" : seg("/", "/", last < 0)) + parts.map((x, i) => `${i ? `<i>${sep}</i>` : ""}${seg(x, to(i), i === last)}`).join("");
 }
+/* @crumbs:end */
 function DirPick(ctx) {
   const p = S.dir;
   if (!p || p.ctx !== ctx) return `<div id="dirpick-${ctx}" hidden></div>`;

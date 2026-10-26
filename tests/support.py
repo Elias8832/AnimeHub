@@ -10,8 +10,10 @@ import atexit
 import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,8 +38,20 @@ for _mod in list(sys.modules.values()):
         _mod.urlopen = _offline
 
 
+@contextmanager
+def sqlite(path):
+    """sqlite3.connect for a `with` block that also closes the file: sqlite's
+    own `with` only commits, and Windows can't delete an open database."""
+    conn = sqlite3.connect(str(path))
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def cases():
-    return json.loads((FIXTURES / "cases.json").read_text())
+    return json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))
 
 
 def case(name):
@@ -50,7 +64,7 @@ def anilist(mid):
     path = FIXTURES / "anilist" / f"{mid}.json"
     if not path.exists():
         raise KeyError(f"no fixture for AniList {mid} — run tests/record_fixtures.py")
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def use_library(c):

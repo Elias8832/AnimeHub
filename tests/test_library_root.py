@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import database, library, server, settings
+from animehub import database, library, server, settings, system
 from animehub.config import config, CONFIG
 
 
@@ -72,6 +72,7 @@ class LibraryRootTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             settings.browse_dirs(str(self.tmp / "nope"))
 
+    @unittest.skipIf(system.WINDOWS, "POSIX only, symlinks need admin (TODO 74)")
     def test_browse_normalizes_without_resolving_links(self):
         link = self.tmp / "link"
         os.symlink(self.lib, link)
@@ -82,7 +83,7 @@ class LibraryRootTests(unittest.TestCase):
     def test_set_root_creates_config_and_applies_live(self):
         res = settings.set_library_root(str(self.lib) + "/")
         self.assertEqual(res, {"ok": True, "library_root": str(self.lib)})
-        self.assertEqual(json.loads(self.cfg.read_text()), {"library_root": str(self.lib)})
+        self.assertEqual(json.loads(self.cfg.read_text(encoding="utf-8")), {"library_root": str(self.lib)})
         self.assertEqual(config.LIBRARY, self.lib)
         self.assertEqual(settings.settings_payload()["library_root"], str(self.lib))
 
@@ -90,7 +91,7 @@ class LibraryRootTests(unittest.TestCase):
         self.cfg.parent.mkdir(parents=True)
         self.cfg.write_text(json.dumps({"port": 9000, "library_root": "/old", "custom": [1]}))
         settings.set_library_root(str(self.lib))
-        self.assertEqual(json.loads(self.cfg.read_text()),
+        self.assertEqual(json.loads(self.cfg.read_text(encoding="utf-8")),
                          {"port": 9000, "library_root": str(self.lib), "custom": [1]})
         self.assertFalse(self.cfg.with_name("config.json.tmp").exists())
 
@@ -99,7 +100,7 @@ class LibraryRootTests(unittest.TestCase):
         self.cfg.write_text("{ not json")
         with self.assertRaises(ValueError):
             settings.set_library_root(str(self.lib))
-        self.assertEqual(self.cfg.read_text(), "{ not json")
+        self.assertEqual(self.cfg.read_text(encoding="utf-8"), "{ not json")
         self.assertIsNone(config.LIBRARY)
 
     def test_set_root_rejects_missing_folder_without_writing(self):

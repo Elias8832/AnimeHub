@@ -6,7 +6,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import anicli, database, library, metadata, streaming, util
+from . import anicli, database, library, metadata, streaming, system, util
 from .config import config
 
 
@@ -163,7 +163,7 @@ def _dl_run(job):
     # ani-cli hands ANI_CLI_PLAYER_FLAGS to yt-dlp/ffmpeg when downloading;
     # the user's (mpv) flags would break them.
     mode = job.get("mode") or link["mode"]
-    env = anicli.anicli_env(link, ANI_CLI_DOWNLOAD_DIR=str(dest), ANI_CLI_PLAYER_FLAGS="", ANI_CLI_MODE=mode)
+    env = anicli.anicli_env(link, ANI_CLI_DOWNLOAD_DIR=system.shell_path(dest), ANI_CLI_PLAYER_FLAGS="", ANI_CLI_MODE=mode)
     proc = anicli.anicli_spawn(["-d", "-e", job["token"], link["query"]], env, subprocess.PIPE, subprocess.STDOUT)
     with _dl_cv:
         job["proc"] = proc
@@ -218,7 +218,7 @@ def _dl_adopt(media_id, dest):
     """A download that started a new folder becomes a new disk show — match
     it to the release right away instead of waiting for the matcher."""
     try:
-        rel = str(dest.relative_to(config.LIBRARY))
+        rel = dest.relative_to(config.LIBRARY).as_posix()
         show = next((s for s in library.scan_library() if s["path"] == rel), None)
         if not show:
             return

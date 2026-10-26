@@ -39,7 +39,7 @@ def _path():
 
 def _read():
     try:
-        return json.loads(_path().read_text())
+        return json.loads(_path().read_text(encoding="utf-8"))
     except Exception:
         return None
 
@@ -47,7 +47,7 @@ def _read():
 def _write(log):
     _path().parent.mkdir(parents=True, exist_ok=True)
     tmp = _path().with_suffix(".tmp")
-    tmp.write_text(json.dumps(log))
+    tmp.write_text(json.dumps(log), encoding="utf-8")
     os.replace(tmp, _path())
 
 

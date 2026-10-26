@@ -14,9 +14,9 @@ from tests import support
 from animehub import anilist
 
 WEB = support.ROOT / "web"
-APP = (WEB / "app.js").read_text()
-CSS = (WEB / "style.css").read_text()
-HTML = (WEB / "index.html").read_text()
+APP = (WEB / "app.js").read_text(encoding="utf-8")
+CSS = (WEB / "style.css").read_text(encoding="utf-8")
+HTML = (WEB / "index.html").read_text(encoding="utf-8")
 
 
 def region(name):
@@ -34,10 +34,11 @@ const S = {{ lib: {{ tab: "ALL", src: "all", fmt: "all", air: "all", year: "all"
 {region("pure")}
 {region("lists")}
 {region("lib")}
+{region("crumbs")}
 const srcLocked = () => false;
 console.log(JSON.stringify((() => {{ {body} }})()));
 """
-    out = subprocess.run(["node", "-e", src], capture_output=True, text=True, timeout=20)
+    out = subprocess.run(["node", "-e", src], capture_output=True, text=True, encoding="utf-8", timeout=20)
     if out.returncode:
         raise AssertionError(out.stderr)
     return json.loads(out.stdout)
@@ -66,6 +67,16 @@ class Frontend(unittest.TestCase):
         m = json.dumps({"entries": ENTRIES})
         self.assertEqual(run_js(f"return genreCounts({m});"), [["Action", 2], ["Drama", 2]])
         self.assertEqual(run_js(f"S.lib.tab = 'CURRENT'; return genreCounts({m});"), [["Action", 2], ["Drama", 1]])
+
+    def test_folder_crumbs_follow_the_os(self):
+        """The folder picker's path buttons: from "/" on Linux, from the
+        drive on Windows (TODO 74), each button walking to its folder."""
+        crumbs = lambda path: run_js(
+            f"return [...dirCrumbs({json.dumps(path)}).matchAll(/data-v=\"([^\"]*)\"|<b aria-current[^>]*>([^<]*)/g)]"
+            ".map((m) => m[1] ?? '=' + m[2]);")
+        self.assertEqual(crumbs("/home/max"), ["/", "/home", "=max"])
+        self.assertEqual(crumbs(r"C:\Users\Max\Anime"), ["C:\\", r"C:\Users", r"C:\Users\Max", "=Anime"])
+        self.assertEqual(crumbs("D:\\"), ["=D:"])
 
     def test_airing_filter_uses_anilist_values(self):
         self.assertEqual(run_js("return Object.keys(AIR);"),
@@ -118,7 +129,7 @@ class Frontend(unittest.TestCase):
         self.assertEqual(run_js("return hexAccent('#5d5d5d');"), None)  # grey: keep the default
         self.assertEqual(run_js("return hexAccent(null);"), None)
         self.assertIn("if (color) return set(hexAccent(color));", APP)
-        self.assertIn("coverImage{extraLarge color}", (support.ROOT / "animehub" / "anilist.py").read_text())
+        self.assertIn("coverImage{extraLarge color}", (support.ROOT / "animehub" / "anilist.py").read_text(encoding="utf-8"))
 
     def test_fonts_ship_with_the_app(self):
         # No network at runtime: every @font-face points at /fonts/, and the files are there.
@@ -319,7 +330,7 @@ class NodeChecks(unittest.TestCase):
         self.assertTrue(scripts, "no .cjs checks found")
         for script in scripts:
             with self.subTest(script=script.name):
-                out = subprocess.run(["node", "--test", str(script)], capture_output=True, text=True, timeout=30)
+                out = subprocess.run(["node", "--test", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=30)
                 self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
 
 

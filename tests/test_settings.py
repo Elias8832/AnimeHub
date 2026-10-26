@@ -69,7 +69,7 @@ class AutomationTests(unittest.TestCase):
              patch.object(config, "LIBRARY", Path("/media/anime")):
             payload = settings.settings_payload()
         self.assertNotIn("SECRET", json.dumps(payload))
-        self.assertEqual(payload["library_root"], "/media/anime")
+        self.assertEqual(payload["library_root"], str(Path("/media/anime")))
         self.assertIn("mpv", payload["tools"])
         self.assertFalse(payload["tour_done"])
 
@@ -321,8 +321,8 @@ class MpvVersion(unittest.TestCase):
         from animehub import settings as st
         st._mpv_versions.clear()
         out = mock.Mock(stdout="mpv v0.41.0 Copyright © 2000-2025 mpv/MPlayer/mplayer2 projects\n built on …")
-        with mock.patch.object(st.shutil, "which", return_value="/usr/bin/mpv"), mock.patch.object(st.subprocess, "run", return_value=out):
+        with mock.patch.object(st.system.shutil, "which", return_value="/usr/bin/mpv"), mock.patch.object(st.subprocess, "run", return_value=out):
             self.assertEqual(st.mpv_version(), "0.41.0")
         st._mpv_versions.clear()
-        with mock.patch.object(st.shutil, "which", return_value=None):
+        with mock.patch.object(st.system.shutil, "which", return_value=None):
             self.assertIsNone(st.mpv_version())

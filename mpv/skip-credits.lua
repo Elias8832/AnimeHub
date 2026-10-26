@@ -1,6 +1,6 @@
 -- Anime Hub: skip openings, endings and credits (Enter), Decision 39.
--- Outside an opening/ending, Enter quits mpv and leaves a marker next to
--- the hub's IPC socket; the server treats that exit as "episode finished"
+-- Outside an opening/ending, Enter quits mpv and leaves a marker file
+-- ($ANIME_HUB_SKIP_MARKER, else beside the IPC socket); the server treats that exit as "episode finished"
 -- (marks it watched) and autoplays the next episode. A plain quit stays a
 -- plain quit: without the marker, ending early just stops playback.
 -- The hub sends this file's opening/ending ranges over IPC
@@ -131,9 +131,13 @@ mp.observe_property("mouse-pos", "native", function(_, m)
 end)
 
 local function finish()
+    -- The hub names the marker (a Windows pipe has no folder beside it);
+    -- older hubs look beside the socket.
+    local marker = os.getenv("ANIME_HUB_SKIP_MARKER")
     local sock = mp.get_property("input-ipc-server")
-    if sock and sock ~= "" then
-        local f = io.open(sock .. ".skip", "w")
+    if (not marker or marker == "") and sock and sock ~= "" then marker = sock .. ".skip" end
+    if marker and marker ~= "" then
+        local f = io.open(marker, "w")
         if f then f:close() end
     end
     mp.commandv("quit")

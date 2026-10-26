@@ -240,7 +240,7 @@ def _scan_library():
         # and flagged `guessed` for Needs a look, until the user confirms.
         read, unread = [], []
         for v in videos:
-            ep_rel = str(rel / v)
+            ep_rel = (rel / v).as_posix()
             n = overrides.get(ep_rel)
             if n is None:
                 n = parse_ep_number(v)

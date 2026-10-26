@@ -20,7 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import anilist, database, player, server, settings, streaming
+from animehub import anilist, database, player, server, settings, streaming, system
 from animehub.config import config, DEFAULT_ANILIST_CLIENT_ID, apply_config
 
 
@@ -93,8 +93,9 @@ class TokenStoreTests(AuthHTTPBase):
 
     def test_store_is_owner_only_and_roundtrips(self):
         anilist.store_token("sekrit", 3600, {"id": 7, "name": "Bob"})
-        mode = stat.S_IMODE(os.stat(config.ANILIST_TOKEN_FILE).st_mode)
-        self.assertEqual(mode, 0o600)
+        if not system.WINDOWS:  # no owner-only mode bits there; the file sits in the user's profile
+            mode = stat.S_IMODE(os.stat(config.ANILIST_TOKEN_FILE).st_mode)
+            self.assertEqual(mode, 0o600)
         tok = anilist.load_token()
         self.assertEqual(tok["access_token"], "sekrit")
         self.assertEqual(tok["user_name"], "Bob")

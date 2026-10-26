@@ -10,9 +10,8 @@ import sys
 import threading
 import time
 import uuid
-from pathlib import Path
 
-from . import anicli, database, library, mapping, pages, progress, settings, skips, streaming, util
+from . import anicli, database, library, mapping, pages, progress, settings, skips, streaming, system, util
 from .config import config, SKIP_CREDITS_LUA
 
 
@@ -30,27 +29,19 @@ _session_error = {"ep_id": None, "error": None, "ts": 0.0}
 
 
 def ipc_socket_path():
-    """A fresh mpv IPC socket path in the user's private runtime dir
-    (TODO 52h); /tmp only when $XDG_RUNTIME_DIR is unset or missing."""
-    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
-    base = Path(runtime) if runtime and Path(runtime).is_dir() else Path("/tmp")
-    return base / f"anime-hub-{uuid.uuid4().hex[:8]}.sock"
+    """A fresh mpv IPC address: a socket in the user's private runtime dir
+    (TODO 52h), a named pipe on Windows (system.ipc_address)."""
+    return system.ipc_address(f"anime-hub-{uuid.uuid4().hex[:8]}")
+
+
+def mpv_env(sock_path):
+    """mpv's environment: where skip-credits.lua leaves its "finished by
+    the hotkey" marker (beside a socket, in the temp dir for a pipe)."""
+    return {"ANIME_HUB_SKIP_MARKER": str(system.ipc_marker(sock_path))}
 
 
 def mpv_ipc(sock_path, command, timeout=2.0):
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(timeout)
-    try:
-        s.connect(str(sock_path))
-        s.sendall((json.dumps({"command": command}) + "\n").encode())
-        buf = b""
-        while b"\n" not in buf:
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            buf += chunk
-    finally:
-        s.close()
+    buf = system.ipc_exchange(sock_path, (json.dumps({"command": command}) + "\n").encode(), timeout)
     for line in buf.decode(errors="replace").splitlines():
         try:
             msg = json.loads(line)
@@ -315,7 +306,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     deadline = time.time() + startup
     connected = False
     while time.time() < deadline and proc.poll() is None:
-        if not sock_path.exists():
+        if not system.ipc_ready(sock_path):
             time.sleep(0.25)
             continue
         try:
@@ -396,7 +387,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     try:
         rc = proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        anicli.stop_process_group(proc, signal.SIGKILL)
+        anicli.stop_process_group(proc, system.SIGKILL)
         rc = proc.wait()
     anicli.anicli_release(proc)
     # Supersession (TODO 24): start_play terminates the replaced mpv with
@@ -410,7 +401,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     # end — always qualifies), or the skip-credits marker (hotkey quit).
     # The old >=90% rule still marks watched for manual quits that get far
     # enough into the episode.
-    marker = Path(str(sock_path) + ".skip")
+    marker = system.ipc_marker(sock_path)
     done = (duration and duration - last_time <= 3) or marker.exists()
     if not retired and duration and (done or last_time / duration >= 0.9):
         pos_save = duration if done and last_time / duration < 0.9 else last_time
@@ -448,7 +439,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     if autoplay:
         autoplay_next(ep_id, version)
     try:
-        sock_path.unlink(missing_ok=True)
+        system.ipc_remove(sock_path)
         marker.unlink(missing_ok=True)
     except OSError:
         pass
@@ -527,8 +518,8 @@ def start_play(ep_id, version=0, from_start=False):
                     log.close()
                 log = None
             try:
-                return subprocess.Popen(args, stdout=subprocess.DEVNULL,
-                                        stderr=err_target, start_new_session=True)
+                return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=err_target,
+                                        env={**os.environ, **mpv_env(sock)}, **system.detached())
             finally:
                 if log:
                     log.close()

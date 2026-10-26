@@ -3,16 +3,14 @@
 import json
 import os
 import re
-import shutil
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import time
 import unicodedata
-from pathlib import Path
 from urllib.error import HTTPError
 
-from . import anicli, anilist, database, library, mapping, metadata, player, util
+from . import anicli, anilist, database, library, mapping, metadata, player, system, util
 from .config import config, SKIP_CREDITS_LUA
 
 
@@ -598,23 +596,12 @@ def session_label(sea, ep):
 def mpv_script_flag():
     """--script for the skip-credits hotkey, usable inside
     ANI_CLI_PLAYER_FLAGS: ani-cli splits that on whitespace, so a path with
-    spaces goes through a symlink in the private runtime dir (or is left out)."""
+    spaces goes through a symlink in the private runtime dir — the short
+    8.3 name on Windows — or is left out (system.space_free_path)."""
     if not SKIP_CREDITS_LUA.exists():
         return None
-    path = str(SKIP_CREDITS_LUA)
-    if re.search(r"[\s*?\[]", path):
-        run = os.environ.get("XDG_RUNTIME_DIR")
-        if not run or re.search(r"[\s*?\[]", run):
-            return None
-        link = Path(run) / "anime-hub-skip-credits.lua"
-        try:
-            if not (link.is_symlink() and os.readlink(link) == path):
-                link.unlink(missing_ok=True)
-                link.symlink_to(path)
-        except OSError:
-            return None
-        path = str(link)
-    return f"--script={path}"
+    path = system.space_free_path(SKIP_CREDITS_LUA)
+    return f"--script={path}" if path else None
 
 
 _session_notice = {"msg": None, "ts": 0.0}
@@ -631,7 +618,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     token = ep_id.split(":", 2)[2] if mid else ""
     if not mid or not anicli.STREAM_EP_RE.match(token):
         return {"error": "unknown episode"}
-    if not shutil.which("mpv"):
+    if not system.find_program("mpv"):
         return {"error": "mpv was not found — install mpv and make sure it is on PATH."}
     try:
         link = stream_autolink(mid)
@@ -663,7 +650,8 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     user_flags = os.environ.get("ANI_CLI_PLAYER_FLAGS", "").strip()
     if user_flags:
         flags.append(user_flags)
-    env = anicli.anicli_env(link, ANI_CLI_PLAYER="mpv", ANI_CLI_PLAYER_FLAGS=" ".join(flags), ANI_CLI_MODE=play_mode)
+    env = anicli.anicli_env(link, ANI_CLI_PLAYER="mpv", ANI_CLI_PLAYER_FLAGS=" ".join(flags), ANI_CLI_MODE=play_mode,
+                            **player.mpv_env(sock))
     with database.db() as c:
         # Identity stamp (TODO 25): history stays readable without the link.
         c.execute("INSERT INTO episodes(id,show_id,label) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE"
