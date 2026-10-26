@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system, upscale
+from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system, upscale
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -427,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done",
-                    "upscale_banners")
+                    "upscale_banners", "measure_lengths")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
@@ -461,6 +461,8 @@ class Handler(BaseHTTPRequestHandler):
                         return
                 else:
                     settings.set_automation(key, body[key])
+                    if key == "measure_lengths" and body[key]:
+                        lengths.turned_on()
             self.send_json({"ok": True, **settings.settings_payload()})
         elif route == "/api/watched":
             if self._fields(body, strings=("id",), bools=("watched",)):
@@ -905,6 +907,8 @@ def main():
     threading.Thread(target=anilist.background_work(franchise.franchise_refresh_loop), daemon=True).start()
     # Banner upscaling (opt-in): pick up banners saved while it was off.
     threading.Thread(target=upscale.queue_all, daemon=True).start()
+    # Episode lengths: measure the files the scans find.
+    lengths.start()
     print(f"Anime Hub → http://127.0.0.1:{config.PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
     print(f"  library  {config.LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)

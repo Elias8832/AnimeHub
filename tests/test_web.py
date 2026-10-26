@@ -220,6 +220,21 @@ class Polish(unittest.TestCase):
         self.assertIn('<div id="ddm" role="listbox"></div>', HTML)
         self.assertIn('sel.dispatchEvent(new Event("change", { bubbles: true }));', APP)  # actions stay on the <select>
 
+    def test_match_card_lengths(self):
+        """The files' own lengths (played, else measured); "each" only when every file is known and agrees."""
+        fn = re.search(r"function lensText\(eps\) \{.*?\n\}\n", APP, re.S).group(0)
+        out = run_js(fn + """return [lensText([{duration: 1440}, {length: 1430}]), lensText([{length: 1440}, {}]),
+            lensText([{length: 1320}, {length: 1440}]), lensText([{length: 6300}]), lensText([{}, {}])];""")
+        self.assertEqual(out, ["24 min each", "24 min", "22–24 min", "1 h 45 min", ""])
+        for spot in ("minsOf(ep.duration || ep.length)", "minsOf(x.duration || x.length, e.duration)", "const len = ep.duration || ep.length"):
+            self.assertIn(spot, APP)
+
+    def test_show_page_lists_studio_and_popularity(self):
+        """Decision 10: AniList's read-only extras, a quiet line under the summary."""
+        self.assertIn('<p class="mfacts" id="mediafacts"></p>', APP)
+        for bit in ('["Studio", m.studios.join(", ")]', '["On lists", m.popularity.toLocaleString()]', '["Favourites", m.favourites.toLocaleString()]'):
+            self.assertIn(bit, APP)
+
     def test_show_page_says_all_on_disk(self):
         self.assertIn('allDisk ? (local.length === 1 ? "on disk" : `all ${local.length} on disk`)', APP)
 

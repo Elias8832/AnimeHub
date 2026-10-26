@@ -7,7 +7,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import anicli, database, library, system, upscale
+from . import anicli, database, lengths, library, system, upscale
 from .config import config, CONFIG, CONFIG_PATH
 
 
@@ -37,7 +37,9 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # Opening/ending times from AniSkip (Decision 39): it
                        # would learn what you watch and when, so opt-in; and
                        # without a VPN, ask before an episode uses it.
-                       "aniskip": False, "aniskip_vpn_warn": True}
+                       "aniskip": False, "aniskip_vpn_warn": True,
+                       # Read each episode's length from its file (lengths.py).
+                       "measure_lengths": True}
 
 
 # Opening/ending skipping in mpv (Decision 39): off, a prompt (Enter skips)
@@ -130,6 +132,7 @@ def settings_payload():
         "aniskip": automation_enabled("aniskip"),
         "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
         "upscale_banners": up["on"],
+        "measure_lengths": automation_enabled("measure_lengths"),
         "tour_done": get_setting("tour_done") == "1",
         # additive: opening/ending skip modes, {"op": …, "ed": …}
         "skip": skip_prefs(),
@@ -142,6 +145,8 @@ def settings_payload():
         "tools": {"mpv": system.find_program("mpv"), "ani-cli": anicli.anicli_path(), "upscayl": up["found"]},
         # additive: banner upscaling — on/off, where Upscayl is, worker progress
         "upscale": up,
+        # additive: episode lengths read from the files — on/off, tool, progress
+        "lengths": lengths.payload(),
         # additive: the tour's last page says "mpv 0.39 found"
         "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.

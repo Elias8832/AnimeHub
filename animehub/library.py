@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import anicli, anilist, database, franchise, mapping, metadata, player, settings, streaming, util
+from . import anicli, anilist, database, franchise, lengths, mapping, metadata, player, settings, streaming, util
 from .config import config
 
 
@@ -120,6 +120,7 @@ def scan_library():
             return json.loads(_scan_memo["json"])
         shows = _scan_library()
         _scan_memo.update(sig=sig, json=json.dumps(shows), state=dict(scan_state))
+        lengths.scan_done(ep["rel"] for s in shows for ep in eps_of(s))
         return shows
     _scan_memo["sig"] = None
     return _scan_library()
@@ -402,6 +403,11 @@ def merge_db(scan):
                 ep["position"] = r[1] if r else 0
                 ep["duration"] = r[2] if r else 0
                 ep["last_played"] = r[3] if r else None
+                # Additive: the file's own length, measured in the background
+                # (lengths.py) — known before the episode is ever played.
+                n = lengths.get(ep.get("rel"))
+                if n:
+                    ep["length"] = n
                 if r is not None:
                     # Identity stamp (TODO 25): a played episode learns which
                     # show/label it belongs to, so its history row stays

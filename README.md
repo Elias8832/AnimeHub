@@ -36,6 +36,7 @@ This app is early in development — expect bugs and breaking changes.
   - They play in mpv with the same resume, tracking, AniList sync and auto-play as your files.
   - Or download them straight into your library folder.
   - A wrong match? "Wrong episodes?" on the show page fixes it.
+- **Episode lengths** - Each file's length is read once in the background (with ffprobe, else mpv), so episodes show how long they are before you play them. Switch it off in Settings → Library.
 - **Sharper banners (optional)** - With [Upscayl](https://upscayl.org) installed, show banners are redrawn 4× bigger on your graphics card. Off by default (Settings → Appearance).
   - Two looks: Natural (keeps soft shading) or Digital art (crisper lines, slower).
   - The originals are kept: switching it off brings them back.
@@ -50,6 +51,7 @@ This app is early in development — expect bugs and breaking changes.
 - An AniList account (optional)
 - ani-cli (optional, for streaming and downloads)
 - [Upscayl](https://upscayl.org) (optional, for sharper banners; Flatpak, a normal install or the Windows installer)
+- ffprobe from [FFmpeg](https://ffmpeg.org) (optional, measures episode lengths faster; mpv does it otherwise)
 
 ## Run
 
@@ -234,3 +236,4 @@ GPL-3.0. See [LICENSE](LICENSE).
 - AniList data is kept on your PC only to show it, never as a backup. Free and non-commercial, following the [AniList API terms](https://docs.anilist.co/guide/terms-of-use).
 - Playback by [mpv](https://mpv.io).
 - Sharper banners by [Upscayl](https://upscayl.org), if you install it.
+- Fonts: [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk), [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Barlow Condensed](https://github.com/jpt/barlow), all under the SIL Open Font License 1.1 (licence texts in `web/fonts/`).
