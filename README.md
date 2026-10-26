@@ -40,7 +40,7 @@ This app is early in development — expect bugs and breaking changes.
 ## Requirements
 
 - Linux, or Windows 10/11 (experimental, see [Windows](#windows-experimental))
-- Python 3.9+ (standard library only, nothing to install)
+- Python 3.9+ (standard library only, nothing to install; the Windows zip brings its own)
 - mpv
 - A Chromium-family browser (chromium, chrome, brave, or edge)
 - rust/cargo (only to build the desktop app or the AppImage)
@@ -88,23 +88,33 @@ To build it yourself (needs rust/cargo): `desktop/appimage/build.sh`.
 
 ### Windows (experimental)
 
-Download `AnimeHub-windows-x64.zip` from the
-[Releases page](https://github.com/Elias8832/AnimeHub/releases), unzip it anywhere and start
-`AnimeHub.exe`. Python comes inside; the window is a Microsoft Edge app window (or Chrome/Brave).
-The exe isn't signed, so Windows may say "Windows protected your PC": "More info" → "Run anyway".
+Windows 10 or 11, 64-bit. Python comes inside the zip, and the window is a Microsoft Edge
+app window (Chrome or Brave are used first if installed).
 
-mpv, and for online episodes ani-cli, come from [Scoop](https://scoop.sh). ani-cli is a bash
-script and runs in Git for Windows' bash:
+1. Download `AnimeHub-windows-x64.zip` from the
+   [Releases page](https://github.com/Elias8832/AnimeHub/releases).
+2. Unzip it anywhere (for example to your Documents). Keep the `AnimeHub` folder together:
+   `AnimeHub.exe` needs the `python` and `app` folders next to it.
+3. Install mpv, and for online episodes ani-cli. In PowerShell, install
+   [Scoop](https://scoop.sh) (skip if you have it), then the tools. ani-cli is a bash script
+   and runs in Git for Windows' bash:
 
-```powershell
-winget install Git.Git
-scoop bucket add extras
-scoop install ani-cli yt-dlp    # brings mpv too; only local files: scoop install extras/mpv
-```
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+   winget install Git.Git
+   scoop bucket add extras
+   scoop install ani-cli yt-dlp    # brings mpv too; only local files: scoop install extras/mpv
+   ```
+
+4. Double-click `AnimeHub.exe`. The exe isn't signed, so the first time Windows may say
+   "Windows protected your PC": click "More info", then "Run anyway".
+   Closing the window quits the app.
 
 Settings are in `%APPDATA%\anime-hub\config.json`, data in `%LOCALAPPDATA%\anime-hub`.
+If it doesn't start, `%LOCALAPPDATA%\anime-hub-wrapper\` has `hub.log` and `wrapper.log`.
 To build the zip yourself (needs rust/cargo, and binutils for the icon):
-`desktop\windows\build.ps1`.
+`powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1`.
 
 ### Updating
 
