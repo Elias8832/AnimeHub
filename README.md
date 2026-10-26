@@ -36,6 +36,9 @@ This app is early in development — expect bugs and breaking changes.
   - They play in mpv with the same resume, tracking, AniList sync and auto-play as your files.
   - Or download them straight into your library folder.
   - A wrong match? "Wrong episodes?" on the show page fixes it.
+- **Sharper banners (optional)** - With [Upscayl](https://upscayl.org) installed, show banners are redrawn 4× bigger on your graphics card. Off by default (Settings → Appearance).
+  - Two looks: Natural (keeps soft shading) or Digital art (crisper lines, slower).
+  - The originals are kept: switching it off brings them back.
 
 ## Requirements
 
@@ -46,6 +49,7 @@ This app is early in development — expect bugs and breaking changes.
 - rust/cargo (only to build the desktop app or the AppImage)
 - An AniList account (optional)
 - ani-cli (optional, for streaming and downloads)
+- [Upscayl](https://upscayl.org) (optional, for sharper banners; Flatpak, a normal install or the Windows installer)
 
 ## Run
 
@@ -91,6 +95,9 @@ To build it yourself (needs rust/cargo): `desktop/appimage/build.sh`.
 Windows 10 or 11, 64-bit. Python comes inside the zip, and the window is a Microsoft Edge
 app window (Chrome or Brave are used first if installed).
 
+Windows gets a new zip only with the bigger releases (v0.4, v0.5, …). Smaller updates in
+between are Linux-only, so the newest Windows zip can be a little behind.
+
 1. Download `AnimeHub-windows-x64.zip` from the
    [Releases page](https://github.com/Elias8832/AnimeHub/releases).
 2. Unzip it anywhere (for example to your Documents). Keep the `AnimeHub` folder together:
@@ -120,7 +127,8 @@ To build the zip yourself (needs rust/cargo, and binutils for the icon):
 ### Updating
 
 - From git: `git pull`. Desktop app: then `cargo build --release && ./install.sh` again.
-- AppImage / Windows zip: download the new one (Windows: replace the whole folder).
+- AppImage / Windows zip: download the new one (Windows: replace the whole folder; new zips
+  come with the bigger releases only).
 
 Your data is kept.
 
@@ -163,6 +171,7 @@ Files are never renamed or moved.
 | `data_dir` | database and cache location (default `~/.local/share/anime-hub`, honours `XDG_DATA_HOME`) |
 | `window` | `"app"` (own window, default), `"browser"` (tab) or `"none"` (server only) |
 | `anilist_client_id` | your own AniList app id; only needed if you change `port` |
+| `upscale_banners` | `true` to make banners sharper with Upscayl (also set from Settings → Appearance; default `false`) |
 | `remote_hosts` | extra host names for opening it from your phone through a proxy, e.g. `["pc.tailnet.ts.net"]` with `tailscale serve --bg --https=8443 8787` |
 
 Changing `library_root` never deletes anything. The app asks before it switches.
@@ -172,7 +181,8 @@ Changing `library_root` never deletes anything. The app asks before it switches.
 Everything lives in `data_dir` (default `~/.local/share/anime-hub`, Windows: `%LOCALAPPDATA%\anime-hub`):
 
 - `hub.db` — watch state, info, history
-- `cache/` — artwork
+- `cache/` — artwork (with sharper banners on, also the original banners: `*.banner.orig.jpg`)
+- `upscaled.json` — which banners are already sharpened, and how
 - `anilist_token.json` — your AniList login
 - `anilist_activity.json` — your AniList activity, for the Journal
 - `recommendations.json`
@@ -223,3 +233,4 @@ GPL-3.0. See [LICENSE](LICENSE).
 - AnimeHub is a player for your files, not a list or tracking service. Your list lives on AniList.
 - AniList data is kept on your PC only to show it, never as a backup. Free and non-commercial, following the [AniList API terms](https://docs.anilist.co/guide/terms-of-use).
 - Playback by [mpv](https://mpv.io).
+- Sharper banners by [Upscayl](https://upscayl.org), if you install it.

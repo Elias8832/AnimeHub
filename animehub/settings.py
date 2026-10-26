@@ -4,9 +4,10 @@ import json
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
-from . import anicli, database, library, system
+from . import anicli, database, library, system, upscale
 from .config import config, CONFIG, CONFIG_PATH
 
 
@@ -119,6 +120,7 @@ def settings_payload():
     promises. The library root is chosen in the UI's folder picker
     (Decision 32: /api/browse + /api/library-root, written back to the
     config file); adopting a changed root stays explicit (Decision 23.7)."""
+    up = upscale.payload()
     return {
         "auto_progress_sync": automation_enabled("auto_progress_sync"),
         "auto_add_watch": automation_enabled("auto_add_watch"),
@@ -127,6 +129,7 @@ def settings_payload():
         "vpn_warn": automation_enabled("vpn_warn"),
         "aniskip": automation_enabled("aniskip"),
         "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
+        "upscale_banners": up["on"],
         "tour_done": get_setting("tour_done") == "1",
         # additive: opening/ending skip modes, {"op": …, "ed": …}
         "skip": skip_prefs(),
@@ -136,7 +139,9 @@ def settings_payload():
         "port": config.PORT,
         "window": config.WINDOW,
         "scan": dict(library.scan_state),
-        "tools": {"mpv": system.find_program("mpv"), "ani-cli": anicli.anicli_path(), "upscayl": system.find_program("upscayl")},
+        "tools": {"mpv": system.find_program("mpv"), "ani-cli": anicli.anicli_path(), "upscayl": up["found"]},
+        # additive: banner upscaling — on/off, where Upscayl is, worker progress
+        "upscale": up,
         # additive: the tour's last page says "mpv 0.39 found"
         "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.
@@ -239,6 +244,18 @@ def write_config_key(key, value):
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
+
+
+def set_upscale(on):
+    """Settings' banner-upscaling switch: saved as 'upscale_banners' in the
+    config file (where it always lived), applied at once. Off puts the
+    AniList originals back (after the run in progress, if any)."""
+    write_config_key("upscale_banners", bool(on))
+    config.UPSCALE_BANNERS = bool(on)
+    if on:
+        upscale.turned_on()
+    else:
+        threading.Thread(target=upscale.restore_originals, daemon=True).start()
 
 
 def set_library_root(path, adopt=False):

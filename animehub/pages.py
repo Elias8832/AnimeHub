@@ -5,6 +5,7 @@ import threading
 import time
 
 from . import anicli, anilist, database, franchise, library, mapping, progress, streaming, util
+from .config import config
 
 
 # --- Franchise page (docs/franchise-page-plan.md, phase 4) ------------------
@@ -57,6 +58,19 @@ def entry_label(m, roots, season_no):
     return (franchise._titles(m) or [FORMAT_LABELS.get(m.get("format"), "Extra")])[0]
 
 
+def _local_banner(aid):
+    """The hub's own copy of an AniList entry's banner (a matched folder's
+    or a linked release's), so the show page shows the same picture as Home
+    — upscaled when Settings → Sharper banners is on."""
+    with database.db() as c:
+        row = c.execute("SELECT banner FROM shows_meta WHERE anilist_id=? AND banner IS NOT NULL LIMIT 1",
+                        (aid,)).fetchone()
+    for name in ((row[0],) if row else ()) + (f"/img/stream-{aid}.banner.jpg",):
+        if (config.POSTERS / name.rsplit("/", 1)[-1]).is_file():
+            return library.img_url(name)
+    return None
+
+
 def _entry_facts(m):
     t = m.get("title") or {}
     nxt = m.get("nextAiringEpisode") or {}
@@ -68,7 +82,8 @@ def _entry_facts(m):
             "year": (m.get("startDate") or {}).get("year") or m.get("seasonYear"),
             "season": m.get("season"), "score": m.get("averageScore"),
             "duration": m.get("duration"), "overview": anilist.strip_html(m.get("description")),
-            "poster": (m.get("coverImage") or {}).get("extraLarge"), "banner": m.get("bannerImage"),
+            "poster": (m.get("coverImage") or {}).get("extraLarge"),
+            "banner": (_local_banner(m["id"]) if m.get("bannerImage") else None) or m.get("bannerImage"),
             "color": (m.get("coverImage") or {}).get("color")}  # additive (TODO 60): the accent
 
 
