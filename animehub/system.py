@@ -41,6 +41,34 @@ def quiet():
     return {"creationflags": _NO_WINDOW} if WINDOWS else {}
 
 
+def http_server_class():
+    """The hub's ThreadingHTTPServer. Windows: without SO_REUSEADDR, which
+    there lets a second program bind a port already in use — a second hub
+    (or anything else on the port) "started" and shared its requests instead
+    of failing with "cannot bind" as on Linux (found on Windows, TODO 74)."""
+    from http.server import ThreadingHTTPServer
+    if not WINDOWS:
+        return ThreadingHTTPServer
+
+    class Server(ThreadingHTTPServer):
+        allow_reuse_address = False
+
+    return Server
+
+
+def utf8_stdio():
+    """Windows: print UTF-8 to a pipe or file too. Python writes those in the
+    ANSI code page (cp1252) there, so the startup banner's "→" or a
+    Japanese library path crashed the hub whenever its output was not a
+    console (the desktop app). A console already gets Unicode; POSIX is
+    left as it is."""
+    if not WINDOWS:
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def open_pty():
     """(master, slave) fds of a new pty, or (None, None) where there is no
     pty module (Windows)."""
@@ -92,7 +120,9 @@ def ipc_marker(address):
     the socket on POSIX; a pipe can't have a file beside it, so on Windows
     it sits in the temp dir under the pipe's name."""
     if WINDOWS:
-        return Path(tempfile.gettempdir()) / (str(address)[len(PIPE_PREFIX):] + ".skip")
+        name = str(address)
+        name = name[len(PIPE_PREFIX):] if name.startswith(PIPE_PREFIX) else Path(name).name
+        return Path(tempfile.gettempdir()) / (name + ".skip")
     return Path(str(address) + ".skip")
 
 
@@ -244,7 +274,9 @@ def find_script(name):
     """A program on PATH by its bare name. Windows: a shell script has no
     .exe/.cmd extension, which shutil.which doesn't look for there, so
     PATH and Scoop's app folder are searched for the bare name first; a
-    shim (ani-cli.cmd / .exe) is the fallback."""
+    shim (ani-cli.cmd / .exe) is the fallback. Scoop's own sh shim
+    (<scoop>\\shims\\ani-cli) is followed to the script it starts, which is
+    the file the hub reads for its feature check."""
     if not WINDOWS:
         return shutil.which(name)
     dirs = os.environ.get("PATH", "").split(os.pathsep)
@@ -252,7 +284,19 @@ def find_script(name):
     for d in dirs:
         p = os.path.join(d, name)
         if d and os.path.isfile(p):
+            real = Path(d).parent / "apps" / name / "current" / name
+            if Path(d).name.lower() == "shims" and real.is_file():
+                return str(real)
             return p
+    return shutil.which(name)
+
+
+def find_program(name):
+    """A program on PATH. Windows: the .exe first — PATHEXT puts .COM ahead,
+    and mpv ships an mpv.com console stub beside mpv.exe, which Settings
+    then showed (playback itself always started mpv.exe)."""
+    if WINDOWS:
+        return shutil.which(name + ".exe") or shutil.which(name)
     return shutil.which(name)
 
 

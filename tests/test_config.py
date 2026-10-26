@@ -4,7 +4,6 @@ constants; Decision 17.1 username removal; Decision 23.7 root adoption).
 A missing or broken config must degrade to usable defaults — the app stays
 readable, never tracebacks on a stranger's config typo."""
 import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -254,7 +253,7 @@ class AdoptRootTests(unittest.TestCase):
         show = lib / "Some Show"
         (show / "Season 1").mkdir(parents=True)
         (show / "Season 1" / "Some Show E1.mkv").write_bytes(b"x")
-        with sqlite3.connect(str(config.DB)) as c:
+        with support.sqlite(config.DB) as c:
             # A fact from the previous root that the new root cannot find.
             c.execute("INSERT INTO episodes(id,watched,position,duration) "
                       "VALUES('oldroot0000000001',1,0,300)")
@@ -264,7 +263,7 @@ class AdoptRootTests(unittest.TestCase):
             settings.adopt_root()
             scan = library.scan_library()
             library.merge_db(scan)
-        with sqlite3.connect(str(config.DB)) as c:
+        with support.sqlite(config.DB) as c:
             row = c.execute("SELECT 1 FROM tombstones WHERE kind='episode' "
                             "AND key='oldroot0000000001'").fetchone()
             self.assertIsNotNone(row)

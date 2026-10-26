@@ -13,7 +13,6 @@ One session transition, one generation guard, one resume rule:
 - auto-next carries the chosen file version; missing mpv is an actionable
   error, not a traceback."""
 import os
-import sqlite3
 import signal
 import subprocess
 import tempfile
@@ -27,7 +26,7 @@ from animehub.config import config
 
 
 def row(ep_id, db):
-    with sqlite3.connect(str(db)) as c:
+    with support.sqlite(db) as c:
         return c.execute(
             "SELECT watched, position, duration, last_played FROM episodes WHERE id=?",
             (ep_id,)).fetchone()
@@ -47,6 +46,11 @@ class LifecycleBase(unittest.TestCase):
         self.killpg = patch.object(os, "killpg", create=True)  # create: Windows has none
         self.killpg.start()
         self.addCleanup(self.killpg.stop)
+        # No skip thread outlives the test: it reads the database, and
+        # Windows can't delete a database that is still open.
+        self.skips = patch.object(player, "send_skips")
+        self.skips.start()
+        self.addCleanup(self.skips.stop)
 
     def tearDown(self):
         with player._active_lock:

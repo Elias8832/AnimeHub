@@ -2,7 +2,6 @@
 request bodies with structured errors — never silent empty-string writes,
 no content-type hole, no garbage-header tracebacks."""
 import json
-import sqlite3
 import tempfile
 import threading
 import unittest
@@ -62,7 +61,7 @@ class ApiValidationTests(unittest.TestCase):
                 return e.code, raw
 
     def episode_rows(self):
-        with sqlite3.connect(str(self.db)) as c:
+        with support.sqlite(self.db) as c:
             return c.execute("SELECT id, watched FROM episodes").fetchall()
 
     # --- the two reproduced probes -------------------------------------

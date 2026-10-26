@@ -3,7 +3,6 @@
 import json
 import os
 import re
-import shutil
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -619,7 +618,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     token = ep_id.split(":", 2)[2] if mid else ""
     if not mid or not anicli.STREAM_EP_RE.match(token):
         return {"error": "unknown episode"}
-    if not shutil.which("mpv"):
+    if not system.find_program("mpv"):
         return {"error": "mpv was not found — install mpv and make sure it is on PATH."}
     try:
         link = stream_autolink(mid)

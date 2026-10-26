@@ -218,7 +218,7 @@ def _dl_adopt(media_id, dest):
     """A download that started a new folder becomes a new disk show — match
     it to the release right away instead of waiting for the matcher."""
     try:
-        rel = str(dest.relative_to(config.LIBRARY))
+        rel = dest.relative_to(config.LIBRARY).as_posix()
         show = next((s for s in library.scan_library() if s["path"] == rel), None)
         if not show:
             return

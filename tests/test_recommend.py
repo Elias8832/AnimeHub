@@ -78,7 +78,7 @@ class States(unittest.TestCase):
         start.assert_called_once()
         self.assertEqual(out, {"state": "ready", "items": [{"id": 30, "title": "Old"}]})
         self.assertTrue(str(recommend._cache_path()).startswith(str(config.DATA)))
-        json.loads(recommend._cache_path().read_text())
+        json.loads(recommend._cache_path().read_text(encoding="utf-8"))
 
 
 class DownloadProgress(unittest.TestCase):

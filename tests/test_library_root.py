@@ -83,7 +83,7 @@ class LibraryRootTests(unittest.TestCase):
     def test_set_root_creates_config_and_applies_live(self):
         res = settings.set_library_root(str(self.lib) + "/")
         self.assertEqual(res, {"ok": True, "library_root": str(self.lib)})
-        self.assertEqual(json.loads(self.cfg.read_text()), {"library_root": str(self.lib)})
+        self.assertEqual(json.loads(self.cfg.read_text(encoding="utf-8")), {"library_root": str(self.lib)})
         self.assertEqual(config.LIBRARY, self.lib)
         self.assertEqual(settings.settings_payload()["library_root"], str(self.lib))
 
@@ -91,7 +91,7 @@ class LibraryRootTests(unittest.TestCase):
         self.cfg.parent.mkdir(parents=True)
         self.cfg.write_text(json.dumps({"port": 9000, "library_root": "/old", "custom": [1]}))
         settings.set_library_root(str(self.lib))
-        self.assertEqual(json.loads(self.cfg.read_text()),
+        self.assertEqual(json.loads(self.cfg.read_text(encoding="utf-8")),
                          {"port": 9000, "library_root": str(self.lib), "custom": [1]})
         self.assertFalse(self.cfg.with_name("config.json.tmp").exists())
 
@@ -100,7 +100,7 @@ class LibraryRootTests(unittest.TestCase):
         self.cfg.write_text("{ not json")
         with self.assertRaises(ValueError):
             settings.set_library_root(str(self.lib))
-        self.assertEqual(self.cfg.read_text(), "{ not json")
+        self.assertEqual(self.cfg.read_text(encoding="utf-8"), "{ not json")
         self.assertIsNone(config.LIBRARY)
 
     def test_set_root_rejects_missing_folder_without_writing(self):

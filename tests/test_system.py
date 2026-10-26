@@ -2,6 +2,7 @@
 imports on Windows at all, and the process helpers take the Windows road
 there without touching the POSIX-only calls."""
 
+import io
 import os
 import subprocess
 import sys
@@ -25,9 +26,11 @@ FAKE_WINDOWS = textwrap.dedent("""
     for name in ("pty", "fcntl", "termios", "tty"):
         sys.modules[name] = None
     for name in ("SIGKILL",):
-        delattr(signal, name)
+        if hasattr(signal, name):  # already gone on a real Windows
+            delattr(signal, name)
     for name in ("killpg", "getpgrp", "setsid"):
-        delattr(os, name)
+        if hasattr(os, name):
+            delattr(os, name)
     sys.platform = "win32"
     sys.path.insert(0, sys.argv[1])
     import animehub.server
@@ -106,6 +109,18 @@ class WindowsProcessTests(unittest.TestCase):
             (Path(d) / "ani-cli").write_text("#!/bin/sh\n")
             with patch.dict(os.environ, {"PATH": d}):
                 self.assertEqual(system.find_script("ani-cli"), os.path.join(d, "ani-cli"))
+
+    def test_scoop_sh_shim_leads_to_the_real_script(self):
+        """Scoop puts a tiny sh shim on PATH; the feature check must read
+        the script it starts (seen on Windows, ani-cli 5.1 from extras)."""
+        with tempfile.TemporaryDirectory() as d:
+            shims, app = Path(d) / "shims", Path(d) / "apps" / "ani-cli" / "current"
+            shims.mkdir()
+            app.mkdir(parents=True)
+            (shims / "ani-cli").write_text("#!/bin/sh\n")
+            (app / "ani-cli").write_text("#!/bin/sh\n")
+            with patch.dict(os.environ, {"PATH": str(shims)}):
+                self.assertEqual(system.find_script("ani-cli"), str(app / "ani-cli"))
 
     def test_env_paths_use_forward_slashes(self):
         with patch.object(anicli, "anicli_menu_helper", return_value=Path(r"C:\Users\Max Muster\anicli-menu.sh")), \
@@ -197,6 +212,14 @@ class WindowsDesktopTests(unittest.TestCase):
         with patch.object(system, "windows_adapters", side_effect=OSError("no iphlpapi")):
             self.assertFalse(settings.vpn_status()["known"])
 
+    def test_programs_are_found_as_exe_first(self):
+        """PATHEXT puts .COM ahead: Settings showed mpv's console stub mpv.com."""
+        found = {"mpv.exe": r"C:\mpv\mpv.exe", "mpv": r"C:\mpv\mpv.COM"}
+        with patch.object(system.shutil, "which", side_effect=found.get):
+            self.assertEqual(system.find_program("mpv"), r"C:\mpv\mpv.exe")
+        with patch.object(system.shutil, "which", side_effect={"upscayl": r"C:\u\upscayl.cmd"}.get):
+            self.assertEqual(system.find_program("upscayl"), r"C:\u\upscayl.cmd")
+
     def test_open_external_uses_startfile(self):
         with patch.object(system.os, "startfile", create=True) as start, \
                 patch.object(system.subprocess, "Popen") as popen:
@@ -240,6 +263,51 @@ class MenuHelperTests(unittest.TestCase):
             raw = anicli.anicli_menu_helper().read_bytes()
         self.assertEqual(raw, anicli.ANICLI_MENU_SH.encode())
         self.assertNotIn(b"\r", raw)
+
+
+class Utf8OutputTests(unittest.TestCase):
+    """Windows writes a piped stdout in cp1252: the banner's "→" crashed the
+    hub whenever it didn't run in a console (seen on Windows, TODO 74)."""
+
+    def streams(self):
+        return (io.TextIOWrapper(io.BytesIO(), encoding="cp1252"),
+                io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
+
+    def test_windows_prints_utf8_to_a_pipe(self):
+        out, err = self.streams()
+        with patch.object(system, "WINDOWS", True), patch.object(sys, "stdout", out), \
+                patch.object(sys, "stderr", err):
+            system.utf8_stdio()
+            print("Anime Hub → 葬送のフリーレン")
+        out.flush()
+        self.assertEqual(out.buffer.getvalue().decode().rstrip(), "Anime Hub → 葬送のフリーレン")
+
+    def test_posix_streams_untouched(self):
+        out, err = self.streams()
+        with patch.object(system, "WINDOWS", False), patch.object(sys, "stdout", out), \
+                patch.object(sys, "stderr", err):
+            system.utf8_stdio()
+        self.assertEqual(out.encoding, "cp1252")
+
+
+class ServerBindTests(unittest.TestCase):
+    """Windows let the hub bind a port another program held (SO_REUSEADDR
+    means "share" there), so "cannot bind" never fired (TODO 74)."""
+
+    def test_windows_server_class_does_not_reuse(self):
+        with patch.object(system, "WINDOWS", True):
+            self.assertFalse(system.http_server_class().allow_reuse_address)
+        with patch.object(system, "WINDOWS", False):
+            from http.server import ThreadingHTTPServer
+            self.assertIs(system.http_server_class(), ThreadingHTTPServer)
+
+    @unittest.skipUnless(system.WINDOWS, "Windows only")
+    def test_a_taken_port_fails_the_bind(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        other = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)  # SO_REUSEADDR, like python -m http.server
+        self.addCleanup(other.server_close)
+        with self.assertRaises(OSError):  # the error server.main words as "cannot bind"
+            system.http_server_class()(("127.0.0.1", other.server_address[1]), BaseHTTPRequestHandler)
 
 
 class PosixUnchangedTests(unittest.TestCase):

@@ -59,7 +59,7 @@ class ManualMatch(unittest.TestCase):
         self.media = {"id": 161645, "title": {"english": "The Apothecary Diaries"}}
 
     def overrides(self):
-        return json.loads((support.config.DATA / "overrides.json").read_text())
+        return json.loads((support.config.DATA / "overrides.json").read_text(encoding="utf-8"))
 
     def test_query_matches_the_top_hit(self):
         with mock.patch.object(metadata, "fetch_media_full", return_value=self.media) as fetch, \
@@ -126,8 +126,8 @@ class Desktop(unittest.TestCase):
     def test_desktop_entry_names_the_window_class(self):
         """X11 honours --class; native Wayland (TODO 61) names the window
         WAYLAND_CLASS — install.sh writes whichever the session gets."""
-        rs = (support.ROOT / "desktop/src/main.rs").read_text()
-        sh = (support.ROOT / "desktop/install.sh").read_text()
+        rs = (support.ROOT / "desktop/src/main.rs").read_text(encoding="utf-8")
+        sh = (support.ROOT / "desktop/install.sh").read_text(encoding="utf-8")
         cls = re.search(r'"--class=(\w+)"', rs).group(1)
         wl = re.search(r'WAYLAND_CLASS: &str = "([^"]+)"', rs).group(1)
         self.assertIn('WMCLASS="%s"; else WMCLASS="%s"' % (wl, cls), sh)

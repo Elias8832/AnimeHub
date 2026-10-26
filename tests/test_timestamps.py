@@ -3,7 +3,6 @@ progress loop wrote ISO strings while watched-completion wrote SQL
 datetime('now') strings; mixed formats sort wrong on the same day and break
 the this-week cutoff. Everything is canonical UTC 'YYYY-MM-DD HH:MM:SS'."""
 import re
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,7 +19,7 @@ def make_mixed_ts_db(db_path):
     """A v3 database carrying the historical mix: ISO last_played from the
     progress loop, SQL datetime('now') strings from watched-completion —
     including the B5 repro pair on the same day."""
-    with sqlite3.connect(str(db_path)) as c:
+    with support.sqlite(db_path) as c:
         c.execute("PRAGMA user_version = 3")
         c.execute("""CREATE TABLE episodes(
             id TEXT PRIMARY KEY, watched INTEGER DEFAULT 0, position REAL DEFAULT 0,
@@ -67,7 +66,7 @@ class TimestampTests(unittest.TestCase):
     def test_mixed_timestamps_normalize_and_sort_correctly(self):
         make_mixed_ts_db(self.db_path)
         database.init_db()
-        with sqlite3.connect(str(self.db_path)) as c:
+        with support.sqlite(self.db_path) as c:
             rows = c.execute("SELECT id, last_played FROM episodes"
                              " ORDER BY last_played DESC").fetchall()
             version = c.execute("PRAGMA user_version").fetchone()[0]
@@ -83,7 +82,7 @@ class TimestampTests(unittest.TestCase):
     def test_tombstone_timestamps_normalize(self):
         make_mixed_ts_db(self.db_path)
         database.init_db()
-        with sqlite3.connect(str(self.db_path)) as c:
+        with support.sqlite(self.db_path) as c:
             ts = c.execute("SELECT ts FROM tombstones").fetchone()[0]
         self.assertEqual(ts, "2026-10-01 08:30:00")
 
@@ -91,7 +90,7 @@ class TimestampTests(unittest.TestCase):
         make_mixed_ts_db(self.db_path)
         database.init_db()
         database.init_db()
-        with sqlite3.connect(str(self.db_path)) as c:
+        with support.sqlite(self.db_path) as c:
             rows = c.execute("SELECT id, last_played FROM episodes ORDER BY id").fetchall()
         self.assertEqual(rows, [
             ("iso-10", "2026-10-14 10:00:00"),
@@ -126,6 +125,11 @@ class WriterFormatTests(unittest.TestCase):
         self.addCleanup(self.database.stop)
         library.scan_state.update(state="ok", walk_errors=0, root="ok")
         database.init_db()
+        # No skip thread outlives the test: it reads the database, and
+        # Windows can't delete a database that is still open.
+        self.skips = patch.object(player, "send_skips")
+        self.skips.start()
+        self.addCleanup(self.skips.stop)
 
     def run_session(self, ep_id, position):
         """Drive watch_process with a fake mpv (same pattern as
@@ -155,7 +159,7 @@ class WriterFormatTests(unittest.TestCase):
         return sock
 
     def row(self, ep_id):
-        with sqlite3.connect(str(config.DB)) as c:
+        with support.sqlite(config.DB) as c:
             return c.execute("SELECT watched, last_played FROM episodes WHERE id=?",
                              (ep_id,)).fetchone()
 
@@ -182,7 +186,7 @@ class WriterFormatTests(unittest.TestCase):
         with database.db() as c:
             c.execute("INSERT INTO episodes(id, watched) VALUES ('gone', 1)")
         library.merge_db(scan)
-        with sqlite3.connect(str(config.DB)) as c:
+        with support.sqlite(config.DB) as c:
             ts = c.execute("SELECT ts FROM tombstones WHERE key='gone'").fetchone()[0]
         self.assertRegex(ts, CANON)
 

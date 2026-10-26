@@ -1,6 +1,5 @@
 """Offline regression checks for the playback watch-state bookkeeping."""
 import os
-import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -66,6 +65,11 @@ class DieBelowThresholdTests(unittest.TestCase):
         self.database.start()
         self.addCleanup(self.database.stop)
         database.init_db()
+        # No skip thread outlives the test: it reads the database, and
+        # Windows can't delete a database that is still open.
+        self.skips = patch.object(player, "send_skips")
+        self.skips.start()
+        self.addCleanup(self.skips.stop)
 
     def tearDown(self):
         with player._active_lock:
@@ -101,7 +105,7 @@ class DieBelowThresholdTests(unittest.TestCase):
         return sock
 
     def episode_row(self, ep_id):
-        with sqlite3.connect(str(config.DB)) as c:
+        with support.sqlite(config.DB) as c:
             return c.execute(
                 "SELECT watched, position, duration, last_played FROM episodes WHERE id=?",
                 (ep_id,)).fetchone()

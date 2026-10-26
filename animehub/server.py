@@ -9,11 +9,11 @@ import subprocess
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system
+from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -317,8 +317,20 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def _drain(self):
+        """Read the body of a refused POST: Windows resets a connection that
+        closes with unread data, and the client loses the refusal itself
+        (TODO 74)."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return
+        if 0 < length <= 1_000_000:
+            self.rfile.read(length)
+
     def do_POST(self):
         if not self.check_local():
+            self._drain()
             return
         # Media type parsed properly (TODO 22): a substring check let
         # "text/plain; note=application/json" through — the classic
@@ -326,6 +338,7 @@ class Handler(BaseHTTPRequestHandler):
         ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         if ctype != "application/json":
             self.send_json({"error": "expected application/json"}, 415)
+            self._drain()
             return
         route = urlparse(self.path).path
         try:
@@ -799,17 +812,22 @@ def open_ui():
 
 def main():
     no_browser = "--no-browser" in sys.argv
+    system.utf8_stdio()
     for w in CONFIG_WARNINGS:
         print(f"anime-hub: {w}", file=sys.stderr, flush=True)
+    steps = [("loading", time.monotonic())]
     for d in (config.DATA, config.CACHE, config.POSTERS, config.EPIMGS):
         d.mkdir(parents=True, exist_ok=True)
     database.init_db()
+    steps.append(("database", time.monotonic()))
     try:
         database.cache_prune()
     except Exception as e:
         print(f"anime-hub: cache prune skipped — {e}", file=sys.stderr, flush=True)
+    steps.append(("cache prune", time.monotonic()))
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler)
+        server = system.http_server_class()(("127.0.0.1", config.PORT), Handler)
+        steps.append(("bind", time.monotonic()))
     except OSError as e:
         # A bind failure must be readable (found by the cold-machine
         # simulation): the default case is a second instance or a taken
@@ -818,6 +836,14 @@ def main():
               f"Is another instance already running, or is the configured 'port' taken?",
               file=sys.stderr, flush=True)
         sys.exit(1)
+    # A slow start says where the time went (the desktop app waits on it; a
+    # first start on Windows once took ~28 s that no test machine showed).
+    if steps[-1][1] - LOADED_AT > 3:
+        times, last = [], LOADED_AT
+        for name, at in steps:
+            times.append(f"{name} {at - last:.1f} s")
+            last = at
+        print("anime-hub: slow start — " + ", ".join(times), file=sys.stderr, flush=True)
     threading.Thread(target=anilist.background_work(metadata.refresh_meta), daemon=True).start()
     # Warm the AniList cache so the spine (TODO 8) is populated on the very
     # first library view; /api/anilist visits keep it fresh afterwards.

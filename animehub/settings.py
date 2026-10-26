@@ -3,7 +3,6 @@
 import json
 import os
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -137,7 +136,7 @@ def settings_payload():
         "port": config.PORT,
         "window": config.WINDOW,
         "scan": dict(library.scan_state),
-        "tools": {"mpv": shutil.which("mpv"), "ani-cli": anicli.anicli_path(), "upscayl": shutil.which("upscayl")},
+        "tools": {"mpv": system.find_program("mpv"), "ani-cli": anicli.anicli_path(), "upscayl": system.find_program("upscayl")},
         # additive: the tour's last page says "mpv 0.39 found"
         "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.
@@ -152,7 +151,7 @@ _mpv_versions = {}
 
 def mpv_version():
     """"0.39.0" from `mpv --version` (asked once per mpv path), or None."""
-    exe = shutil.which("mpv")
+    exe = system.find_program("mpv")
     if not exe:
         return None
     if exe not in _mpv_versions:
