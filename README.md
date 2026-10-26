@@ -110,6 +110,7 @@ app window (Chrome or Brave are used first if installed).
 4. Double-click `AnimeHub.exe`. The exe isn't signed, so the first time Windows may say
    "Windows protected your PC": click "More info", then "Run anyway".
    Closing the window quits the app.
+   For a Start-menu entry, double-click `Add to Start menu.cmd` once (again after moving the folder).
 
 Settings are in `%APPDATA%\anime-hub\config.json`, data in `%LOCALAPPDATA%\anime-hub`.
 If it doesn't start, `%LOCALAPPDATA%\anime-hub-wrapper\` has `hub.log` and `wrapper.log`.

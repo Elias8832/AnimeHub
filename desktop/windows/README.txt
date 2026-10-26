@@ -4,6 +4,9 @@ Anime Hub - experimental Windows build
 Start: double-click AnimeHub.exe. Keep this folder together - AnimeHub.exe
 needs python\ and app\ beside it. Closing the window quits the app.
 
+Start menu: double-click "Add to Start menu.cmd" once (again after moving
+this folder).
+
 Windows may warn "Windows protected your PC" the first time (the program
 is not signed): click "More info", then "Run anyway".
 
