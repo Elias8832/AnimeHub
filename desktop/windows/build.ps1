@@ -5,6 +5,7 @@
 #   python\        Python's official embeddable build - users install no Python
 #   app\           hub.py, animehub\, web\, mpv\, LICENSE
 #   README.txt     what to install next to it (mpv, Git for Windows, ani-cli)
+#   Add to Start menu.cmd   puts a Start-menu shortcut to AnimeHub.exe
 # Needs cargo (Rust; the GNU toolchain also wants binutils' windres for the
 # icon). The Python zip is downloaded once into desktop\target\tools\ and
 # checked against the hash pinned here.
@@ -46,6 +47,8 @@ foreach ($item in "hub.py", "animehub", "web", "mpv", "LICENSE") {
 }
 Get-ChildItem "$Stage\app" -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
 Copy-Item (Join-Path $PSScriptRoot "README.txt") "$Stage\README.txt"
+# Set-Content writes CRLF lines, which cmd.exe wants (the source may be LF).
+Get-Content (Join-Path $PSScriptRoot "start-menu.cmd") | Set-Content "$Stage\Add to Start menu.cmd" -Encoding Ascii
 
 if (Test-Path $Zip) { Remove-Item $Zip }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
