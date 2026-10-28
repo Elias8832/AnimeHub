@@ -48,6 +48,16 @@ const ICONS = {
   folder: ['<path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2.2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'],
   up: ['<path d="M12 19V5m-6 6 6-6 6 6"/>'],
   shield: ['<path d="M12 3.5 5 6.3v5.4c0 4.3 3 7.6 7 8.8 4-1.2 7-4.5 7-8.8V6.3z"/>'],
+  pause: ['<rect x="6.5" y="5" width="3.8" height="14" rx="1"/><rect x="13.7" y="5" width="3.8" height="14" rx="1"/>', 1],
+  rew: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/><text x="12" y="15.3" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">10</text>'],
+  fwd: ['<path d="M20 12a8 8 0 1 1-2.5-5.8L20 8.5M20 4v4.5h-4.5"/><text x="12" y="15.3" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">10</text>'],
+  next: ['<path d="M6 5.5v13l9.5-6.5z" fill="currentColor"/><path d="M18 5.5v13"/>'],
+  stop: ['<rect x="6" y="6" width="12" height="12" rx="2"/>', 1],
+  vol: ['<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'],
+  chevd: ['<path d="m6 9 6 6 6-6"/>'],
+  home: ['<path d="M4 11 12 4l8 7v8.5a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>'],
+  grid: ['<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'],
+  sliders: ['<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'],
   cal: ['<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4m7-4v4"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
@@ -313,6 +323,7 @@ function weekHTML(list, now = Date.now()) {
         <span class="agt"><span class="when">${d} <small>${tm}</small></span><b>${esc(e.title)}</b><span class="m">episode ${esc(e.next_episode?.number ?? "")}</span></span><span class="cdn">${sec > 0 ? "in " + fmtIn(sec) : "out now"}</span></button>`; }).join("")}</div></section>`;
 }
 function Home() {
+  if (isPhone()) return HomePhone();
   const d = S.data, up = nextUpInfo();
   const L = keepWatching(up && up.s.id);
   const touched = new Set((d.history || []).map((e) => e.show_id));
@@ -323,8 +334,11 @@ function Home() {
   const sum = [inprog ? `<span><b>${inprog}</b> in progress</span>` : "", next ? `<span><b>${esc(next.title)}</b> ${(airsIn(next.next_episode) ?? 0) > 0 ? "airs in " + esc(fmtIn(airsIn(next.next_episode))) : "is out"}</span>` : "",
     fresh.length ? `<span><b>${fresh.length}</b> ready to start</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
   let body = "";
-  if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
-  body += weekHTML(airing);
+  if (isTabletP()) body += homePair(L, airing);
+  else {
+    if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
+    body += weekHTML(airing);
+  }
   const recs = recsFor();
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="mut">from AniList, based on what you rated highly</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="mut">on disk, not started</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
@@ -619,8 +633,9 @@ function Lib() {
       ${frng("score", "score", 0, 10, 0.5, (x) => String(x))}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${fsel("sort", "sort", [["updated", "recently updated"], ["score", "score"], ["year", "year"], ["title", "title"]])}
-      <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button></div>`;
-    main = `${filters}${(m.cold || isUn) ? "" : genreTray(m)}<div id="wall"></div>`;
+      <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
+    const fltb = filters ? `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>` : "";
+    main = `${fltb}${filters}${(m.cold || isUn) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
   return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}${main}</div>`;
 }
@@ -638,14 +653,21 @@ function paintWall(fade) {
   const w = $("#wall");
   if (!w) return;
   const m = libModel();
-  let html;
-  if (m.cold) html = S.data.shows.map(showCard).join("");
-  else if (S.lib.tab === "UNTRACKED") html = m.untracked.map(showCard).join("");
-  else html = oneCardPerFranchise(libFiltered(m)).map(entryCard).join("");
+  const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : oneCardPerFranchise(libFiltered(m)).map(entryCard);
+  let html = cards.join("");
   const empty = `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
   const fx = fade && !reduceMotion();
   w.className = "wall" + (fx ? " fade" : "");
-  if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
+  clearTimeout(paintWall.more);
+  /* Touch screens (Decision 44): a fresh wall shows its first screenful at
+     once and the rest in batches over the next frames — building all ~270
+     cards in one go froze the page change on a phone. */
+  if ((fx || !w.firstChild) && cards.length > 36 && mq("(pointer:coarse)")) {
+    w.innerHTML = cards.slice(0, 24).join("");
+    let i = 24;
+    const more = () => { if (!w.isConnected) return; w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
+    paintWall.more = setTimeout(more, 380); // after the page has slid in
+  } else if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
 }
 
 /* ---------- detail ---------- */
@@ -1003,15 +1025,27 @@ function frMore(x0, y0) {
   const folders = [...new Map(e.slots.filter((x) => x.local).map((x) => [x.local.show_id + "|" + x.local.season, x.local])).values()];
   const ready = !!S.data.stream_ready, picking = S.sel?.show === frSelKey();
   const m = $("#cm");
+  clearTimeout(cmHide.t); m.classList.remove("closing");
   m.innerHTML = `<div class="cap">${esc(e.title || p.title)}</div>
     ${e.slots.some((x) => playableSlot(e, x)) ? `<button class="mi" data-a="selmode">${ico("checkc")}${picking ? "Stop selecting" : "Select episodes"}</button>` : ""}
     ${folders.length ? `<button class="mi" data-a="folder" data-v="${esc(folders[0].show_id)}">${ico("folder")}Open the folder</button>` : ""}
     ${folders.map((l) => `<button class="mi" data-a="pinopen" data-s="${esc(l.show_id)}" data-k="${esc(l.season)}" data-l="${esc(l.folder + " · " + l.season_label)}">${ico("tv")}Wrong season? <small>${esc(l.season_label)}</small></button>`).join("")}
     ${ready && e.online.linked ? `<button class="mi" data-a="srcfix">${ico("search")}Wrong online episodes?</button>` : ""}
     <a class="mi" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}">${ico("ext")}Open on AniList</a>`;
+  /* Phones (S2): the page shows only Play; its other buttons (download,
+     mark all watched, edit entry) open from here, first. */
+  if (isPhone()) {
+    const cap = m.querySelector(".cap");
+    for (const b of [...$$("#app .frpage .cta .btn:not(.pri):not(.ic)")].reverse()) {
+      const c = b.cloneNode(true);
+      c.className = "mi"; c.querySelectorAll(".kb").forEach((k) => k.remove());
+      cap.after(c);
+    }
+    m.insertAdjacentHTML("afterbegin", grab);
+  }
   m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
   const z = zoomGet() / 100;
-  m.style.cssText += `;display:block;left:${Math.min(x0 / z, innerWidth / z - 270)}px;top:${Math.min(y0 / z, innerHeight / z - 280)}px`;
+  m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:${Math.min(x0 / z, innerWidth / z - 270)}px;top:${Math.min(y0 / z, innerHeight / z - 280)}px`;
 }
 /* "Wrong season?": say which entry a folder season is (or none of them),
    or hand it back to the automatic mapping. */
@@ -1029,10 +1063,20 @@ function PinDlg() {
 function cmRow(a, v, icon, label, key, extra = "", attrs = "") {
   return `<button class="mi" data-a="${a}" data-v="${esc(v)}" ${attrs}>${ico(icon)}<span class="ml">${label}</span>${extra}${key ? `<kbd class="kb">${key}</kbd>` : ""}</button>`;
 }
+/* The menu closes with a slide down on phones (it used to vanish). */
+function cmHide() {
+  const m = $("#cm");
+  if (m.style.display !== "block" || m.classList.contains("closing")) return;
+  if (!isPhone() || reduceMotion()) { m.style.display = "none"; return; }
+  m.classList.add("closing");
+  cmHide.t = setTimeout(() => { m.classList.remove("closing"); m.style.display = "none"; }, 190);
+}
 function cmShow(m, x, y) {
+  clearTimeout(cmHide.t); m.classList.remove("closing");
+  if (isPhone() && !m.querySelector(".grabber")) m.insertAdjacentHTML("afterbegin", grab);
   m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
   const z = zoomGet() / 100;
-  m.style.cssText += `;display:block;left:0;top:0`;
+  m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:0;top:0`;
   const w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.max(8, Math.min(x / z, innerWidth / z - w - 8)) + "px";
   m.style.top = Math.max(8, Math.min(y / z, innerHeight / z - h - 8)) + "px";
@@ -1524,13 +1568,16 @@ function Sett() {
   const stateTxt = { ok: "Watching this folder.", unconfigured: "No library folder is configured yet.", missing: "The folder is not accessible right now.", partial: "Some folders could not be read — part of the library may be missing." };
   const changed = s.scan?.root === "changed", conn = !!ani.connected, off = !conn;
   /* Settings (Decision 38): one section at a time; every setting is also in the search. */
-  const tab = SET_TABS.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
+  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone); // a paired phone can't change the remote (Decision 43)
+  if (isPhone() && !S.setOpen) return settingsList(tabs, s);
+  const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
   const sec = {
     appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}<div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div>`,
     playback: `${skipGroup(s)}`,
     online: `${streamGroup(s)}`,
+    phone: s.phone ? "" : phoneGroup(),
     anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
       conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}
   <div class="adv2${off ? " dis" : ""}">${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
@@ -1541,8 +1588,8 @@ function Sett() {
     keys: `<div class="group"><h3>Keys</h3><p class="sub">Press <kbd class="kb">?</kbd> anywhere for this list.</p><div class="keys big">${KEYS.map(([n, k]) => `<span>${esc(n)}</span><kbd class="kb">${esc(k)}</kbd>`).join("")}</div></div>`,
     data: `<div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div><div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div>`,
   };
-  return `<div class="set2"><div class="hello"><h1 class="hd">Settings</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
-  <div class="setg"><nav class="snav">${SET_TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
+  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
+  <div class="setg"><nav class="snav">${tabs.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
   <div class="settings scol" data-sec="${tab}">${sec[tab]}</div></div></div>`;
 }
 /* Episode lengths read from the files (ffprobe, else mpv), once per file.
@@ -1594,7 +1641,47 @@ function skipGroup(s) {
     ${srow("Skip openings", "Ask: shows a skip button. Auto: skips right away.", seg("op", "Skip openings"))}
     ${srow("Skip endings", "Anything after the ending still plays.", seg("ed", "Skip endings"))}
     ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees which episode you start and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
-    ${srow("Ask without VPN", "Asks before AniSkip is used without a VPN.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}</div>`;
+    ${srow("Ask without VPN", "Asks before AniSkip is used without a VPN.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}
+    ${srow("Remember audio and subtitles", "Switch tracks in mpv once, and the show's next episodes start with the same audio and subtitles.", tgl("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>`;
+}
+/* Phone remote (Decision 43): a second door on the home Wi-Fi, off by
+   default; phones pair with the QR code (or the address and code). While a
+   code is up, Settings re-reads it every few seconds to see the phone arrive. */
+function phoneGroup() {
+  const r = S.remote;
+  if (!r) { api("/api/remote").then((x) => { S.remote = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Phone remote</h3><p class="sub">Loading…</p></div>'; }
+  const when = (t) => t ? new Date(t.replace(" ", "T") + (/[zZ+]/.test(t) ? "" : "Z")).toLocaleDateString() : "";
+  const code = r.code, mins = code ? Math.max(1, Math.ceil(code.left / 60)) : 0;
+  if (code && !phoneGroup.t) phoneGroup.t = setTimeout(phoneWatch, 3000);
+  const pair = !r.on ? "" : r.error ? srow("Pair a phone", `<span class="chip warn">Not reachable</span> ${esc(r.error)}`, "")
+    : !r.address ? srow("Pair a phone", "This PC isn't on a network right now.", "")
+    : code ? `<div class="pairbox"><div class="qr" aria-label="QR code with the pairing link">${code.qr}</div><div class="pairtxt"><b>Scan this with the phone's camera</b>
+        <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
+        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
+    : srow("Pair a phone", "Shows a QR code to scan with the phone.", '<button class="btn pri" data-a="rmtcode">Pair a phone</button>');
+  const devs = r.devices.length ? r.devices.map((d) => srow(esc(d.name), `Paired ${esc(when(d.created))} · last used ${esc(when(d.last_seen))}`, `<button class="btn" data-a="rmtdel" data-v="${d.id}">Remove</button>`)).join("")
+    : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
+  return `<div class="group"><h3>Phone remote</h3>
+    ${srow("Phone remote", "Pause, skip and pick tracks from your phone while an episode plays here. Phone and PC need the same Wi-Fi. No app to install.", `<button class="switch" role="switch" aria-checked="${r.on}" aria-label="Phone remote" data-a="rmton"></button>`)}
+    ${pair}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}
+    <div class="group"><h3>Good to know</h3><p class="sub">Only paired phones get in; they can't change your folders or AniList account. Away from home, use Tailscale (see the README). On a phone, “Add to Home Screen” gives the remote its own icon.</p></div>`;
+}
+function phoneWatch() {
+  phoneGroup.t = 0;
+  if (S.view !== "settings" || S.setTab !== "phone") return;
+  const had = S.remote?.devices.length || 0;
+  api("/api/remote").then((x) => {
+    S.remote = x;
+    if (x.devices.length > had) toast(`${x.devices[x.devices.length - 1].name} paired`);
+    if (S.view === "settings" && S.setTab === "phone") render(true);
+  }).catch(() => {});
+}
+async function remoteSet(body) {
+  try {
+    const r = await api("/api/remote", body);
+    if (r.error) toast(r.error); else S.remote = r;
+  } catch { toast("Could not reach the hub."); }
+  render(true);
 }
 const QLABEL = { best: "Best available", worst: "Smallest" };
 function streamGroup(s) {
@@ -1722,7 +1809,7 @@ async function loadSettings() {
 }
 
 /* ---------- nav, search, downloads ---------- */
-const VIEWS = ["home", "library", "history", "stats", "settings"];
+const VIEWS = ["home", "library", "history", "stats", "settings", "week"];
 /* One list for library and AniList hits: ranked by how well the title
    matches, library first on ties; an AniList hit that is a library show
    shows once, as the library show. AniList results follow the typing
@@ -1735,14 +1822,15 @@ const SETTINGS_INDEX = [
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
-  ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"],
+  ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "playback", "audio subtitle subs track language dub dual remember", "remember_tracks"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
   ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"],
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
+  ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"],
   ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
 ];
-const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["online", "Online episodes"], ["anilist", "AniList"], ["keys", "Keys"], ["data", "Data & setup"]];
+const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["online", "Online episodes"], ["anilist", "AniList"], ["phone", "Phone remote"], ["keys", "Keys"], ["data", "Data & setup"]];
 const COMMANDS = [
   ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
@@ -1918,6 +2006,7 @@ const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];
 const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal", "1 2 3"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
 const keysPop = () => `<div class="pop keyp"><div class="cap">Keys</div><div class="keys">${KEYS.map(([n, k]) => `<span>${n}</span><kbd class="kb">${k}</kbd>`).join("")}</div></div>`;
 function paintNav() {
+  paintTabbar(); paintSide();
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   const links = $("#links");
   links.innerHTML = TABS.map(([k, n], i) => `<button class="link ${cur === k ? "on" : ""}" ${cur === k ? 'aria-current="page"' : ""} data-a="go" data-v="${k}">${n}<kbd>${i + 1}</kbd></button>`).join("");
@@ -1927,11 +2016,12 @@ function paintNav() {
   $("#q").placeholder = ph; $("#srph").textContent = ph;
   const sr = $("#sr"), srHad = !!sr.firstElementChild;
   const keep = $("#sr .mi.sel")?.dataset.i;
-  sr.innerHTML = S.menu === "sr" ? srHTML() : "";
+  sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";
   if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
   if (S.menu === "sr") srPreview(keep != null && srPv[keep] ? keep : 0);
   const wasOpen = document.body.classList.contains("srch");
   document.body.classList.toggle("srch", S.menu === "sr");
+  fitPal();
   if (!wasOpen && S.menu === "sr") { const bx = $("#pal .pbox"); bx.classList.remove("in"); void bx.offsetWidth; bx.classList.add("in"); }
   const now = S.data?.now, ctx = now && findEpContext(now.episode_id), pct = now ? Math.round(now.percent) : 0;
   const nr = $("#nr"), popHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued");
@@ -1954,6 +2044,441 @@ function paintNav() {
     if (!popHad) nr.querySelector(".pop")?.classList.add("in");
   }
 }
+
+/* ---------- phone and tablet layout (Decision 44) ---------- */
+/* Phones (≤ 700 px): a floating bottom tab bar in the One UI 9 style, Home
+   as one up-next card plus a compact list (the card opens a full-screen
+   deck of what you're watching), the week as its own timeline, episode
+   lists as rows with the Play button at the thumb. Tablets: a show list
+   beside the show page (landscape), Home in two columns (portrait). The
+   PC layout is untouched. */
+const mq = (q) => matchMedia(q).matches;
+const isPhone = () => mq("(max-width:700px)");
+const isTabletL = () => mq("(min-width:901px) and (max-width:1400px) and (pointer:coarse) and (orientation:landscape)");
+const isTabletP = () => mq("(min-width:701px) and (max-width:1100px) and (orientation:portrait)");
+const layoutKey = () => (isPhone() ? "phone" : isTabletL() ? "tabL" : isTabletP() ? "tabP" : "pc");
+let layoutNow = layoutKey();
+addEventListener("resize", () => { const k = layoutKey(); if (k !== layoutNow) { layoutNow = k; if (S.data) render(); } });
+/* Phones and tablets: a service worker, so "Install app" makes a real app
+   (sw.js caches nothing). Needs https — the Tailscale address. */
+if ("serviceWorker" in navigator && isSecureContext && mq("(pointer:coarse)")) navigator.serviceWorker.register("/sw.js").catch(() => {});
+const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["history", "Journal", "cal"]];
+function paintTabbar() {
+  const el = $("#tabbar");
+  if (!el) return;
+  if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
+  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view === "week" ? "home" : S.view;
+  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}</div>
+    <button class="sq" data-a="sropen" aria-label="Search">${ico("search")}</button>`;
+  /* The highlight glides to the open tab (One UI 9); none on Settings. */
+  let on = null;
+  for (const b of el.querySelectorAll(".tb button")) { const y = b.dataset.v === cur; b.classList.toggle("on", y); b.setAttribute("aria-selected", y); if (y) on = b; }
+  el.querySelector(".sq").classList.toggle("on", S.menu === "sr");
+  const ind = el.querySelector(".ind");
+  ind.style.opacity = on ? "1" : "0";
+  if (on) { ind.style.width = on.offsetWidth + "px"; ind.style.transform = `translateX(${on.offsetLeft}px)`; }
+}
+/* Airing entries on your lists, soonest first (Home and the week share it). */
+function airingList() {
+  return aniMode() ? S.data.spine.entries.filter((e) => e.airing === "RELEASING" && e.next_episode && inProg(e.status))
+    .sort((a, b) => (airsIn(a.next_episode) ?? Infinity) - (airsIn(b.next_episode) ?? Infinity)) : [];
+}
+const airAt = (e, now = Date.now()) => (e.next_episode?.at ? e.next_episode.at * 1000 : now + (airsIn(e.next_episode, now) || 0) * 1000);
+const whenTxt = (t, now = Date.now()) => { const d = new Date(t), today = new Date(now), tm = d.toTimeString().slice(0, 5);
+  const tom = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  return d.toDateString() === today.toDateString() ? `today ${tm}` : d.toDateString() === tom.toDateString() ? `tomorrow ${tm}` : `${DAYS[(d.getDay() + 6) % 7]} ${d.getDate()} · ${tm}`; };
+function airRow(e, now = Date.now()) {
+  const sec = (airAt(e, now) - now) / 1000;
+  return `<button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")} · ${esc(whenTxt(airAt(e, now), now))}</small></span><span class="cdn">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"}</span></button>`;
+}
+/* A show you're watching as one row: poster, title, what's next, play. */
+function watchRow({ s, t }) {
+  const sea = t.sea, seen = sea.episodes.filter((x) => x.watched).length;
+  return `<div class="prow" data-a="open" data-v="${esc(s.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : "next"} · ${seen}/${sea.episodes.length}</small></span>
+    <button class="btn ic" data-a="play" data-v="${esc(t.ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></div>`;
+}
+function upPhone(up) {
+  const s = up.s, ep = up.ep, sea = up.sea, art = s.banner || homeThumb(sea, ep) || s.poster;
+  const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
+  const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
+  return `<div class="upp"><button class="upa2" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
+    <div class="upb"><div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
+    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</div>
+    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
+    <button class="btn pri big wide" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div>`;
+}
+function HomePhone() {
+  const d = S.data, up = nextUpInfo(), L = keepWatching(up && up.s.id), airing = airingList(), now = Date.now();
+  const soon = airing.filter((e) => airAt(e, now) > now - 3600e3).slice(0, 3);
+  const touched = new Set((d.history || []).map((e) => e.show_id));
+  const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
+  const sum = [L.length + (up ? 1 : 0) ? `<span><b>${L.length + (up ? 1 : 0)}</b> in progress</span>` : "", airing.length ? `<span><b>${airing.length}</b> airing</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+  let body = up ? upPhone(up) : "";
+  if (L.length) body += `<section class="psec"><div class="sh"><h2>Also watching</h2><span class="mut">${L.length}</span></div>${L.map(watchRow).join("")}</section>`;
+  if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
+  const recs = recsFor();
+  if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="fill"></span><button class="btn sm disc" data-a="deck" data-v="recs">${ico("up")}Discover</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
+  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
+    `<button class="rc" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
+  if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
+  return `<div class="home2 phone"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${body}</div>`;
+}
+/* Tablet portrait: what you're watching and the week side by side. */
+function homePair(L, airing) {
+  const now = Date.now(), soon = airing.filter((e) => airAt(e, now) > now - 3600e3).slice(0, 5);
+  if (!L.length && !soon.length) return "";
+  return `<div class="hpair"><section class="psec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span></div>${L.slice(0, 5).map(watchRow).join("") || '<p class="empty">Nothing else in progress.</p>'}</section>
+    <section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("") || '<p class="empty">Nothing airing this week.</p>'}</section></div>`;
+}
+
+/* The deck (E1, reworked — Elias 2026-10-27: "it should be a discovery
+   like tiktok"): one show per screen, swipe up for the next. Two sources:
+   "recs" — AniList's recommendations (Home → Recommended → Discover), with
+   + Planning; "lib" — the Library list you're on, as filtered (Library →
+   Swipe), with Play when it's on disk. Esc or the cross closes it. */
+function deckItems(src) {
+  if (src === "recs") {
+    const listed = new Set((S.data.spine?.entries || []).filter((e) => e.status).map((e) => e.id));
+    return (S.recs?.items || []).filter((r) => !listed.has(r.id)).map((r) => ({
+      id: r.id, title: r.title, art: r.poster || r.banner, color: r.color,
+      eye: r.because ? `because you liked ${r.because.title}` : "recommended for you",
+      facts: [FMT[r.format] || r.format, r.year, r.average ? `★ ${r.average}` : ""].filter(Boolean).join(" · "),
+      genres: (r.genres || []).slice(0, 3), add: !S.recsAdded?.has(r.id), open: ["recopen", r.id] }));
+  }
+  const m = libModel();
+  return oneCardPerFranchise(libFiltered(m)).map((e) => {
+    const sh = e.local_show_id ? showById(e.local_show_id) : null, t = sh ? pickTarget(sh) : null;
+    return { id: e.id, title: e.title, art: e.poster || e.banner, color: e.color, eye: statusLabel(e.status).toLowerCase(),
+      facts: [FMT[e.format] || e.format, e.year, e.episodes ? `${e.progress || 0} / ${e.episodes}` : ""].filter(Boolean).join(" · "),
+      genres: (e.genres || []).slice(0, 3), play: t && { id: t.ep.id, label: `${KIND_WORD[t.kind]} ${epCode(t.sea, t.ep)}` }, open: ["entry", e.id] };
+  });
+}
+function openDeck(src = "recs", i = 0) {
+  const items = deckItems(src);
+  if (!items.length) { toast(src === "recs" ? "No recommendations yet — rate a few shows on AniList." : "Nothing in this list."); return; }
+  S.deck = { src, i: Math.min(i, items.length - 1) };
+  const el = $("#deck");
+  el.innerHTML = `<div class="deck" role="dialog" aria-modal="true" aria-label="${src === "recs" ? "Discover" : "Swipe through your list"}">
+    ${grab}<div class="dtop"><button class="btn ic" data-a="deckclose" aria-label="Close">${ico("close")}</button><b class="dttl">${src === "recs" ? "Discover" : esc(statusLabel(S.lib.tab) || "Library")}</b><span class="dcount mono"><b>${S.deck.i + 1}</b> / ${items.length}</span></div>
+    <div class="dscroll">${items.map((x, k) => `<section class="dpage" style="${x.art ? `--art:${esc(cssUrl(x.art))}` : `--h:${hueOf(x.title)}`}"><i class="dart"></i>
+        <div class="dbody"><div class="eye"><i class="mdot"${x.color ? ` style="background:${esc(hexAccent(x.color) || "var(--accent)")}"` : ""}></i>${esc(x.eye)}</div><h2>${esc(x.title)}</h2>
+        <div class="sub mono">${esc(x.facts)}</div>${x.genres.length ? `<div class="dgen">${x.genres.map((g) => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
+        <div class="cta">${x.play ? `<button class="btn pri big" data-a="deckplay" data-v="${esc(x.play.id)}">${ico("play")}<span>${esc(x.play.label)}</span></button>` : ""}${x.add != null ? `<button class="btn ${x.play ? "" : "pri "}big" data-a="deckadd" data-v="${x.id}" ${x.add ? "" : "disabled"}>${ico(x.add ? "plus" : "check")}<span>${x.add ? "Planning" : "On Planning"}</span></button>` : ""}<button class="btn big" data-a="deckopen" data-v="${esc(x.open.join(":"))}">Details</button></div></div>
+        ${k < items.length - 1 ? `<span class="dnext">${ico("up")}${esc(items[k + 1].title)}</span>` : ""}</section>`).join("")}</div></div>`;
+  document.body.classList.add("deck-open");
+  ovOpen("deck", () => closeDeck());
+  const sc = el.querySelector(".dscroll");
+  sc.scrollTop = S.deck.i * sc.clientHeight;
+  sc.onscroll = () => {
+    const k = Math.round(sc.scrollTop / sc.clientHeight);
+    if (k === S.deck?.i) return;
+    S.deck.i = k;
+    el.querySelector(".dcount b").textContent = k + 1;
+  };
+  el.querySelector(".dtop .btn").focus({ preventScroll: true });
+}
+function closeDeck(silent) { if (!S.deck) return; S.deck = null; $("#deck").innerHTML = ""; document.body.classList.remove("deck-open"); if (silent) ovDrop("deck"); else ovClosed("deck"); }
+document.addEventListener("keydown", (e) => {
+  if (!S.deck) return;
+  const sc = $("#deck .dscroll");
+  if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); closeDeck(); }
+  else if (sc && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); sc.scrollBy({ top: (e.key === "ArrowDown" ? 1 : -1) * sc.clientHeight, behavior: reduceMotion() ? "auto" : "smooth" }); }
+}, true);
+
+/* The week (E2): every next episode on your lists as a timeline with
+   countdowns, then the month with a dot on each day one airs. */
+function Week() {
+  const now = Date.now(), list = airingList();
+  const head = `<div class="hello"><h1 class="hd">This week</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
+  if (!aniMode()) return `<div class="wk2">${head}<p class="empty">Connect AniList to see what airs next.</p></div>`;
+  const tl = list.map((e, k) => { const t = airAt(e, now), sec = (t - now) / 1000;
+    return `<div class="tli${k === 0 ? " first" : ""}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
+      <button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")}</small></span></button></div>`; }).join("");
+  const today = new Date(now), y = today.getFullYear(), mo = today.getMonth(), lead = (new Date(y, mo, 1).getDay() + 6) % 7, days = new Date(y, mo + 1, 0).getDate();
+  const marks = new Set(list.map((e) => new Date(airAt(e, now))).filter((d) => d.getFullYear() === y && d.getMonth() === mo).map((d) => d.getDate()));
+  const cells = Array.from({ length: Math.ceil((lead + days) / 7) * 7 }, (_, i) => { const d = i - lead + 1, inM = d >= 1 && d <= days;
+    return `<span class="${!inM ? "out" : ""}${d === today.getDate() ? " today" : ""}${inM && marks.has(d) ? " has" : ""}">${inM ? d : ""}</span>`; }).join("");
+  const cal = `<section class="psec"><div class="sh"><h2>${esc(today.toLocaleDateString(undefined, { month: "long" }))}</h2><span class="mut">a dot: an episode airs</span></div>
+    <div class="cal2">${DAYS.map((d) => `<b>${d.slice(0, 2)}</b>`).join("")}${cells}</div></section>`;
+  return `<div class="wk2">${head}<div class="tline">${tl || '<p class="empty">Nothing airing right now.</p>'}</div>${cal}</div>`;
+}
+
+/* Tablet landscape: your lists beside the show page, so picking another
+   show only changes the right side. */
+const SIDE_TABS = [["watching", "Watching", (e) => inProg(e.status)], ["planning", "Planning", (e) => e.status === "PLANNING"], ["done", "Done", (e) => e.status === "COMPLETED"]];
+function paintSide() {
+  let el = $("#tside");
+  const on = isTabletL() && (S.view === "show" || S.view === "fr") && S.data?.spine?.entries?.length;
+  document.body.classList.toggle("has-side", !!on);
+  if (!on) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement("aside"); el.id = "tside"; document.body.append(el); }
+  const tab = SIDE_TABS.find(([k]) => k === S.sideTab) || SIDE_TABS[0];
+  const cur = S.view === "fr" ? frEntry()?.id : showById(S.showId)?.meta?.anilist_id;
+  const rows = oneCardPerFranchise(S.data.spine.entries.filter(tab[2])).sort(SORT.updated).slice(0, 60);
+  const html = `<div class="tsh"><span class="seg" role="group" aria-label="List">${SIDE_TABS.map(([k, l]) => `<button class="${k === tab[0] ? "on" : ""}" data-a="sidetab" data-v="${k}">${l}</button>`).join("")}</span></div>
+    <div class="tsl">${rows.map((e) => `<button class="prow${e.id === cur || e.franchise_id === cur ? " on" : ""}" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>${e.episodes ? `${e.progress || 0} / ${e.episodes}` : esc(FMT[e.format] || e.format || "")}</small></span></button>`).join("") || '<p class="empty">Nothing here.</p>'}</div>`;
+  if (el._html !== html) { el._html = html; el.innerHTML = html; }
+}
+
+/* Phones: the show page's Play button and the library's filter sheet sit
+   fixed at the bottom. The page's entrance animation leaves a transform on
+   their ancestors (fixed would then mean "fixed to the page"), so both are
+   drawn in their own layer outside #app: copies whose data-a actions work
+   the same. Redrawn after every render and patch. */
+function paintPortals() {
+  const el = $("#portal");
+  if (!el) return;
+  let html = "";
+  if (isPhone() && (S.view === "show" || S.view === "fr")) {
+    const b = $("#app .sp2 .cta .btn.pri"), more = $("#app .frpage .cta [data-a=frmore]");
+    if (b) html += `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
+  }
+  const flt = isPhone() && S.view === "library" && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
+  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet">${flt.outerHTML.replace('<div class="filters">', '<div class="filters">' + grab + '<b class="fsh">Sort & filter</b>')}</div>`;
+  else document.body.classList.remove("flt-open");
+  if (el._html !== html) { el._html = html; el.innerHTML = html; }
+  document.body.classList.toggle("has-pbar", html.includes('class="pbar"'));
+}
+/* Search on touch screens (Elias, 2026-10-27: "rework the design of
+   search"): a full page over the art with the field at the thumb.
+   Before typing: recent searches, your lists, what you're watching.
+   Typing: library rows, AniList as a poster grid, matching settings. Same
+   rows (.mi, data-i) as the PC list, so Enter and the arrows still work. */
+const touchSearch = () => isPhone() || mq("(pointer:coarse)");
+const SR_RECENT = "srRecent";
+function srRemember(qq) {
+  qq = String(qq || "").trim();
+  if (qq.length < 2) return;
+  lsSet(SR_RECENT, [qq, ...lsGet(SR_RECENT, []).filter((x) => x.toLowerCase() !== qq.toLowerCase())].slice(0, 6));
+}
+function srHTMLTouch() {
+  const qq = S.q.trim(), ql = qq.toLowerCase();
+  srPv = [];
+  let i = 0, h = "";
+  const mi = (attrs, cls, inner) => { srPv.push(null); return `<div class="mi ${cls}" tabindex="-1" data-i="${i++}" ${attrs}>${inner}</div>`; };
+  const sec = (t, extra = "") => `<div class="srsec"><h2>${t}</h2><span class="fill"></span>${extra}</div>`;
+  if (!qq) {
+    const recent = lsGet(SR_RECENT, []);
+    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srchips">${recent.map((r) => `<button class="chip" data-a="srq" data-v="${esc(r)}">${ico("clock")}${esc(r)}</button>`).join("")}</div>`;
+    const sp = S.data?.spine;
+    if (aniMode() && sp?.entries?.length) {
+      const n = (k) => new Set(sp.entries.filter((e) => e.status === k).map(franchiseKey)).size;
+      const lists = LISTS.filter(([k]) => n(k)).map(([k, l]) => `<button class="chip" data-a="srlist" data-v="${k}">${esc(l)}<span class="n">${n(k)}</span></button>`).join("");
+      h += sec("Your lists") + `<div class="srchips">${lists}<button class="chip" data-a="srgo" data-v="week">${ico("cal")}This week</button></div>`;
+    }
+    const up = S.data && nextUpInfo(), shows = S.data ? [up?.s, ...keepWatching(up && up.s.id).map((x) => x.s)].filter(Boolean).slice(0, 8) : [];
+    if (shows.length) h += sec("Watching") + `<div class="srposters">${shows.map((s) => mi(`data-a="open" data-v="${esc(s.id)}"`, "sp", `${poster(s.title, s.poster)}<b>${esc(s.title)}</b>`)).join("")}</div>`;
+    if (!h) h = '<p class="srnone">Type a show, a setting or a command.</p>';
+  } else {
+    const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
+      .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), s })).sort((a, b) => a.r - b.r).slice(0, 6);
+    const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
+    const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, k })).filter((y) => !have.has(y.x.id)).sort((a, b) => a.r - b.r).slice(0, 9);
+    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s);
+      return mi(`data-a="open" data-v="${esc(s.id)}"`, "srrow", `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>${ico("chevr")}`); }).join("");
+    if (remote.length) h += sec("On AniList") + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+      return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
+    const sets = SETTINGS_INDEX.filter(([t, tab, w]) => srMatch(`${t} ${w} ${tab}`.toLowerCase(), ql)).slice(0, 4);
+    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
+      return mi(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, "srrow set", `<i class="sic">${ico(SET_ICONS[tab] || "sliders")}</i><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : ico("chevr")}`); }).join("")}</div>`;
+    const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, 3);
+    if (cmds.length) h += sec("Do") + `<div class="srchips">${cmds.map(([[t], k]) => `<button class="chip" data-a="cmd" data-v="${k}">${ico("arrowr")}${esc(t)}</button>`).join("")}</div>`;
+    if (alSearchable() && (S.alBusy || (S.alq !== qq && qq.length >= 2))) h += '<p class="srnone"><i class="spin"></i> searching AniList…</p>';
+    if (!h) h = `<p class="srnone">Nothing for “${esc(qq)}”${alSearchable() ? " in your library, on AniList or in settings" : " in your library or settings"}.</p>`;
+  }
+  return `<div class="pal2 touch"><div class="plist">${grab}<h1 class="hd srhd">Search</h1>${h}</div></div>`;
+}
+/* The keyboard (Elias: "the entire page goes up when I open my keyboard").
+   index.html asks Chrome/Samsung Internet to shrink the page instead of
+   pushing it up (interactive-widget=resizes-content). Browsers that ignore
+   that (iPhone) still push: there, while search is open, the search page is
+   fitted to the part of the screen above the keyboard (visualViewport). */
+const vv = window.visualViewport;
+function fitPal() {
+  const p = $("#pal");
+  if (!p) return;
+  const on = vv && S.menu === "sr" && touchSearch() && Math.round(vv.height) < innerHeight;
+  p.style.height = on ? vv.height + "px" : "";
+  p.style.transform = on && vv.offsetTop ? `translateY(${vv.offsetTop}px)` : "";
+}
+vv?.addEventListener("resize", fitPal);
+vv?.addEventListener("scroll", fitPal);
+/* Opening a result remembers what was typed (Recent). */
+document.addEventListener("click", (e) => { if (S.menu === "sr" && S.q.trim() && e.target.closest?.("#sr .mi, #sr [data-a=cmd]")) srRemember(S.q); }, true);
+
+/* Settings on a phone (S5): a grouped list; a section opens as its own page. */
+function setSummary(k, s) {
+  const ani = S.ani || {}, st = s.stream || {}, sk = s.skip || {};
+  return {
+    appearance: "accent, background art, motion, zoom",
+    library: s.library_root || "no folder chosen yet",
+    playback: `openings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.op] || "ask"} · endings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.ed] || "ask"}`,
+    online: s.tools?.["ani-cli"] ? `${st.mode === "dub" ? "dub" : "sub"} · ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "ani-cli not installed",
+    anilist: ani.connected ? `connected as ${ani.user || "you"}` : "not connected",
+    phone: "pair a phone with a QR code",
+    keys: "for a keyboard",
+    data: "config file, data folder",
+  }[k] || "";
+}
+const SET_ICONS = { appearance: "edit", library: "folder", playback: "play", online: "download", anilist: "star", phone: "tv", keys: "search", data: "clock" };
+function settingsList(tabs, s) {
+  return `<div class="set2 phone"><div class="hello"><h1 class="hd">Settings</h1></div>
+    <button class="slsearch" data-a="sropen">${ico("search")}<span>search settings — try “vpn”</span></button>
+    <div class="slist">${tabs.filter(([k]) => k !== "keys").map(([k, l]) => `<button class="sli" data-a="setopen" data-v="${k}"><i class="sic">${ico(SET_ICONS[k] || "chevr")}</i><span><b>${l}</b><small>${esc(setSummary(k, s))}</small></span>${ico("chevr")}</button>`).join("")}</div></div>`;
+}
+
+/* ---------- phone remote (Decision 43) ---------- */
+/* On phones (and narrow or touch screens) a mini player sits above the
+   status line while mpv plays on the PC; tapping it opens the remote, a
+   full page in the show page's style over the playing show's art. The
+   page is built once per state change and patched in place (rebuilding it
+   replayed its entrance); the clock and progress tick between polls. */
+const phoneUI = () => !!S.settings?.phone || matchMedia("(max-width:700px), (pointer:coarse)").matches;
+const tclock = (x) => { x = Math.max(0, Math.floor(x || 0)); const h = Math.floor(x / 3600), m = Math.floor(x / 60) % 60, sec = String(x % 60).padStart(2, "0"); return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`; };
+const LANGS = { jpn: "Japanese", ja: "Japanese", eng: "English", en: "English", ger: "German", deu: "German", de: "German", spa: "Spanish", es: "Spanish", fre: "French", fra: "French", fr: "French", ita: "Italian", it: "Italian", por: "Portuguese", pt: "Portuguese", rus: "Russian", ru: "Russian", chi: "Chinese", zho: "Chinese", zh: "Chinese", kor: "Korean", ko: "Korean", ara: "Arabic", ar: "Arabic", und: "" };
+const langName = (c) => { if (!c) return ""; const k = c.toLowerCase(); if (k in LANGS) return LANGS[k]; try { return new Intl.DisplayNames(["en"], { type: "language" }).of(k) || c; } catch { return c; } };
+const trackName = (t, i) => { const l = langName(t.lang), ti = t.title || ""; return ti && l && !ti.toLowerCase().includes(l.toLowerCase()) ? `${ti} · ${l}` : ti || l || `Track ${i + 1}`; };
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+const SEGNAME = { op: "opening", ed: "ending" };
+const LIVE_KEYS = ["position", "duration", "paused", "volume", "tracks", "speed", "sub_delay", "segments", "stop_after"];
+function livePos() {
+  const l = S.live;
+  if (!l || typeof l.position !== "number") return 0;
+  const p = l.position + (l.paused || S.data?.now?.loading ? 0 : ((Date.now() - l.at) / 1000) * (l.speed || 1));
+  return l.duration ? Math.min(p, l.duration) : p;
+}
+/* The opening/ending playing right now (the same window mpv's own skip prompt uses). */
+const segNow = () => { const p = livePos(); return (S.live?.segments || []).find((x) => p >= x.start - 1 && p < x.end - 1) || null; };
+function liveFrom(now) {
+  if (!now.playing) { S.live = null; return; }
+  if (S.live?.hold > Date.now() && S.live.ep === now.episode_id) return; // a button just answered: keep its fresher state
+  S.live = { ep: now.episode_id, at: Date.now(), ...Object.fromEntries(LIVE_KEYS.map((k) => [k, now[k]])) };
+  S.live.paused = !!S.live.paused;
+}
+let rmtSig = "";
+function rmtEpisodes(ctx, nowId) {
+  if (!ctx) return "";
+  const { s, sea } = ctx, eps = [...sea.episodes].sort((x, y) => x.number - y.number);
+  const at = Math.max(0, eps.findIndex((e) => e.id === nowId));
+  const tiles = eps.map((ep, i) => {
+    const rt = epThumbOf(sea.thumbs, ep), art = rt || s.poster || s.banner, cur = ep.id === nowId;
+    const online = String(ep.id).startsWith("stream:"), mins = minsOf(ep.duration || ep.length);
+    const meta = cur ? "playing now" : `${mins ? mins + " min · " : ""}${online ? "online" : "disk"}`;
+    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : "playep", v: ep.id, i,
+      art, pos: rt ? "50% 50%" : "50% 22%", num: "E" + String(ep.number).padStart(2, "0"), watched: ep.watched && !cur, title: epTitle(s, sea, ep) || "Episode " + ep.number, meta, menu: "" })
+      .replace(/<button class="dots"[\s\S]*?<\/button>/, "");
+  }).join("");
+  return `<div class="eps-head"><h2>${esc(sea.label || sea.name || "Episodes")}</h2><span class="rk">${at + 1} of ${eps.length}</span></div><div class="eps strip mr" data-at="${at}">${tiles}</div>`;
+}
+function paintRemote() {
+  const el = $("#rmt"), now = S.data?.now;
+  if (!now || !phoneUI()) {
+    if (rmtSig) { el.innerHTML = ""; rmtSig = ""; document.body.classList.remove("rmt-on", "rmt-open"); if (S.rmtOpen) { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } }
+    S.rmtOpen = false;
+    return;
+  }
+  const ctx = findEpContext(now.episode_id), s = ctx?.s, l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
+  const hasNext = !!now.next && (now.next.source === "local" || now.next.source === "online");
+  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster]);
+  if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
+    rmtSig = sig;
+    document.body.classList.add("rmt-on");
+    const paused = !!l.paused, busy = now.loading ? "disabled" : "", epNo = ctx ? "E" + String(ctx.ep.number).padStart(2, "0") : now.label;
+    const pp = (c) => `<button class="btn pri ic ${c}" data-a="rmt" data-v="toggle" aria-label="${paused ? "Play" : "Pause"}" ${busy}>${ico(paused ? "play" : "pause")}</button>`;
+    const skip = (c) => `<button class="btn ${c}" data-a="rmt" data-v="skip" hidden>${ico("next")}<span>Skip opening</span></button>`;
+    const thumb = s?.poster ? `<img alt="" src="${esc(s.poster)}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
+    const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
+    const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
+    const opts = [
+      tr.audio.length > 1 ? `<div class="ropt"><span class="rk">audio</span>${seg("audio", tr.audio.map((t, i) => [t.id, trackName(t, i), t.selected]), "Audio")}</div>` : "",
+      tr.sub.length ? `<div class="ropt"><span class="rk">subtitles</span>${seg("sub", [["no", "Off", !subOn], ...tr.sub.map((t, i) => [t.id, trackName(t, i), t.selected])], "Subtitles")}</div>` : "",
+      subOn ? `<div class="ropt"><span class="rk">subtitle timing · this episode</span><div class="rstep"><button class="btn ic" data-a="rmtdelay" data-v="-0.1" aria-label="Subtitles 0.1 s earlier">${ico("minus")}</button><b>${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s</b><button class="btn ic" data-a="rmtdelay" data-v="0.1" aria-label="Subtitles 0.1 s later">${ico("plus")}</button>${delay ? '<button class="btn" data-a="rmtdelay" data-v="0">Reset</button>' : `<span class="rk">${"earlier ← → later"}</span>`}</div></div>` : "",
+      typeof l.speed === "number" ? `<div class="ropt"><span class="rk">speed</span>${seg("speed", SPEEDS.map((v) => [v, v + "×", Math.abs(v - speed) < 0.01]), "Speed")}</div>` : "",
+      typeof l.volume === "number" ? `<div class="ropt"><span class="rk">volume</span><label class="rvol">${ico("vol")}<input class="rrange" type="range" min="0" max="130" step="5" value="${Math.round(l.volume)}" data-a="rmtvol" aria-label="Volume"><span>${Math.round(l.volume)}%</span></label></div>` : "",
+    ].join("");
+    const segBand = (l.segments || []).filter(() => l.duration).map((x) => `<i class="rsegb" style="left:${(x.start / l.duration) * 100}%;width:${((x.end - x.start) / l.duration) * 100}%"></i>`).join("");
+    const view = `<div class="sp2 rv">
+        ${grab}<div class="rtop"><button class="backbtn" data-a="rmtclose">${ico("chevd")}Close</button><span class="rpc"><i class="led"></i>${now.loading ? "starting on the PC…" : "playing on the PC"}</span></div>
+        <div class="rhero"><div class="meta"><i class="mdot"></i><span>${esc(now.label)}${ctx?.ep && (ctx.ep.duration || ctx.ep.length) ? ` · ${minsOf(ctx.ep.duration || ctx.ep.length)} min` : ""}</span></div>
+          <h1>${esc(s?.title || now.show)}</h1>${ctx ? `<p class="eptitle">${esc(epTitle(s, ctx.sea, ctx.ep) || "Episode " + ctx.ep.number)}</p>` : ""}</div>
+        <div class="rseek"><div class="rtrack">${segBand}<input class="rrange" type="range" min="0" max="${Math.max(1, Math.round(l.duration || 0))}" step="1" value="${Math.round(livePos())}" data-a="rmtseek" aria-label="Position" ${l.duration && !now.loading ? "" : "disabled"}></div>
+          <div class="rtimes"><span class="rcur">${tclock(livePos())}</span><span class="rmid"></span><span class="rleft">-${tclock((l.duration || 0) - livePos())}</span></div></div>
+        <div class="rskip">${skip("big")}</div>
+        <div class="cta rctl"><button class="btn big ic" data-a="rmt" data-v="stop" aria-label="Stop">${ico("stop")}</button><button class="btn big ic" data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>${ico("rew")}</button>${pp("big rpp")}<button class="btn big ic" data-a="rmt" data-v="fwd" aria-label="Forward 10 seconds" ${busy}>${ico("fwd")}</button><button class="btn big ic" data-a="rmt" data-v="next" aria-label="Next episode" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}</button></div>
+        ${opts ? `<div class="ropts">${opts}</div>` : ""}
+        <div class="rsleep"><div><b>Stop after this episode</b><p>${l.stop_after ? `mpv closes when ${esc(epNo)} ends. No auto-play.` : "Otherwise the next episode starts by itself."}</p></div><button class="switch" role="switch" aria-checked="${!!l.stop_after}" aria-label="Stop after this episode" data-a="rmtsleep"></button></div>
+        ${rmtEpisodes(ctx, now.episode_id)}
+      </div>`;
+    const barIn = `${thumb}<div class="rt"><b>${esc(s?.title || now.show)}</b><span><i class="led"></i>${now.loading ? "starting on the PC…" : esc(epNo)}<span class="rbt"></span></span></div>${skip("rbskip")}${pp("rp")}<i class="rprog"><i></i></i>`;
+    /* Patch in place: rebuilding the bar or the page would replay their entrance. */
+    const focus = document.activeElement?.closest?.("#rmt [data-a]"), fk = focus && [focus.dataset.a, focus.dataset.v, focus.dataset.k];
+    let bar = el.querySelector(".rbar"), vw = el.querySelector(".rview");
+    if (!bar) { el.innerHTML = '<div class="rbar" data-a="rmtopen" role="button" tabindex="0" aria-label="Open the remote"></div>'; bar = el.firstChild; vw = null; }
+    bar.innerHTML = barIn;
+    if (!S.rmtOpen) vw?.remove();
+    else {
+      const fresh = !vw;
+      if (fresh) { bar.insertAdjacentHTML("afterend", '<div class="rview" role="dialog" aria-modal="true" aria-label="Remote"></div>'); vw = el.querySelector(".rview"); }
+      const strip = vw.querySelector(".eps.strip"), sl = strip?.scrollLeft;
+      vw.innerHTML = view;
+      for (const x of vw.querySelectorAll("[data-bg]")) { if (x.dataset.bg) { x.style.backgroundImage = cssUrl(x.dataset.bg); x.style.backgroundPosition = x.dataset.bp || "50% 50%"; } }
+      const st = vw.querySelector(".eps.strip");
+      if (st) st.scrollLeft = fresh || sl == null ? Math.max(0, Number(st.dataset.at) * 234 - 40) : sl;
+    }
+    if (fk) [...el.querySelectorAll("[data-a]")].find((x) => x.dataset.a === fk[0] && x.dataset.v === fk[1] && x.dataset.k === fk[2])?.focus({ preventScroll: true });
+    document.body.classList.toggle("rmt-open", !!S.rmtOpen);
+  }
+  rmtTick();
+}
+/* The clock between polls: progress, slider, times and the skip button. */
+function rmtTick() {
+  const el = $("#rmt"), l = S.live;
+  if (!rmtSig || !l) return;
+  const pos = livePos(), dur = l.duration || 0, pct = dur ? (pos / dur) * 100 : S.data?.now?.percent || 0, sg = segNow();
+  const bar = el.querySelector(".rprog i");
+  if (bar) bar.style.width = pct + "%";
+  const bt = el.querySelector(".rbt");
+  if (bt) bt.textContent = dur ? ` · ${tclock(pos)}` : "";
+  for (const b of el.querySelectorAll('[data-v="skip"]')) { b.hidden = !sg; if (sg) b.querySelector("span").textContent = `Skip ${SEGNAME[sg.kind] || "this"}`; }
+  const mid = el.querySelector(".rmid");
+  if (mid) mid.textContent = sg ? SEGNAME[sg.kind] || "" : "";
+  if (S.rmtDrag) return;
+  const r = el.querySelector('.rseek input');
+  if (r) { r.value = Math.round(pos); r.style.setProperty("--p", pct + "%"); el.querySelector(".rcur").textContent = tclock(pos); el.querySelector(".rleft").textContent = "-" + tclock(dur - pos); }
+  const v = el.querySelector('.rvol input');
+  if (v) v.style.setProperty("--p", (v.value / 130) * 100 + "%");
+}
+setInterval(() => { if (rmtSig && !S.live?.paused) rmtTick(); }, 500);
+async function remoteSend(action, value) {
+  const l = S.live;
+  if (action === "toggle" && l) { l.position = livePos(); l.at = Date.now(); l.paused = !l.paused; l.hold = Date.now() + 1500; paintRemote(); }
+  let r;
+  try { r = await api("/api/control", value === undefined ? { action } : { action, value }); } catch { r = { error: "Could not reach the PC." }; }
+  if (r.error) { toast(r.error); pollSoon(200); return; }
+  if (action === "stop" || action === "next") { toast(action === "next" ? "Starting the next episode…" : "Stopped"); if (action === "stop") { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } pollSoon(800); return; }
+  if (action === "stop_after") { if (l) { l.stop_after = r.stop_after; l.hold = Date.now() + 1500; } toast(r.stop_after ? "Stops after this episode" : "Auto-play is back on"); paintRemote(); return; }
+  if (r.position == null) { pollSoon(300); return; } // skipped an ending: the episode finished
+  S.live = { ...(l || {}), ep: S.data?.now?.episode_id, at: Date.now(), hold: Date.now() + 1500, ...Object.fromEntries(LIVE_KEYS.filter((k) => k in r).map((k) => [k, r[k]])) };
+  S.live.paused = !!S.live.paused;
+  paintRemote();
+}
+/* Dragging a slider: the numbers follow the finger, the change is sent on release. */
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.dataset?.a === "rmtseek") {
+    S.rmtDrag = true;
+    const dur = S.live?.duration || 0, v = Number(t.value);
+    t.style.setProperty("--p", (dur ? (v / dur) * 100 : 0) + "%");
+    $("#rmt .rcur").textContent = tclock(v); $("#rmt .rleft").textContent = "-" + tclock(dur - v);
+  } else if (t.dataset?.a === "rmtvol") { S.rmtDrag = true; t.style.setProperty("--p", (t.value / 130) * 100 + "%"); t.nextElementSibling.textContent = t.value + "%"; }
+});
+document.addEventListener("keydown", (e) => {
+  if (S.rmtOpen && e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); A.rmtclose(); }
+  else if (e.target.closest?.(".rbar") && (e.key === "Enter" || e.key === " ") && !e.target.closest("button")) { e.preventDefault(); A.rmtopen(); }
+}, true);
+/* A slider let go without moving sends no change: still end the hold. */
+for (const ev of ["pointerup", "touchend", "pointercancel"]) document.addEventListener(ev, () => { if (S.rmtDrag) setTimeout(() => { S.rmtDrag = false; paintRemote(); }, 50); }, true);
+addEventListener("resize", () => paintRemote());
 
 /* ---------- context menu ---------- */
 function openCm(id, x, y) {
@@ -2044,7 +2569,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -2055,10 +2580,14 @@ function paintModal(focus) {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" || m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
-  if (focus) (el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
+  /* Touch: open at the top with nothing focused (focusing a field would
+     scroll the sheet and pop the keyboard up). */
+  if (focus) mq("(pointer:coarse)") ? el.querySelector(".dialog")?.focus({ preventScroll: true }) : (el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
 }
-function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; paintNav(); paintModal(true); }
-function closeModal() { S.modal = null; paintModal(); S.opener && S.opener.isConnected && S.opener.focus(); }
+function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
+/* Back gesture / swipe down on a dialog: the same as tapping beside it. */
+const modalDismiss = () => (S.modal?.t === "done" ? A.dnskip() : closeModal());
+function closeModal() { S.modal = null; paintModal(); ovClosed("modal"); S.opener && S.opener.isConnected && S.opener.focus(); }
 function confetti() {
   if (reduceMotion()) return;
   const f = $("#fx"), c = ["var(--accent)", "var(--accent-hi)", "var(--ok)", "var(--warn)", "var(--ink)"];
@@ -2221,6 +2750,7 @@ const colorOfId = (id) => (id && S.data?.spine?.entries?.find((e) => e.id === id
 const showColor = (s) => colorOfId(s?.meta?.anilist_id);
 const lastShow = () => { for (const h of S.data?.history || []) { const c = findEpContext(h.id); if (c) return c.s; } return null; };
 function canvasArt() {
+  if (S.rmtOpen && S.data?.now) { const c = findEpContext(S.data.now.episode_id); if (c) return { blur: c.s.banner || c.s.poster, sharp: c.s.banner, color: showColor(c.s) }; }
   if (!S.data || S.view === "settings") return null;
   if (S.view === "fr") { const e = frEntry(), p = S.fr?.page; return { blur: e?.banner || p?.banner || e?.poster || p?.poster, sharp: e?.banner || p?.banner, color: e?.color || colorOfId(e?.id) }; }
   if (S.view === "show") { const s = showById(S.showId); return s && { blur: s.banner || s.poster, sharp: s.banner, color: showColor(s) }; }
@@ -2267,10 +2797,23 @@ function ambFade(to) {
     if (k >= 5) clearInterval(ambStep);
   }, 80);
 }
+/* The phone's status bar (theme-color) takes a deep tone of the page's
+   colour, so the top of the screen reads as one surface with the art. */
+function barTint(c) {
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (!m) return;
+  let hue = /hsl\((\d+)/.exec(c || "")?.[1];
+  const rgb = /rgb\((\d+),\s*(\d+),\s*(\d+)/.exec(c || "");
+  if (hue == null && rgb) {
+    const [r, g, b] = rgb.slice(1).map((v) => v / 255), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+    hue = !d ? null : Math.round((mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60);
+  }
+  m.content = hue != null ? `hsl(${hue} 28% 13%)` : "#101114";
+}
 function accentFrom(url, color) {
   const root = document.documentElement;
   ambWant = url || null;
-  const set = (c) => { if (root.classList.contains("amb-now")) return ambFade(c); clearInterval(ambStep); c ? root.style.setProperty("--amb", c) : root.style.removeProperty("--amb"); };
+  const set = (c) => { barTint(c); if (root.classList.contains("amb-now")) return ambFade(c); clearInterval(ambStep); c ? root.style.setProperty("--amb", c) : root.style.removeProperty("--amb"); };
   if (color) return set(hexAccent(color));
   if (!url) return set(null);
   if (url in ambMemo) return set(ambMemo[url]);
@@ -2283,7 +2826,7 @@ function accentFrom(url, color) {
   img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
 }
 const ambient = paintCanvas;
-const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings" };
+const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "This week" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
    it: the new HTML is matched against the live nodes (by data-a/data-v or
@@ -2353,7 +2896,7 @@ function render(inPlace = false) {
   paintNav();
   io && io.disconnect();
   const app = $("#app");
-  const html = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran }[S.view]();
+  const html = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran, week: Week }[S.view]();
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
   if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !reduceMotion()); app.innerHTML = html; }
@@ -2368,12 +2911,14 @@ function render(inPlace = false) {
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
   const t = S.view === "show" ? showById(S.showId)?.title : S.view === "fr" ? S.fr?.page?.title || frEntry()?.title : VIEW_TITLE[S.view];
   document.title = t ? `${t} · Anime Hub` : "Anime Hub";
+  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : S.view === "week" ? "This week" : t);
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
   if (S.view === "fr" && frEntry()) loadEntry(frEntry().id);
   if (S.sel && S.sel.show !== selKey()) S.sel = null;
   paintSel();
   if (S.view === "stats" || S.view === "history") loadAlData();
   applyFocus();
+  paintPortals();
 }
 /* Background refreshes must not clobber a field the user is typing in. */
 function softRender() {
@@ -2393,15 +2938,31 @@ function dip(f) {
   if (reduceMotion()) return;
   a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter");
 }
-function clearSearch() { S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
+function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
+/* Switching Home · Library · Journal on a touch screen slides the page in
+   from the side of the tab you went to (one transform on #app, no fill,
+   so nothing stays transformed afterwards). */
+const TAB_AT = { home: 0, week: 0, library: 1, history: 2, stats: 2 };
+function tabSlide(from, to) {
+  if (reduceMotion() || !mq("(pointer:coarse), (max-width:700px)")) return;
+  const a = TAB_AT[from], b = TAB_AT[to], app = $("#app"), page = (v) => v === "show" || v === "fr";
+  /* Opening a show pushes it in from the right, like a native stack. */
+  const cls = page(to) && !page(from) ? "tab-l" : a == null || b == null || a === b ? null : b > a ? "tab-l" : "tab-r";
+  if (!cls) return;
+  app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add(cls);
+}
+const tabScroll = {};
 function nav(view, fn) {
+  const from = S.view;
+  if (TAB_AT[from] != null) tabScroll[from] = scrollY;
   dip(() => {
     const prev = S.view;
     S.navIn = true; S.view = view; clearSearch(); fIdx = -1;
     if (view === "library") S.fadeNext = true;
     if (fn) fn(prev);
-    render(); scrollTo(0, 0); pushNav();
+    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); pushNav();
   });
+  tabSlide(from, view);
 }
 function openShow(id) {
   /* A matched folder or an online show is one franchise page; only
@@ -2555,6 +3116,7 @@ async function pollNow() {
     else if (now.playing) {
       const wasLoading = !!S.data.now?.loading;
       S.data.now = { episode_id: now.episode_id, show: now.show, label: now.label, percent: now.percent, loading: !!now.loading, next: now.next };
+      liveFrom(now);
       if (wasLoading !== !!now.loading) pagePatch();
       if (prevEp && prevEp !== now.episode_id) await reload(); // autoplay moved on: refresh ticks / next-up
     }
@@ -2570,11 +3132,14 @@ async function pollNow() {
     else if (dlChanged) pagePatch(); // progress on the tiles
     const sig = JSON.stringify([S.data?.now, S.outbox, S.dl, S.data?.vpn]);
     if (sig !== navSig) { navSig = sig; paintNav(); }
+    if (!now.playing) S.live = null;
+    else if (!S.live || S.live.ep !== now.episode_id) liveFrom(now);
+    paintRemote();
     if (now.completed) maybeCompletion(now.completed);
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000);
+  pollSoon(S.rmtOpen ? 1000 : S.artWorking ? 1500 : (S.data?.now && rmtSig) || S.dl.some((j) => j.status === "running") ? 2000 : 4000);
 }
 /* A banner was upscaled (or put back) under the same name: point every
    copy of its URL at the new ?v= stamp — the data the page draws from and
@@ -2599,6 +3164,7 @@ function swapArt(changed) {
 function pagePatch() {
   if (S.view === "show" && showById(S.showId)) patchShow();
   else if (S.view === "fr") frRepaint();
+  paintPortals();
 }
 /* Online episodes take a few seconds to start: the tile (and the hero
    button) show it loading until mpv reports playback. */
@@ -2662,7 +3228,17 @@ const A = {
     t.classList.toggle("on", on); t.setAttribute("aria-pressed", on);
     saveLib(); paintWall(); syncFilters();
   },
-  go: (v) => nav(v), open: (v) => openShow(v), back: () => nav(VIEWS.includes(S.showBack) ? S.showBack : "home"),
+  go: (v, t) => {
+    if (v === "settings") S.setOpen = false;
+    const same = v === S.view || (v === "history" && S.view === "stats");
+    /* The bottom bar (phones): the open tab again scrolls to the top; another
+       tab comes back where you left it, with a light tap. */
+    if (t?.closest?.("#tabbar")) {
+      if (same) { scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }); return; }
+      buzz();
+    }
+    nav(v);
+  }, open: (v) => openShow(v), back: () => nav(VIEWS.includes(S.showBack) ? S.showBack : "home"),
   entry: (v) => {
     const e = S.data.spine?.entries.find((x) => String(x.id) === v);
     if (!e) return;
@@ -2896,11 +3472,44 @@ const A = {
   /* settings + account */
   adv: (v) => { if (S.settings) setToggle(v, !S.settings[v]); },
   srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
-  setgo: (v, t) => { const tab = t.dataset.t; clearSearch(); q.blur(); S.setTab = tab; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
+  setgo: (v, t) => { const tab = t.dataset.t; clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
-  srclose: () => { clearSearch(); paintNav(); q.blur(); },
+  srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
+  srq: (v) => { q.value = v; q.dispatchEvent(new Event("input")); q.focus(); },
+  srclr: () => { lsSet(SR_RECENT, []); paintNav(); },
+  srlist: (v) => { clearSearch(); q.blur(); S.lib.tab = v; saveLib(); nav("library"); },
+  srgo: (v) => { clearSearch(); q.blur(); nav(v); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
   settab: (v) => { S.setTab = v; render(true); },
+  setopen: (v) => { S.setTab = v; S.setOpen = true; S.navIn = true; ovOpen("set", () => A.setback()); render(); scrollTo(0, 0); },
+  setback: () => { S.setOpen = false; S.navIn = true; render(); scrollTo(0, 0); ovClosed("set"); },
+  deck: (v) => openDeck(v === "lib" ? "lib" : "recs"), deckclose: () => closeDeck(),
+  deckplay: (v) => { closeDeck(); play(v); },
+  deckopen: (v) => { const [a, id] = v.split(":"); closeDeck(true); A[a](id); }, // the page takes the deck's history entry
+  deckadd: (v, t) => {
+    t.disabled = true;
+    entrySave(+v, { status: "PLANNING" }).then((r) => {
+      if (!r || r.error) throw 0;
+      (S.recsAdded ||= new Set()).add(+v); toast("Added to Planning");
+      t.innerHTML = `${ico("check")}<span>On Planning</span>`;
+      refreshData();
+    }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
+  },
+  sidetab: (v) => { S.sideTab = v; paintSide(); },
+  fltopen: () => { document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); paintPortals(); },
+  fltclose: () => { document.body.classList.remove("flt-open"); paintPortals(); ovClosed("flt"); },
+  rmton: () => remoteSet({ on: !S.remote?.on }),
+  rmtcode: () => remoteSet({ new_code: true }),
+  rmtdel: (v) => remoteSet({ remove: Number(v) }),
+  rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },
+  rmtclose: () => { S.rmtOpen = false; paintRemote(); paintCanvas(); ovClosed("rmt"); },
+  rmtsleep: () => remoteSend("stop_after", !S.live?.stop_after),
+  rmtdelay: (v) => remoteSend("sub_delay", Number(v) === 0 ? 0 : Math.round(((S.live?.sub_delay || 0) + Number(v)) * 10) / 10),
+  rmt: (v) => v === "back" ? remoteSend("seek", -10) : v === "fwd" ? remoteSend("seek", 10) : remoteSend(v),
+  rmtseek: (v) => { S.rmtDrag = false; remoteSend("seek_to", Number(v)); },
+  rmtvol: (v) => { S.rmtDrag = false; remoteSend("volume", Number(v)); },
+  rmttrack: (v, t) => remoteSend(t.dataset.k, v === "no" ? "no" : Number(v)),
+
   ani: () => openModal({ t: "ani" }),
   aniout: async () => {
     await api("/api/auth/logout", {}).catch(() => {});
@@ -3033,7 +3642,7 @@ const A = {
 /* ---------- events ---------- */
 const isField = (t) => /^(SELECT|INPUT)$/.test(t.tagName);
 document.addEventListener("click", (e) => {
-  $("#cm").style.display = "none";
+  if ($("#cm").style.display === "block" && !$("#cm").classList.contains("closing")) { cmHide(); ovClosed("cm"); }
   if (S.menu && !e.target.closest(".rel,#srb,#pal .pbox")) { S.menu = null; paintNav(); }
   if (S.cal && !e.target.closest(".datef")) calClose();
   const t = e.target.closest("[data-a]");
@@ -3224,7 +3833,7 @@ q.addEventListener("input", () => {
 });
 q.addEventListener("focus", () => { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } });
 /* The palette opens centred over the page with its own line; the top bar only holds the button. */
-function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } q.focus(); }
+function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; ovOpen("sr", () => A.srclose()); paintNav(); } q.focus(); }
 q.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     const items = $$("#sr .mi");
@@ -3241,7 +3850,13 @@ q.addEventListener("keydown", (e) => {
   const first = $("#sr .mi");
   if (first) { e.preventDefault(); q.blur(); first.click(); }
 });
-addEventListener("scroll", () => document.body.classList.toggle("sc", scrollY > 8), { passive: true });
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); }, { passive: true });
+/* Phones: the page's big title shrinks into the top bar as it scrolls away. */
+function paintPtitle(t) {
+  let el = $("#ptl");
+  if (!el) { el = document.createElement("b"); el.id = "ptl"; $("#nav").insertBefore(el, $("#links")); }
+  el.textContent = t || "";
+}
 
 /* keyboard: / search · Esc back · j/k/h/l or arrows move focus · Enter opens */
 const focusables = () => $$("#app .hc, #app .ag, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
@@ -3311,12 +3926,259 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Enter" && document.activeElement.classList.contains("ep")) document.activeElement.click();
 });
 
+/* ---------- back gesture and swipes (Decision 44; Elias 2026-10-27: "a
+   universal back button… swipe from top to bottom so it closes… more of
+   these") ---------- */
+/* Layers (the remote, the deck, search, the filter sheet, a settings
+   section on a phone) put one entry on the browser history when they open,
+   so Android's back gesture / button closes the top layer first instead of
+   leaving the page. Closing one by hand takes its entry back off. */
+const OV = [];
+let ovSkip = 0;
+/* A layer closed and opened again in the same moment (one dialog handing
+   over to the next) keeps its history entry instead of stepping back. */
+const ovLeaving = new Set();
+function ovOpen(name, close) {
+  if (OV.some((o) => o.name === name)) return;
+  OV.push({ name, close });
+  if (ovLeaving.delete(name)) return;
+  history.pushState({ ...navSnap(), ov: name }, "", location.href);
+}
+function ovClosed(name) {
+  const k = OV.findIndex((o) => o.name === name);
+  if (k < 0) return;
+  OV.splice(k, 1); ovLeaving.add(name);
+  setTimeout(() => { if (ovLeaving.delete(name)) { ovSkip++; history.back(); } }, 0);
+}
+function ovDrop(name) { const k = OV.findIndex((o) => o.name === name); if (k >= 0) OV.splice(k, 1); }
+/* Swipe down to close: grab a layer at its top and pull. Past ~120 px (or a
+   quick flick) it slides away; otherwise it springs back. Horizontal
+   controls (sliders, segments, strips) keep their own drag. */
+const PULL = [
+  { sel: ".rview", scroller: (el) => el, close: () => A.rmtclose(), fade: () => ({ style: {} }) }, // stays solid, only shrinks
+  { sel: "#deck .deck", scroller: (el) => el.querySelector(".dscroll"), close: () => closeDeck() },
+  { sel: "#pal .pbox", scroller: (el) => el.querySelector(".plist"), close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
+  { sel: ".fsheet .filters", scroller: (el) => el, close: () => A.fltclose() },
+  { sel: "#modal .dialog", scroller: (el) => el, close: () => modalDismiss(), when: () => isPhone() && S.modal && S.modal.t !== "tour" },
+  { sel: "#cm", scroller: (el) => el, close: () => { cmHide(); ovClosed("cm"); }, when: () => isPhone() },
+];
+const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srchips, .dgen, .gtray, .switch";
+/* Pull to refresh (Home, Library, Journal, the week): installed web apps
+   get no browser pull-to-refresh, so the app draws its own — a circle that
+   drops in with the pull, turns with it, and spins while the hub reloads. */
+let ptrBusy = false;
+function ptrEl() {
+  let el = $("#ptr");
+  if (!el) { el = document.createElement("div"); el.id = "ptr"; el.setAttribute("aria-hidden", "true"); el.innerHTML = `<i>${ico("refresh")}</i>`; document.body.append(el); }
+  return el;
+}
+function ptrShow(dist) {
+  const el = ptrEl(), k = Math.min(dist / 70, 1);
+  el.className = "on" + (k >= 1 ? " armed" : "");
+  el.style.transform = `translate3d(-50%,${Math.round(dist - 56)}px,0)`;
+  el.style.opacity = String(Math.min(1, k * 1.4));
+  el.firstChild.style.transform = `rotate(${Math.round(dist * 3.2)}deg)`;
+}
+function ptrHide() { const el = $("#ptr"); if (!el) return; el.className = "out"; el.style.transform = "translate3d(-50%,-56px,0)"; el.style.opacity = "0"; }
+async function ptrRun() {
+  ptrBusy = true;
+  const el = ptrEl();
+  el.className = "on spin"; el.style.transform = "translate3d(-50%,18px,0)"; el.style.opacity = "1"; el.firstChild.style.transform = "";
+  const t0 = Date.now();
+  try {
+    if (S.view === "history" || S.view === "stats") S.alData = null;
+    S.recs = null;
+    await reload();
+  } catch {}
+  await sleep(Math.max(0, 600 - (Date.now() - t0))); // a moment of spin even when it was instant
+  ptrHide(); ptrBusy = false;
+}
+let pull = null;
+const buzz = () => { try { navigator.vibrate?.(8); } catch {} };
+/* The hint beside the screen edge while you swipe sideways: an arrow in a
+   glass circle that grows with the swipe and fills once letting go counts,
+   with the name of where you're going. */
+let swHint = null;
+function hintShow(side, label, prog) {
+  if (!swHint) { swHint = document.createElement("div"); swHint.id = "swhint"; swHint.setAttribute("aria-hidden", "true"); document.body.append(swHint); }
+  const armed = prog >= 1, k = Math.min(prog, 1);
+  if (swHint.dataset.k !== side + label) { swHint.dataset.k = side + label; swHint.innerHTML = `<i>${ico(side === "left" ? "chevl" : "chevr")}</i><span>${esc(label)}</span>`; }
+  const cls = `on ${side}${armed ? " armed" : ""}`;
+  if (swHint.className !== cls) swHint.className = cls;
+  swHint.style.opacity = (0.25 + k * 0.75).toFixed(3);
+  swHint.style.transform = `translateY(-50%) scale(${(0.6 + k * 0.4).toFixed(3)})`;
+}
+function hintHide() { if (swHint) { swHint.className = ""; swHint.style.opacity = swHint.style.transform = ""; } }
+/* Smoothness (Elias: "often the animation is a bit laggy"): while a finger
+   drags, the frosted glass on the bars goes plain (redrawing a blur under
+   a moving page is a phone GPU's most expensive job), the moving part is
+   told ahead (will-change), and styles are written once per frame. */
+let swFrame = 0, swWrite = null;
+function swSet(fn) { swWrite = fn; if (!swFrame) swFrame = requestAnimationFrame(() => { swFrame = 0; const f = swWrite; swWrite = null; f && f(); }); }
+function swBegin(el) { document.body.classList.add("swiping"); el.style.willChange = "transform"; }
+function swEnd(el) { document.body.classList.remove("swiping"); if (el) el.style.willChange = ""; }
+const TAB_NAME = { home: "Home", library: "Library", history: "Journal" };
+document.addEventListener("touchstart", (e) => {
+  pull = null;
+  if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
+  const t = e.target, L = PULL.find((p) => t.closest?.(p.sel) && (!p.when || p.when()));
+  /* Sideways swipes leave real sideways scrollers alone; the phone's
+     episode list is vertical (it only keeps the PC strip's class). */
+  const x = e.touches[0].clientX, y = e.touches[0].clientY;
+  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda")
+    && !(t.closest(".strip") && !(isPhone() && t.closest(".eps")));
+  if (L) {
+    const el = t.closest(L.sel), sc = L.scroller(el);
+    if ((sc && sc.scrollTop > 2) || t.closest(NO_PULL)) return;
+    pull = { kind: "close", L, el, x, y, t: Date.now(), dy: 0, live: false };
+  } else if (t.closest?.(".rbar") && !t.closest("button")) pull = { kind: "rbar", y };
+  else if (isPhone() && inApp && x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture
+    const ptrOK = scrollY <= 0 && ["home", "library", "history", "stats", "week"].includes(S.view) && !ptrBusy;
+    if (["home", "library", "history", "stats"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
+    else if (["show", "fr", "week", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
+  }
+}, { passive: true });
+/* Sideways: Home ⇄ Library ⇄ Journal, or back from a page. The page
+   follows the finger; past ~30 % of the width (or a flick) it goes. */
+function sideTarget(p, dx) {
+  if (p.kind === "back") return dx > 0 ? { label: "Back", side: "left" } : null;
+  const order = ["home", "library", "history"], at = order.indexOf(S.view === "stats" ? "history" : S.view), to = order[at + (dx < 0 ? 1 : -1)];
+  return to ? { to, label: TAB_NAME[to], side: dx < 0 ? "right" : "left" } : null;
+}
+document.addEventListener("touchmove", (e) => {
+  if (!pull) return;
+  const p = pull, x = e.touches[0].clientX, y = e.touches[0].clientY;
+  if (p.kind === "rbar") { if (y - p.y < -28) { pull = null; buzz(); A.rmtopen(); } return; }
+  if (p.kind === "ptr") {
+    e.preventDefault();
+    const dist = Math.min(Math.max(0, (y - p.y0) * 0.5), 110);
+    p.dist = dist;
+    swSet(() => ptrShow(dist));
+    if (dist >= 70 && !p.armed) { p.armed = true; buzz(); } else if (dist < 70) p.armed = false;
+    return;
+  }
+  if (p.kind === "tab" || p.kind === "back") {
+    const dx = x - p.x, dy = y - p.y;
+    /* Clearly sideways: the swipe is ours (else the browser takes it and
+       cancels the touch). Clearly up/down: it's a scroll, let it be. */
+    if (!p.side) {
+      if (p.ptrOK && dy > 10 && dy > Math.abs(dx) && scrollY <= 0) { p.kind = "ptr"; p.y0 = y; e.preventDefault(); return; }
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pull = null; return; }
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; swBegin($("#app")); }
+      else return;
+    }
+    e.preventDefault();
+    const d = x - p.x0, tg = sideTarget(p, d), lim = innerWidth * 0.3;
+    p.lx = x; p.ly = y; p.tg = tg;
+    /* Nothing that way (first/last tab): only a little give. */
+    const tx = tg ? d * (p.kind === "back" ? 1 : 0.55) : d * 0.12;
+    const prog = tg ? Math.abs(d) / lim : 0;
+    /* Back (Android's predictive back): the page shrinks toward 90 % and
+       shifts a little, rather than sliding off with the finger. */
+    const sc = p.kind === "back" && tg ? 1 - 0.1 * Math.min(prog, 1) : 1, bx = p.kind === "back" && tg ? Math.min(d * 0.3, innerWidth * 0.1) : tx;
+    swSet(() => {
+      if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`;
+      $("#app").style.transform = `translate3d(${bx}px,0,0)${sc < 1 ? ` scale(${sc.toFixed(4)})` : ""}`;
+      if (p.kind === "back") $("#portal").style.opacity = String(1 - Math.min(Math.abs(d) / lim, 1));
+      if (tg) hintShow(tg.side, tg.label, prog); else hintHide();
+    });
+    if (prog >= 1 && !p.armed) { p.armed = true; buzz(); } else if (prog < 1) p.armed = false;
+    return;
+  }
+  if (p.kind !== "close") return;
+  const d = y - p.y, dx = x - p.x;
+  if (!p.live) {
+    if (Math.abs(dx) > Math.abs(d) || d < 0) { if (Math.abs(dx) > 10 || d < -6) pull = null; return; }
+    if (d < 8) return;
+    p.live = true; p.y = y; p.el.style.transition = "none"; swBegin(p.el);
+    p.el.style.transformOrigin = "50% 0";
+    document.body.classList.add("peek"); // what's behind the layer shows while you pull
+    if (document.activeElement?.blur && p.L.sel.startsWith("#pal")) document.activeElement.blur();
+  }
+  p.dy = Math.max(0, y - p.y);
+  e.preventDefault();
+  const k = Math.min(p.dy / 320, 1), fade = p.L.fade ? p.L.fade(p.el) : p.el, dy = p.dy;
+  /* It becomes a card: a little smaller, rounded, sliding down. */
+  swSet(() => {
+    p.el.style.transform = `translate3d(0,${dy}px,0) scale(${1 - k * 0.07})`;
+    p.el.style.borderRadius = `${Math.round(k * 28)}px`;
+    fade.style.opacity = String(1 - k * 0.45);
+  });
+  if (p.dy > 120 && !p.armed) { p.armed = true; buzz(); } else if (p.dy <= 120) p.armed = false;
+}, { passive: false });
+const unstyle = (...els) => { for (const el of els) if (el) { el.style.transform = el.style.opacity = el.style.transition = el.style.borderRadius = el.style.transformOrigin = ""; } };
+document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
+document.addEventListener("touchend", () => {
+  const p = pull;
+  pull = null;
+  if (!p) return;
+  cancelAnimationFrame(swFrame); swFrame = 0; swWrite = null;
+  if (p.side || p.live) swEnd(p.side ? $("#app") : p.el);
+  if (p.kind === "ptr") { if ((p.dist || 0) >= 70) ptrRun(); else ptrHide(); return; }
+  if (p.kind === "tab" || p.kind === "back") {
+    if (!p.side) return;
+    const app = $("#app"), d = (p.lx ?? p.x0) - p.x0, v = Math.abs(d) / Math.max(1, Date.now() - p.t), go = p.tg && (Math.abs(d) > innerWidth * 0.3 || (Math.abs(d) > 60 && v > 0.45));
+    hintHide();
+    const ease = "transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s";
+    if (!go) { app.style.transition = ease.replace(".22s cubic-bezier(.2,.8,.2,1)", ".38s cubic-bezier(.3,1.35,.5,1)"); app.style.transform = ""; app.style.opacity = ""; $("#portal").style.opacity = ""; setTimeout(() => unstyle(app), 400); return; }
+    app.style.transition = ease; app.style.transform = p.kind === "back" ? `translate3d(${Math.round(innerWidth * 0.35)}px,0,0) scale(.88)` : `translateX(${Math.sign(d) * innerWidth * 0.5}px)`; app.style.opacity = "0";
+    setTimeout(() => {
+      unstyle(app, $("#portal"));
+      if (p.kind === "tab") nav(p.tg.to);
+      else { backSwiped = true; history.back(); }
+    }, 170);
+    return;
+  }
+  if (p.kind !== "close" || !p.live) return;
+  const v = p.dy / Math.max(1, Date.now() - p.t), el = p.el, fade = p.L.fade ? p.L.fade(el) : el;
+  el.style.transition = fade.style.transition = "transform .26s cubic-bezier(.2,.8,.2,1), opacity .26s, border-radius .26s";
+  if (p.dy > 120 || (p.dy > 50 && v > 0.5)) {
+    el.style.transform = "translateY(100%) scale(.93)"; fade.style.opacity = "0";
+    /* the inline offset stays until the layer is gone: clearing it first made
+       a sheet's own close animation start from the top again */
+    setTimeout(() => { p.L.close(); setTimeout(() => { unstyle(el, fade); document.body.classList.remove("peek"); }, 280); }, 240);
+  } else {
+    el.style.transition = fade.style.transition = "transform .38s cubic-bezier(.3,1.35,.5,1), opacity .3s, border-radius .3s";
+    el.style.transform = ""; el.style.borderRadius = ""; fade.style.opacity = "";
+    setTimeout(() => { unstyle(el, fade); document.body.classList.remove("peek"); }, 400);
+  }
+});
+/* Long-press (touch): on an episode it opens the episode menu with a light
+   tap, like right-click on the PC. A hold never turns into a tap when the
+   finger lifts (it used to start the episode), and the browser's own
+   long-press menu stays away from the app. */
+let lp = null, lpUntil = 0;
+document.addEventListener("touchstart", (e) => {
+  clearTimeout(lp?.timer); lp = null;
+  if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
+  const t = e.target, x = e.touches[0].clientX, y = e.touches[0].clientY;
+  lp = { x, y, timer: setTimeout(() => {
+    if (!lp) return;
+    lp.fired = true;
+    const ep = t.closest?.(".ep[data-a=playep]");
+    if (ep && !pull?.side && !pull?.live && $("#cm").style.display !== "block") { buzz(); openCm(ep.dataset.v, x, y); }
+  }, 480) };
+}, { passive: true, capture: true });
+document.addEventListener("touchmove", (e) => { if (lp && Math.hypot(e.touches[0].clientX - lp.x, e.touches[0].clientY - lp.y) > 10) { clearTimeout(lp.timer); lp = null; } }, { passive: true, capture: true });
+document.addEventListener("touchend", () => { if (!lp) return; clearTimeout(lp.timer); if (lp.fired) lpUntil = Date.now() + 700; lp = null; }, { capture: true });
+document.addEventListener("click", (e) => { if (Date.now() < lpUntil) { e.preventDefault(); e.stopImmediatePropagation(); lpUntil = 0; } }, true);
+document.addEventListener("contextmenu", (e) => { if (mq("(pointer:coarse)") && !e.target.closest?.("input, textarea")) { e.preventDefault(); } }, true);
+/* Switches answer with a light tap (Android). */
+document.addEventListener("click", (e) => { if (e.target.closest?.(".switch") && mq("(pointer:coarse)")) buzz(); }, true);
+/* A back swipe lands on the page before with a slide in from the left. */
+let backSwiped = false;
+/* A grab handle shows that a layer can be pulled down. */
+const grab = '<i class="grabber" aria-hidden="true"></i>';
+
 /* ---------- browser history (back/forward, mouse side buttons, #deep links) ---------- */
 let navSeeded = false;
 const navSnap = () => ({ view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY });
 const navUrl = () => location.pathname + location.search + (S.view === "show" ? "#show=" + encodeURIComponent(S.showId) : S.view === "fr" ? "#f=" + S.fr.eid : VIEWS.includes(S.view) && S.view !== "home" ? "#" + S.view : "");
 function pushNav() {
   const h = navSnap();
+  /* Going somewhere from inside a layer (a result in search, Details in the
+     deck): the new page takes the layer's history entry. */
+  if (history.state?.ov) { OV.length = 0; history.replaceState(h, "", navUrl()); return; }
   if (navSeeded) history.pushState(h, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
 }
 function applyNav(h) {
@@ -3327,13 +4189,19 @@ function applyNav(h) {
   history.replaceState(h, "", navUrl());
   scrollTo(0, h.scroll || 0);
 }
-addEventListener("popstate", (e) => applyNav(e.state || {}));
+addEventListener("popstate", (e) => {
+  if (ovSkip) { ovSkip--; return; } // a layer closed by hand took its own entry back
+  const top = OV.pop();
+  if (top) { top.close(); return; } // back closes the top layer first
+  applyNav(e.state || {});
+  if (backSwiped) { backSwiped = false; const app = $("#app"); app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add("tab-r"); }
+});
 history.replaceState(navSnap(), "", location.href);
 navSeeded = true;
 
 /* ---------- boot ---------- */
 aniStatusRefresh();
-const hashShow = location.hash.match(/^#show=(.+)$/), hashFr = location.hash.match(/^#f=(\d+)$/), hashView = location.hash.match(/^#(library|history|stats|settings)$/);
+const hashShow = location.hash.match(/^#show=(.+)$/), hashFr = location.hash.match(/^#f=(\d+)$/), hashView = location.hash.match(/^#(library|history|stats|settings|week)$/);
 applyLook(); // index.html already did; this drops an unknown saved value
 applyZoom(); // before first paint, so the UI never flashes at 100 %
 reload().then(() => {

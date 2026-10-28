@@ -195,7 +195,7 @@ class Journal(unittest.TestCase):
         self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
         self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
         self.assertIn('<div class="jside">${most}${genres}${heat}${st.side}</div>', APP)  # all time in the same two columns
-        self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings"];', APP)
+        self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings", "week"];', APP)
 
 
 class SearchPalette(unittest.TestCase):
@@ -206,11 +206,12 @@ class SearchPalette(unittest.TestCase):
         self.assertIn('data-a="srsw" data-v="${key}"', APP)
         self.assertIn('if (S.menu === "sr") srPreview(', APP)
         # the palette opens centred with its own line; the top bar only holds the button
-        self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } q.focus(); }', APP)
+        self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; ovOpen("sr", () => A.srclose()); paintNav(); } q.focus(); }', APP)
         self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)
         self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
         self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
-        self.assertIn('<nav class="snav">${SET_TABS.map(', APP)
+        self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone);', APP)
+        self.assertIn('<nav class="snav">${tabs.map(', APP)
         self.assertIn("r.classList.add(\"flash\")", APP)
 
 

@@ -231,6 +231,30 @@ class NaturalEndTests(LifecycleBase):
             player.watch_process(proc, "ep1", sock)
         auto.assert_called_once_with("ep1", 2)
 
+    def test_stop_after_this_episode_skips_autoplay(self):
+        """The phone remote's "Stop after this episode" (Decision 43): the
+        episode still counts as watched, nothing plays next."""
+        sock = Path(self.directory.name) / "fake.sock"
+        sock.write_text("")
+        proc = Mock(hub_pty=None, hub_retired=False)
+        proc.poll.side_effect = [None, None]
+        proc.wait.return_value = 0
+        self.register("ep1", proc)
+        player._active["ep1"]["stop_after"] = True
+        self.seed("ep1", watched=0, position=0.0)
+
+        def fake_ipc(sock_path, cmd):
+            return {"data": {"time-pos": 1439.0, "duration": 1440.0}.get(cmd[1])} if cmd[0] == "get_property" else {}
+
+        with patch.object(player, "mpv_ipc", side_effect=fake_ipc), \
+                patch.object(player, "autoplay_next") as auto, \
+                patch.object(player.progress, "completion_for_episode"), \
+                patch.object(player.progress, "auto_track_after_play"):
+            player.watch_process(proc, "ep1", sock)
+        auto.assert_not_called()
+        with database.db() as c:
+            self.assertEqual(c.execute("SELECT watched FROM episodes WHERE id='ep1'").fetchone()[0], 1)
+
 
 class StartPlayTransitionTests(LifecycleBase):
     def setUp(self):

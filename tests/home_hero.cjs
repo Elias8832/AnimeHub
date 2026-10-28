@@ -31,6 +31,7 @@ function homepage(data) {
   const context = vm.createContext({
     S: { data, view: "home", showId: null, seasonIdx: 0, showBack: "home", cat: null, q: "", menu: null },
     aniMode: () => false, // spine mode; the airing panel is covered elsewhere
+    isPhone: () => false, isTabletP: () => false, // the PC layout (phones: test_phone_layout.py)
   });
   vm.runInContext(
     block("/* @pure:start */", "/* @pure:end */") +

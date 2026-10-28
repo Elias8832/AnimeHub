@@ -39,7 +39,9 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # without a VPN, ask before an episode uses it.
                        "aniskip": False, "aniskip_vpn_warn": True,
                        # Read each episode's length from its file (lengths.py).
-                       "measure_lengths": True}
+                       "measure_lengths": True,
+                       # Pick the show's last audio/subtitle track again (tracks.py).
+                       "remember_tracks": True}
 
 
 # Opening/ending skipping in mpv (Decision 39): off, a prompt (Enter skips)
@@ -133,6 +135,7 @@ def settings_payload():
         "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
         "upscale_banners": up["on"],
         "measure_lengths": automation_enabled("measure_lengths"),
+        "remember_tracks": automation_enabled("remember_tracks"),
         "tour_done": get_setting("tour_done") == "1",
         # additive: opening/ending skip modes, {"op": …, "ed": …}
         "skip": skip_prefs(),

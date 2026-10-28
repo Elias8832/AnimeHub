@@ -30,6 +30,9 @@ This app is early in development — expect bugs and breaking changes.
 - **Playback** - Episodes open in mpv, with resume, auto-play next and progress tracking. Your mpv config still works.
   - Skip openings and endings with Enter, or automatically. Uses the file's chapters ("Opening", "ED"…).
   - Optional [AniSkip](https://aniskip.com) for files without chapters. Off by default: AniSkip sees which episode you start.
+  - Remembers the audio and subtitle track you pick for each show, and picks it again for the next episodes.
+- **Phone remote (optional)** - Pause, seek, skip openings, change volume and speed, pick audio and subtitles, fix subtitle timing, pick another episode or stop after this one, all from your phone while an episode plays on the PC. Same Wi-Fi, no app to install: switch it on in Settings → Phone remote and scan the QR code. Off by default.
+- **Phone and tablet** - Open it on your phone or tablet (Phone remote or Tailscale) and it gets its own layout: bottom tabs, a swipeable deck of what you're watching, the week's airings as a timeline and calendar, and on tablets your list beside the show page.
 - **Search and keys** - `/` searches your library, AniList, settings and commands. `?` lists all keyboard shortcuts.
 - **AniList** - Matches your shows to AniList for info and artwork. Edit your score, progress and status right in the app.
 - **Online episodes (optional)** - With [ani-cli](https://github.com/pystardust/ani-cli) installed, episodes you don't have show up as online episodes.
@@ -176,6 +179,7 @@ Files are never renamed or moved.
 | `window` | `"app"` (own window, default), `"browser"` (tab) or `"none"` (server only) |
 | `anilist_client_id` | your own AniList app id; only needed if you change `port` |
 | `upscale_banners` | `true` to make banners sharper with Upscayl (also set from Settings → Appearance; default `false`) |
+| `remote_port` | the phone remote's Wi-Fi port (default: `port` + 1) |
 | `remote_hosts` | extra host names for opening it from your phone through a proxy, e.g. `["pc.tailnet.ts.net"]` with `tailscale serve --bg --https=8443 8787` |
 
 Changing `library_root` never deletes anything. The app asks before it switches.
@@ -196,8 +200,9 @@ Deleting the folder is a full reset.
 ## Privacy and security
 
 - **No tracking.** No accounts, no ads, no analytics. Your data stays on your PC.
-- **Only your PC can open it.** The server only listens locally and turns away requests from other websites.
-- **No password.** If you open it to your phone (`remote_hosts`), everyone on that network can use it.
+- **Only your PC can open it.** The server only listens locally and turns away requests from other websites (the phone remote is the one opt-in exception, see below).
+- **Phone remote:** off by default. When on, the app also listens on your home Wi-Fi, but only phones you paired with the QR code get in, and they can't change your folders or AniList account. Remove a phone in Settings → Phone remote.
+- **No password through a proxy.** If you open it to your phone through a proxy (`remote_hosts`), everyone on that network can use it.
 - **Your AniList login** is a token in `anilist_token.json`, readable only by your user (Windows: it sits in your own user profile).
 - **What it talks to on the internet:**
   - [AniList](https://anilist.co) — metadata, artwork and your list (when connected)

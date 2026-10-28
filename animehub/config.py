@@ -21,7 +21,7 @@ SKIP_CREDITS_LUA = MPV / "skip-credits.lua"
 DEFAULT_PORT = 8787
 
 CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners",
-               "remote_hosts", "library_extra")
+               "remote_hosts", "library_extra", "remote_port")
 
 # AnimeHub's public AniList OAuth client (redirect: http://localhost:8787/
 # auth/callback). Client ids are public by design — no secret involved;
@@ -82,6 +82,8 @@ def read_config(path=None):
       remote_hosts     list[str]   — extra Host names the hub answers, e.g. a
                                      Tailscale name proxied by `tailscale
                                      serve` (Decision 36); default none
+      remote_port      int|None    — the phone remote's Wi-Fi port
+                                     (Decision 43); default port + 1
 
     anilist_username was removed (found live 2026-10-17: the README's
     example value pinned a stranger's public lists over Elias's connected
@@ -91,7 +93,8 @@ def read_config(path=None):
     path = Path(path).expanduser() if path else _default_config_path()
     cfg = {"library_root": None, "port": DEFAULT_PORT,
            "data_dir": None, "window": "app", "anilist_client_id": None,
-           "upscale_banners": False, "remote_hosts": [], "library_extra": []}
+           "upscale_banners": False, "remote_hosts": [], "library_extra": [],
+           "remote_port": None}
     warnings = []
     try:
         # utf-8-sig: Windows editors may start the file with a BOM.
@@ -125,6 +128,12 @@ def read_config(path=None):
             cfg["port"] = p
         else:
             warn("port", "an integer in 1–65535")
+    if raw.get("remote_port") not in (None, ""):
+        p = raw["remote_port"]
+        if isinstance(p, int) and not isinstance(p, bool) and 1 <= p <= 65535:
+            cfg["remote_port"] = p
+        else:
+            warn("remote_port", "an integer in 1–65535")
 
     if raw.get("window") not in (None, ""):
         w = raw["window"]
@@ -202,6 +211,7 @@ def apply_config(cfg):
     config.PORT = cfg["port"]
     config.WINDOW = cfg["window"]
     config.REMOTE_HOSTS = tuple(cfg.get("remote_hosts") or ())
+    config.REMOTE_PORT = cfg.get("remote_port") or (cfg["port"] % 65535) + 1
     config.ANILIST_CACHE = config.DATA / "anilist_cache.json"
     # OAuth token lives with the other per-user state — outside the repo
     # (Decision 20 / READINESS A5); permissions tightened on every write.
