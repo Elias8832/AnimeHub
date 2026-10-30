@@ -41,134 +41,63 @@ chmod +x AnimeHub-x86_64.AppImage
 <details>
 <summary>What you need</summary>
 
-- Linux, or Windows 10/11 (experimental)
-- Python 3.9+ (standard library only, nothing to install; the Windows zip brings its own)
-- mpv
-- A Chromium-family browser (chromium, chrome, brave, or edge)
-- rust/cargo (only to build the desktop app or the AppImage)
-- An AniList account (optional)
-- ani-cli 5.1 or newer (optional, for online episodes and downloads; the app can fetch it, it needs curl)
-- [Upscayl](https://upscayl.org) (optional, for sharper banners; Flatpak, a normal install or the Windows installer)
-- ffprobe from [FFmpeg](https://ffmpeg.org) (optional, measures episode lengths faster; mpv does it otherwise)
+- **Required:** Python 3.9+, mpv, a Chromium-family browser (chromium, chrome, brave or edge). Linux, or Windows 10/11 (experimental).
+- **Optional:** an AniList account; ani-cli 5.1+ for online episodes (the app can fetch it, it needs curl); [Upscayl](https://upscayl.org/download) for sharper banners; ffprobe for faster episode lengths.
 
 </details>
 
 <details>
 <summary>Windows (experimental)</summary>
 
-Windows 10 or 11, 64-bit. Python comes inside the zip, and the window is a Microsoft Edge
-app window (Chrome or Brave are used first if installed).
+New zips only come with bigger releases (v0.4, v0.5, …), so Windows can be a little behind. Python is inside the zip.
 
-Windows gets a new zip only with the bigger releases (v0.4, v0.5, …). Smaller updates in
-between are Linux-only, so the newest Windows zip can be a little behind.
-
-1. Download `AnimeHub-windows-x64.zip` from the
-   [Releases page](https://github.com/Elias8832/AnimeHub/releases).
-2. Unzip it anywhere (for example to your Documents). Keep the `AnimeHub` folder together:
-   `AnimeHub.exe` needs the `python` and `app` folders next to it.
-3. Install mpv, and for online episodes ani-cli. In PowerShell, install
-   [Scoop](https://scoop.sh) (skip if you have it), then the tools. ani-cli is a bash script
-   and runs in Git for Windows' bash:
+1. Download `AnimeHub-windows-x64.zip` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases) and unzip it anywhere. Keep the folder together.
+2. Install the tools in PowerShell ([Scoop](https://scoop.sh) and Git; ani-cli runs in Git's bash). Only local files? `scoop install extras/mpv` is enough.
 
    ```powershell
    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
    Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
    winget install Git.Git
    scoop bucket add extras
-   scoop install ani-cli yt-dlp    # brings mpv too; only local files: scoop install extras/mpv
+   scoop install ani-cli yt-dlp
    ```
 
-4. Double-click `AnimeHub.exe`. The exe isn't signed, so the first time Windows may say
-   "Windows protected your PC": click "More info", then "Run anyway".
-   Closing the window quits the app.
-   For a Start-menu entry, double-click `Add to Start menu.cmd` once (again after moving the folder).
+3. Double-click `AnimeHub.exe`. If Windows warns you: "More info", then "Run anyway". `Add to Start menu.cmd` adds a menu entry.
 
-Settings are in `%APPDATA%\anime-hub\config.json`, data in `%LOCALAPPDATA%\anime-hub`.
-If it doesn't start, `%LOCALAPPDATA%\anime-hub-wrapper\` has `hub.log` and `wrapper.log`.
-To build the zip yourself (needs rust/cargo, and binutils for the icon):
-`powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1`.
+Won't start? Logs are in `%LOCALAPPDATA%\anime-hub-wrapper\`.
 
 </details>
 
 <details>
 <summary>Updating</summary>
 
-- From git: `git pull`. Desktop app: then `cargo build --release && ./install.sh` again.
-- AppImage / Windows zip: download the new one (Windows: replace the whole folder; new zips
-  come with the bigger releases only).
-
-Your data is kept.
+`git pull`, then `cargo build --release && ./install.sh`. AppImage or Windows zip: download the new one (Windows: replace the whole folder). Your data is kept.
 
 </details>
-
-## Details
 
 <details>
 <summary>Library folders</summary>
 
-Point AnimeHub at one folder (Settings → Library). It understands the usual layouts:
-
-```
-Anime/
-├── Frieren/                     one folder per show
-│   ├── Season 1/                seasons as "Season N" (or "Part N")
-│   │   └── Frieren - 01.mkv
-│   └── Specials/                "Specials" / "OVA"
-├── Cowboy Bebop/
-│   └── [Group] Cowboy Bebop - 01 (1080p).mkv
-└── Movies/
-    └── Your Name/Your Name.mkv  movies in a "Movies" folder
-```
-
-Episode numbers are read from names like `S01E05`, `E05`, `Episode 5` or `Title - 05`.
-Files are never renamed or moved.
+One folder per show, with seasons as `Season 1` or `Part 1`, extras in `Specials` or `OVA`, and movies in `Movies`. Files can also sit directly in the show folder. Episode numbers come from names like `S01E05`, `E05`, `Episode 5` or `Title - 05`. Files are never renamed or moved.
 
 </details>
 
 <details>
 <summary>Configuration</summary>
 
-`~/.config/anime-hub/config.json` (Windows: `%APPDATA%\anime-hub\config.json`; or `--config FILE`). Every key is optional:
-
-```json
-{
-  "library_root": "~/Videos/Anime",
-  "port": 8787,
-  "data_dir": null,
-  "window": "app"
-}
-```
+Most of it is in Settings. The file is `~/.config/anime-hub/config.json` (Windows: `%APPDATA%\anime-hub\config.json`), or use `--config FILE`. Every key is optional:
 
 | Key | Meaning |
 | --- | --- |
-| `library_root` | the folder AnimeHub watches for video files (also set from Settings → Library) |
-| `library_extra` | extra folders, e.g. `[{"id": 2, "path": "/mnt/Drive2/Anime"}]` (easiest from Settings → Library). Each `id` belongs to its folder: keep it when the folder moves, so its shows keep their history |
+| `library_root`, `library_extra` | your folders (easiest from Settings → Library) |
 | `port` | server port (default `8787`) |
-| `data_dir` | database and cache location (default `~/.local/share/anime-hub`, honours `XDG_DATA_HOME`) |
-| `window` | `"app"` (own window, default), `"browser"` (tab) or `"none"` (server only) |
-| `anilist_client_id` | your own AniList app id; only needed if you change `port` |
-| `upscale_banners` | `true` to make banners sharper with Upscayl (also set from Settings → Appearance; default `false`) |
-| `remote_port` | the phone remote's Wi-Fi port (default: `port` + 1) |
-| `remote_hosts` | extra host names for opening it from your phone through a proxy, e.g. `["pc.tailnet.ts.net"]` with `tailscale serve --bg --https=8443 8787` |
+| `data_dir` | where data lives (default `~/.local/share/anime-hub`, Windows: `%LOCALAPPDATA%\anime-hub`) |
+| `window` | `"app"`, `"browser"` or `"none"` |
+| `anilist_client_id` | your own AniList app id, only if you change `port` |
+| `remote_port` | the phone remote's Wi-Fi port (default `port` + 1) |
+| `remote_hosts` | host names for reaching it through a proxy, e.g. `["pc.tailnet.ts.net"]` |
 
-Changing `library_root` never deletes anything. The app asks before it switches.
-
-</details>
-
-<details>
-<summary>Your data</summary>
-
-Everything lives in `data_dir` (default `~/.local/share/anime-hub`, Windows: `%LOCALAPPDATA%\anime-hub`):
-
-- `hub.db` — watch state, info, history
-- `cache/` — artwork (with sharper banners on, also the original banners: `*.banner.orig.jpg`)
-- `upscaled.json` — which banners are already sharpened, and how
-- `anilist_token.json` — your AniList login
-- `anilist_activity.json` — your AniList activity, for the Journal
-- `recommendations.json`, `schedule.json`
-- `bin/ani-cli` — only if you pressed Get ani-cli
-
-Deleting the folder is a full reset.
+Your data is all in `data_dir`. Deleting that folder is a full reset.
 
 </details>
 
@@ -179,17 +108,10 @@ No tracking, no accounts, no ads. Your data stays on your PC.
 <details>
 <summary>What it talks to, and security</summary>
 
-- **No tracking.** No accounts, no ads, no analytics. Your data stays on your PC.
-- **Only your PC can open it.** The server only listens locally and turns away requests from other websites (the phone remote is the one opt-in exception, see below).
-- **Phone remote:** off by default. When on, the app also listens on your home Wi-Fi, but only phones you paired with the QR code get in, and they can't change your folders or AniList account. Remove a phone in Settings → Phone remote.
-- **No password through a proxy.** If you open it to your phone through a proxy (`remote_hosts`), everyone on that network can use it.
-- **Your AniList login** is a token in `anilist_token.json`, readable only by your user (Windows: it sits in your own user profile).
-- **What it talks to on the internet:**
-  - [AniList](https://anilist.co) — metadata, artwork and your list (when connected)
-  - [ani.zip](https://api.ani.zip) — episode titles and pictures
-  - [AniSkip](https://aniskip.com) — only if you turn it on (off by default); it sees which episode you start
-  - [GitHub](https://github.com/pystardust/ani-cli) — only when you press Get ani-cli or Update ani-cli
-  - with online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on
+- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start), GitHub (only when you get or update ani-cli). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on.
+- **Access:** the server only listens on your PC. The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or AniList account.
+- **Proxy:** through `remote_hosts` there's no password, so everyone on that network can use it.
+- **AniList login:** a token in `anilist_token.json`, readable only by your user.
 
 </details>
 
