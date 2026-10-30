@@ -193,9 +193,30 @@ mp.observe_property("time-pos", "number", function(_, t)
     end
 end)
 
+-- Openings and endings on the timeline: chapters at their start and end,
+-- so mpv's seek bar marks them and names them under the mouse. A spot that
+-- already has a chapter (a file's own "Opening") keeps it.
+local function mark_timeline()
+    local list = mp.get_property_native("chapter-list") or {}
+    local function add(time, title)
+        for _, c in ipairs(list) do
+            if math.abs(c.time - time) < 1 then return end
+        end
+        list[#list + 1] = { time = time, title = title }
+    end
+    for _, seg in ipairs(segments) do
+        add(seg.start, seg.kind == "op" and "Opening" or "Ending")
+        if not seg.finish then add(seg.stop, "Episode") end
+    end
+    table.sort(list, function(a, b) return a.time < b.time end)
+    mp.set_property_native("chapter-list", list)
+end
+
 mp.register_script_message("anime-hub-segments", function(raw)
     segments = parse(raw)
     current = nil
+    local data = utils.parse_json(raw or "")
+    if type(data) == "table" and data.marks == true then mark_timeline() end
 end)
 
 mp.register_event("start-file", function()

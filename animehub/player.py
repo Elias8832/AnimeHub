@@ -432,7 +432,7 @@ def _send_skips(proc, ep_id, sock_path, duration, prefs):
                                                  duration, prefs, missing)
         # The session may have ended or been replaced while AniSkip answered.
         if segs and _owns_session(ep_id, proc):
-            mpv_ipc(sock_path, ["script-message", "anime-hub-segments", json.dumps({"segments": segs})])
+            mpv_ipc(sock_path, ["script-message", "anime-hub-segments", json.dumps({"segments": segs, "marks": settings.automation_enabled("mpv_marks")})])
             with _active_lock:  # the phone remote's "Skip opening" (Decision 43)
                 entry = _active.get(ep_id)
                 if entry is not None and entry.get("proc") is proc:
@@ -655,7 +655,7 @@ def start_play(ep_id, version=0, from_start=False):
     if path is None or not path.exists():
         return {"error": "file missing"}
     sock = ipc_socket_path()
-    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start)]
+    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start), *settings.mpv_flags()]
     # No --save-position-on-quit (TODO 24): the hub's IPC loop is the only
     # resume store. mpv's watch-later state would otherwise fight an
     # intentional restart/reset — a stale mpv-side position can override

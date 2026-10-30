@@ -7,6 +7,7 @@ entries (AniList media dicts) in page order; fetch(id) returns one entry
 in franchise.FRANCHISE_QUERY_ID's shape."""
 
 import unittest
+from unittest import mock
 
 from tests import support
 from animehub import anilist, database, franchise
@@ -112,6 +113,8 @@ class Refresh(unittest.TestCase):
         self.assertEqual(franchise.franchise_seeds(self.scan), set())
         self.scan[0]["meta"] = {"anilist_id": 161645}
         self.assertEqual(franchise.franchise_seeds(self.scan), {161645})
+        with mock.patch.object(franchise.anilist, "anilist_cache_stale", return_value={"entries": [{"id": 5}]}):
+            self.assertEqual(franchise.franchise_seeds(self.scan), {161645, 5})
 
     def test_one_build_per_franchise_then_fresh(self):
         self.assertEqual(franchise.refresh_franchises({161645, 176301}, self.fetch), 1)

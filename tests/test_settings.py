@@ -264,6 +264,22 @@ class SettingsRouteTests(unittest.TestCase):
         code, body = self.post({})
         self.assertEqual(code, 400)
 
+    def test_mpv_options(self):
+        self.assertEqual(settings.mpv_flags(), ["--fs"])  # fullscreen by default
+        code, body = self.post({"mpv_fullscreen": "off", "mpv_marks": False})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["mpv"], {"fullscreen": "off", "marks": False})
+        self.assertEqual(settings.mpv_flags(), ["--no-fs"])
+        self.post({"mpv_fullscreen": "own"})
+        self.assertEqual(settings.mpv_flags(), [])  # left to mpv.conf
+        self.assertEqual(self.post({"mpv_fullscreen": "maybe"})[0], 400)
+        self.post({"mpv_fullscreen": "on", "mpv_marks": True})
+
+    def test_online_episodes_get_the_mpv_flags(self):
+        from animehub import streaming
+        self.assertIs(streaming.settings, settings)
+        self.assertIn("*settings.mpv_flags()]", Path(streaming.__file__).read_text(encoding="utf-8"))
+
     def test_skip_settings(self):
         """Decision 39: skip modes are a closed vocabulary; AniSkip is a
         boolean and starts off."""

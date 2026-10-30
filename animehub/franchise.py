@@ -244,10 +244,12 @@ def _franchise_fresh(fid, entries):
 
 
 def franchise_seeds(scan):
-    """AniList entries the library knows of: matched folders and linked
-    online releases. Their franchises are the ones kept up to date."""
+    """AniList entries the library knows of: matched folders, linked online
+    releases and everything on your lists. Their franchises are the ones
+    kept up to date, so the Library can group them before any page opens."""
     ids = {(s.get("meta") or {}).get("anilist_id") for s in scan}
     ids |= {link["media_id"] for link in streaming.stream_links_all()}
+    ids |= {e.get("id") for e in (anilist.anilist_cache_stale() or {}).get("entries") or []}
     ids.discard(None)
     return ids
 

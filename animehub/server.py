@@ -490,10 +490,11 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done",
-                    "upscale_banners", "measure_lengths", "remember_tracks")
+                    "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
+                       **{key: settings.MPV_MODES for key in settings.MPV_OPTIONS},
                        "upscale_style": tuple(upscale.STYLES)}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
