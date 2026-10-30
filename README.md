@@ -22,7 +22,7 @@ This app is early in development — expect bugs and breaking changes.
 
 ## Install
 
-You need **Python 3.9+**, **mpv** and a **Chromium-family browser** (chromium, chrome, brave or edge), on Linux or Windows 10/11 (experimental).
+You need **Python 3.9+**(Linux), a **Chromium-family browser**(Linux and Windows) (chromium, chrome, brave or edge)
 
 **From git** (needs rust/cargo)**:**
 
