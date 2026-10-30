@@ -678,14 +678,15 @@ function paintWall(fade) {
   const fx = fade && !reduceMotion();
   w.className = "wall" + (fx ? " fade" : "");
   clearTimeout(paintWall.more);
-  /* Touch screens (Decision 44): a fresh wall shows its first screenful at
-     once and the rest in batches over the next frames — building all ~270
-     cards in one go froze the page change on a phone. */
-  if ((fx || !w.firstChild) && cards.length > 36 && mq("(pointer:coarse)")) {
-    w.innerHTML = cards.slice(0, 24).join("");
-    let i = 24;
-    const more = () => { if (!w.isConnected) return; w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
-    paintWall.more = setTimeout(more, 380); // after the page has slid in
+  /* A fresh wall shows its first screenful at once and the rest in batches
+     over the next frames — building all ~300 cards in one go froze the page
+     change (TODO 126; phones first, Decision 44). */
+  if ((fx || !w.firstChild) && cards.length > 36) {
+    const coarse = mq("(pointer:coarse)"), head = coarse ? 24 : 36;
+    w.innerHTML = cards.slice(0, head).join("");
+    let i = head;
+    const more = () => { if (!w.isConnected) return; w.classList.remove("fade"); w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
+    paintWall.more = setTimeout(more, coarse ? 380 : 650); // after the page has settled
   } else if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
   gtrayFit();
 }
@@ -1383,7 +1384,7 @@ function dayLabel(d) {
    numbers for it as a band, the timeline by day, and on the side a month
    heat map, top genres and most watched. The all-time charts follow below. */
 const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];
-const calKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const spineOf = (s) => (s?.meta?.anilist_id && S.data?.spine?.entries?.find((e) => e.id === s.meta.anilist_id)) || null;
 /* Journal charts (Decision 38): one bar look and one row look for every panel. */
 function jBars(items, cls = "", val) {
@@ -1407,7 +1408,7 @@ function loadJournal() {
     if (more && jrTries++ < 40) setTimeout(() => { if (S.view === "history" || S.view === "stats") loadJournal(); }, 3000);
     else jrTries = 0;
     if (S.view === "history" || S.view === "stats") render(true);
-  }).catch(() => { jrBusy = false; });
+  }, () => { jrBusy = false; }); // only the request: a drawing error should show, not hang on "Reading…"
 }
 function jEvents() {
   if (aniMode()) {
@@ -2906,7 +2907,7 @@ function swapLayer(cls, url) {
 }
 function paintCanvas() {
   const art = canvasArt(), mode = lookGet("art");
-  if (!(S.view === "library" && S.libHover)) document.documentElement.classList.remove("amb-now"); // page changes fade the accent
+  document.documentElement.classList.add("amb-now"); // page changes step the accent too: the CSS fade restyled everything each frame
   swapLayer("cv-blur", mode === "off" ? null : art?.blur);
   swapLayer("cv-art", mode === "full" ? art?.sharp : null);
   accentFrom(art?.blur || art?.sharp, art?.color);
@@ -2920,7 +2921,7 @@ let ambStep = 0;
 function ambFade(to) {
   const root = document.documentElement, from = getComputedStyle(root).getPropertyValue("--amb").trim();
   clearInterval(ambStep);
-  if (!to || !from || reduceMotion()) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
+  if (!to || !from || reduceMotion() || mq("(pointer:coarse)")) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
   let k = 0;
   ambStep = setInterval(() => {
     k++;
@@ -3274,7 +3275,7 @@ async function pollNow() {
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.rmtOpen ? 1000 : S.artWorking ? 1500 : (S.data?.now && rmtSig) || S.dl.some((j) => j.status === "running") ? 2000 : 4000);
+  pollSoon(S.rmtOpen || S.data?.now ? 1000 : S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000); // while playing: Home follows mpv within a second
 }
 /* A banner was upscaled (or put back) under the same name: point every
    copy of its URL at the new ?v= stamp — the data the page draws from and

@@ -182,6 +182,13 @@ class WholeScript(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
 
 
+class JournalKeys(unittest.TestCase):
+    def test_streak_day_key_exists(self):
+        # A rename took this away and the Journal hung on "Reading…", no error shown.
+        self.assertRegex(APP, r"const dayKey = \(d\) =>")
+        self.assertIn("dates.map(dayKey)", APP)
+
+
 class WeekSection(unittest.TestCase):
     def test_calendar_context_only_states_facts(self):
         self.assertIn('const airTag = (x) => (x.start || x.ep === 1 ? "Premiere" : x.ep && x.ep === x.e.episodes ? "Finale" : "");', APP)

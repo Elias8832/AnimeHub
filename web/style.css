@@ -1640,6 +1640,9 @@ body.has-side #app{padding-left:340px}
    a whole still fades in), no film grain, no blur behind glass inside the
    scrolling page (the floating bars keep theirs), and off-screen cards and
    episode rows are skipped until they scroll into view. */
+/* Library posters off screen are skipped until they scroll near (PC too, TODO 126). */
+.lib2 .wall .card .pw{content-visibility:auto;aspect-ratio:2/3;contain-intrinsic-size:auto 250px}
+.lib2 .wall .card{contain:layout style} /* on the whole card it clipped the caption's first letter (Chrome) */
 @media (pointer:coarse){
   html{transition:none}
   .cv-grain{display:none}
@@ -1650,8 +1653,6 @@ body.has-side #app{padding-left:340px}
   :root[data-art=soft] .cv-blur{inset:auto;filter:blur(35px) saturate(1.3) brightness(.5)}
   #app *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
   #app.nav-in *,.wall.fade .card,.wall.fade .prog i{animation:none!important}
-  .lib2 .wall .card .pw{content-visibility:auto;contain-intrinsic-size:auto 170px}
-  .lib2 .wall .card{contain:layout style} /* on the whole card it clipped the caption's first letter (Chrome) */
   .sp2 .eps .ep{content-visibility:auto;contain-intrinsic-size:auto 90px}
   .prow{content-visibility:auto;contain-intrinsic-size:auto 64px}
 }

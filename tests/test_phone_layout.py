@@ -66,13 +66,12 @@ class TouchSmoothness(unittest.TestCase):
     def test_touch_rules(self):
         touch = CSS[CSS.index("/* ───────── touch screens: smoothness"):]
         for rule in ("html{transition:none}", ".cv-grain{display:none}", "#app *{-webkit-backdrop-filter:none!important",
-                     "#app.nav-in *,.wall.fade .card,.wall.fade .prog i{animation:none!important}",
-                     ".lib2 .wall .card .pw{content-visibility:auto"):
+                     "#app.nav-in *,.wall.fade .card,.wall.fade .prog i{animation:none!important}"):
             self.assertIn(rule, touch)
         self.assertTrue(touch.lstrip("/* ─").find("@media (pointer:coarse){") > 0)  # never the PC
 
-    def test_library_builds_in_batches_on_touch(self):
-        self.assertIn('if ((fx || !w.firstChild) && cards.length > 36 && mq("(pointer:coarse)")) {', APP)
+    def test_library_builds_in_batches(self):
+        self.assertIn('if ((fx || !w.firstChild) && cards.length > 36) {', APP)
 
     def test_nothing_wider_than_the_screen(self):
         self.assertIn("html,body{overflow-x:clip;overscroll-behavior-x:none}", CSS)
