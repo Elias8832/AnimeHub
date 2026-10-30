@@ -80,7 +80,7 @@ test("missing artwork does not exclude the latest show", () => {
     continue: [], history: [recent] });
   const html = app.Home();
   assert.match(html, /<h1>No artwork<\/h1>/);
-  assert.match(html, /<div class="upn" style="--h:[^"]*"><div class="upc">/); // hue placeholder, no art layer
+  assert.match(html, /<div class="upn" data-a="open" data-v="[^"]*" style="--h:[^"]*"><div class="upc">/); // hue placeholder, no art layer
 });
 
 test("empty activity and removed episodes do not crash the hero picker", () => {
@@ -92,11 +92,17 @@ test("empty activity and removed episodes do not crash the hero picker", () => {
 
 test("the latest fully watched show gets a rewatch banner", () => {
   const older = episode("older", earlier);
-  const finished = episode("finished", latest, true);
+  const finished = { ...episode("finished", latest, true, 1430), duration: 1440 };
   const app = homepage({ shows: [show("Older", [older]), show("Finished", [finished])],
     continue: [older], history: [finished, older] });
   assert.equal(app.nextUpInfo().s.title, "Finished");
   assert.equal(app.nextUpInfo().label, "Rewatch");
+});
+
+test("a watched episode stopped halfway says Continue, not Rewatch", () => {
+  const stopped = { ...episode("stopped", latest, true), position: 600, duration: 1440 };
+  const app = homepage({ shows: [show("Stopped", [stopped])], continue: [stopped], history: [stopped] });
+  assert.equal(app.nextUpInfo().label, "Continue watching");
 });
 
 test("homepage renders the new hero, excludes its duplicate tile, and targets its buttons", () => {

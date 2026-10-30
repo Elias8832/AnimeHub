@@ -303,7 +303,7 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 .hero .poster:hover:before{opacity:1}
 .hero h1{font-size:clamp(36px,4.8vw,64px);line-height:1.04;font-weight:700;letter-spacing:-.035em;margin-bottom:14px;max-width:880px;text-shadow:0 4px 36px rgba(0,0,0,.5)}
 .meta{display:flex;gap:8px;flex-wrap:wrap;color:var(--mute);align-items:center}
-.meta .live-t{display:inline-flex;align-items:center;gap:8px;color:var(--warn);font-weight:600;font-size:13px}.meta .live-t:empty{display:none}
+.meta .live-t{display:inline-flex;align-items:center;gap:8px;margin-left:6px;color:var(--warn);font-weight:600;font-size:13px}.meta .live-t:empty{display:none}
 .meta .live-t:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--warn);animation:livePulse 1.8s ease-out infinite}
 .cta{display:flex;gap:16px;align-items:center;margin-top:24px;flex-wrap:wrap}
 .warn{color:var(--warn);font-size:14px;border-left:2px solid var(--warn);padding-left:12px;max-width:300px}
@@ -570,8 +570,8 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .st2 .fvb.on .v .ico{color:#ff8fa3;fill:currentColor}
 .st2 .fvb:hover .v .ico{transform:scale(1.12)}
 .st2 .fvb.pop1 .ico{animation:heartPop .55s var(--spring)}
-.st2.off{align-items:center;gap:16px;min-height:58px}.st2.off .k{margin:0;font-size:13px;color:var(--ink-2)}
-.st2.off>.btn{display:inline-flex;flex-direction:row;align-items:center;gap:8px;height:40px;padding:0 18px;border:0;border-radius:999px;font:600 14px var(--ui)}
+.st2.unl{align-items:center;gap:16px;min-height:58px}.st2.unl .k{margin:0;font-size:13px;color:var(--ink-2)}
+.st2.unl>.btn{display:inline-flex;flex-direction:row;align-items:center;gap:8px;height:40px;padding:0 18px;border:0;border-radius:999px;font:600 14px var(--ui)}
 .sp2 .cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px;align-items:center}
 .sp2 .cta .btn.big{height:48px;font-size:15px;padding:0 20px}
 .sp2 .cta .btn.ic{width:48px;padding:0}
@@ -688,7 +688,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .mfacts{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:13.5px;color:var(--ink-2);margin:6px 0 2px}.sp2 .mfacts:empty{display:none}
 .sp2 .mfacts span{font-variant-numeric:tabular-nums}.sp2 .mfacts small{color:var(--mute);font-size:12px;margin-right:7px}
 .sp2 .meta .mchip.al{gap:4px;margin:0}
-.sp2 .meta .live-t:not(:empty)::before{content:"·";margin-right:12px;color:var(--mute)}
 .st2>button{justify-content:flex-start}
 .st2 .v{height:34px;align-items:flex-end}
 .st2 .fvb .v .ico{width:28px;height:28px;margin-bottom:2px}
@@ -763,6 +762,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 @keyframes tick{from{opacity:0;transform:scaleY(.1)}}
 .upn .cta{display:flex;gap:10px;margin-top:22px}
 .upn .btn.big{height:48px;font-size:15px}
+.upn[data-a]{cursor:pointer}
 .upn .btn.pri .kb{background:rgba(0,0,0,.08);color:rgba(0,0,0,.55)}
 /* sections */
 .hsec{margin-top:46px}
@@ -890,7 +890,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .lib2 .tg{position:absolute;top:8px;z-index:4;font:500 10px var(--mono);padding:3px 8px;border-radius:999px;background:rgba(14,15,18,.78);box-shadow:var(--edge);color:var(--ink)}
 .lib2 .tg.src{left:8px}.lib2 .tg.sc{right:8px}
 .lib2 .tg.src.partial,.lib2 .tg.src.none{color:var(--warn)}
-.lib2 .card .fav{top:auto;bottom:12px;right:10px}
+.lib2 .card .fav{top:auto;bottom:12px;right:10px}.lib2 .card .pw:has(.prog) .fav{bottom:20px}
 .lib2 .card .prog{left:10px;right:10px;bottom:10px;height:4px;border-radius:4px;background:rgba(0,0,0,.45);overflow:hidden}
 .lib2 .card .prog i{background:var(--accent)}
 .lib2 .resume-tag{top:auto;bottom:22px;left:8px;background:var(--ink);color:#111;font:600 11px var(--ui)}
@@ -1246,7 +1246,9 @@ body.srch #pal{display:grid}
 .jbars.full{margin:0;padding:0;width:100%;height:auto;gap:6px;align-items:flex-end}
 .jbars.full>div{flex:1;min-width:0;height:auto}
 .jbars.full i{width:100%;max-width:34px;height:calc(4px + var(--h,0) * 110px)}
-.jbars.full.many{gap:3px}.jbars.full.many i{border-radius:4px}
+/* The gap is a border: borders stay whole device pixels, plain gaps round unevenly at fractional scale. */
+.jbars.full.many{gap:0;width:calc(100% + 3px)}.jbars.full.many i{position:relative;border-right:3px solid transparent;background:none;border-radius:0}
+.jbars.full.many i:before{content:"";position:absolute;inset:0;border-radius:4px;background:rgba(255,255,255,.14)}.jbars.full.many i.on:before{background:var(--accent)}
 .jbars.full span{overflow:visible}
 .jcard.gen .r span:first-child{width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:1000px){.jr2 .jrange{margin-left:0}.jband.all{flex-wrap:wrap;gap:14px 0}.jband .src{width:100%;margin:0}}

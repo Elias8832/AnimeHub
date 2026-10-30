@@ -168,7 +168,7 @@ function nextUpInfo() {
   const anyUn = ctx.s.seasons.map((sea) => ({ sea, ep: sea.episodes.find((e) => !e.watched) })).filter((x) => x.ep)[0];
   if (after) return { s: ctx.s, sea: ctx.sea, ep: after, label: "Up next" };
   if (anyUn) return { s: ctx.s, sea: anyUn.sea, ep: anyUn.ep, label: "Up next" };
-  return { ...ctx, label: "Rewatch", ep: ctx.ep };
+  return { ...ctx, label: resumable(ctx.ep) ? "Continue watching" : "Rewatch", ep: ctx.ep };
 }
 /* Watch facts on the model, in place (marked ids only, artwork untouched):
    the show page patches itself after a mark instead of rebuilding — see
@@ -273,7 +273,7 @@ function heroHTML(up) {
   const src = streamEp(ep) ? "online" : "on disk";
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="upn" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
+  return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
     <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
     <div class="sub">${esc(epCode(sea, ep))} · ${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</div>
@@ -1194,7 +1194,7 @@ function entryHTML(f, pending) {
 }
 /* The row on the page: score · watched · status · ♥ (Decision 38). */
 function entryStats(f, pending) {
-  if (!f.status && !pending) return `<div class="st2 off"><span class="k">not on your list yet</span><button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></div>`;
+  if (!f.status && !pending) return `<div class="st2 unl"><span class="k">not on your list yet</span><button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></div>`;
   const max = f.score_max || 10, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
   const total = f.media?.episodes || fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
   const got = f.local || f.progress == null ? (fe ? fe.slots.filter((x) => x.watched).length : show ? epWatched(show) : 0) : f.progress;
@@ -1663,8 +1663,7 @@ function phoneGroup() {
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
     ${srow("Phone remote", "Pause, skip and pick tracks from your phone while an episode plays here. Phone and PC need the same Wi-Fi. No app to install.", `<button class="switch" role="switch" aria-checked="${r.on}" aria-label="Phone remote" data-a="rmton"></button>`)}
-    ${pair}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}
-    <div class="group"><h3>Good to know</h3><p class="sub">Only paired phones get in; they can't change your folders or AniList account. Away from home, use Tailscale (see the README). On a phone, “Add to Home Screen” gives the remote its own icon.</p></div>`;
+    ${pair}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
 }
 function phoneWatch() {
   phoneGroup.t = 0;
@@ -3229,6 +3228,11 @@ const A = {
     saveLib(); paintWall(); syncFilters();
   },
   go: (v, t) => {
+    /* The settings icon again acts as back. */
+    if (v === "settings" && S.view === "settings") {
+      if (isPhone() && S.setOpen) A.setback(); else if (history.state?.inApp) history.back(); else nav("home");
+      return;
+    }
     if (v === "settings") S.setOpen = false;
     const same = v === S.view || (v === "history" && S.view === "stats");
     /* The bottom bar (phones): the open tab again scrolls to the top; another
@@ -3878,7 +3882,8 @@ function moveFocus(dir) {
   if (best >= 0) { fIdx = best; applyFocus(); }
 }
 document.addEventListener("keydown", (e) => {
-  const inInput = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  /* e.target too: search blurs its field on Enter before this runs. */
+  const inInput = [document.activeElement, e.target].some((x) => /^(INPUT|TEXTAREA|SELECT)$/.test(x.tagName));
   if (S.modal) {
     if (e.key === "Escape") { e.preventDefault(); const t = S.modal.t; t === "tour" ? finishTour(true) : t === "rec" ? recDone() : t === "done" ? A.dnskip() : closeModal(); }
     else if (e.key === "Tab") {
@@ -3895,7 +3900,7 @@ document.addEventListener("keydown", (e) => {
   if (!inInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
     const tab = TABS[+e.key - 1];
     if (tab && e.key !== "0") { e.preventDefault(); nav(tab[0]); return; }
-    if (e.key === ",") { e.preventDefault(); nav("settings"); return; }
+    if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }
     if (e.key === "?") { e.preventDefault(); S.menu = S.menu === "keys" ? null : "keys"; paintNav(); return; }
     /* The show page's keys (shown on its buttons): E edit, D download, ⇧W mark all, ↵ play. */
     if (S.view === "home") {
@@ -4179,7 +4184,7 @@ function pushNav() {
   /* Going somewhere from inside a layer (a result in search, Details in the
      deck): the new page takes the layer's history entry. */
   if (history.state?.ov) { OV.length = 0; history.replaceState(h, "", navUrl()); return; }
-  if (navSeeded) history.pushState(h, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
+  if (navSeeded) history.pushState({ ...h, inApp: true }, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
 }
 function applyNav(h) {
   S.navIn = true; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";

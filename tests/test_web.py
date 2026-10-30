@@ -150,7 +150,7 @@ class Frontend(unittest.TestCase):
         self.assertEqual(run_js("return 1;"), 1)
         self.assertIn("const TABS = [", APP)
         self.assertIn("<kbd>${i + 1}</kbd>", APP)
-        self.assertIn('if (e.key === ",") { e.preventDefault(); nav("settings"); return; }', APP)
+        self.assertIn('if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }', APP)
         self.assertIn("function paintCanvas()", APP)
         self.assertIn('swapLayer("cv-art", mode === "full" ? art?.sharp : null);', APP)
 
