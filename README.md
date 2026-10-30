@@ -22,6 +22,8 @@ This app is early in development — expect bugs and breaking changes.
 
 ## Install
 
+You need **Python 3.9+**, **mpv** and a **Chromium-family browser** (chromium, chrome, brave or edge), on Linux or Windows 10/11 (experimental).
+
 **From git** (needs rust/cargo)**:**
 
 ```sh
@@ -39,10 +41,9 @@ chmod +x AnimeHub-x86_64.AppImage
 ```
 
 <details>
-<summary>What you need</summary>
+<summary>Optional extras</summary>
 
-- **Required:** Python 3.9+, mpv, a Chromium-family browser (chromium, chrome, brave or edge). Linux, or Windows 10/11 (experimental).
-- **Optional:** an AniList account; ani-cli 5.1+ for online episodes (the app can fetch it, it needs curl); [Upscayl](https://upscayl.org/download) for sharper banners; ffprobe for faster episode lengths.
+An AniList account; ani-cli 5.1+ for online episodes (the app can fetch it, it needs curl); [Upscayl](https://upscayl.org/download) for sharper banners; ffprobe for faster episode lengths.
 
 </details>
 
@@ -117,7 +118,7 @@ No tracking, no accounts, no ads. Your data stays on your PC.
 
 ## AI-notice
 
-- AnimeHub was made with a lot of help from mainly GLM 5.3 Flash, and very little help from Sonnet 5.5.
+- AnimeHub was made with a lot of help from mainly GLM 5.3 Flash, Opus 5.5(after v0.2) and very little help from Sonnet 5.5.
 - I want to make clear that using LLMs didn't take anyone's job here. AnimeHub simply wouldn't exist without them, because I would never have started this project.
 - I **DID NOT** give a large LLM $200, a prompt and a couple of hours. I built this project step by step. This is my app, built with passion over many, many hours, and I want to keep working on it.
 
