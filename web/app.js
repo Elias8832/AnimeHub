@@ -1583,7 +1583,7 @@ function loadAlData() {
 /* ---------- settings ---------- */
 const srow = (t, desc, ctl) => `<div class="srow"><div><b>${t}</b><p>${desc}</p></div><div class="ctl">${ctl}</div></div>`;
 const tgl = (key, label, on, off) => `<button class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-a="adv" data-v="${key}" ${off ? "disabled" : ""}></button>`;
-const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), `<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "found" : "not found"}</span>`);
+const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), `${path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : ""}<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "found" : "not found"}</span>`);
 function Sett() {
   const s = S.settings, ani = S.ani || {};
   if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
@@ -1647,7 +1647,7 @@ function upscaleRow(s) {
     if (S.view === "settings") loadSettings().then(() => S.view === "settings" && render(true));
   }, 4000);
   const look = [["natural", "Natural"], ["digital", "Digital art"]].map(([v, l]) => `<button class="${u.style === v ? "on" : ""}" aria-pressed="${u.style === v}" data-a="spref" data-k="upscale_style" data-v="${v}" ${u.on ? "" : "disabled"}>${l}</button>`).join("");
-  return srow("Sharper banners", txt, tgl("upscale_banners", "Sharper banners", u.on, missing && !u.on))
+  return srow("Sharper banners", txt, (missing ? UPSCAYL_BTN : "") + tgl("upscale_banners", "Sharper banners", u.on, missing && !u.on))
     + srow("Banner look", "Natural keeps soft shading as it is. Digital art draws crisper lines and takes about 3× longer (Upscayl's Digital Art with TTA Mode).", `<span class="seg" role="group" aria-label="Banner look">${look}</span>`);
 }
 /* A segmented control for one Appearance preference. */
@@ -1718,7 +1718,8 @@ const QLABEL = { best: "Best available", worst: "Smallest" };
 function streamGroup(s) {
   const st = s.stream || {}, off = !s.tools?.["ani-cli"];
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
-  return `<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3>${off ? '<p class="sub">Install ani-cli to watch and download episodes you don\'t have.</p>' : ""}${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
+  const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), aniBtn(s)) : st.own ? srow("ani-cli", esc(aniLine(s)), aniBtn(s)) : "";
+  return `${getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3>${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
     ${srow("Quality", "For watching and downloading online episodes.", `<select aria-label="Stream quality" data-a="spref" data-k="stream_quality" ${off ? "disabled" : ""}>${(st.qualities || []).map((q) => `<option value="${q}" ${q === st.quality ? "selected" : ""}>${QLABEL[q] || q + "p"}</option>`).join("")}</select>`)}
     ${srow("Audio", "Sub or dub for online episodes. Any episode's menu plays the other one.", `<span class="seg" role="group" aria-label="Default audio">${SLMODES.map(([m, l]) => `<button class="${st.mode === m ? "on" : ""}" aria-pressed="${st.mode === m}" data-a="spref" data-k="stream_mode" data-v="${m}" ${off ? "disabled" : ""}>${l}</button>`).join("")}</span>`)}
     ${srow("Downloads", "Saved into your library folder, one folder per show.", "")}
@@ -2638,12 +2639,32 @@ function AniDlg() {
   <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
 }
 /* The tour's last page (mockup): what the hub found — ✓ found, ! needed, – optional. */
+const MPV_BTN = '<button class="btn sm" data-a="ext" data-v="https://mpv.io/installation/">Get mpv</button>';
+const UPSCAYL_BTN = '<button class="btn sm" data-a="ext" data-v="https://upscayl.org/download">Get Upscayl</button>';
+const tourRow = (st, k, v, more = "") => `<div class="${st}"><span class="okc">${st === "ok" ? ico("check") : st === "bad" ? "!" : "–"}</span><b>${k}</b><span class="v">${esc(v)}</span>${more}</div>`;
+/* The ani-cli button (Decision 47): the official script, only when clicked. */
+const aniWord = (s) => (s.stream?.own && !s.stream?.outdated ? "Check for updates" : s.stream?.own ? "Update ani-cli" : "Get ani-cli");
+const aniBtn = (s) => (s.stream?.can_get ? `<button class="btn sm" data-a="aniget" ${S.aniGet ? "disabled" : ""}>${S.aniGet ? "Getting it…" : aniWord(s)}</button>` : "");
+function aniLine(s) {
+  const v = s.stream?.version, has = !!s.tools?.["ani-cli"];
+  if (!has) return "Needed for episodes you don't have as files.";
+  if (s.stream?.outdated) return `Version ${v} is too old: online episodes won't work.`;
+  return `ani-cli${v ? " " + v : ""} found`;
+}
+function tourTools(s) {
+  const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? ` It also needs ${st.needs.join(", ")}.` : "";
+  return [
+    tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN),
+    tourRow(ani && !st.outdated ? "ok" : st.outdated ? "bad" : "opt", "Online episodes", aniLine(s) + need, ani && !st.outdated ? "" : aniBtn(s)),
+    tourRow(up ? "ok" : "opt", "Sharper banners", up ? "Upscayl found" : "Optional: install Upscayl for sharper show banners.", up ? tgl("upscale_banners", "Sharper banners", s.upscale_banners) : UPSCAYL_BTN),
+  ].join("");
+}
 function tourFound(s, a, n, ok) {
-  const row = (st, k, v) => `<div class="${st}"><span class="okc">${st === "ok" ? ico("check") : st === "bad" ? "!" : "–"}</span><b>${k}</b><span class="v">${esc(v)}</span></div>`;
+  const row = tourRow;
   return [
     row(ok ? "ok" : "bad", "Library", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : s.library_root ? `${s.library_root} · can't be read` : "no folder chosen yet"),
     row(s.tools?.mpv ? "ok" : "bad", "Player", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "mpv not found — install it to play files"),
-    row(s.tools?.["ani-cli"] ? "ok" : "opt", "Online episodes", s.tools?.["ani-cli"] ? `ani-cli${s.stream?.version ? " " + s.stream.version : ""} found` : "ani-cli not installed — optional"),
+    row(s.tools?.["ani-cli"] ? "ok" : "opt", "Online episodes", s.tools?.["ani-cli"] ? aniLine(s) : "not set up, optional"),
     row(a.connected ? "ok" : "opt", "AniList", a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected"),
   ].join("");
 }
@@ -2651,18 +2672,23 @@ function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
   const b = [
+    `<h2 id="dt">Welcome to AnimeHub</h2><p class="sub">Your anime in one place, played in mpv.</p>
+     <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
+     <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
+     <div>${ico("play")}<span><b>It keeps up</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
     `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}
      <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>`,
     `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
+    `<h2 id="dt">A few tools</h2><p class="sub">AnimeHub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
      <div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`,
   ][T.step];
-  return `<div class="steps">${[0, 1, 2].map((i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b}
-  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === 2 ? "Open library" : "Continue"}</button></div>`;
+  return `<div class="steps">${[0, 1, 2, 3, 4].map((i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b}
+  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === 4 ? "Open library" : "Continue"}</button></div>`;
 }
 function Rec() {
   const { res, pick } = S.rec, n = res.conflicts.length;
@@ -3720,11 +3746,18 @@ const A = {
     dirSet(p.path);
   },
   dirconfirm: (v) => { if (v === "1") dirSet(S.dir.path); else { S.dir.confirm = false; paintDir(); } },
+  aniget: async () => {
+    S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);
+    const r = await api("/api/anicli-get", {}).catch(() => ({ error: "Could not reach the hub." }));
+    S.aniGet = false; await loadSettings();
+    toast(r.error || (r.changed === false ? `You have the latest ani-cli (${r.version})` : `ani-cli ${r.version || ""} is ready`), r.error ? "err" : undefined);
+    if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
+  },
   tourpick: (v) => { S.tour.choice = v; paintModal(); }, tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < 2) { T.step++; return paintModal(true); }
+    if (T.step < 4) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList

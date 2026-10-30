@@ -1,78 +1,28 @@
 # AnimeHub
 
-A beautiful, local anime library to organize your shows and play them in mpv.
-Works with your AniList account: what you watch is synced back to it.
+Your anime in one place. Your files and your AniList list on one page per show, played in mpv.
 
 ## Important!
 This app is early in development — expect bugs and breaking changes.
-## Features
-
-- **Home** - Up next, continue watching, this week's new episodes and recommendations.
 
 ![Home](docs/screenshots/home.png)
 
-- **Library** - All your shows, with lots of filters. Anything it couldn't match lands in "Needs a look".
+## Why it's nice
 
-![Library](docs/screenshots/library.png)
-
-- **Show page** - One page per franchise: every season, movie and special, plus your AniList entry.
+- **One page per show.** Every season, movie and special together, with your AniList entry right there.
+- **Your files and online episodes in one list.** Missing an episode? Watch or download it from the same page. Auto-play carries on from a file to an online episode.
+- **Made for mpv.** Resume, skip openings and endings with Enter, marks on the timeline, next episode. Your own `mpv.conf` still loads.
+- **AniList stays in sync.** Progress and scores go back to your list, even after being offline.
+- **A calendar of what's airing**, and a Journal of what you watched.
+- **Your phone as a remote.** No app to install, and it has its own phone layout.
 
 ![Show](docs/screenshots/show.png)
 
-- **Journal** - Your history and stats on one page: what you watched when, totals, most watched, genres and more.
+![Library](docs/screenshots/library.png)
 
-![Journal](docs/screenshots/journal.png)
+## Install
 
-- **Settings** - AniList, library, playback, online episodes and appearance.
-
-![Settings](docs/screenshots/settings.png)
-
-- **Playback** - Episodes open in mpv, with resume, auto-play next and progress tracking. Your mpv config still works.
-  - Skip openings and endings with Enter, or automatically. Uses the file's chapters ("Opening", "ED"…).
-  - Openings and endings marked on mpv's timeline, fullscreen on start. Your own `mpv.conf` still loads; Settings → mpv says what the hub overrides.
-  - Optional [AniSkip](https://aniskip.com) for files without chapters. Off by default: AniSkip sees which episode you start.
-  - Remembers the audio and subtitle track you pick for each show, and picks it again for the next episodes.
-- **Phone remote (optional)** - Pause, seek, skip openings, change volume and speed, pick audio and subtitles, fix subtitle timing, pick another episode or stop after this one, all from your phone while an episode plays on the PC. Same Wi-Fi, no app to install: switch it on in Settings → Phone remote and scan the QR code. Off by default.
-- **Phone and tablet** - Open it on your phone or tablet (Phone remote or Tailscale) and it gets its own layout: bottom tabs, a swipeable deck of what you're watching, the week's airings as a timeline and calendar, and on tablets your list beside the show page.
-- **Search and keys** - `/` searches your library, AniList, settings and commands. `?` lists all keyboard shortcuts.
-- **AniList** - Matches your shows to AniList for info and artwork. Edit your score, progress and status right in the app.
-- **Online episodes (optional)** - With [ani-cli](https://github.com/pystardust/ani-cli) installed, episodes you don't have show up as online episodes.
-  - They play in mpv with the same resume, tracking, AniList sync and auto-play as your files.
-  - Or download them straight into your library folder.
-  - A wrong match? "Wrong episodes?" on the show page fixes it.
-- **Extra folders** - Anime on more than one drive? Add extra folders in Settings → Library. Their shows join your library, the same show split over two folders gets one show page, and downloads go where the show already is.
-- **Episode lengths** - Each file's length is read once in the background (with ffprobe, else mpv), so episodes show how long they are before you play them. Switch it off in Settings → Library.
-- **Sharper banners (optional)** - With [Upscayl](https://upscayl.org) installed, show banners are redrawn 4× bigger on your graphics card. Off by default (Settings → Appearance).
-  - Two looks: Natural (keeps soft shading) or Digital art (crisper lines, slower).
-  - The originals are kept: switching it off brings them back.
-
-## Requirements
-
-- Linux, or Windows 10/11 (experimental, see [Windows](#windows-experimental))
-- Python 3.9+ (standard library only, nothing to install; the Windows zip brings its own)
-- mpv
-- A Chromium-family browser (chromium, chrome, brave, or edge)
-- rust/cargo (only to build the desktop app or the AppImage)
-- An AniList account (optional)
-- ani-cli (optional, for streaming and downloads)
-- [Upscayl](https://upscayl.org) (optional, for sharper banners; Flatpak, a normal install or the Windows installer)
-- ffprobe from [FFmpeg](https://ffmpeg.org) (optional, measures episode lengths faster; mpv does it otherwise)
-
-## Run
-
-Quickest way to try it, nothing to build:
-
-```sh
-git clone https://github.com/Elias8832/AnimeHub.git
-cd AnimeHub
-python3 hub.py
-```
-
-It opens in a Chromium app window (or a browser tab). The server runs on `http://127.0.0.1:8787`.
-
-### Desktop app
-
-Its own window and an app-menu entry; closing the window quits the app. Needs rust/cargo:
+**From git** (needs rust/cargo)**:**
 
 ```sh
 git clone https://github.com/Elias8832/AnimeHub.git
@@ -81,23 +31,30 @@ cargo build --release
 ./install.sh
 ```
 
-### AppImage (any distro, no building)
-
-One file that runs on any Linux distro. Download `AnimeHub-x86_64.AppImage` from the
-[Releases page](https://github.com/Elias8832/AnimeHub/releases), then:
+**AppImage:** download `AnimeHub-x86_64.AppImage` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases), then:
 
 ```sh
 chmod +x AnimeHub-x86_64.AppImage
 ./AnimeHub-x86_64.AppImage
 ```
 
-It still uses your system's Python 3.9+, mpv, Chromium-family browser and ani-cli. A tool like
-[Gear Lever](https://github.com/mijorus/gearlever) adds it to your app menu.
-`AnimeHub-x86_64.AppImage --hub` starts only the server (add `--no-browser` for no window).
+<details>
+<summary>What you need</summary>
 
-To build it yourself (needs rust/cargo): `desktop/appimage/build.sh`.
+- Linux, or Windows 10/11 (experimental)
+- Python 3.9+ (standard library only, nothing to install; the Windows zip brings its own)
+- mpv
+- A Chromium-family browser (chromium, chrome, brave, or edge)
+- rust/cargo (only to build the desktop app or the AppImage)
+- An AniList account (optional)
+- ani-cli 5.1 or newer (optional, for online episodes and downloads; the app can fetch it, it needs curl)
+- [Upscayl](https://upscayl.org) (optional, for sharper banners; Flatpak, a normal install or the Windows installer)
+- ffprobe from [FFmpeg](https://ffmpeg.org) (optional, measures episode lengths faster; mpv does it otherwise)
 
-### Windows (experimental)
+</details>
+
+<details>
+<summary>Windows (experimental)</summary>
 
 Windows 10 or 11, 64-bit. Python comes inside the zip, and the window is a Microsoft Edge
 app window (Chrome or Brave are used first if installed).
@@ -131,7 +88,10 @@ If it doesn't start, `%LOCALAPPDATA%\anime-hub-wrapper\` has `hub.log` and `wrap
 To build the zip yourself (needs rust/cargo, and binutils for the icon):
 `powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1`.
 
-### Updating
+</details>
+
+<details>
+<summary>Updating</summary>
 
 - From git: `git pull`. Desktop app: then `cargo build --release && ./install.sh` again.
 - AppImage / Windows zip: download the new one (Windows: replace the whole folder; new zips
@@ -139,7 +99,12 @@ To build the zip yourself (needs rust/cargo, and binutils for the icon):
 
 Your data is kept.
 
-## Library folders
+</details>
+
+## Details
+
+<details>
+<summary>Library folders</summary>
 
 Point AnimeHub at one folder (Settings → Library). It understands the usual layouts:
 
@@ -158,7 +123,10 @@ Anime/
 Episode numbers are read from names like `S01E05`, `E05`, `Episode 5` or `Title - 05`.
 Files are never renamed or moved.
 
-## Configuration
+</details>
+
+<details>
+<summary>Configuration</summary>
 
 `~/.config/anime-hub/config.json` (Windows: `%APPDATA%\anime-hub\config.json`; or `--config FILE`). Every key is optional:
 
@@ -185,7 +153,10 @@ Files are never renamed or moved.
 
 Changing `library_root` never deletes anything. The app asks before it switches.
 
-## Data
+</details>
+
+<details>
+<summary>Your data</summary>
 
 Everything lives in `data_dir` (default `~/.local/share/anime-hub`, Windows: `%LOCALAPPDATA%\anime-hub`):
 
@@ -194,11 +165,19 @@ Everything lives in `data_dir` (default `~/.local/share/anime-hub`, Windows: `%L
 - `upscaled.json` — which banners are already sharpened, and how
 - `anilist_token.json` — your AniList login
 - `anilist_activity.json` — your AniList activity, for the Journal
-- `recommendations.json`
+- `recommendations.json`, `schedule.json`
+- `bin/ani-cli` — only if you pressed Get ani-cli
 
 Deleting the folder is a full reset.
 
-## Privacy and security
+</details>
+
+## Privacy
+
+No tracking, no accounts, no ads. Your data stays on your PC.
+
+<details>
+<summary>What it talks to, and security</summary>
 
 - **No tracking.** No accounts, no ads, no analytics. Your data stays on your PC.
 - **Only your PC can open it.** The server only listens locally and turns away requests from other websites (the phone remote is the one opt-in exception, see below).
@@ -209,17 +188,10 @@ Deleting the folder is a full reset.
   - [AniList](https://anilist.co) — metadata, artwork and your list (when connected)
   - [ani.zip](https://api.ani.zip) — episode titles and pictures
   - [AniSkip](https://aniskip.com) — only if you turn it on (off by default); it sees which episode you start
-  - with online episodes, your own ani-cli contacts the streaming site; the app warns you when no VPN is on
+  - [GitHub](https://github.com/pystardust/ani-cli) — only when you press Get ani-cli or Update ani-cli
+  - with online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on
 
-## Roadmap
-
-Only the big releases. Nothing is set in stone.
-
-- **v0.1** (done)— local library, AniList sync, stats, desktop wrapper.
-- **v0.2** (done) — online episodes and downloads through your own [ani-cli](https://github.com/pystardust/ani-cli), one episode list for both.
-- **v0.25** (done) Focus on Quality of Life changes and bug fixes.
-- **v0.3** (done) — complete redesign, much faster, Journal, recommendations, skip openings/endings, AppImage.
-- **Later** — AUR package
+</details>
 
 ## AI-notice
 

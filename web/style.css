@@ -1924,7 +1924,8 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .wk2 .hd{font:700 clamp(48px,6vw,72px)/.9 var(--display);text-transform:uppercase;margin:0}
 .wk2 .hello{margin:14px 0 18px}
 
-.ptip{display:grid;gap:14px;margin-bottom:24px}.ptip>div{display:flex;gap:14px;align-items:flex-start}.ptip .kb{min-width:30px;height:30px;font-size:15px;border-radius:9px}.ptip b{display:block;color:var(--ink);font-weight:600}.ptip span{color:var(--mute);font-size:14px}
+.ptip{display:grid;gap:14px;margin-bottom:24px}.ptip>div{display:flex;gap:14px;align-items:flex-start}.ptip .kb{min-width:30px;height:30px;font-size:15px;border-radius:9px}.ptip b{display:block;color:var(--ink);font-weight:600}.ptip span{color:var(--mute);font-size:14px}.ptip>div>.ico{flex:none;width:20px;height:20px;margin-top:2px;color:var(--accent)}
+.sum2 .btn.sm,.sum2 .switch{flex:none;margin-left:auto}.sum2 .v{white-space:normal;padding:6px 0}.sum2 b{width:128px}
 
 /* the desktop calendar */
 .airp2{padding:0 44px 60px;max-width:1800px;margin:0 auto}

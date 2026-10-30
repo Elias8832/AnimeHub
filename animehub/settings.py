@@ -185,7 +185,7 @@ def settings_payload():
         "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
-                   "check": anicli.anicli_check(),
+                   "check": anicli.anicli_check(), **anicli.anicli_status(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
     }
 

@@ -664,6 +664,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     res = library.set_episode_numbers(body["show_id"], nums)
                     self.send_json(res, 200 if res.get("ok") else 400)
+        elif route == "/api/anicli-get":
+            self.send_json(anicli.fetch_anicli())
         elif route == "/api/keep-local":
             # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
             if self._fields(body, strings=("show_id",)):
