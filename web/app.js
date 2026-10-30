@@ -474,19 +474,20 @@ function entryCard(e, i) {
   const tg = s ? pickTarget(s) : null;
   const res = tg && tg.kind === "resume" && inProg(e.status) ? tg : null;
   const prog = e.progress || 0, pct = e.episodes ? Math.min(100, Math.round((100 * prog) / e.episodes)) : 0;
-  const facts = [e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "", FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
-  const src = e.capability === "none" ? capLabel("none") : CAPW[e.capability] || "";
+  /* The poster stays clean (Elias): the score is a key badge by the title, like the top bar's; phones keep only progress below it. */
+  const facts = e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
+  const more = [FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
   return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}">
-    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${src ? `<span class="tg src ${esc(e.capability)}">${esc(src)}</span>` : ""}${e.score ? `<span class="tg sc">★ ${Math.round(e.score * 10) / 10}</span>` : ""}${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}
+    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}
     ${res ? `<span class="resume-tag">${ico("play")}${esc(epCode(res.sea, res.ep))}${res.ep.position ? " · " + fmtTime(res.ep.position) : ""}</span>` : ""}
     ${inProg(e.status) && pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
-    <h3>${esc(e.title)}</h3>
-    <div class="m">${esc(facts)}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
+    <h3><span class="ttl">${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(e.title)}</span>${e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : ""}</h3>
+    <div class="m">${esc(facts)}${more ? `<span class="mx">${facts ? " · " : ""}${esc(more)}</span>` : ""}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
 }
 function showCard(s, i) {
   const total = epTotal(s), w = epWatched(s), pct = total ? Math.round((100 * w) / total) : 0;
   return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="open" data-v="${esc(s.id)}" data-poster="${esc(s.poster || "")}">
-    <div class="pw">${poster(s.title, s.poster, { wait: S.data.meta_running && !s.poster })}<span class="tg src installed">disk</span>
+    <div class="pw">${poster(s.title, s.poster, { wait: S.data.meta_running && !s.poster })}
     ${pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
     <h3>${esc(s.title)}</h3><div class="m">${w} / ${total}${s.collection ? " · " + esc(s.collection) : ""}</div></button>`;
 }
