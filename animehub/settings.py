@@ -163,6 +163,8 @@ def settings_payload():
         # additive (Decision 45): mpv options, "on" / "off" / "own"
         "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks")},
         "tour_done": get_setting("tour_done") == "1",
+        # additive: the first-play explainer has been seen
+        "play_tip_done": get_setting("play_tip_done") == "1",
         # additive: opening/ending skip modes, {"op": …, "ed": …}
         "skip": skip_prefs(),
         "library_root": str(config.LIBRARY) if config.LIBRARY else None,

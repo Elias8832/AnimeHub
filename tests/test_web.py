@@ -174,6 +174,35 @@ class ShowPage(unittest.TestCase):
         self.assertIn('<div class="epa"><span class="epimg" data-bg=', APP)
 
 
+class WholeScript(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_app_js_parses(self):
+        # The other checks load regions of it; one bad line elsewhere blanks the app.
+        out = subprocess.run(["node", "--check", str(support.ROOT / "web" / "app.js")], capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(out.returncode, 0, out.stderr)
+
+
+class WeekSection(unittest.TestCase):
+    def test_calendar_context_only_states_facts(self):
+        self.assertIn('const airTag = (x) => (x.start || x.ep === 1 ? "Premiere" : x.ep && x.ep === x.e.episodes ? "Finale" : "");', APP)
+        self.assertIn("const airSeen = (x) => !x.start && (x.e.progress || 0) >= x.ep;", APP)
+        self.assertIn('"Month"], ["week", "Week"]', APP)
+
+    def test_week_page_is_reachable_from_home(self):
+        self.assertIn('data-a="go" data-v="week">Calendar', APP)
+
+
+class Toast(unittest.TestCase):
+    def test_loading_popup_stays_until_mpv_answers(self):
+        self.assertIn('toast(`Loading ${now.show} · ${now.label}`, "busy")', APP)
+        self.assertIn('if (k !== "busy") toast.h = setTimeout', APP)
+        self.assertIn("loadToast(now);", APP)
+
+    def test_first_play_explains_enter(self):
+        self.assertIn('S.settings?.play_tip_done === false', APP)
+        self.assertIn('tip: TipDlg', APP)
+
+
 class LibraryCards(unittest.TestCase):
     """TODO 128: each show gets its own card; franchises are a choice, and
     their cards sort by the entry they show."""

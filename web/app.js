@@ -238,13 +238,23 @@ async function api(path, body) {
   const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
   try { return await res.json(); } catch { throw new Error(`HTTP ${res.status} from ${path}`); }
 }
-function toast(m) {
-  const t = $("#toast");
-  t.innerHTML = '<i class="tdot"></i><span></span><b class="ttime"></b>'; // fresh timer bar each time
-  t.querySelector("span").textContent = m;
-  t.classList.toggle("err", /could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m));
+/* The bottom popup. kind "busy" stays with a spinner until toastDone or the next popup. */
+function toast(m, kind) {
+  const t = $("#toast"), k = kind || (/could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m) ? "err" : "ok");
+  t.dataset.k = k;
+  t.innerHTML = `<span class="ti">${k === "busy" ? '<i class="tsp"></i>' : ico(k === "err" ? "close" : "check")}</span><span class="tm"></span>`;
+  t.querySelector(".tm").textContent = m;
   t.classList.add("on");
-  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 2400);
+  clearTimeout(toast.h);
+  if (k !== "busy") toast.h = setTimeout(() => t.classList.remove("on"), 2800);
+}
+function toastDone() { const t = $("#toast"); if (t.dataset.k === "busy") t.classList.remove("on"); }
+/* An episode on its way: from the click (or autoplay) until mpv answers. */
+let loadShown = null;
+function loadToast(now) {
+  const id = now.playing && now.loading ? now.episode_id : null;
+  if (id && id !== loadShown) { loadShown = id; toast(`Loading ${now.show} · ${now.label}`, "busy"); }
+  else if (!id && loadShown && !S.playBusy) { loadShown = null; toastDone(); }
 }
 const reduceMotion = () => document.documentElement.dataset.motion === "off" || matchMedia("(prefers-reduced-motion:reduce)").matches;
 
@@ -311,13 +321,13 @@ function contCard({ s, t }, k) {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function weekHTML(list, now = Date.now()) {
   const at = (e) => e.next_episode?.at ? e.next_episode.at * 1000 : now + (airsIn(e.next_episode, now) || 0) * 1000;
-  const soon = list.filter((e) => { const t = at(e); return t > now - 3600e3 && t < now + 7 * 864e5; }).slice(0, 3);
+  const soon = list.filter((e) => at(e) > now - 3600e3).slice(0, 3); // the next three, however far off (Blue Box's next was 8 days away)
   if (!soon.length) return "";
   const today = new Date(now), dow = (today.getDay() + 6) % 7, monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow).getTime();
   const has = new Set(list.map((e) => Math.floor((at(e) - monday) / 864e5)).filter((d) => d >= 0 && d < 7));
   const when = (t) => { const d = new Date(t), same = d.toDateString() === today.toDateString(), tm = d.toTimeString().slice(0, 5);
-    return [same ? "Today" : DAYS[(d.getDay() + 6) % 7], tm]; };
-  return `<section class="hsec"><div class="sh"><h2>This week</h2><span class="mut">airing on your lists</span><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
+    return [same ? "Today" : DAYS[(d.getDay() + 6) % 7] + (t - now > 6 * 864e5 ? " " + d.getDate() : ""), tm]; };
+  return `<section class="hsec"><div class="sh"><h2>${at(soon[0]) < now + 7 * 864e5 ? "This week" : "Coming up"}</h2><span class="mut">airing on your lists</span><button class="link-btn" data-a="go" data-v="week">Calendar${ico("arrowr")}</button><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
     <div class="agenda">${soon.map((e) => { const t = at(e), [d, tm] = when(t), sec = (t - now) / 1000;
       return `<button class="ag${d === "Today" ? " today" : ""}" data-a="entry" data-v="${esc(e.id)}">${e.poster ? `<i class="agb" style="background-image:${esc(cssUrl(e.poster))}"></i><i class="agp" style="background-image:${esc(cssUrl(e.poster))}"></i>` : ""}
         <span class="agt"><span class="when">${d} <small>${tm}</small></span><b>${esc(e.title)}</b><span class="m">episode ${esc(e.next_episode?.number ?? "")}</span></span><span class="cdn">${sec > 0 ? "in " + fmtIn(sec) : "out now"}</span></button>`; }).join("")}</div></section>`;
@@ -1373,7 +1383,7 @@ function dayLabel(d) {
    numbers for it as a band, the timeline by day, and on the side a month
    heat map, top genres and most watched. The all-time charts follow below. */
 const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];
-const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+const calKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const spineOf = (s) => (s?.meta?.anilist_id && S.data?.spine?.entries?.find((e) => e.id === s.meta.anilist_id)) || null;
 /* Journal charts (Decision 38): one bar look and one row look for every panel. */
 function jBars(items, cls = "", val) {
@@ -1981,6 +1991,14 @@ const ipLine = (online, skp) => `Without a VPN, ${online && skp ? "the streaming
 /* Use AniSkip / Without AniSkip in place of one Continue button. */
 const skpBtns = (yes, no, key = "") => `<button class="btn" data-a="${no}">Without AniSkip</button><button class="btn pri" data-a="${yes}">Use AniSkip${key}</button>`;
 const aniskipAsk = () => S.settings?.aniskip === true && S.settings?.aniskip_vpn_warn !== false && !!S.data?.vpn?.known && !vpnOn();
+/* Once, before the very first play: the two things Enter does in mpv. */
+function TipDlg() {
+  return `<h2 id="dt">While you watch</h2>
+  <p class="sub">Press Enter in mpv:</p>
+  <div class="ptip"><div><kbd class="kb">↵</kbd><span><b>In an opening or ending</b>Skips it. A button shows up in the corner too.</span></div>
+  <div><kbd class="kb">↵</kbd><span><b>Anywhere else</b>Finishes the episode, marks it watched and plays the next one.</span></div></div>
+  <div class="actions"><span class="note2 mono">change this in Settings → Playback</span><button class="btn pri" data-a="tipgo">Got it, play</button></div>`;
+}
 function SkpDlg() {
   return `<h2 id="dt">No VPN detected</h2>
   <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
@@ -2207,20 +2225,112 @@ document.addEventListener("keydown", (e) => {
 
 /* The week (E2): every next episode on your lists as a timeline with
    countdowns, then the month with a dot on each day one airs. */
+/* The desktop calendar (TODO 106): a real month you can page through, with
+   every episode AniList has scheduled for what's on your lists. */
+const monthName = (d) => d.toLocaleDateString(undefined, { month: "long" });
+const airKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function loadSched() {
+  if (S.schedBusy) return;
+  S.schedBusy = true;
+  api("/api/schedule").then((r) => {
+    S.schedBusy = false; S.sched = { at: r.state === "loading" ? 0 : Date.now(), state: r.state, items: r.items || [] };
+    if (S.view === "week") render(true);
+    if (r.state === "loading") setTimeout(() => S.view === "week" && loadSched(), 2500);
+  }).catch(() => { S.schedBusy = false; });
+}
+/* Date key → the day's events, earliest first. The list's own next episodes
+   fill in until the schedule has loaded. */
+function calEvents() {
+  const byId = new Map(S.data.spine.entries.map((e) => [e.id, e])), mine = S.airCal.scope === "watching", days = new Map();
+  const add = (x) => {
+    const e = byId.get(x.id);
+    if (!e || (mine && !inProg(e.status))) return;
+    const d = x.at ? new Date(x.at * 1000) : new Date(`${x.date}T00:00:00`), k = airKey(d);
+    (days.get(k) || days.set(k, []).get(k)).push({ e, ep: x.ep, t: d.getTime(), start: !x.at });
+  };
+  if (S.sched?.items.length) S.sched.items.forEach(add);
+  else for (const e of airingList()) add({ id: e.id, ep: e.next_episode?.number, at: Math.floor(airAt(e) / 1000) });
+  for (const l of days.values()) l.sort((a, b) => a.t - b.t);
+  return days;
+}
+/* Context, from what AniList states: first and last episode, what you've seen. */
+const airTag = (x) => (x.start || x.ep === 1 ? "Premiere" : x.ep && x.ep === x.e.episodes ? "Finale" : "");
+const airSeen = (x) => !x.start && (x.e.progress || 0) >= x.ep;
+const airTime = (x) => new Date(x.t).toTimeString().slice(0, 5);
+const airStyle = (x) => (x.e.poster ? ` style="background-image:${esc(cssUrl(x.e.poster))}"` : "");
+const airTile = (x) => { const t = airTag(x); return `<i class="airt${airSeen(x) ? " is-seen" : ""}"${airStyle(x)}>${t ? `<em class="${t === "Finale" ? "is-end" : ""}">${t}</em>` : ""}</i>`; };
+/* What the schedule says about each show: aired so far, its last date. */
+function airFacts(days, now) {
+  const f = new Map();
+  for (const x of [...days.values()].flat()) {
+    const r = f.get(x.e.id) || f.set(x.e.id, { aired: 0, last: null }).get(x.e.id);
+    if (x.t <= now && x.ep > r.aired) r.aired = x.ep;
+    if (x.ep && x.ep === x.e.episodes) r.last = x.t;
+  }
+  return f;
+}
+const airBehind = (e, f) => (inProg(e.status) && f ? Math.max(0, f.aired - (e.progress || 0)) : 0);
+function airCard(x, facts, now) {
+  const e = x.e, f = facts.get(e.id), behind = airBehind(e, f), sec = (x.t - now) / 1000;
+  const tags = [statusLabel(e.status), e.episodes ? `${e.progress || 0} / ${e.episodes} seen` : e.progress ? `${e.progress} seen` : "", ({ installed: "on disk", partial: "partly on disk", online: "online" })[e.capability]].filter(Boolean);
+  const ends = f?.last && f.last > x.t ? `Finale ${new Date(f.last).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "";
+  return `<button class="aircard" data-a="entry" data-v="${esc(e.id)}"><i class="airp"${airStyle(x)}></i><span class="airx"><b>${esc(e.title)}</b>
+    <small>${x.start ? "Starts" : `Episode ${esc(x.ep)}${e.episodes ? " of " + e.episodes : ""} · ${airTime(x)}`}${sec > 0 ? ` · <span class="ac">in ${esc(fmtIn(sec))}</span>` : ""}</small>
+    <span class="airtags">${airTag(x) ? `<u class="is-hot">${airTag(x)}</u>` : ""}${behind ? `<u class="is-hot">${behind} behind</u>` : ""}${tags.map((t) => `<u>${esc(t)}</u>`).join("")}${ends ? `<u>${esc(ends)}</u>` : ""}</span></span></button>`;
+}
+function airMonth(c, days, today) {
+  const first = new Date(c.y, c.m, 1), lead = (first.getDay() + 6) % 7, count = new Date(c.y, c.m + 1, 0).getDate(), rows = Math.ceil((lead + count) / 7);
+  const cells = Array.from({ length: rows * 7 }, (_, i) => {
+    const d = new Date(c.y, c.m, i - lead + 1), k = airKey(d), l = days.get(k) || [], shown = l.length > 3 ? l.slice(0, 2) : l;
+    const cls = [d.getMonth() !== c.m ? "is-out" : "", k === airKey(today) ? "is-today" : "", k === c.sel ? "is-sel" : ""].filter(Boolean).join(" ");
+    return `<button class="aird ${cls}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts">${shown.map(airTile).join("")}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
+  return `<div class="airgrid" style="--rows:${rows}">${DAYS.map((d) => `<b class="airw">${d}</b>`).join("")}${cells}</div>`;
+}
+function airWeek(c, days, today) {
+  const sel = new Date(`${c.sel}T00:00:00`), mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7);
+  return `<div class="airwk">${Array.from({ length: 7 }, (_, i) => { const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i), k = airKey(d), l = days.get(k) || [];
+    return `<div class="aircol${k === airKey(today) ? " is-today" : ""}"><div class="aircolh"><span>${DAYS[i]}</span><b>${d.getDate()}</b></div>${l.map((x) => `<button class="airbig${airSeen(x) ? " is-seen" : ""}" data-a="entry" data-v="${esc(x.e.id)}" title="${esc(x.e.title)}">${airTile(x)}<b>${esc(x.e.title)}</b><small>${x.start ? "Starts" : `E${esc(x.ep)} · ${airTime(x)}`}</small></button>`).join("")}</div>`; }).join("")}</div>`;
+}
+function CalDesk() {
+  const now = Date.now(), today = new Date(now), c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: airKey(today), scope: "all", mode: lsGet("airMode", "month") });
+  if (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3)) loadSched();
+  const days = calEvents(), facts = airFacts(days, now), week = c.mode === "week", first = new Date(c.y, c.m, 1);
+  const inMonth = [...days.entries()].filter(([k]) => k.startsWith(airKey(first).slice(0, 7))).flatMap(([, l]) => l);
+  const prem = inMonth.filter((x) => airTag(x) === "Premiere").length, fin = inMonth.filter((x) => airTag(x) === "Finale").length;
+  const shows = new Map(S.data.spine.entries.map((e) => [e.id, e])), behind = [...facts].reduce((n, [id, f]) => n + airBehind(shows.get(id), f), 0);
+  const sum = [`<span><b>${inMonth.filter((x) => !x.start).length}</b> episodes this month</span>`, prem ? `<span><b>${prem}</b> premiere${prem === 1 ? "" : "s"}</span>` : "", fin ? `<span><b>${fin}</b> finale${fin === 1 ? "" : "s"}</span>` : "", behind ? `<span><b>${behind}</b> to catch up</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+  const sel = new Date(`${c.sel}T00:00:00`), picked = days.get(c.sel) || [], seen = new Set();
+  const next = [...days.values()].flat().filter((x) => x.t > now).sort((a, b) => a.t - b.t).filter((x) => !seen.has(x.e.id) && seen.add(x.e.id)).slice(0, 4);
+  const seg = (a, cur, opts) => opts.map(([v, l]) => `<button class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" data-a="${a}" data-v="${v}">${l}</button>`).join("");
+  const mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7), sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6), md = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const title = week ? `${esc(md(mon))} <span>– ${esc(md(sun))}</span>` : `${esc(monthName(first))} <span>${c.y}</span>`;
+  const panel = `<aside class="airside"><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
+  return `<div class="airp2"><div class="airhead"><h1 class="hd">${title}</h1>
+    <button class="arr" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button class="arr" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button><button class="btn sm" data-a="airtoday">Today</button>
+    ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
+    <span class="seg" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><span class="seg" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
+    ${week ? "" : `<div class="sum airsum">${sum}</div>`}
+    ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
+}
 function Week() {
+  if (!isPhone() && mq("(min-width:1001px)") && aniMode()) return CalDesk();
   const now = Date.now(), list = airingList();
-  const head = `<div class="hello"><h1 class="hd">This week</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
+  const head = `<div class="hello"><h1 class="hd">Airing</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
   if (!aniMode()) return `<div class="wk2">${head}<p class="empty">Connect AniList to see what airs next.</p></div>`;
   const tl = list.map((e, k) => { const t = airAt(e, now), sec = (t - now) / 1000;
     return `<div class="tli${k === 0 ? " first" : ""}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
       <button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")}</small></span></button></div>`; }).join("");
-  const today = new Date(now), y = today.getFullYear(), mo = today.getMonth(), lead = (new Date(y, mo, 1).getDay() + 6) % 7, days = new Date(y, mo + 1, 0).getDate();
-  const marks = new Set(list.map((e) => new Date(airAt(e, now))).filter((d) => d.getFullYear() === y && d.getMonth() === mo).map((d) => d.getDate()));
-  const cells = Array.from({ length: Math.ceil((lead + days) / 7) * 7 }, (_, i) => { const d = i - lead + 1, inM = d >= 1 && d <= days;
-    return `<span class="${!inM ? "out" : ""}${d === today.getDate() ? " today" : ""}${inM && marks.has(d) ? " has" : ""}">${inM ? d : ""}</span>`; }).join("");
-  const cal = `<section class="psec"><div class="sh"><h2>${esc(today.toLocaleDateString(undefined, { month: "long" }))}</h2><span class="mut">a dot: an episode airs</span></div>
-    <div class="cal2">${DAYS.map((d) => `<b>${d.slice(0, 2)}</b>`).join("")}${cells}</div></section>`;
-  return `<div class="wk2">${head}<div class="tline">${tl || '<p class="empty">Nothing airing right now.</p>'}</div>${cal}</div>`;
+  const today = new Date(now), airs = list.map((e) => new Date(airAt(e, now)));
+  const month = (first, note) => { const y = first.getFullYear(), mo = first.getMonth(), lead = (first.getDay() + 6) % 7, days = new Date(y, mo + 1, 0).getDate();
+    const marks = new Set(airs.filter((d) => d.getFullYear() === y && d.getMonth() === mo).map((d) => d.getDate())), thisMo = y === today.getFullYear() && mo === today.getMonth();
+    const cells = Array.from({ length: Math.ceil((lead + days) / 7) * 7 }, (_, i) => { const d = i - lead + 1, inM = d >= 1 && d <= days;
+      return `<span class="${!inM ? "out" : ""}${thisMo && d === today.getDate() ? " today" : ""}${inM && marks.has(d) ? " has" : ""}">${inM ? d : ""}</span>`; }).join("");
+    return `<section class="psec"><div class="sh"><h2>${esc(first.toLocaleDateString(undefined, { month: "long" }))}</h2>${note ? '<span class="mut">a dot: an episode airs</span>' : ""}</div>
+      <div class="cal2">${DAYS.map((d) => `<b>${d.slice(0, 2)}</b>`).join("")}${cells}</div></section>`; };
+  const y = today.getFullYear(), mo = today.getMonth(), nextM = new Date(y, mo + 1, 1);
+  /* The next month joins once something airs in it. */
+  const cal = month(new Date(y, mo, 1), true) + (airs.some((d) => d >= nextM) ? month(nextM) : "");
+  return `<div class="wk2">${head}<div class="wkgrid"><div class="tline">${tl || '<p class="empty">Nothing airing right now.</p>'}</div><div class="wkcal">${cal}</div></div></div>`;
 }
 
 /* Tablet landscape: your lists beside the show page, so picking another
@@ -2590,7 +2700,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -2847,7 +2957,7 @@ function accentFrom(url, color) {
   img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
 }
 const ambient = paintCanvas;
-const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "This week" };
+const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Airing" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
    it: the new HTML is matched against the live nodes (by data-a/data-v or
@@ -2932,7 +3042,7 @@ function render(inPlace = false) {
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
   const t = S.view === "show" ? showById(S.showId)?.title : S.view === "fr" ? S.fr?.page?.title || frEntry()?.title : VIEW_TITLE[S.view];
   document.title = t ? `${t} · Anime Hub` : "Anime Hub";
-  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : S.view === "week" ? "This week" : t);
+  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : S.view === "week" ? "Airing" : t);
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
   if (S.view === "fr" && frEntry()) loadEntry(frEntry().id);
   if (S.sel && S.sel.show !== selKey()) S.sel = null;
@@ -3132,6 +3242,7 @@ async function pollNow() {
       else if (vpnMoved && now.vpn.active && S.modal?.t === "skp") A.skpgo();
     }
     if (now.notice && now.notice.ts !== lastNotice) { lastNotice = now.notice.ts; toast(now.notice.msg); }
+    loadToast(now);
     if (!S.playBusy) {
       const nl = now.playing && now.loading ? now.episode_id : null;
       if (nl !== S.loadingEp) { S.loadingEp = nl; if (was === now.playing) pagePatch(); }
@@ -3199,19 +3310,21 @@ function markLoading(id) {
 /* skipOk: undefined = not asked yet, true/false = the AniSkip answer
    (yes to the online VPN dialog counts as yes). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk) {
+  if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk) });
   const online = id.startsWith("stream:");
   if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
   if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
   S.playBusy = true;
   if (online) markLoading(id);
+  const ctx = findEpContext(id);
+  loadShown = id; toast(online ? `Finding ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"} online…` : `Loading ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"}`, "busy");
   const body = { id, version };
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
   if (skipOk !== undefined) body.aniskip = skipOk;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
-  if (res.error) { markLoading(null); toast(res.error); }
-  else if (!online) toast("Launching mpv…");
+  if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
   pollSoon(600);
 }
 /* Queue ani-cli downloads; they land in the library folder as ordinary files. */
@@ -3246,6 +3359,16 @@ function commitMatch(id, aid) {
 const A = {
   strip: (v, t) => { const st = t.closest("section")?.querySelector(".strip") || $("#app .strip"); st && st.scrollBy({ left: +t.dataset.d * st.clientWidth * 0.8, behavior: reduceMotion() ? "auto" : "smooth" }); },
   fclear: () => { for (const k of ["fmt", "air", "year", "score"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); S.fadeNext = true; render(); },
+  airgo: (v) => {
+    const c = S.airCal;
+    if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
+    else { const d = new Date(c.y, c.m + +v, 1); c.y = d.getFullYear(); c.m = d.getMonth(); }
+    render(true);
+  },
+  airtoday: () => { const d = new Date(); Object.assign(S.airCal, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) }); render(true); },
+  airday: (v) => { S.airCal.sel = v; render(true); },
+  airscope: (v) => { S.airCal.scope = v; render(true); },
+  airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
   genre: (v, t) => {
@@ -3358,6 +3481,7 @@ const A = {
   },
   dlcancel: (v) => { api("/api/download/cancel", { id: +v }).then(() => pollSoon(200)).catch(() => {}); },
   dlclear: () => { api("/api/download/clear", {}).then(() => { S.dl = S.dl.filter((j) => j.status === "running" || j.status === "queued"); paintNav(); }).catch(() => {}); },
+  tipgo: () => { const go = S.modal?.go; S.settings.play_tip_done = true; api("/api/settings", { play_tip_done: true }).catch(() => {}); closeModal(); go?.(); },
   spref: (v, t) => {
     api("/api/settings", { [t.dataset.k]: v }).then((r) => {
       if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");

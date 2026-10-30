@@ -32,6 +32,7 @@ function homepage(data) {
     S: { data, view: "home", showId: null, seasonIdx: 0, showBack: "home", cat: null, q: "", menu: null },
     aniMode: () => false, // spine mode; the airing panel is covered elsewhere
     isPhone: () => false, isTabletP: () => false, // the PC layout (phones: test_phone_layout.py)
+    fmtIn: () => "soon", airsIn: () => 0,
   });
   vm.runInContext(
     block("/* @pure:start */", "/* @pure:end */") +
@@ -103,6 +104,14 @@ test("a watched episode stopped halfway says Continue, not Rewatch", () => {
   const stopped = { ...episode("stopped", latest, true), position: 600, duration: 1440 };
   const app = homepage({ shows: [show("Stopped", [stopped])], continue: [stopped], history: [stopped] });
   assert.equal(app.nextUpInfo().label, "Continue watching");
+});
+
+test("the next airing shows even when it's past this week", () => {
+  const app = homepage({ shows: [], continue: [], history: [] });
+  const now = Date.UTC(2026, 9, 30, 12), e = { id: 1, title: "Blue Box", next_episode: { number: 5, at: now / 1000 + 8 * 86400 } };
+  const html = app.weekHTML([e], now);
+  assert.match(html, /Blue Box/);
+  assert.match(html, /<h2>Coming up<\/h2>/);
 });
 
 test("homepage renders the new hero, excludes its duplicate tile, and targets its buttons", () => {

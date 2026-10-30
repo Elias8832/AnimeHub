@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, remote, settings, streaming, sync, system, upscale
+from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -274,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._bad("'since' must be an integer (unix seconds)")
                 return
             self.send_json(journal.journal(since))
+        elif route == "/api/schedule":
+            self.send_json(schedule.schedule())
         elif route == "/api/recommendations":
             # TODO 65 (additive): Home's "Recommended for you" row.
             self.send_json(recommend.recommendations())
@@ -489,7 +491,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
-            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done",
+            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
                     "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
@@ -515,8 +517,8 @@ class Handler(BaseHTTPRequestHandler):
             for key in keys:
                 if key not in body:
                     continue
-                if key == "tour_done":
-                    settings.set_setting("tour_done", "1" if body[key] else "0")
+                if key in ("tour_done", "play_tip_done"):
+                    settings.set_setting(key, "1" if body[key] else "0")
                 elif key == "upscale_banners":
                     try:
                         settings.set_upscale(body[key])

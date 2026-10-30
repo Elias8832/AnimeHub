@@ -275,6 +275,10 @@ class SettingsRouteTests(unittest.TestCase):
         self.assertEqual(self.post({"mpv_fullscreen": "maybe"})[0], 400)
         self.post({"mpv_fullscreen": "on", "mpv_marks": True})
 
+    def test_first_play_tip_is_remembered(self):
+        self.assertEqual(self.post({"play_tip_done": True})[1]["play_tip_done"], True)
+        self.assertEqual(self.post({"play_tip_done": False})[1]["play_tip_done"], False)
+
     def test_online_episodes_get_the_mpv_flags(self):
         from animehub import streaming
         self.assertIs(streaming.settings, settings)
