@@ -60,6 +60,7 @@ select:disabled{opacity:.5;cursor:default}
 select.set{background-color:var(--pick);box-shadow:none}
 input[type=number]{font-variant-numeric:tabular-nums}
 input[type=range],input[type=checkbox],input[type=radio]{background:none;box-shadow:none;padding:0;backdrop-filter:none;border-radius:0}
+input[type=range]:hover:not(:disabled){background:none}
 .btn,.pill,.dl-btn,.rels button,.choice,.link-btn{position:relative;overflow:hidden;isolation:isolate}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:40px;padding:0 18px;border:0;border-radius:999px;font-weight:600;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
 .btn[hidden]{display:none}
@@ -1620,7 +1621,7 @@ body.has-side #app{padding-left:340px}
   .lib2 .wall{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px 12px;margin-top:18px}
   .lib2 .card .mx{display:none}
   .lib2 .hello{position:relative;padding-right:112px}.lib2 .sum span:nth-of-type(n+2),.lib2 .sum .sep{display:none}
-  .lib2 .fltrow{position:absolute;right:16px;top:36px;display:flex;gap:8px;margin:0}.lib2 .fltrow .fltb{width:44px;height:44px;padding:0;justify-content:center;font-size:0}.lib2 .fltrow .fltb .ico{width:18px;height:18px;margin:0}
+  .lib2 .fltrow{position:absolute;right:16px;top:36px;display:flex;gap:8px;margin:0}.lib2 .fltrow .fltb{width:44px;height:44px;padding:0;gap:0;justify-content:center;font-size:0}.lib2 .fltrow .fltb .ico{width:18px;height:18px;margin:0}
   .lib2 .card h3{font-size:12.5px;line-height:1.25;margin-top:8px;align-items:flex-start;gap:5px}.lib2 .card .ttl{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.lib2 .card h3 .kb{min-width:18px;height:18px;padding:0 4px;font-size:10px}
   .lib2 .card .m{font-size:10.5px}
   .lib2 .card .tg.sc,.lib2 .card .resume-tag{display:none}

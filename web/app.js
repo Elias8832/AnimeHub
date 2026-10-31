@@ -1672,7 +1672,7 @@ function skipGroup(s) {
   return `<div class="group"><h3>Playback</h3>
     ${srow("Skip openings", "Ask: shows a skip button. Auto: skips right away.", seg("op", "Skip openings"))}
     ${srow("Skip endings", "Anything after the ending still plays.", seg("ed", "Skip endings"))}
-    ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees which episode you start and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
+    ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees which episode you start, its length and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
     ${srow("Ask without VPN", "Asks before AniSkip is used without a VPN.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}
     ${srow("Remember audio and subtitles", "Switch tracks in mpv once, and the show's next episodes start with the same audio and subtitles.", tgl("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>`;
 }

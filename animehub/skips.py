@@ -68,7 +68,7 @@ def chapter_segments(chapters, duration, prefs):
     return out
 
 
-ANISKIP_URL = "https://api.aniskip.com/v2/skip-times/%d/%d?types[]=op&types[]=ed&episodeLength=0"
+ANISKIP_URL = "https://api.aniskip.com/v2/skip-times/%d/%d?types[]=op&types[]=ed&episodeLength=%d"
 FOUND_TTL = 30 * 86400
 # Times get submitted after an episode airs: look again soon.
 MISSING_TTL = 2 * 86400
@@ -77,7 +77,7 @@ MAX_BYTES = 256 * 1024
 # AniSkip's times fit the release they were taken from. A file up to this
 # much longer or shorter is the same episode with a few seconds more or less
 # (logos, a recap card) somewhere; past it, the times can't be trusted.
-MAX_DRIFT = 15.0
+MAX_DRIFT = 20.0
 
 
 def aniskip_segments(results, duration, prefs, kinds=("op", "ed")):
@@ -115,18 +115,21 @@ def _positive_int(x):
     return isinstance(x, int) and not isinstance(x, bool) and x > 0
 
 
-def aniskip_times(mal_id, episode):
+def aniskip_times(mal_id, episode, duration):
     """AniSkip's results for one episode, cached. [] when it has none;
     None when it couldn't be asked or answered nonsense (not cached, tried
-    again next time). Sends only the two numbers in the URL."""
-    if not _positive_int(mal_id) or not _positive_int(episode):
+    again next time). Sends only the three numbers in the URL: the length,
+    in whole seconds, makes AniSkip answer from the closest release, not
+    its best-voted one, which a file's length often rules out."""
+    length = round(duration) if _num(duration) else 0
+    if not _positive_int(mal_id) or not _positive_int(episode) or not _positive_int(length):
         return None
-    key = f"aniskip:{mal_id}:{episode}"
+    key = f"aniskip:{mal_id}:{episode}:{length}"
     cached = database.cache_get(key, FOUND_TTL)
     if isinstance(cached, list) and (cached or database.cache_get(key, MISSING_TTL) is not None):
         return cached
     try:
-        req = Request(ANISKIP_URL % (mal_id, episode),
+        req = Request(ANISKIP_URL % (mal_id, episode, length),
                       headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) anime-hub/1.0"})
         with urlopen(req, timeout=10) as r:
             raw = r.read(MAX_BYTES + 1)

@@ -428,7 +428,7 @@ def _send_skips(proc, ep_id, sock_path, duration, prefs):
         hit = entry_of_episode(ep_id) if missing and aniskip_allowed(ep_id) else None
         if hit and isinstance(hit[1], int):
             mal = skips.mal_id(hit[0])
-            segs = segs + skips.aniskip_segments(skips.aniskip_times(mal, hit[1]) if mal else None,
+            segs = segs + skips.aniskip_segments(skips.aniskip_times(mal, hit[1], duration) if mal else None,
                                                  duration, prefs, missing)
         # The session may have ended or been replaced while AniSkip answered.
         if segs and _owns_session(ep_id, proc):
