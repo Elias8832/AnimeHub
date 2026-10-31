@@ -1043,8 +1043,25 @@ function Fran() {
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
   <div class="eps-head"><div class="tabs2">${tabs || `<h2>${movie ? "Movie" : "Episodes"}</h2>`}</div><div class="ctl"><span class="srcl">${esc(srcLine)}</span>${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
   ${e.slots.length ? `<div class="eps strip">${e.slots.map((x, i) => slotTile(p, e, x, tg && tg.x.id, i)).join("")}</div>` : ""}${note}
+  ${frOrder(p, e)}
   ${p.other_local.length ? `<h2 class="frother-h">Other files</h2>${otherLocal(p, e)}` : ""}
   </div>`;
+}
+/* Watch order (TODO 132): the main story big and numbered, everything else
+   small, right after the part AniList links it to. It never guesses.
+   Tiles are the app's cards: the page's short labels as on the season tabs,
+   no pills on the art (Elias): the number leads the name, the note sits with the facts. */
+function frOrder(p, e) {
+  const rows = p.order || [];
+  if (rows.length < 2) return "";
+  let step = 0, apart = false;
+  const tile = (x) => {
+    const o = p.entries.find((y) => y.id === x.id), n = x.main ? ++step : 0;
+    const seen = !!o?.slots.length && o.slots.length >= (o.episodes || 0) && o.slots.every((s) => s.watched);
+    const first = !x.on_page && !apart; apart ||= first; // spin-offs start their own stretch
+    const name = o?.label && (/^Season \d+$/.test(o.label) || x.title?.includes(o.label)) ? o.label : x.title || ""; // a label cut from the romaji title reads as a different name
+    return `<button class="ot${x.main ? " big" : ""}${x.id === e.id ? " on" : ""}${first ? " apart" : ""}" data-a="frgo" data-v="${x.id}" title="${esc(x.title || "")}"><span class="pw">${poster(x.title || "", x.poster, { c: "op" })}${seen ? `<span class="tick" title="Watched">${ico("check")}</span>` : ""}</span><b>${n ? `<i>${n}</i>` : ""}${esc(name)}</b>${x.note && !n ? `<small class="nt">${esc(x.note)}</small>` : ""}<small>${esc([x.year, x.format_label, x.status === "NOT_YET_RELEASED" ? "upcoming" : ""].filter(Boolean).join(" · "))}</small></button>`; };
+  return `<section class="hsec"><div class="sh"><h2>Watch order</h2><span class="mut">follows AniList's links</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder">${rows.map(tile).join("")}</div></section>`;
 }
 /* ⋯ on the show page: the rare actions, in the episode-menu box. */
 function frMore(x0, y0) {
@@ -2979,7 +2996,12 @@ function strips() {
       st.classList.toggle("ml", x > 4); st.classList.toggle("mr", x < max - 4);
       if (arrows[0]) { arrows[0].hidden = arrows[1].hidden = max <= 4; arrows[0].disabled = x <= 4; arrows[1].disabled = x >= max - 4; }
     };
-    if (!st._strip) { st._strip = true; st.addEventListener("scroll", upd, { passive: true }); }
+    if (!st._strip) {
+      st._strip = true; st.addEventListener("scroll", upd, { passive: true });
+      const on = st.matches(".frorder") && st.querySelector(".on"); // the watch order opens at this entry
+      const x = on ? on.getBoundingClientRect().left - st.getBoundingClientRect().left - 80 : 0;
+      if (x > 0) st.scrollLeft = x;
+    }
     upd();
   });
 }
@@ -3920,6 +3942,12 @@ const A = {
     render();
     $("#app .eps-head .on")?.scrollIntoView({ block: "nearest", inline: "center" }); // the phone's tabs are one sideways row
     frLoad(mid); // the hub starts this entry's online list and stills
+  },
+  /* A tile of the watch order: an entry of this page, or a spin-off's own page. */
+  frgo: (v) => {
+    if (!S.fr?.page?.order?.find((x) => x.id === +v)?.on_page) return openFranchise(+v);
+    A.frsel(v);
+    scrollTo({ top: 0, behavior: "smooth" });
   },
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   pinopen: (v, t) => openModal({ t: "pin", show: t.dataset.s, season: t.dataset.k, label: t.dataset.l, pick: null }),

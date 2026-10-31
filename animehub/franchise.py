@@ -15,7 +15,7 @@ from . import anilist, database, library, mapping, pages, streaming, util
 FRANCHISE_FIELDS = """id idMal title{romaji english native} synonyms format status episodes duration averageScore
 season seasonYear startDate{year month day} nextAiringEpisode{episode airingAt}
 coverImage{extraLarge color} bannerImage description
-relations{edges{relationType node{id type format status startDate{year month day} title{romaji english}}}}
+relations{edges{relationType node{id type format status startDate{year month day} title{romaji english} coverImage{extraLarge}}}}
 streamingEpisodes{title thumbnail}"""
 FRANCHISE_QUERY_ID = "query($id:Int){Media(id:$id,type:ANIME){" + FRANCHISE_FIELDS + "}}"
 # Many entries in one request (TODO 61): a franchise walk asks for every
