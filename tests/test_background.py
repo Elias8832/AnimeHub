@@ -88,7 +88,7 @@ class Switches(unittest.TestCase):
 
     def test_another_config_goes_along(self):
         with mock.patch.object(background, "CONFIG_PATH", Path("/x/other.json")):
-            self.assertEqual(background._command()[1:], ["--background", "--config", "/x/other.json"])
+            self.assertEqual(background._command()[1:], ["--background", "--config", str(Path("/x/other.json"))])
 
 
 class WindowsEntry(unittest.TestCase):
