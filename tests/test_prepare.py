@@ -144,7 +144,7 @@ class Prepared(unittest.TestCase):
         with mock.patch.object(settings, "vpn_status", return_value=NO_VPN):
             self.assertIsNone(prepare.take(self.key()))
         self.assertIsNotNone(slot["proc"].poll())
-        self.assertFalse(slot["dir"].exists())
+        self.assertTrue(wait_for(lambda: not slot["dir"].exists()))
 
     def test_the_setting_turns_it_off(self):
         with mock.patch.dict(settings.AUTOMATION_DEFAULTS, {"prepare_online": False}), \

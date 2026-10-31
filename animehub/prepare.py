@@ -80,7 +80,21 @@ def end(slot):
 
 
 def clean(slot):
-    shutil.rmtree(slot["dir"], ignore_errors=True)
+    """Remove a run's folder. Windows refuses while the ending run still
+    holds its log open, so the rest happens in the background; never in the
+    way of a click. A folder that outlasts this goes at the next start."""
+    folder = slot["dir"]
+
+    def sweep():
+        for _ in range(50):
+            time.sleep(0.1)
+            shutil.rmtree(folder, ignore_errors=True)
+            if not folder.exists():
+                return
+
+    shutil.rmtree(folder, ignore_errors=True)
+    if folder.exists():
+        threading.Thread(target=sweep, daemon=True).start()
 
 
 def discard():

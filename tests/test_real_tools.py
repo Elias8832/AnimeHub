@@ -19,7 +19,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import support
-from animehub import anicli, database, downloader, lengths, library, player, streaming, system
+from animehub import anicli, database, downloader, lengths, library, player, prepare, streaming, system
 from animehub.config import apply_config, config, CONFIG
 
 # ani-cli as the bridge sees it: its version, its two menus, its player and
@@ -63,6 +63,17 @@ def wait_for(check, limit=20):
 
 class RealDisk(unittest.TestCase):
     """What this system's disk and shell really do."""
+
+    def test_a_prepared_folder_goes_after_its_log_is_let_go(self):
+        """Windows won't delete a file an ending run still holds open: the
+        first run of Decision 49 left its folder behind (GitHub, 2026-10-31)."""
+        d = Path(tempfile.mkdtemp(dir=support.TMP)) / "run"
+        d.mkdir()
+        log = open(d / "stderr.log", "ab")
+        prepare.clean({"dir": d})
+        time.sleep(0.3)
+        log.close()
+        self.assertTrue(wait_for(lambda: not d.exists(), 6))
 
     def test_replace_outlasts_readers(self):
         """Windows refuses to replace an open file: a banner being served
