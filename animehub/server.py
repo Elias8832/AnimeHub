@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, settings, streaming, sync, system, upscale
+from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -69,7 +69,48 @@ if (!t) {
 </script></body></html>"""
 
 
+PAIR_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark"><meta name="theme-color" content="#101114">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png">
+<title>Anime Hub — pair this phone</title><style>
+@font-face{font-family:H;src:url(/fonts/hanken-grotesk-latin.woff2) format("woff2");font-weight:100 900}
+body{font:16px/1.5 H,system-ui,sans-serif;background:#101114;color:#eceae6;display:grid;place-items:center;min-height:100vh;margin:0;padding:0 24px;box-sizing:border-box}
+main{max-width:360px;width:100%}h1{font-size:26px;margin:0 0 6px}p{color:#a5a29c;margin:0 0 22px}
+input{width:100%;box-sizing:border-box;font:600 30px/1 ui-monospace,monospace;letter-spacing:.35em;text-align:center;padding:14px;border-radius:14px;border:1px solid #3a3a40;background:#18191d;color:#fff}
+button{margin-top:14px;width:100%;padding:14px;border:0;border-radius:14px;background:#f2a46f;color:#111;font:700 17px H,system-ui,sans-serif}
+#m{min-height:24px;margin-top:14px;color:#f2a46f}
+</style></head><body><main><h1>Pair this phone</h1>
+<p>On the PC, open Anime Hub → Settings → Phone remote and type the 6-digit code shown there.</p>
+<form id="f"><input id="c" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="Pairing code" autofocus>
+<button>Pair</button></form><div id="m">@MSG@</div></main>
+<script>
+"use strict";
+document.getElementById("f").onsubmit = (ev) => {
+  ev.preventDefault();
+  const m = document.getElementById("m");
+  fetch("/api/remote/pair", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: document.getElementById("c").value }) })
+    .then((r) => r.json())
+    .then((j) => { if (j.ok) location.replace("/"); else m.textContent = j.error || "That didn't work."; })
+    .catch(() => { m.textContent = "Can't reach the PC. Is Anime Hub still running?"; });
+};
+</script></body></html>"""
+
+MANIFEST = {"id": "/", "name": "Anime Hub", "short_name": "Anime Hub", "start_url": "/", "scope": "/", "display": "standalone",
+            "background_color": "#101114", "theme_color": "#101114",
+            "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
+                      {"src": "/icon-180.png", "sizes": "180x180", "type": "image/png"},
+                      # Android's "Install app" wants PNGs of these two sizes.
+                      {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+                      {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]}
+
+
 class Handler(BaseHTTPRequestHandler):
+    # The paired phone a request on the Wi-Fi listener comes from
+    # (RemoteHandler, Decision 43); None on the main server.
+    remote_device = None
+
     def log_message(self, fmt, *args):
         pass
 
@@ -233,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._bad("'since' must be an integer (unix seconds)")
                 return
             self.send_json(journal.journal(since))
+        elif route == "/api/schedule":
+            self.send_json(schedule.schedule())
         elif route == "/api/recommendations":
             # TODO 65 (additive): Home's "Recommended for you" row.
             self.send_json(recommend.recommendations())
@@ -244,7 +287,9 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/settings":
             # TODO 15: the settings surface's read side (Decision 5) —
             # toggles + running config + detected tools, never the token.
-            self.send_json(settings.settings_payload())
+            # additive (Decision 43): on a paired phone, Settings hides what
+            # a phone can't change.
+            self.send_json({**settings.settings_payload(), "phone": self.remote_device is not None})
         elif route == "/api/browse":
             # Decision 32: the library folder picker walks one level at a time.
             qs = parse_qs(urlparse(self.path).query)
@@ -311,6 +356,11 @@ class Handler(BaseHTTPRequestHandler):
                 # Additive (TODO 10): where the next episode comes from.
                 if a.get("next"):
                     payload["next"] = a["next"]
+                # Additive (Decision 43): what the phone remote shows.
+                for k in ("position", "duration", "paused", "volume", "tracks", "speed", "sub_delay",
+                          "segments", "stop_after"):
+                    if k in a:
+                        payload[k] = a[k]
                 if notice:
                     payload["notice"] = notice
                 if outbox_n:
@@ -345,6 +395,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_file(p, "image/jpeg", cache=True)
         elif route.startswith("/epimg/"):
             self.send_file(config.EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
+        elif route == "/api/remote":
+            self.send_json(remote.payload())
+        elif route == "/manifest.webmanifest":
+            self.send_file_body(json.dumps(MANIFEST).encode(), "application/manifest+json")
+        elif route == "/icon.svg":
+            self.send_file(WEB / "icon.svg", "image/svg+xml", cache=True)
+        elif route == "/sw.js":
+            # Lets phones install the app (Decision 44); never cached, so an
+            # update reaches the phone on its next visit.
+            self.send_file(WEB / "sw.js", "text/javascript")
+        elif route in ("/icon-180.png", "/icon-192.png", "/icon-512.png"):
+            self.send_file(WEB / route.lstrip("/"), "image/png", cache=True)
         elif route in ("/", "/index.html"):
             self.send_file(WEB / "index.html", "text/html; charset=utf-8")
         elif route == "/style.css":
@@ -429,11 +491,12 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
-            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done",
-                    "upscale_banners", "measure_lengths")
+            keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
+                    "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
+                       **{key: settings.MPV_MODES for key in settings.MPV_OPTIONS},
                        "upscale_style": tuple(upscale.STYLES)}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
@@ -454,8 +517,8 @@ class Handler(BaseHTTPRequestHandler):
             for key in keys:
                 if key not in body:
                     continue
-                if key == "tour_done":
-                    settings.set_setting("tour_done", "1" if body[key] else "0")
+                if key in ("tour_done", "play_tip_done"):
+                    settings.set_setting(key, "1" if body[key] else "0")
                 elif key == "upscale_banners":
                     try:
                         settings.set_upscale(body[key])
@@ -466,7 +529,35 @@ class Handler(BaseHTTPRequestHandler):
                     settings.set_automation(key, body[key])
                     if key == "measure_lengths" and body[key]:
                         lengths.turned_on()
-            self.send_json({"ok": True, **settings.settings_payload()})
+            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None})
+        elif route == "/api/control":
+            # The phone remote's buttons (Decision 43).
+            if not isinstance(body.get("action"), str):
+                self._bad("'action' must be a string")
+                return
+            r = player.control(body["action"], body.get("value"))
+            self.send_json(r, 400 if r.get("error") and r["error"] != "nothing is playing" else 200)
+        elif route == "/api/remote":
+            # Settings → Phone remote: {on}, {new_code: true} or {remove: id}.
+            if "on" in body:
+                if not isinstance(body["on"], bool):
+                    self._bad("'on' must be a boolean")
+                    return
+                remote.set_enabled(body["on"], RemoteHandler)
+            elif body.get("new_code") is True:
+                if not remote.enabled():
+                    self._bad("switch the phone remote on first")
+                    return
+                remote.new_code()
+            elif "remove" in body:
+                if not isinstance(body["remove"], int) or isinstance(body["remove"], bool):
+                    self._bad("'remove' must be a phone's id")
+                    return
+                remote.remove(body["remove"])
+            else:
+                self._bad("send one of: on, new_code, remove")
+                return
+            self.send_json({"ok": True, **remote.payload()})
         elif route == "/api/watched":
             if self._fields(body, strings=("id",), bools=("watched",)):
                 progress.set_watched(body["id"], body["watched"])
@@ -573,6 +664,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     res = library.set_episode_numbers(body["show_id"], nums)
                     self.send_json(res, 200 if res.get("ok") else 400)
+        elif route == "/api/anicli-get":
+            self.send_json(anicli.fetch_anicli())
         elif route == "/api/keep-local":
             # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
             if self._fields(body, strings=("show_id",)):
@@ -619,28 +712,33 @@ class Handler(BaseHTTPRequestHandler):
                 progress._dismiss_completion(body["media_id"], body["count"])
                 self.send_json({"ok": True})
         elif route == "/api/reconcile":
-            # TODO 16 (Decision 14): connect-time merge. Facts apply inside
-            # (automatic — higher watched count wins, both directions);
-            # curation conflicts come back for the user to decide.
+            # TODO 16 (Decisions 14, 48): connect-time merge. Local progress
+            # goes to AniList inside (automatic); episodes AniList is ahead
+            # on and curation conflicts come back for the user to decide.
             try:
                 self.send_json(sync.reconcile_analyze())
             except Exception as e:
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/reconcile/apply":
-            # TODO 16: curation winners. Facts were already applied during
-            # analyze and are not user-decidable (Decision 14).
+            # TODO 16: curation winners, plus additive `mark_watched`: the
+            # answer to `marks` (Decision 48).
             decisions = body.get("decisions")
             if not isinstance(decisions, list):
                 self._bad("'decisions' must be a list")
                 return
+            mark = body.get("mark_watched", False)
+            if not isinstance(mark, bool):
+                self._bad("'mark_watched' must be a boolean")
+                return
             try:
+                marked = sync.reconcile_mark_watched() if mark else 0
                 applied = sync.reconcile_apply(decisions)
             except Exception as e:
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
                 return
             threading.Thread(target=anilist.refresh_user_data, kwargs={"force": True},
                              daemon=True).start()
-            self.send_json({"ok": True, "applied": applied})
+            self.send_json({"ok": True, "applied": applied, "marked": marked})
         elif route == "/api/outbox/flush":
             # TODO 14: the sync chip's "try now" — every held row, this moment.
             before = sync.outbox_count()
@@ -855,6 +953,80 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
 
+
+class RemoteHandler(Handler):
+    """The phone remote's Wi-Fi listener (Decision 43). Any Host name (the
+    phone uses the PC's address), but every request needs a paired phone's
+    cookie except the pairing page; a phone can't use remote.BLOCKED."""
+
+    def check_local(self):
+        route = urlparse(self.path).path
+        self.remote_device = remote.device_of(self.headers.get("Cookie"))
+        if remote.allowed(route, self.remote_device):
+            return True
+        if self.remote_device is None and self.command == "GET" and not route.startswith("/api/"):
+            self.send_response(302)
+            self.send_header("Location", "/pair")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif self.remote_device is None:
+            self.send_json({"error": "this phone isn't paired — open the pairing link again"}, 401)
+        else:
+            self.send_json({"error": "a phone can't change this — use the PC"}, 403)
+        return False
+
+    def pair_page(self, msg=""):
+        self.send_file_body(PAIR_PAGE.replace("@MSG@", msg).encode(), "text/html; charset=utf-8")
+
+    def paired(self, token, location=None):
+        """Hand the phone its cookie: a redirect into the app (QR link) or
+        a JSON ok (typed code)."""
+        body = b"" if location else json.dumps({"ok": True}).encode()
+        self.send_response(302 if location else 200)
+        self.send_header("Set-Cookie", remote.cookie_header(token))
+        if location:
+            self.send_header("Location", location)
+        else:
+            self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        if url.path == "/pair":
+            code = (parse_qs(url.query).get("c") or [""])[0]
+            token = remote.pair(code, self.headers.get("User-Agent")) if code else None
+            if token:
+                self.paired(token, "/")
+            else:
+                self.pair_page("This code has run out. Show a new one on the PC." if code else "")
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/api/remote/pair":
+            return super().do_POST()
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            length = -1
+        if ctype != "application/json" or not 0 <= length <= 10_000:
+            self._drain()
+            self.send_json({"error": "expected a small JSON body"}, 400)
+            return
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except json.JSONDecodeError:
+            body = None
+        token = remote.pair(body.get("code"), self.headers.get("User-Agent")) if isinstance(body, dict) else None
+        if token:
+            self.paired(token)
+        else:
+            self.send_json({"error": "Wrong or expired code. Check the PC for the current one."}, 400)
+
+
 def open_ui():
     """How the user reaches the UI on startup (Decision 26). "app": a
     Chromium-family app-mode window — a standalone window with no tabs or
@@ -923,6 +1095,9 @@ def main():
     threading.Thread(target=upscale.queue_all, daemon=True).start()
     # Episode lengths: measure the files the scans find.
     lengths.start()
+    # The phone remote's Wi-Fi listener, when switched on (Decision 43).
+    if remote.enabled():
+        remote.start(RemoteHandler)
     print(f"Anime Hub → http://127.0.0.1:{config.PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
     print(f"  library  {config.LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)

@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 
-from . import anicli, database, library, mapping, pages, progress, settings, skips, streaming, system, util
+from . import anicli, database, library, mapping, pages, progress, settings, skips, streaming, system, tracks, util
 from .config import config, SKIP_CREDITS_LUA
 
 
@@ -95,6 +95,151 @@ def entry_of_episode(ep_id):
         return None
     unit, n = mapping.unit_of_episode(streaming.trackable(s), ep_id)
     return (unit["media_id"], n) if unit else None
+
+
+def track_shows(ep_id):
+    """Where an episode's remembered tracks live (tracks.py), first match
+    wins: its AniList entry, so a file and the online episodes share them,
+    then its library show, so a folder's next season starts with them."""
+    try:
+        hit = entry_of_episode(ep_id)
+    except Exception:
+        hit = None
+    s, _ = library.episode_by_id(ep_id)
+    keys = ["media:%s" % hit[0]] if hit else []
+    if s and not str(s.get("id", "")).startswith("aid:"):
+        keys.append("show:%s" % s["id"])
+    return keys
+
+
+def follow_tracks(sock_path, ep_id, state, data):
+    """Called on every poll once mpv plays, with mpv's track-list: the
+    first time, pick the show's remembered tracks; after that, remember a
+    track the user switched to (in mpv or on the phone remote). state
+    carries the show keys and what mpv played last poll."""
+    if not isinstance(data, list) or not data:
+        return
+    if "shows" not in state:
+        state["shows"] = track_shows(ep_id)
+        if not state["shows"]:
+            return
+        for prop, val in tracks.changes(data, tracks.load(state["shows"])).items():
+            mpv_ipc(sock_path, ["set_property", prop, val])
+        data = (mpv_ipc(sock_path, ["get_property", "track-list"]) or {}).get("data") or data
+    elif not state["shows"]:
+        return
+    now = tracks.selection(data)
+    for kind in tracks.KINDS:
+        if "seen" in state and now[kind] != state["seen"][kind] and now[kind]:
+            tracks.save(state["shows"], kind, now[kind])
+    state["seen"] = now
+
+
+def track_menu(data):
+    """The remote's track picker: {"audio": [...], "sub": [...]}, each
+    {id, lang, title, selected}."""
+    out = {"audio": [], "sub": []}
+    for t in data if isinstance(data, list) else ():
+        if t.get("type") in out and not t.get("image"):
+            out[t["type"]].append({"id": t.get("id"), "lang": t.get("lang"), "title": t.get("title"),
+                                   "selected": bool(t.get("selected"))})
+    return out
+
+
+def read_live(sock_path, position=True):
+    """What the phone remote shows: position and length (unless the
+    caller has them), paused, volume and the tracks."""
+    get = lambda prop: (mpv_ipc(sock_path, ["get_property", prop]) or {}).get("data")
+    live = {"paused": get("pause"), "volume": get("volume"), "speed": get("speed"), "sub_delay": get("sub-delay")}
+    if position:
+        live.update(position=get("time-pos"), duration=get("duration"))
+    data = get("track-list")
+    live = {k: v for k, v in live.items() if isinstance(v, (int, float, bool))}
+    return live, data
+
+
+# The phone remote's buttons (Decision 43): action → how it checks its value.
+CONTROLS = {"toggle": None, "seek": "number", "seek_to": "number", "volume": "number",
+            "audio": "track", "sub": "track", "stop": None, "next": None,
+            "skip": None, "speed": "number", "sub_delay": "number", "stop_after": "bool"}
+# The last speed picked on the remote: later episodes start with it until
+# it is changed again (kept while the hub runs).
+_speed = {"value": 1.0}
+
+
+def _segment_now(a, sock):
+    """The opening/ending the session is inside right now, or None."""
+    pos = (mpv_ipc(sock, ["get_property", "time-pos"]) or {}).get("data")
+    if not isinstance(pos, (int, float)):
+        return None
+    return next((x for x in a.get("segments") or () if x["start"] - 1 <= pos < x["end"] - 1), None)
+
+
+def control(action, value=None):
+    """One remote button on the playing session (a file or an online
+    episode — the same mpv socket either way). "next" finishes the episode
+    the way the skip-credits hotkey does: watched, then auto-play next."""
+    if action not in CONTROLS:
+        return {"error": "unknown action — one of: %s" % ", ".join(CONTROLS)}
+    kind = CONTROLS[action]
+    if kind == "number" and (isinstance(value, bool) or not isinstance(value, (int, float))):
+        return {"error": "'value' must be a number"}
+    if kind == "bool" and not isinstance(value, bool):
+        return {"error": "'value' must be true or false"}
+    if kind == "track" and not (value == "no" or (isinstance(value, int) and not isinstance(value, bool))):
+        return {"error": "'value' must be a track id or \"no\""}
+    with _active_lock:
+        a = next(iter(_active.values()), None)
+        sock = a.get("sock") if a else None
+    if not sock:
+        return {"error": "nothing is playing"}
+    if action == "audio" and value == "no":
+        return {"error": "audio can't be switched off"}
+    if action == "stop_after":
+        # Finish this episode, then no auto-play (checked when it ends).
+        with _active_lock:
+            a["stop_after"] = value
+        return {"ok": True, "stop_after": value}
+    if action == "skip":
+        try:
+            seg = _segment_now(a, sock)
+        except OSError:
+            return {"error": "mpv stopped answering"}
+        if not seg:
+            return {"error": "no opening or ending playing right now"}
+        if seg.get("finish"):
+            action, value = "next", None  # nothing after this ending: finish it like Enter does
+        else:
+            action, value, kind = "seek_to", seg["end"], "number"
+    if action == "speed":
+        value = _speed["value"] = round(max(0.25, min(4.0, value)), 2)
+    if action == "sub_delay":
+        value = round(max(-30.0, min(30.0, value)), 2)
+    if kind == "number":
+        value = max(0, min(130, value)) if action == "volume" else max(0, value) if action == "seek_to" else value
+    cmd = {"toggle": ["cycle", "pause"],
+           "seek": ["seek", value, "relative"],
+           "seek_to": ["seek", value, "absolute"],
+           "volume": ["set_property", "volume", value],
+           "audio": ["set_property", "aid", value],
+           "sub": ["set_property", "sid", value],
+           "speed": ["set_property", "speed", value],
+           "sub_delay": ["set_property", "sub-delay", value],
+           "stop": ["quit"], "next": ["quit"]}[action]
+    try:
+        if action == "next":
+            system.ipc_marker(sock).touch()
+        mpv_ipc(sock, cmd)
+        if action in ("stop", "next"):
+            return {"ok": True}
+        live, data = read_live(sock)
+    except OSError:
+        return {"error": "mpv stopped answering"}
+    with _active_lock:
+        if a is next(iter(_active.values()), None):
+            a.update(live)
+            a["tracks"] = track_menu(data)
+    return {"ok": True, **live, "tracks": track_menu(data)}
 
 
 def next_up(ep_id):
@@ -283,11 +428,15 @@ def _send_skips(proc, ep_id, sock_path, duration, prefs):
         hit = entry_of_episode(ep_id) if missing and aniskip_allowed(ep_id) else None
         if hit and isinstance(hit[1], int):
             mal = skips.mal_id(hit[0])
-            segs = segs + skips.aniskip_segments(skips.aniskip_times(mal, hit[1]) if mal else None,
+            segs = segs + skips.aniskip_segments(skips.aniskip_times(mal, hit[1], duration) if mal else None,
                                                  duration, prefs, missing)
         # The session may have ended or been replaced while AniSkip answered.
         if segs and _owns_session(ep_id, proc):
-            mpv_ipc(sock_path, ["script-message", "anime-hub-segments", json.dumps({"segments": segs})])
+            mpv_ipc(sock_path, ["script-message", "anime-hub-segments", json.dumps({"segments": segs, "marks": settings.automation_enabled("mpv_marks")})])
+            with _active_lock:  # the phone remote's "Skip opening" (Decision 43)
+                entry = _active.get(ep_id)
+                if entry is not None and entry.get("proc") is proc:
+                    entry["segments"] = [{k: x[k] for k in ("kind", "start", "end", "finish") if k in x} for x in segs]
     except Exception as exc:
         util.log("skip ranges not sent: %s" % exc)
 
@@ -303,6 +452,8 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     # initial 0 then would erase the resume point if the user quits early.
     seen = False
     skips_sent = False
+    picks = {} if tracks.enabled() else None
+    speed_set = False
     deadline = time.time() + startup
     connected = False
     while time.time() < deadline and proc.poll() is None:
@@ -316,6 +467,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                 entry = _active.get(ep_id)
                 if entry is not None and entry.get("proc") is proc:
                     entry["loading"] = False
+                    entry["sock"] = sock_path  # the phone remote's way in
             break
         except (FileNotFoundError, ConnectionRefusedError, socket.error):
             time.sleep(0.25)
@@ -362,6 +514,21 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                 if not skips_sent and duration:
                     skips_sent = True
                     send_skips(proc, ep_id, sock_path, duration)
+                # Paused, volume and tracks for the phone remote; the
+                # track-list also feeds the track memory.
+                live, track_list = read_live(sock_path, position=False)
+                live.update(position=last_time, duration=duration)
+                if not speed_set:
+                    speed_set = True
+                    if _speed["value"] != 1.0 and live.get("speed") == 1.0:
+                        mpv_ipc(sock_path, ["set_property", "speed", _speed["value"]])
+                        live["speed"] = _speed["value"]
+                if picks is not None:
+                    try:
+                        follow_tracks(sock_path, ep_id, picks, track_list)
+                    except Exception as exc:
+                        util.log("track memory: %s" % exc)
+                        picks = None
                 now = util.utc_stamp()
                 with database.db() as c:
                     c.execute(
@@ -375,6 +542,8 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                     entry = _active.get(ep_id)
                     if entry is not None and entry.get("proc") is proc:
                         entry["percent"] = (last_time / duration * 100) if duration else 0
+                        entry.update(live)
+                        entry["tracks"] = track_menu(track_list)
             except (FileNotFoundError, ConnectionRefusedError, socket.error):
                 break
             # Wait out the interval, but wake the instant mpv exits —
@@ -435,7 +604,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
         if entry.get("proc") is proc:
             version = entry.get("version", 0)
             _active.pop(ep_id, None)
-            autoplay = not _active and bool(done) and not retired
+            autoplay = not _active and bool(done) and not retired and not entry.get("stop_after")
     if autoplay:
         autoplay_next(ep_id, version)
     try:
@@ -486,7 +655,7 @@ def start_play(ep_id, version=0, from_start=False):
     if path is None or not path.exists():
         return {"error": "file missing"}
     sock = ipc_socket_path()
-    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start)]
+    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start), *settings.mpv_flags()]
     # No --save-position-on-quit (TODO 24): the hub's IPC loop is the only
     # resume store. mpv's watch-later state would otherwise fight an
     # intentional restart/reset — a stale mpv-side position can override

@@ -317,81 +317,108 @@ def reconcile_clear():
         c.execute("DELETE FROM settings WHERE key=?", (RECONCILE_KEY,))
 
 
-def reconcile_analyze():
-    """Compute the connect-time merge. Facts apply immediately (both
-    directions, guarded); curation conflicts come back as rows. Only shows
-    whose matched release is ALSO on the user's lists participate — pushing
-    facts to an unlisted show would create list entries, which is the
-    consent-gated auto-track domain (Decision 5, TODO 15). Per entry
-    (release_units): each mapped season of a folder reconciles against its
-    own entry; unmapped seasons sit out."""
+def _reconcile_pending():
     tok = anilist.load_token()
-    if not tok or not tok.get("user_id"):
-        return {"pending": False, "facts": [], "conflicts": []}
-    if settings.get_setting(RECONCILE_KEY) != str(tok.get("user_id")):
-        return {"pending": False, "facts": [], "conflicts": []}
-    try:
-        data = anilist.anilist_user_data(force=True)
-    except Exception as e:
-        return {"pending": True, "facts": [], "conflicts": [],
-                "error": anilist.friendly_error(e)}
-    remote = {e["id"]: e for e in data.get("entries", [])}
-    fmt = data.get("score_format") or "POINT_10"
-    facts, conflicts = [], []
+    return bool(tok and tok.get("user_id")) and settings.get_setting(RECONCILE_KEY) == str(tok["user_id"])
+
+
+def _listed_units(remote):
+    """(show, unit, list entry) for each mapped entry on the user's lists,
+    once per entry."""
     scan = library.scan_library()
     library.merge_db(scan)  # the folder's match, season map and watch facts live in hub.db
     seen = set()
     for s in scan:
         for u in mapping.release_units(streaming.trackable(s)):
-            aid = u["media_id"]
-            if aid not in remote or aid in seen:
-                continue
-            seen.add(aid)
-            e = remote[aid]
-            label = e.get("title") or s["title"]
-            # Facts (automatic). Both directions, per entry, in the entry's
-            # own numbering; a folder that doesn't fit the entry is never
-            # pushed (unit_fits). An unknown total (airing) can't rule it out.
-            if mapping.unit_fits(u, e.get("episodes")):
-                watched = [n for ep, n in u["eps"] if ep["watched"]]
-                local_highest = max(watched) if watched else 0
-                remote_progress = e.get("progress") or 0
-                if local_highest > remote_progress:
-                    if not outbox_pending_for(aid):
-                        outbox_enqueue(aid, patch={"progress": local_highest})
-                    facts.append({"show": label, "kind": "progress",
-                                  "remote": remote_progress, "local": local_highest})
-                elif remote_progress > local_highest:
-                    marked = []
-                    for ep, n in u["eps"]:
-                        if not ep["watched"] and n <= remote_progress:
-                            progress.set_watched(ep["id"], True)
-                            marked.append(n)
-                    if marked:
-                        facts.append({"show": label, "kind": "watched",
-                                      "remote": remote_progress, "local": local_highest})
-            # Curation (user decides): only when the local overlay holds an
-            # opinion — a never-touched show has no local values to defend.
-            cur = library.curation_get("aid:%d" % aid) or {}
-            r_status, l_status = e.get("status"), cur.get("status")
-            # score100 is already on the 0-100 scale; `score` is POINT_10
-            # (old caches carry only that one).
-            r_score = (float(e["score100"]) if e.get("score100") is not None
-                       else anilist._score_norm(e.get("score"), "POINT_10"))
-            l_score = anilist._score_norm(cur.get("score"), fmt)
-            status_diff = l_status and r_status and l_status != r_status
-            score_diff = l_score is not None and r_score is not None and \
-                abs(l_score - r_score) > 0.51
-            if status_diff or score_diff:
-                conflicts.append({
-                    "media_id": aid, "show_id": s["id"], "title": label,
-                    "remote": {"status": r_status, "score": _user_score(e, fmt)},
-                    "local": {"status": l_status, "score": cur.get("score")},
-                    "diff": ("status" if status_diff else "") +
-                            ("+score" if status_diff and score_diff else
-                             ("score" if score_diff else "")),
-                })
-    return {"pending": True, "facts": facts, "conflicts": conflicts}
+            if u["media_id"] in remote and u["media_id"] not in seen:
+                seen.add(u["media_id"])
+                yield s, u, remote[u["media_id"]]
+
+
+def _behind_anilist(u, e):
+    """Episode ids AniList counts as seen and this device doesn't, when
+    AniList is ahead of the highest episode watched here."""
+    done = e.get("progress") or 0
+    if not mapping.unit_fits(u, e.get("episodes")) or any(ep["watched"] and n >= done for ep, n in u["eps"]):
+        return []
+    return [ep["id"] for ep, n in u["eps"] if not ep["watched"] and n <= done]
+
+
+def reconcile_analyze():
+    """Compute the connect-time merge. Progress this device is ahead on
+    goes to AniList at once (guarded); episodes AniList is ahead on come
+    back as `marks`, for the user to accept (Decision 48), and curation
+    conflicts as rows. Only shows whose matched release is ALSO on the
+    user's lists participate — pushing facts to an unlisted show would
+    create list entries, which is the
+    consent-gated auto-track domain (Decision 5, TODO 15). Per entry
+    (release_units): each mapped season of a folder reconciles against its
+    own entry; unmapped seasons sit out."""
+    if not _reconcile_pending():
+        return {"pending": False, "facts": [], "conflicts": [], "marks": []}
+    try:
+        data = anilist.anilist_user_data(force=True)
+    except Exception as e:
+        return {"pending": True, "facts": [], "conflicts": [], "marks": [],
+                "error": anilist.friendly_error(e)}
+    remote = {e["id"]: e for e in data.get("entries", [])}
+    fmt = data.get("score_format") or "POINT_10"
+    facts, conflicts, marks = [], [], []
+    for s, u, e in _listed_units(remote):
+        aid = u["media_id"]
+        label = e.get("title") or s["title"]
+        # Facts, per entry, in the entry's own numbering; a folder that
+        # doesn't fit the entry is never pushed (unit_fits). An unknown
+        # total (airing) can't rule it out.
+        if mapping.unit_fits(u, e.get("episodes")):
+            watched = [n for ep, n in u["eps"] if ep["watched"]]
+            local_highest = max(watched) if watched else 0
+            remote_progress = e.get("progress") or 0
+            if local_highest > remote_progress:
+                if not outbox_pending_for(aid):
+                    outbox_enqueue(aid, patch={"progress": local_highest})
+                facts.append({"show": label, "kind": "progress",
+                              "remote": remote_progress, "local": local_highest})
+            behind = _behind_anilist(u, e)
+            if behind:
+                marks.append({"show": label, "media_id": aid, "remote": remote_progress,
+                              "episodes": len(behind)})
+        # Curation (user decides): only when the local overlay holds an
+        # opinion — a never-touched show has no local values to defend.
+        cur = library.curation_get("aid:%d" % aid) or {}
+        r_status, l_status = e.get("status"), cur.get("status")
+        # score100 is already on the 0-100 scale; `score` is POINT_10
+        # (old caches carry only that one).
+        r_score = (float(e["score100"]) if e.get("score100") is not None
+                   else anilist._score_norm(e.get("score"), "POINT_10"))
+        l_score = anilist._score_norm(cur.get("score"), fmt)
+        status_diff = l_status and r_status and l_status != r_status
+        score_diff = l_score is not None and r_score is not None and \
+            abs(l_score - r_score) > 0.51
+        if status_diff or score_diff:
+            conflicts.append({
+                "media_id": aid, "show_id": s["id"], "title": label,
+                "remote": {"status": r_status, "score": _user_score(e, fmt)},
+                "local": {"status": l_status, "score": cur.get("score")},
+                "diff": ("status" if status_diff else "") +
+                        ("+score" if status_diff and score_diff else
+                         ("score" if score_diff else "")),
+            })
+    return {"pending": True, "facts": facts, "conflicts": conflicts, "marks": marks}
+
+
+def reconcile_mark_watched():
+    """The user's yes to `marks` (Decision 48): episodes up to AniList's
+    progress become watched here. Returns how many were marked."""
+    if not _reconcile_pending():
+        return 0
+    remote = {e["id"]: e for e in anilist.anilist_user_data().get("entries", [])}
+    marked = 0
+    for _, u, e in _listed_units(remote):
+        for ep_id in _behind_anilist(u, e):
+            progress.set_watched(ep_id, True)
+            marked += 1
+    return marked
 
 
 def _user_score(e, fmt):

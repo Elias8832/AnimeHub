@@ -23,9 +23,9 @@ from . import anilist, util
 from .config import config
 
 
-SEEDS = 10          # your best shows asked about, one alias each
-PER_SEED = 8        # AniList recommendations read per show
-KEEP = 24           # how many the row can show
+SEEDS = 20          # your best shows asked about, one alias each
+PER_SEED = 15       # AniList recommendations read per show
+KEEP = 60           # how many Home and Discover can show
 TTL = 24 * 3600
 REC_FIELDS = """id title{english romaji} format episodes seasonYear status averageScore genres
 coverImage{extraLarge color} bannerImage"""

@@ -2,9 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#101114">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Anime Hub">
 <title>Anime Hub</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect x='8' y='8' width='112' height='112' rx='34' fill='%23f2a46f'/%3E%3Cpath d='M52 40v48l38-24-38-24z' fill='%23111'/%3E%3C/svg%3E">
 <link rel="preload" href="/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -12,7 +18,7 @@
 <link rel="preload" href="/fonts/barlow-condensed-700-latin.woff2" as="font" type="font/woff2" crossorigin>
 <!-- Appearance (Decision 38): device preferences, applied before the stylesheet so nothing flashes. -->
 <script>try{var d=document.documentElement,g=function(k){return JSON.parse(localStorage.getItem(k))};d.dataset.motion=g("motion")||"full";d.dataset.art=g("art")||"full";d.dataset.bar=g("bar")||"classic";d.dataset.grain=g("grain")===false?"off":"on";var a=g("accent");if(a&&a!=="follow")d.style.setProperty("--fixed",a)}catch(e){}</script>
-<link rel="stylesheet" href="/style.css?v=161">
+<link rel="stylesheet" href="/style.css?v=246">
 </head>
 <body>
 <div id="canvas" aria-hidden="true"><i class="cv-blur"></i><i class="cv-blur out"></i><i class="cv-art"></i><i class="cv-art out"></i><i class="cv-wash"></i><i class="cv-grain"></i></div>
@@ -20,7 +26,7 @@
 <main id="app"><div class="sk" aria-hidden="true"><div class="sk-hero"></div><div class="wrap"><div class="sk-t" style="width:180px;margin-top:40px"></div><div class="sk-row"><div class="sk-c"></div><div class="sk-c"></div><div class="sk-c"></div></div></div></div></main>
 <footer id="status"><div id="nr"></div></footer>
 <div id="pal" role="dialog" aria-label="Search"><div class="pbox"><div class="pin"><span class="sp" aria-hidden="true">›</span><input id="q" type="search" aria-label="Search" placeholder="search or command" autocomplete="off"><button class="kb pclose" data-a="srclose" aria-label="Close search">esc</button></div><div id="sr"></div></div></div>
-<div id="cm"></div><div id="ddm" role="listbox"></div><div id="toast" role="status"></div><div id="modal"></div><div id="fx"></div>
-<script src="/app.js?v=178"></script>
+<nav id="tabbar" aria-label="Places"></nav><div id="deck"></div><div id="portal"></div><div id="rmt"></div><div id="cm"></div><div id="ddm" role="listbox"></div><div id="toast" role="status"></div><div id="modal"></div><div id="fx"></div>
+<script src="/app.js?v=255"></script>
 </body>
 </html>

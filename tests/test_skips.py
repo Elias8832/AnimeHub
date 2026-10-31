@@ -105,6 +105,13 @@ class AniSkipSegmentTests(unittest.TestCase):
     def test_other_releases_are_ignored(self):
         self.assertEqual(skips.aniskip_segments([aniskip("op", 100, 190, 1420)], 1300.0, ASK), [])
 
+    def test_drift_limit(self):
+        """Attack on Titan: the files run 17 s longer than AniSkip's release."""
+        results = [aniskip("op", 100, 190, 1420)]
+        self.assertEqual(skips.aniskip_segments(results, 1437.0, ASK)[0]["start"], 117.0)
+        self.assertEqual(skips.aniskip_segments(results, 1440.0, ASK)[0]["start"], 120.0)
+        self.assertEqual(skips.aniskip_segments(results, 1441.0, ASK), [])
+
     def test_closest_release_wins(self):
         results = [aniskip("op", 90, 180, 1432), aniskip("op", 100, 190, 1421)]
         self.assertEqual(skips.aniskip_segments(results, 1420.0, ASK)[0]["start"], 100.0)
@@ -156,46 +163,58 @@ class AniSkipFetchTests(DbTests):
     def test_found_is_cached(self):
         body = {"found": True, "results": [aniskip("op", 100, 190, 1420)]}
         with self.reply(body) as op:
-            self.assertEqual(skips.aniskip_times(52991, 5), body["results"])
-            self.assertEqual(skips.aniskip_times(52991, 5), body["results"])
+            self.assertEqual(skips.aniskip_times(52991, 5, 1419.6), body["results"])
+            self.assertEqual(skips.aniskip_times(52991, 5, 1419.6), body["results"])
         self.assertEqual(op.call_count, 1)
         self.assertEqual(op.call_args[0][0].full_url,
-                         "https://api.aniskip.com/v2/skip-times/52991/5?types[]=op&types[]=ed&episodeLength=0")
+                         "https://api.aniskip.com/v2/skip-times/52991/5?types[]=op&types[]=ed&episodeLength=1420")
 
-    def test_only_the_two_numbers_are_sent(self):
+    def test_only_the_three_numbers_are_sent(self):
         with self.reply({"results": []}) as op:
-            skips.aniskip_times(52991, 5)
+            skips.aniskip_times(52991, 5, 1419.6)
         req = op.call_args[0][0]
         self.assertIsNone(req.data)
         self.assertEqual({k.lower() for k in req.headers}, {"user-agent"})
 
+    def test_another_length_asks_again(self):
+        with self.reply({"results": [aniskip("op", 100, 190, 1420)]}) as op:
+            skips.aniskip_times(52991, 5, 1420.0)
+            skips.aniskip_times(52991, 5, 1457.0)
+        self.assertEqual(op.call_count, 2)
+
+    def test_no_length_never_reaches_the_network(self):
+        with patch.object(skips, "urlopen") as op:
+            for length in (0, 0.4, None, "1420"):
+                self.assertIsNone(skips.aniskip_times(52991, 5, length))
+        op.assert_not_called()
+
     def test_missing_is_cached_briefly(self):
         missing = HTTPError("u", 404, "Not Found", {}, None)
         with patch.object(skips, "urlopen", side_effect=missing) as op:
-            self.assertEqual(skips.aniskip_times(1, 1), [])
-            self.assertEqual(skips.aniskip_times(1, 1), [])
+            self.assertEqual(skips.aniskip_times(1, 1, 1420.0), [])
+            self.assertEqual(skips.aniskip_times(1, 1, 1420.0), [])
         self.assertEqual(op.call_count, 1)
         with database.db() as c:  # three days later: asked again
             c.execute("UPDATE catalog_cache SET ts=?", (time.time() - 3 * 86400,))
         with self.reply({"results": []}) as op:
-            skips.aniskip_times(1, 1)
+            skips.aniskip_times(1, 1, 1420.0)
         self.assertEqual(op.call_count, 1)
 
     def test_failures_are_not_cached(self):
         for fail in (OSError("down"), HTTPError("u", 500, "x", {}, None)):
             with patch.object(skips, "urlopen", side_effect=fail):
-                self.assertIsNone(skips.aniskip_times(1, 1))
+                self.assertIsNone(skips.aniskip_times(1, 1, 1420.0))
         for nonsense in (b"not json", b"[1, 2]", b"x" * (skips.MAX_BYTES + 1)):
             with self.reply(nonsense):
-                self.assertIsNone(skips.aniskip_times(1, 1))
+                self.assertIsNone(skips.aniskip_times(1, 1, 1420.0))
         with self.reply({"results": []}) as op:
-            self.assertEqual(skips.aniskip_times(1, 1), [])
+            self.assertEqual(skips.aniskip_times(1, 1, 1420.0), [])
         self.assertEqual(op.call_count, 1)
 
     def test_bad_ids_never_reach_the_network(self):
         with patch.object(skips, "urlopen") as op:
             for mal, ep in ((None, 1), (1, None), (0, 1), (1, 0), (True, 1), ("1", 1), (1, 2.5)):
-                self.assertIsNone(skips.aniskip_times(mal, ep))
+                self.assertIsNone(skips.aniskip_times(mal, ep, 1420.0))
         op.assert_not_called()
 
 
@@ -345,7 +364,7 @@ class SendTests(DbTests):
         settings.set_automation("aniskip", True)
         sent, _, times = self.run_send(ch((0, "OP"), (90, "Part A")),
                                        results=[aniskip("op", 5, 95, 1420), aniskip("ed", 1300, 1390, 1420)])
-        times.assert_called_once_with(70, 5)
+        times.assert_called_once_with(70, 5, 1420.0)
         self.assertEqual([(s["kind"], s["start"]) for s in sent[0]], [("op", 0.0), ("ed", 1300.0)])
 
     def test_chapters_cover_both_no_lookup(self):

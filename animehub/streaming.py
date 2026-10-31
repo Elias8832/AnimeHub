@@ -10,7 +10,7 @@ import time
 import unicodedata
 from urllib.error import HTTPError
 
-from . import anicli, anilist, database, library, mapping, metadata, player, system, upscale, util
+from . import anicli, anilist, database, library, mapping, metadata, player, settings, system, upscale, util
 from .config import config, SKIP_CREDITS_LUA
 
 
@@ -652,7 +652,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     code = f"E{token}"
     play_mode = "sub" if sub_once else link["mode"]
     sock = player.ipc_socket_path()
-    flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *player.resume_args(ep_id, from_start)]
+    flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *player.resume_args(ep_id, from_start), *settings.mpv_flags()]
     script = mpv_script_flag()
     if script:
         flags.append(script)

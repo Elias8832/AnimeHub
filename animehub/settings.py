@@ -39,12 +39,38 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # without a VPN, ask before an episode uses it.
                        "aniskip": False, "aniskip_vpn_warn": True,
                        # Read each episode's length from its file (lengths.py).
-                       "measure_lengths": True}
+                       "measure_lengths": True,
+                       # Pick the show's last audio/subtitle track again (tracks.py).
+                       "remember_tracks": True,
+                       # Openings/endings as marks on mpv's timeline (Decision 45).
+                       "mpv_marks": True}
 
 
 # Opening/ending skipping in mpv (Decision 39): off, a prompt (Enter skips)
 # or automatic, one choice for openings and one for endings.
 SKIP_MODES = ("off", "prompt", "auto")
+
+
+# mpv options the hub can set (Decision 45): each is on, off, or "own" =
+# left to the user's mpv.conf. Setting → (default, flag when on, flag when off).
+MPV_MODES = ("on", "off", "own")
+MPV_OPTIONS = {"mpv_fullscreen": ("on", "--fs", "--no-fs")}
+
+
+def mpv_mode(key):
+    v = get_setting(key)
+    return v if v in MPV_MODES else MPV_OPTIONS[key][0]
+
+
+def mpv_flags():
+    """The hub's flags on top of the user's mpv.conf, one per option not
+    left to it. Flags beat mpv.conf for that option only."""
+    out = []
+    for key, (_, on, off) in MPV_OPTIONS.items():
+        mode = mpv_mode(key)
+        if mode != "own":
+            out.append(on if mode == "on" else off)
+    return out
 
 
 def skip_prefs():
@@ -133,7 +159,12 @@ def settings_payload():
         "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
         "upscale_banners": up["on"],
         "measure_lengths": automation_enabled("measure_lengths"),
+        "remember_tracks": automation_enabled("remember_tracks"),
+        # additive (Decision 45): mpv options, "on" / "off" / "own"
+        "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks")},
         "tour_done": get_setting("tour_done") == "1",
+        # additive: the first-play explainer has been seen
+        "play_tip_done": get_setting("play_tip_done") == "1",
         # additive: opening/ending skip modes, {"op": …, "ed": …}
         "skip": skip_prefs(),
         "library_root": str(config.LIBRARY) if config.LIBRARY else None,
@@ -154,7 +185,7 @@ def settings_payload():
         "mpv_version": mpv_version(),
         # ani-cli bridge preferences: quality + default audio for new links.
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
-                   "check": anicli.anicli_check(),
+                   "check": anicli.anicli_check(), **anicli.anicli_status(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
     }
 

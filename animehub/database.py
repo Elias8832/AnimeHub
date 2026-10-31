@@ -277,10 +277,25 @@ def migration_20(c):
         path TEXT PRIMARY KEY, size INTEGER, mtime INTEGER, seconds REAL)""")
 
 
+def migration_21(c):
+    """Audio and subtitle tracks remembered per show (tracks.py): show is
+    "media:<AniList id>" or "show:<library show id>", each pick JSON."""
+    c.execute("""CREATE TABLE IF NOT EXISTS track_prefs(
+        show TEXT PRIMARY KEY, audio TEXT, sub TEXT)""")
+
+
+def migration_22(c):
+    """Phones paired with the Wi-Fi remote (remote.py, Decision 43): only
+    the SHA-256 of each phone's token is kept."""
+    c.execute("""CREATE TABLE IF NOT EXISTS remote_devices(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, token_hash TEXT UNIQUE NOT NULL,
+        created TEXT, last_seen TEXT)""")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
-              migration_18, migration_19, migration_20]
+              migration_18, migration_19, migration_20, migration_21, migration_22]
 
 
 def snapshot_before(target_version):

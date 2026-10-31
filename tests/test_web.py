@@ -56,7 +56,7 @@ ENTRIES = [
 class Frontend(unittest.TestCase):
     def filtered(self, **lib):
         return run_js(f"Object.assign(S.lib, {json.dumps(lib)});"
-                      f"return libFiltered({{ entries: {json.dumps(ENTRIES)} }}).map((e) => e.id).sort();")
+                      f"return libList({{ entries: {json.dumps(ENTRIES)} }}).map((e) => e.id).sort();")
 
     def test_genre_filter_needs_every_pick(self):
         self.assertEqual(self.filtered(genres=["Action"]), [1, 2])
@@ -150,7 +150,7 @@ class Frontend(unittest.TestCase):
         self.assertEqual(run_js("return 1;"), 1)
         self.assertIn("const TABS = [", APP)
         self.assertIn("<kbd>${i + 1}</kbd>", APP)
-        self.assertIn('if (e.key === ",") { e.preventDefault(); nav("settings"); return; }', APP)
+        self.assertIn('if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }', APP)
         self.assertIn("function paintCanvas()", APP)
         self.assertIn('swapLayer("cv-art", mode === "full" ? art?.sharp : null);', APP)
 
@@ -174,6 +174,64 @@ class ShowPage(unittest.TestCase):
         self.assertIn('<div class="epa"><span class="epimg" data-bg=', APP)
 
 
+class WholeScript(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_app_js_parses(self):
+        # The other checks load regions of it; one bad line elsewhere blanks the app.
+        out = subprocess.run(["node", "--check", str(support.ROOT / "web" / "app.js")], capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(out.returncode, 0, out.stderr)
+
+
+class JournalKeys(unittest.TestCase):
+    def test_streak_day_key_exists(self):
+        # A rename took this away and the Journal hung on "Reading…", no error shown.
+        self.assertRegex(APP, r"const dayKey = \(d\) =>")
+        self.assertIn("dates.map(dayKey)", APP)
+
+
+class WeekSection(unittest.TestCase):
+    def test_calendar_context_only_states_facts(self):
+        self.assertIn('const airTag = (x) => (x.start || x.ep === 1 ? "Premiere" : x.ep && x.ep === x.e.episodes ? "Finale" : "");', APP)
+        self.assertIn("const airSeen = (x) => !x.start && (x.e.progress || 0) >= x.ep;", APP)
+        self.assertIn('"Month"], ["week", "Week"]', APP)
+
+    def test_week_page_is_reachable_from_home(self):
+        self.assertIn('data-a="go" data-v="week">Calendar', APP)
+
+
+class Toast(unittest.TestCase):
+    def test_loading_popup_stays_until_mpv_answers(self):
+        self.assertIn('toast(`Loading ${now.show} · ${now.label}`, "busy")', APP)
+        self.assertIn('if (k !== "busy") toast.h = setTimeout', APP)
+        self.assertIn("loadToast(now);", APP)
+
+    def test_first_play_explains_enter(self):
+        self.assertIn('S.settings?.play_tip_done === false', APP)
+        self.assertIn('tip: TipDlg', APP)
+
+
+class LibraryCards(unittest.TestCase):
+    """TODO 128: each show gets its own card; franchises are a choice, and
+    their cards sort by the entry they show."""
+    ENTRIES = [{"id": 1, "franchise_id": 7, "title": "Chainsaw Man", "format": "TV", "score": 9, "updated": 5, "status": "COMPLETED"},
+               {"id": 2, "franchise_id": 7, "title": "Reze Arc", "format": "MOVIE", "score": 10, "updated": 1, "status": "COMPLETED"},
+               {"id": 3, "franchise_id": 8, "title": "Frieren", "format": "TV", "score": 9.5, "updated": 2, "status": "COMPLETED"}]
+
+    def cards(self, group):
+        return run_js(f"""
+            S.data = {{ shows: [], spine: {{ entries: {json.dumps(self.ENTRIES)}, untracked: [] }} }};
+            Object.assign(S.lib, {{ tab: "ALL", sort: "score", group: {json.dumps(group)} }});
+            const m = libModel();
+            return {{ cards: libList(m).map((e) => e.id), all: m.tabs.find((t) => t.k === "ALL").n }};""")
+
+    def test_each_show_has_its_own_card(self):
+        self.assertEqual(self.cards("all"), {"cards": [2, 3, 1], "all": 3})
+
+    def test_franchise_card_sorts_by_the_entry_it_shows(self):
+        # Chainsaw Man shows the series (9), so it can't sit before Frieren's 9.5.
+        self.assertEqual(self.cards("fr"), {"cards": [3, 1], "all": 2})
+
+
 class Library(unittest.TestCase):
     """TODO 60 step 4: list tabs + side places, glass filter chips, poster
     cards with source/score tags, Needs a look match cards, calm hover art."""
@@ -195,7 +253,7 @@ class Journal(unittest.TestCase):
         self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
         self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
         self.assertIn('<div class="jside">${most}${genres}${heat}${st.side}</div>', APP)  # all time in the same two columns
-        self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings"];', APP)
+        self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings", "week"];', APP)
 
 
 class SearchPalette(unittest.TestCase):
@@ -206,12 +264,28 @@ class SearchPalette(unittest.TestCase):
         self.assertIn('data-a="srsw" data-v="${key}"', APP)
         self.assertIn('if (S.menu === "sr") srPreview(', APP)
         # the palette opens centred with its own line; the top bar only holds the button
-        self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } q.focus(); }', APP)
+        self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; ovOpen("sr", () => A.srclose()); paintNav(); } q.focus(); }', APP)
         self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)
         self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
         self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
-        self.assertIn('<nav class="snav">${SET_TABS.map(', APP)
+        self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone);', APP)
+        self.assertIn('<nav class="snav">${tabs.map(', APP)
         self.assertIn("r.classList.add(\"flash\")", APP)
+
+
+class UsageNotices(unittest.TestCase):
+    def test_hidden_buttons_stay_hidden(self):
+        # .btn's display beat [hidden]: the remote showed Skip opening all episode (TODO 99).
+        self.assertIn(".btn[hidden]{display:none}", CSS)
+
+    def test_every_settings_section_opens_the_same(self):
+        # TODO 105: one entrance on the section; none on rows, which only some sections have.
+        self.assertIn('$("#app .scol")?.remove()', APP)
+        self.assertNotIn("#app.nav-in .srow", CSS)
+
+    def test_connect_asks_before_marking_watched(self):
+        # TODO 117, Decision 48.
+        self.assertIn("mark_watched: S.rec.mark && recEps() > 0", APP)
 
 
 class Polish(unittest.TestCase):
@@ -241,8 +315,10 @@ class Polish(unittest.TestCase):
     def test_show_page_blurs_its_banner(self):
         self.assertIn("blur: e?.banner || p?.banner || e?.poster || p?.poster", APP)
 
-    def test_range_pills_keep_their_width(self):
-        self.assertIn('data-w="${esc(`${W} – ${W}`)}"', APP)
+    def test_range_value_sits_after_the_track(self):
+        # A pill sizes to its value; the slider stays put under the finger.
+        self.assertIn('<div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div><b class="rv">', APP)
+        self.assertIn("field-sizing:content", CSS)
 
     def test_library_hover_skips_the_colour_fade(self):
         self.assertIn('document.documentElement.classList.add("amb-now")', APP)

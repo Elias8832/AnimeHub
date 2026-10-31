@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import uuid
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from . import settings, system
 from .config import config
@@ -67,8 +68,62 @@ class AniCliError(Exception):
     """An ani-cli failure, worded for the UI."""
 
 
+# Older releases can't reach the current provider (distro packages lag), so
+# Settings and the tour offer the official script (Decision 47).
+MIN_VERSION = (5, 1)
+ANICLI_URL = "https://github.com/pystardust/ani-cli/releases/latest/download/ani-cli"
+ANICLI_MAX = 2_000_000
+ANICLI_TOOLS = ("curl", "sed", "grep")  # what it needs with the hub answering its menus
+
+
+def own_anicli():
+    return config.DATA / "bin" / "ani-cli"
+
+
 def anicli_path():
+    """The copy Get ani-cli fetched, else the installed one."""
+    if not system.WINDOWS and own_anicli().is_file():
+        return str(own_anicli())
     return system.find_script("ani-cli")
+
+
+def anicli_outdated():
+    m = re.search(r"(\d+)\.(\d+)", anicli_version() or "")
+    return bool(m) and (int(m[1]), int(m[2])) < MIN_VERSION
+
+
+def anicli_status():
+    """Additive in /api/settings: stream.own / outdated / can_get / needs."""
+    return {"own": anicli_path() == str(own_anicli()), "outdated": anicli_outdated(), "can_get": not system.WINDOWS,
+            "needs": [t for t in ANICLI_TOOLS if not system.find_program(t)]}
+
+
+def fetch_anicli():
+    """POST /api/anicli-get: the official script into the data folder, only
+    on the user's click. Refused unless it reads as an ani-cli the bridge
+    can drive; a failure leaves what was there."""
+    if system.WINDOWS:
+        return {"error": "On Windows, update ani-cli with Scoop."}
+    try:
+        req = Request(ANICLI_URL, headers={"User-Agent": "anime-hub/1.0"})
+        with urlopen(req, timeout=20) as r:
+            raw = r.read(ANICLI_MAX + 1)
+    except OSError:
+        return {"error": "Could not reach GitHub."}
+    text = raw.decode(errors="replace")
+    if len(raw) > ANICLI_MAX or not raw.startswith(b"#!") or "version_number=" not in text \
+            or any(not re.search(pat, text) for pat, _ in ANICLI_NEEDS):
+        return {"error": "That download didn't look like ani-cli, so nothing changed."}
+    path = own_anicli()
+    if path.is_file() and path.read_bytes() == raw:
+        return {"ok": True, "version": anicli_version(), "changed": False}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_bytes(raw)
+    tmp.chmod(0o755)
+    os.replace(tmp, path)
+    _anicli_versions.pop(str(path), None)
+    return {"ok": True, "version": anicli_version(), "changed": True}
 
 
 _anicli_versions = {}

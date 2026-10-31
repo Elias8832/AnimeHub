@@ -11,7 +11,7 @@ const S = {
   data: null, view: "home", showId: null, seasonIdx: 0, showBack: "home", cat: null,
   q: "", menu: null, alres: null, alq: null, alBusy: false,
   ani: null, settings: null, alData: null, modal: null, entry: null,
-  lib: (({ year, score, genres, air, ...l }) => ({ tab: null, src: "all", fmt: "all", sort: "updated", ...l,
+  lib: (({ year, score, genres, air, ...l }) => ({ tab: null, src: "all", fmt: "all", sort: "updated", group: "all", ...l,
          air: air === "FINISHED_AIRING" ? "FINISHED" : air || "all", genres: Array.isArray(genres) ? genres : [],
          year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all" }))(lsGet("hubLib", {})),
   histRange: lsGet("histRange", "7d"), histMax: 120,
@@ -48,6 +48,16 @@ const ICONS = {
   folder: ['<path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2.2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'],
   up: ['<path d="M12 19V5m-6 6 6-6 6 6"/>'],
   shield: ['<path d="M12 3.5 5 6.3v5.4c0 4.3 3 7.6 7 8.8 4-1.2 7-4.5 7-8.8V6.3z"/>'],
+  pause: ['<rect x="6.5" y="5" width="3.8" height="14" rx="1"/><rect x="13.7" y="5" width="3.8" height="14" rx="1"/>', 1],
+  rew: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/><text x="12" y="15.3" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">10</text>'],
+  fwd: ['<path d="M20 12a8 8 0 1 1-2.5-5.8L20 8.5M20 4v4.5h-4.5"/><text x="12" y="15.3" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">10</text>'],
+  next: ['<path d="M6 5.5v13l9.5-6.5z" fill="currentColor"/><path d="M18 5.5v13"/>'],
+  stop: ['<rect x="6" y="6" width="12" height="12" rx="2"/>', 1],
+  vol: ['<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'],
+  chevd: ['<path d="m6 9 6 6 6-6"/>'],
+  home: ['<path d="M4 11 12 4l8 7v8.5a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>'],
+  grid: ['<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'],
+  sliders: ['<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'],
   cal: ['<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4m7-4v4"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
@@ -158,7 +168,7 @@ function nextUpInfo() {
   const anyUn = ctx.s.seasons.map((sea) => ({ sea, ep: sea.episodes.find((e) => !e.watched) })).filter((x) => x.ep)[0];
   if (after) return { s: ctx.s, sea: ctx.sea, ep: after, label: "Up next" };
   if (anyUn) return { s: ctx.s, sea: anyUn.sea, ep: anyUn.ep, label: "Up next" };
-  return { ...ctx, label: "Rewatch", ep: ctx.ep };
+  return { ...ctx, label: resumable(ctx.ep) ? "Continue watching" : "Rewatch", ep: ctx.ep };
 }
 /* Watch facts on the model, in place (marked ids only, artwork untouched):
    the show page patches itself after a mark instead of rebuilding — see
@@ -228,13 +238,23 @@ async function api(path, body) {
   const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
   try { return await res.json(); } catch { throw new Error(`HTTP ${res.status} from ${path}`); }
 }
-function toast(m) {
-  const t = $("#toast");
-  t.innerHTML = '<i class="tdot"></i><span></span><b class="ttime"></b>'; // fresh timer bar each time
-  t.querySelector("span").textContent = m;
-  t.classList.toggle("err", /could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m));
+/* The bottom popup. kind "busy" stays with a spinner until toastDone or the next popup. */
+function toast(m, kind) {
+  const t = $("#toast"), k = kind || (/could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m) ? "err" : "ok");
+  t.dataset.k = k;
+  t.innerHTML = `<span class="ti">${k === "busy" ? '<i class="tsp"></i>' : ico(k === "err" ? "close" : "check")}</span><span class="tm"></span>`;
+  t.querySelector(".tm").textContent = m;
   t.classList.add("on");
-  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 2400);
+  clearTimeout(toast.h);
+  if (k !== "busy") toast.h = setTimeout(() => t.classList.remove("on"), 2800);
+}
+function toastDone() { const t = $("#toast"); if (t.dataset.k === "busy") t.classList.remove("on"); }
+/* An episode on its way: from the click (or autoplay) until mpv answers. */
+let loadShown = null;
+function loadToast(now) {
+  const id = now.playing && now.loading ? now.episode_id : null;
+  if (id && id !== loadShown) { loadShown = id; toast(`Loading ${now.show} · ${now.label}`, "busy"); }
+  else if (!id && loadShown && !S.playBusy) { loadShown = null; toastDone(); }
 }
 const reduceMotion = () => document.documentElement.dataset.motion === "off" || matchMedia("(prefers-reduced-motion:reduce)").matches;
 
@@ -263,7 +283,7 @@ function heroHTML(up) {
   const src = streamEp(ep) ? "online" : "on disk";
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="upn" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
+  return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
     <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
     <div class="sub">${esc(epCode(sea, ep))} · ${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</div>
@@ -301,18 +321,19 @@ function contCard({ s, t }, k) {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function weekHTML(list, now = Date.now()) {
   const at = (e) => e.next_episode?.at ? e.next_episode.at * 1000 : now + (airsIn(e.next_episode, now) || 0) * 1000;
-  const soon = list.filter((e) => { const t = at(e); return t > now - 3600e3 && t < now + 7 * 864e5; }).slice(0, 3);
+  const soon = list.filter((e) => at(e) > now - 3600e3).slice(0, 3); // the next three, however far off (Blue Box's next was 8 days away)
   if (!soon.length) return "";
   const today = new Date(now), dow = (today.getDay() + 6) % 7, monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow).getTime();
   const has = new Set(list.map((e) => Math.floor((at(e) - monday) / 864e5)).filter((d) => d >= 0 && d < 7));
   const when = (t) => { const d = new Date(t), same = d.toDateString() === today.toDateString(), tm = d.toTimeString().slice(0, 5);
-    return [same ? "Today" : DAYS[(d.getDay() + 6) % 7], tm]; };
-  return `<section class="hsec"><div class="sh"><h2>This week</h2><span class="mut">airing on your lists</span><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
+    return [same ? "Today" : DAYS[(d.getDay() + 6) % 7] + (t - now > 6 * 864e5 ? " " + d.getDate() : ""), tm]; };
+  return `<section class="hsec"><div class="sh"><h2>${at(soon[0]) < now + 7 * 864e5 ? "This week" : "Coming up"}</h2><span class="mut">airing on your lists</span><button class="link-btn" data-a="go" data-v="week">Calendar${ico("arrowr")}</button><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
     <div class="agenda">${soon.map((e) => { const t = at(e), [d, tm] = when(t), sec = (t - now) / 1000;
       return `<button class="ag${d === "Today" ? " today" : ""}" data-a="entry" data-v="${esc(e.id)}">${e.poster ? `<i class="agb" style="background-image:${esc(cssUrl(e.poster))}"></i><i class="agp" style="background-image:${esc(cssUrl(e.poster))}"></i>` : ""}
         <span class="agt"><span class="when">${d} <small>${tm}</small></span><b>${esc(e.title)}</b><span class="m">episode ${esc(e.next_episode?.number ?? "")}</span></span><span class="cdn">${sec > 0 ? "in " + fmtIn(sec) : "out now"}</span></button>`; }).join("")}</div></section>`;
 }
 function Home() {
+  if (isPhone()) return HomePhone();
   const d = S.data, up = nextUpInfo();
   const L = keepWatching(up && up.s.id);
   const touched = new Set((d.history || []).map((e) => e.show_id));
@@ -323,8 +344,11 @@ function Home() {
   const sum = [inprog ? `<span><b>${inprog}</b> in progress</span>` : "", next ? `<span><b>${esc(next.title)}</b> ${(airsIn(next.next_episode) ?? 0) > 0 ? "airs in " + esc(fmtIn(airsIn(next.next_episode))) : "is out"}</span>` : "",
     fresh.length ? `<span><b>${fresh.length}</b> ready to start</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
   let body = "";
-  if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
-  body += weekHTML(airing);
+  if (isTabletP()) body += homePair(L, airing);
+  else {
+    if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
+    body += weekHTML(airing);
+  }
   const recs = recsFor();
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="mut">from AniList, based on what you rated highly</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="mut">on disk, not started</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
@@ -343,7 +367,7 @@ function recsFor() {
   if (!aniMode()) return [];
   if (!S.recs || Date.now() - S.recs.at > 10 * 60e3) loadRecs();
   const listed = new Set(S.data.spine.entries.filter((e) => e.status).map((e) => e.id));
-  return (S.recs?.items || []).filter((r) => !listed.has(r.id) && !S.recsAdded?.has(r.id)).slice(0, 14);
+  return (S.recs?.items || []).filter((r) => !listed.has(r.id) && !S.recsAdded?.has(r.id)).slice(0, 30);
 }
 function recCard(r) {
   const disk = (S.data.shows || []).some((s) => s.meta?.anilist_id === r.id);
@@ -385,10 +409,10 @@ const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id && !
    file order until you check them (Needs a look). */
 const unclearShows = () => S.data.shows.filter((s) => (s.seasons || []).some((sea) => sea.episodes.some((e) => e.guessed)));
 
-/* One card per franchise, where its first entry sorts; the rest are
-   counted on it ("+2"). It shows the entry last active in, else the
-   series itself before its movies and extras, oldest first (Attack on
-   Titan, not one of its films). */
+/* The Library lists each show; "Show: franchises" folds them into one card
+   per franchise, the rest counted on it ("+2"). That card shows the entry
+   last active in, else the series itself before its movies and extras,
+   oldest first (Attack on Titan, not one of its films). */
 const franchiseKey = (e) => (e.franchise_id ? "f" + e.franchise_id : "e" + e.id);
 const SERIES = new Set(["TV", "TV_SHORT", "ONA"]);
 const cardRank = (e) => [-(e.updated || 0), SERIES.has(e.format) ? 0 : 1, e.year || 9999];
@@ -401,13 +425,16 @@ function oneCardPerFranchise(list) {
   }
   return [...groups.values()].map((g) => ({ ...g.best, more: g.more }));
 }
+const byFranchise = () => S.lib.group === "fr";
+const libKey = (e) => (byFranchise() ? franchiseKey(e) : "e" + e.id);
+const libCards = (list) => (byFranchise() ? oneCardPerFranchise(list) : list);
 function libModel() {
   const d = S.data, sp = d.spine;
   if (!sp) return { cold: true, tabs: [], entries: [], untracked: [], unmatched: unmatchedShows(), unclear: unclearShows() };
   const counts = {};
-  for (const e of sp.entries) (counts[e.status] ||= new Set()).add(franchiseKey(e));
+  for (const e of sp.entries) (counts[e.status] ||= new Set()).add(libKey(e));
   const tabs = LISTS.filter(([k]) => counts[k]).map(([k, l]) => ({ k, l, n: counts[k].size }));
-  if (sp.entries.length) tabs.unshift({ k: "ALL", l: "All", n: new Set(sp.entries.map(franchiseKey)).size });
+  if (sp.entries.length) tabs.unshift({ k: "ALL", l: "All", n: new Set(sp.entries.map(libKey)).size });
   const untracked = sp.untracked.map(showById).filter((s) => s && (s.meta?.anilist_id || s.kept_local));
   const unmatched = unmatchedShows(), unclear = unclearShows(), look = new Set([...unmatched, ...unclear]).size;
   if (untracked.length) tabs.push({ k: "UNTRACKED", l: "On disk only", n: untracked.length, side: true });
@@ -418,15 +445,16 @@ function fixTab(m) {
   if (m.cold || !m.tabs.length) return;
   if (!m.tabs.some((t) => t.k === S.lib.tab)) S.lib.tab = m.tabs[0].k;
 }
-function libFiltered(m) {
+/* Sorted after the fold: a franchise card sits where the entry it shows sorts. */
+function libList(m) {
   const f = S.lib;
-  return m.entries.filter((e) => (f.tab === "ALL" || e.status === f.tab)
+  return libCards(m.entries.filter((e) => (f.tab === "ALL" || e.status === f.tab)
     && (srcLocked() || f.src === "all" || e.capability === f.src)
     && (f.fmt === "all" || e.format === f.fmt)
     && (f.air === "all" || e.airing === f.air)
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
-    && hasGenres(e, f.genres)).sort(SORT[f.sort] || SORT.updated);
+    && hasGenres(e, f.genres))).sort(SORT[f.sort] || SORT.updated);
 }
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
 const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genres || []).includes(g));
@@ -434,7 +462,7 @@ const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genre
 function genreCounts(m) {
   const c = new Map();
   for (const e of m.entries) if (S.lib.tab === "ALL" || e.status === S.lib.tab)
-    for (const g of e.genres || []) (c.get(g) || c.set(g, new Set()).get(g)).add(franchiseKey(e));
+    for (const g of e.genres || []) (c.get(g) || c.set(g, new Set()).get(g)).add(libKey(e));
   return [...c].map(([g, set]) => [g, set.size]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 /* @lib:end */
@@ -446,19 +474,20 @@ function entryCard(e, i) {
   const tg = s ? pickTarget(s) : null;
   const res = tg && tg.kind === "resume" && inProg(e.status) ? tg : null;
   const prog = e.progress || 0, pct = e.episodes ? Math.min(100, Math.round((100 * prog) / e.episodes)) : 0;
-  const facts = [e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "", FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
-  const src = e.capability === "none" ? capLabel("none") : CAPW[e.capability] || "";
+  /* The poster stays clean (Elias): the score is a key badge by the title, like the top bar's; phones keep only progress below it. */
+  const facts = e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
+  const more = [FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
   return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}">
-    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${src ? `<span class="tg src ${esc(e.capability)}">${esc(src)}</span>` : ""}${e.score ? `<span class="tg sc">★ ${Math.round(e.score * 10) / 10}</span>` : ""}${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}
+    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}
     ${res ? `<span class="resume-tag">${ico("play")}${esc(epCode(res.sea, res.ep))}${res.ep.position ? " · " + fmtTime(res.ep.position) : ""}</span>` : ""}
     ${inProg(e.status) && pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
-    <h3>${esc(e.title)}</h3>
-    <div class="m">${esc(facts)}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
+    <h3><span class="ttl">${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(e.title)}</span>${e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : ""}</h3>
+    <div class="m">${esc(facts)}${more ? `<span class="mx">${facts ? " · " : ""}${esc(more)}</span>` : ""}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
 }
 function showCard(s, i) {
   const total = epTotal(s), w = epWatched(s), pct = total ? Math.round((100 * w) / total) : 0;
   return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="open" data-v="${esc(s.id)}" data-poster="${esc(s.poster || "")}">
-    <div class="pw">${poster(s.title, s.poster, { wait: S.data.meta_running && !s.poster })}<span class="tg src installed">disk</span>
+    <div class="pw">${poster(s.title, s.poster, { wait: S.data.meta_running && !s.poster })}
     ${pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
     <h3>${esc(s.title)}</h3><div class="m">${w} / ${total}${s.collection ? " · " + esc(s.collection) : ""}</div></button>`;
 }
@@ -556,10 +585,9 @@ function frng(k, label, lo, hi, step, fmt) {
   const v = Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi];
   const a = Math.max(lo, Math.min(hi, v[0])), b = Math.max(a, Math.min(hi, v[1]));
   const pct = (x) => ((x - lo) / (hi - lo || 1)) * 100;
-  const W = [lo, hi, lo + step, hi - step].map(fmt).sort((x, y) => y.length - x.length)[0]; // the widest label sizes the pill, so it never jumps
   const inp = (n, val, l) => `<input type="range" aria-label="${label} ${l}" min="${lo}" max="${hi}" step="${step}" value="${val}" data-r="${n}">`;
-  return `<div class="fl rng${Array.isArray(S.lib[k]) ? " set" : ""}" data-k="${k}" style="--a:${pct(a)}%;--b:${pct(b)}%"><span>${label} <b class="rv" data-w="${esc(`${W} – ${W}`)}"><i>${a <= lo && b >= hi ? "any" : `${fmt(a)} – ${fmt(b)}`}</i></b></span>
-    <div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div></div>`;
+  return `<div class="fl rng${Array.isArray(S.lib[k]) ? " set" : ""}" data-k="${k}" style="--a:${pct(a)}%;--b:${pct(b)}%"><span>${label}</span>
+    <div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div><b class="rv"><i>${a <= lo && b >= hi ? "any" : `${fmt(a)} – ${fmt(b)}`}</i></b></div>`;
 }
 let rngFrame = 0;
 document.addEventListener("input", (e) => {
@@ -601,7 +629,7 @@ function Lib() {
   if (m.cold && S.ani?.connected) notes.push('<div class="note-bar">Your AniList lists are still loading — showing what is on disk.</div>');
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
   const files = d.shows.reduce((a, x) => a + epTotal(x), 0);
-  const sum = [`<span><b>${m.entries.length ? new Set(m.entries.map(franchiseKey)).size : d.shows.length}</b> shows</span>`, files ? `<span><b>${files.toLocaleString()}</b> files on disk</span>` : "",
+  const sum = [`<span><b>${m.entries.length ? new Set(m.entries.map(libKey)).size : d.shows.length}</b> shows</span>`, files ? `<span><b>${files.toLocaleString()}</b> files on disk</span>` : "",
     (() => { const n = new Set([...m.unmatched, ...m.unclear]).size; return n ? `<span><b>${n}</b> folder${n === 1 ? "" : "s"} need a look</span>` : ""; })()].filter(Boolean).join('<i class="sep"></i>');
   const tab = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}${t.attn ? " attn" : ""}" data-a="tab" data-v="${t.k}">${t.l}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
   const tabs = m.tabs.length ? `<div class="tabs" data-glide="libtabs">${m.tabs.filter((t) => !t.side).map(tab).join("")}${m.tabs.some((t) => t.side) ? '<i class="vs"></i>' : ""}${m.tabs.filter((t) => t.side).map(tab).join("")}</div>` : "";
@@ -618,34 +646,50 @@ function Lib() {
       ${frng("year", "year", ...yearBounds(), 1, String)}
       ${frng("score", "score", 0, 10, 0.5, (x) => String(x))}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${fsel("sort", "sort", [["updated", "recently updated"], ["score", "score"], ["year", "year"], ["title", "title"]])}
-      <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button></div>`;
-    main = `${filters}${(m.cold || isUn) ? "" : genreTray(m)}<div id="wall"></div>`;
+      <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "score"], ["year", "year"], ["title", "title"]])}
+      <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
+    const fltb = filters ? `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>` : "";
+    main = `${fltb}${filters}${(m.cold || isUn) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
   return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}${main}</div>`;
 }
 function genreTray(m) {
   const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
   const gone = S.lib.genres.filter((g) => !have.has(g)).map((g) => [g, 0]); // picked, but not in this tab: still unpickable
-  const all = [...counts, ...gone];
+  const on1 = (g) => (S.lib.genres.includes(g) ? 0 : 1);
+  const all = [...counts, ...gone].sort((a, b) => on1(a[0]) - on1(b[0])); // picked ones stay in the one visible row
   if (!all.length) return "";
-  return `<div class="gtray" role="group" aria-label="Genres">${all.map(([g, n]) => {
+  return `<div class="gwrap"><div class="gtray${S.genOpen ? " open" : ""}" role="group" aria-label="Genres">${all.map(([g, n]) => {
     const on = S.lib.genres.includes(g);
     return `<button class="gchip${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}">${esc(g)}<span class="n">${n}</span></button>`;
-  }).join("")}</div>`;
+  }).join("")}</div><button class="gmore" data-a="gmore" hidden>${S.genOpen ? "Less" : "More"}</button></div>`;
+}
+/* "More" only when the genres really run past one row. */
+function gtrayFit() {
+  const t = $(".gtray"), b = $(".gmore");
+  if (t && b) b.hidden = !S.genOpen && t.scrollHeight <= t.clientHeight + 2;
 }
 function paintWall(fade) {
   const w = $("#wall");
   if (!w) return;
   const m = libModel();
-  let html;
-  if (m.cold) html = S.data.shows.map(showCard).join("");
-  else if (S.lib.tab === "UNTRACKED") html = m.untracked.map(showCard).join("");
-  else html = oneCardPerFranchise(libFiltered(m)).map(entryCard).join("");
+  const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
+  let html = cards.join("");
   const empty = `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
   const fx = fade && !reduceMotion();
   w.className = "wall" + (fx ? " fade" : "");
-  if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
+  clearTimeout(paintWall.more);
+  /* A fresh wall shows its first screenful at once and the rest in batches
+     over the next frames — building all ~300 cards in one go froze the page
+     change (TODO 126; phones first, Decision 44). */
+  if ((fx || !w.firstChild) && cards.length > 36) {
+    const coarse = mq("(pointer:coarse)"), head = coarse ? 24 : 36;
+    w.innerHTML = cards.slice(0, head).join("");
+    let i = head;
+    const more = () => { if (!w.isConnected) return; w.classList.remove("fade"); w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
+    paintWall.more = setTimeout(more, coarse ? 380 : 650); // after the page has settled
+  } else if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
+  gtrayFit();
 }
 
 /* ---------- detail ---------- */
@@ -1003,15 +1047,27 @@ function frMore(x0, y0) {
   const folders = [...new Map(e.slots.filter((x) => x.local).map((x) => [x.local.show_id + "|" + x.local.season, x.local])).values()];
   const ready = !!S.data.stream_ready, picking = S.sel?.show === frSelKey();
   const m = $("#cm");
+  clearTimeout(cmHide.t); m.classList.remove("closing");
   m.innerHTML = `<div class="cap">${esc(e.title || p.title)}</div>
     ${e.slots.some((x) => playableSlot(e, x)) ? `<button class="mi" data-a="selmode">${ico("checkc")}${picking ? "Stop selecting" : "Select episodes"}</button>` : ""}
     ${folders.length ? `<button class="mi" data-a="folder" data-v="${esc(folders[0].show_id)}">${ico("folder")}Open the folder</button>` : ""}
     ${folders.map((l) => `<button class="mi" data-a="pinopen" data-s="${esc(l.show_id)}" data-k="${esc(l.season)}" data-l="${esc(l.folder + " · " + l.season_label)}">${ico("tv")}Wrong season? <small>${esc(l.season_label)}</small></button>`).join("")}
     ${ready && e.online.linked ? `<button class="mi" data-a="srcfix">${ico("search")}Wrong online episodes?</button>` : ""}
     <a class="mi" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}">${ico("ext")}Open on AniList</a>`;
+  /* Phones (S2): the page shows only Play; its other buttons (download,
+     mark all watched, edit entry) open from here, first. */
+  if (isPhone()) {
+    const cap = m.querySelector(".cap");
+    for (const b of [...$$("#app .frpage .cta .btn:not(.pri):not(.ic)")].reverse()) {
+      const c = b.cloneNode(true);
+      c.className = "mi"; c.querySelectorAll(".kb").forEach((k) => k.remove());
+      cap.after(c);
+    }
+    m.insertAdjacentHTML("afterbegin", grab);
+  }
   m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
   const z = zoomGet() / 100;
-  m.style.cssText += `;display:block;left:${Math.min(x0 / z, innerWidth / z - 270)}px;top:${Math.min(y0 / z, innerHeight / z - 280)}px`;
+  m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:${Math.min(x0 / z, innerWidth / z - 270)}px;top:${Math.min(y0 / z, innerHeight / z - 280)}px`;
 }
 /* "Wrong season?": say which entry a folder season is (or none of them),
    or hand it back to the automatic mapping. */
@@ -1029,10 +1085,20 @@ function PinDlg() {
 function cmRow(a, v, icon, label, key, extra = "", attrs = "") {
   return `<button class="mi" data-a="${a}" data-v="${esc(v)}" ${attrs}>${ico(icon)}<span class="ml">${label}</span>${extra}${key ? `<kbd class="kb">${key}</kbd>` : ""}</button>`;
 }
+/* The menu closes with a slide down on phones (it used to vanish). */
+function cmHide() {
+  const m = $("#cm");
+  if (m.style.display !== "block" || m.classList.contains("closing")) return;
+  if (!isPhone() || reduceMotion()) { m.style.display = "none"; return; }
+  m.classList.add("closing");
+  cmHide.t = setTimeout(() => { m.classList.remove("closing"); m.style.display = "none"; }, 190);
+}
 function cmShow(m, x, y) {
+  clearTimeout(cmHide.t); m.classList.remove("closing");
+  if (isPhone() && !m.querySelector(".grabber")) m.insertAdjacentHTML("afterbegin", grab);
   m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
   const z = zoomGet() / 100;
-  m.style.cssText += `;display:block;left:0;top:0`;
+  m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:0;top:0`;
   const w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.max(8, Math.min(x / z, innerWidth / z - w - 8)) + "px";
   m.style.top = Math.max(8, Math.min(y / z, innerHeight / z - h - 8)) + "px";
@@ -1150,7 +1216,7 @@ function entryHTML(f, pending) {
 }
 /* The row on the page: score · watched · status · ♥ (Decision 38). */
 function entryStats(f, pending) {
-  if (!f.status && !pending) return `<div class="st2 off"><span class="k">not on your list yet</span><button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></div>`;
+  if (!f.status && !pending) return `<div class="st2 unl"><span class="k">not on your list yet</span><button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></div>`;
   const max = f.score_max || 10, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
   const total = f.media?.episodes || fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
   const got = f.local || f.progress == null ? (fe ? fe.slots.filter((x) => x.watched).length : show ? epWatched(show) : 0) : f.progress;
@@ -1343,7 +1409,7 @@ function loadJournal() {
     if (more && jrTries++ < 40) setTimeout(() => { if (S.view === "history" || S.view === "stats") loadJournal(); }, 3000);
     else jrTries = 0;
     if (S.view === "history" || S.view === "stats") render(true);
-  }).catch(() => { jrBusy = false; });
+  }, () => { jrBusy = false; }); // only the request: a drawing error should show, not hang on "Reading…"
 }
 function jEvents() {
   if (aniMode()) {
@@ -1517,20 +1583,24 @@ function loadAlData() {
 /* ---------- settings ---------- */
 const srow = (t, desc, ctl) => `<div class="srow"><div><b>${t}</b><p>${desc}</p></div><div class="ctl">${ctl}</div></div>`;
 const tgl = (key, label, on, off) => `<button class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-a="adv" data-v="${key}" ${off ? "disabled" : ""}></button>`;
-const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), `<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "found" : "not found"}</span>`);
+const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), `${path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : ""}<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "found" : "not found"}</span>`);
 function Sett() {
   const s = S.settings, ani = S.ani || {};
   if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
   const stateTxt = { ok: "Watching this folder.", unconfigured: "No library folder is configured yet.", missing: "The folder is not accessible right now.", partial: "Some folders could not be read — part of the library may be missing." };
   const changed = s.scan?.root === "changed", conn = !!ani.connected, off = !conn;
   /* Settings (Decision 38): one section at a time; every setting is also in the search. */
-  const tab = SET_TABS.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
+  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone); // a paired phone can't change the remote (Decision 43)
+  if (isPhone() && !S.setOpen) return settingsList(tabs, s);
+  const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
   const sec = {
     appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}<div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div>`,
     playback: `${skipGroup(s)}`,
+    mpv: mpvGroup(s),
     online: `${streamGroup(s)}`,
+    phone: s.phone ? "" : phoneGroup(),
     anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
       conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}
   <div class="adv2${off ? " dis" : ""}">${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
@@ -1541,8 +1611,8 @@ function Sett() {
     keys: `<div class="group"><h3>Keys</h3><p class="sub">Press <kbd class="kb">?</kbd> anywhere for this list.</p><div class="keys big">${KEYS.map(([n, k]) => `<span>${esc(n)}</span><kbd class="kb">${esc(k)}</kbd>`).join("")}</div></div>`,
     data: `<div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div><div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div>`,
   };
-  return `<div class="set2"><div class="hello"><h1 class="hd">Settings</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
-  <div class="setg"><nav class="snav">${SET_TABS.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
+  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
+  <div class="setg"><nav class="snav">${tabs.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
   <div class="settings scol" data-sec="${tab}">${sec[tab]}</div></div></div>`;
 }
 /* Episode lengths read from the files (ffprobe, else mpv), once per file.
@@ -1577,7 +1647,7 @@ function upscaleRow(s) {
     if (S.view === "settings") loadSettings().then(() => S.view === "settings" && render(true));
   }, 4000);
   const look = [["natural", "Natural"], ["digital", "Digital art"]].map(([v, l]) => `<button class="${u.style === v ? "on" : ""}" aria-pressed="${u.style === v}" data-a="spref" data-k="upscale_style" data-v="${v}" ${u.on ? "" : "disabled"}>${l}</button>`).join("");
-  return srow("Sharper banners", txt, tgl("upscale_banners", "Sharper banners", u.on, missing && !u.on))
+  return srow("Sharper banners", txt, (missing ? UPSCAYL_BTN : "") + tgl("upscale_banners", "Sharper banners", u.on, missing && !u.on))
     + srow("Banner look", "Natural keeps soft shading as it is. Digital art draws crisper lines and takes about 3× longer (Upscayl's Digital Art with TTA Mode).", `<span class="seg" role="group" aria-label="Banner look">${look}</span>`);
 }
 /* A segmented control for one Appearance preference. */
@@ -1587,20 +1657,69 @@ function lookSeg(k, opts) {
 }
 /* Opening/ending skipping in mpv (Decision 39). AniSkip is opt-in: it would learn what you watch. */
 const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
+/* mpv's own section (Decision 45): each option is on, off, or left to your mpv.conf. */
+const MPVMODES = [["on", "On"], ["off", "Off"], ["own", "My config"]];
+function mpvGroup(s) {
+  const m = s.mpv || {};
+  const seg = (k, label) => `<span class="seg" role="group" aria-label="${label}">${MPVMODES.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
+  return `<div class="group"><h3>mpv</h3><p class="sub">Your own mpv.conf always loads. The hub only overrides what's set to On or Off here.</p>
+    ${srow("Fullscreen", "How episodes start.", seg("fullscreen", "Fullscreen"))}
+    ${srow("Opening and ending on the timeline", "Marks them on mpv's seek bar and names them under the mouse. Needs skipping on (Playback).", tgl("mpv_marks", "Opening and ending on the timeline", m.marks !== false))}</div>`;
+}
 function skipGroup(s) {
   const sk = s.skip || {};
   const seg = (k, label) => `<span class="seg" role="group" aria-label="${label}">${SKIPMODES.map(([m, l]) => `<button class="${sk[k] === m ? "on" : ""}" aria-pressed="${sk[k] === m}" data-a="spref" data-k="skip_${k}" data-v="${m}">${l}</button>`).join("")}</span>`;
   return `<div class="group"><h3>Playback</h3>
     ${srow("Skip openings", "Ask: shows a skip button. Auto: skips right away.", seg("op", "Skip openings"))}
     ${srow("Skip endings", "Anything after the ending still plays.", seg("ed", "Skip endings"))}
-    ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees which episode you start and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
-    ${srow("Ask without VPN", "Asks before AniSkip is used without a VPN.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}</div>`;
+    ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees which episode you start, its length and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
+    ${srow("Ask without VPN", "Asks before AniSkip is used without a VPN.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}
+    ${srow("Remember audio and subtitles", "Switch tracks in mpv once, and the show's next episodes start with the same audio and subtitles.", tgl("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>`;
+}
+/* Phone remote (Decision 43): a second door on the home Wi-Fi, off by
+   default; phones pair with the QR code (or the address and code). While a
+   code is up, Settings re-reads it every few seconds to see the phone arrive. */
+function phoneGroup() {
+  const r = S.remote;
+  if (!r) { api("/api/remote").then((x) => { S.remote = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Phone remote</h3><p class="sub">Loading…</p></div>'; }
+  const when = (t) => t ? new Date(t.replace(" ", "T") + (/[zZ+]/.test(t) ? "" : "Z")).toLocaleDateString() : "";
+  const code = r.code, mins = code ? Math.max(1, Math.ceil(code.left / 60)) : 0;
+  if (code && !phoneGroup.t) phoneGroup.t = setTimeout(phoneWatch, 3000);
+  const pair = !r.on ? "" : r.error ? srow("Pair a phone", `<span class="chip warn">Not reachable</span> ${esc(r.error)}`, "")
+    : !r.address ? srow("Pair a phone", "This PC isn't on a network right now.", "")
+    : code ? `<div class="pairbox"><div class="qr" aria-label="QR code with the pairing link">${code.qr}</div><div class="pairtxt"><b>Scan this with the phone's camera</b>
+        <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
+        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
+    : srow("Pair a phone", "Shows a QR code to scan with the phone.", '<button class="btn pri" data-a="rmtcode">Pair a phone</button>');
+  const devs = r.devices.length ? r.devices.map((d) => srow(esc(d.name), `Paired ${esc(when(d.created))} · last used ${esc(when(d.last_seen))}`, `<button class="btn" data-a="rmtdel" data-v="${d.id}">Remove</button>`)).join("")
+    : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
+  return `<div class="group"><h3>Phone remote</h3>
+    ${srow("Phone remote", "Pause, skip and pick tracks from your phone while an episode plays here. Phone and PC need the same Wi-Fi. No app to install.", `<button class="switch" role="switch" aria-checked="${r.on}" aria-label="Phone remote" data-a="rmton"></button>`)}
+    ${pair}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
+}
+function phoneWatch() {
+  phoneGroup.t = 0;
+  if (S.view !== "settings" || S.setTab !== "phone") return;
+  const had = S.remote?.devices.length || 0;
+  api("/api/remote").then((x) => {
+    S.remote = x;
+    if (x.devices.length > had) toast(`${x.devices[x.devices.length - 1].name} paired`);
+    if (S.view === "settings" && S.setTab === "phone") render(true);
+  }).catch(() => {});
+}
+async function remoteSet(body) {
+  try {
+    const r = await api("/api/remote", body);
+    if (r.error) toast(r.error); else S.remote = r;
+  } catch { toast("Could not reach the hub."); }
+  render(true);
 }
 const QLABEL = { best: "Best available", worst: "Smallest" };
 function streamGroup(s) {
   const st = s.stream || {}, off = !s.tools?.["ani-cli"];
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
-  return `<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3>${off ? '<p class="sub">Install ani-cli to watch and download episodes you don\'t have.</p>' : ""}${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
+  const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), aniBtn(s)) : st.own ? srow("ani-cli", esc(aniLine(s)), aniBtn(s)) : "";
+  return `${getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3>${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
     ${srow("Quality", "For watching and downloading online episodes.", `<select aria-label="Stream quality" data-a="spref" data-k="stream_quality" ${off ? "disabled" : ""}>${(st.qualities || []).map((q) => `<option value="${q}" ${q === st.quality ? "selected" : ""}>${QLABEL[q] || q + "p"}</option>`).join("")}</select>`)}
     ${srow("Audio", "Sub or dub for online episodes. Any episode's menu plays the other one.", `<span class="seg" role="group" aria-label="Default audio">${SLMODES.map(([m, l]) => `<button class="${st.mode === m ? "on" : ""}" aria-pressed="${st.mode === m}" data-a="spref" data-k="stream_mode" data-v="${m}" ${off ? "disabled" : ""}>${l}</button>`).join("")}</span>`)}
     ${srow("Downloads", "Saved into your library folder, one folder per show.", "")}
@@ -1722,7 +1841,7 @@ async function loadSettings() {
 }
 
 /* ---------- nav, search, downloads ---------- */
-const VIEWS = ["home", "library", "history", "stats", "settings"];
+const VIEWS = ["home", "library", "history", "stats", "settings", "week"];
 /* One list for library and AniList hits: ranked by how well the title
    matches, library first on ties; an AniList hit that is a library show
    shows once, as the library show. AniList results follow the typing
@@ -1735,14 +1854,16 @@ const SETTINGS_INDEX = [
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
-  ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"],
+  ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "playback", "audio subtitle subs track language dub dual remember", "remember_tracks"],
+  ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
   ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"],
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
+  ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"],
   ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
 ];
-const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["online", "Online episodes"], ["anilist", "AniList"], ["keys", "Keys"], ["data", "Data & setup"]];
+const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["mpv", "mpv"], ["online", "Online episodes"], ["anilist", "AniList"], ["phone", "Phone remote"], ["keys", "Keys"], ["data", "Data & setup"]];
 const COMMANDS = [
   ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
@@ -1873,6 +1994,14 @@ const ipLine = (online, skp) => `Without a VPN, ${online && skp ? "the streaming
 /* Use AniSkip / Without AniSkip in place of one Continue button. */
 const skpBtns = (yes, no, key = "") => `<button class="btn" data-a="${no}">Without AniSkip</button><button class="btn pri" data-a="${yes}">Use AniSkip${key}</button>`;
 const aniskipAsk = () => S.settings?.aniskip === true && S.settings?.aniskip_vpn_warn !== false && !!S.data?.vpn?.known && !vpnOn();
+/* Once, before the very first play: the two things Enter does in mpv. */
+function TipDlg() {
+  return `<h2 id="dt">While you watch</h2>
+  <p class="sub">Press Enter in mpv:</p>
+  <div class="ptip"><div><kbd class="kb">↵</kbd><span><b>In an opening or ending</b>Skips it. A button shows up in the corner too.</span></div>
+  <div><kbd class="kb">↵</kbd><span><b>Anywhere else</b>Finishes the episode, marks it watched and plays the next one.</span></div></div>
+  <div class="actions"><span class="note2 mono">change this in Settings → Playback</span><button class="btn pri" data-a="tipgo">Got it, play</button></div>`;
+}
 function SkpDlg() {
   return `<h2 id="dt">No VPN detected</h2>
   <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
@@ -1918,6 +2047,7 @@ const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];
 const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal", "1 2 3"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
 const keysPop = () => `<div class="pop keyp"><div class="cap">Keys</div><div class="keys">${KEYS.map(([n, k]) => `<span>${n}</span><kbd class="kb">${k}</kbd>`).join("")}</div></div>`;
 function paintNav() {
+  paintTabbar(); paintSide(); paintTop();
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   const links = $("#links");
   links.innerHTML = TABS.map(([k, n], i) => `<button class="link ${cur === k ? "on" : ""}" ${cur === k ? 'aria-current="page"' : ""} data-a="go" data-v="${k}">${n}<kbd>${i + 1}</kbd></button>`).join("");
@@ -1927,11 +2057,12 @@ function paintNav() {
   $("#q").placeholder = ph; $("#srph").textContent = ph;
   const sr = $("#sr"), srHad = !!sr.firstElementChild;
   const keep = $("#sr .mi.sel")?.dataset.i;
-  sr.innerHTML = S.menu === "sr" ? srHTML() : "";
+  sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";
   if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
   if (S.menu === "sr") srPreview(keep != null && srPv[keep] ? keep : 0);
   const wasOpen = document.body.classList.contains("srch");
   document.body.classList.toggle("srch", S.menu === "sr");
+  fitPal();
   if (!wasOpen && S.menu === "sr") { const bx = $("#pal .pbox"); bx.classList.remove("in"); void bx.offsetWidth; bx.classList.add("in"); }
   const now = S.data?.now, ctx = now && findEpContext(now.episode_id), pct = now ? Math.round(now.percent) : 0;
   const nr = $("#nr"), popHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued");
@@ -1954,6 +2085,627 @@ function paintNav() {
     if (!popHad) nr.querySelector(".pop")?.classList.add("in");
   }
 }
+
+/* ---------- phone and tablet layout (Decision 44) ---------- */
+/* Phones (≤ 700 px): a floating bottom tab bar in the One UI 9 style, Home
+   as one up-next card plus a compact list (the card opens a full-screen
+   deck of what you're watching), the week as its own timeline, episode
+   lists as rows with the Play button at the thumb. Tablets: a show list
+   beside the show page (landscape), Home in two columns (portrait). The
+   PC layout is untouched. */
+const mq = (q) => matchMedia(q).matches;
+const isPhone = () => mq("(max-width:700px)");
+const isTabletL = () => mq("(min-width:901px) and (max-width:1400px) and (pointer:coarse) and (orientation:landscape)");
+const isTabletP = () => mq("(min-width:701px) and (max-width:1100px) and (orientation:portrait)");
+const layoutKey = () => (isPhone() ? "phone" : isTabletL() ? "tabL" : isTabletP() ? "tabP" : "pc");
+let layoutNow = layoutKey();
+addEventListener("resize", () => { const k = layoutKey(); if (k !== layoutNow) { layoutNow = k; if (S.data) render(); } });
+/* Phones and tablets: a service worker, so "Install app" makes a real app
+   (sw.js caches nothing). Needs https — the Tailscale address. */
+if ("serviceWorker" in navigator && isSecureContext && mq("(pointer:coarse)")) navigator.serviceWorker.register("/sw.js").catch(() => {});
+const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["history", "Journal", "cal"]];
+function paintTabbar() {
+  const el = $("#tabbar");
+  if (!el) return;
+  if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
+  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view === "week" ? "home" : S.view;
+  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}</div>
+    <button class="sq" data-a="sropen" aria-label="Search">${ico("search")}</button>`;
+  /* The highlight glides to the open tab (One UI 9); none on Settings. */
+  let on = null;
+  for (const b of el.querySelectorAll(".tb button")) { const y = b.dataset.v === cur; b.classList.toggle("on", y); b.setAttribute("aria-selected", y); if (y) on = b; }
+  el.querySelector(".sq").classList.toggle("on", S.menu === "sr");
+  const ind = el.querySelector(".ind");
+  ind.style.opacity = on ? "1" : "0";
+  if (on) { ind.style.width = on.offsetWidth + "px"; ind.style.transform = `translateX(${on.offsetLeft}px)`; }
+}
+/* Airing entries on your lists, soonest first (Home and the week share it). */
+function airingList() {
+  return aniMode() ? S.data.spine.entries.filter((e) => e.airing === "RELEASING" && e.next_episode && inProg(e.status))
+    .sort((a, b) => (airsIn(a.next_episode) ?? Infinity) - (airsIn(b.next_episode) ?? Infinity)) : [];
+}
+const airAt = (e, now = Date.now()) => (e.next_episode?.at ? e.next_episode.at * 1000 : now + (airsIn(e.next_episode, now) || 0) * 1000);
+const whenTxt = (t, now = Date.now()) => { const d = new Date(t), today = new Date(now), tm = d.toTimeString().slice(0, 5);
+  const tom = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  return d.toDateString() === today.toDateString() ? `today ${tm}` : d.toDateString() === tom.toDateString() ? `tomorrow ${tm}` : `${DAYS[(d.getDay() + 6) % 7]} ${d.getDate()} · ${tm}`; };
+function airRow(e, now = Date.now()) {
+  const sec = (airAt(e, now) - now) / 1000;
+  return `<button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")} · ${esc(whenTxt(airAt(e, now), now))}</small></span><span class="cdn">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"}</span></button>`;
+}
+/* A show you're watching as one row: poster, title, what's next, play. */
+function watchRow({ s, t }) {
+  const sea = t.sea, seen = sea.episodes.filter((x) => x.watched).length;
+  return `<div class="prow" data-a="open" data-v="${esc(s.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : "next"} · ${seen}/${sea.episodes.length}</small></span>
+    <button class="btn ic" data-a="play" data-v="${esc(t.ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></div>`;
+}
+function upPhone(up) {
+  const s = up.s, ep = up.ep, sea = up.sea, art = s.banner || homeThumb(sea, ep) || s.poster;
+  const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
+  const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
+  return `<div class="upp"><button class="upa2" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
+    <div class="upb"><div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
+    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</div>
+    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
+    <button class="btn pri big wide" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div>`;
+}
+function HomePhone() {
+  const d = S.data, up = nextUpInfo(), L = keepWatching(up && up.s.id), airing = airingList(), now = Date.now();
+  const soon = airing.filter((e) => airAt(e, now) > now - 3600e3).slice(0, 3);
+  const touched = new Set((d.history || []).map((e) => e.show_id));
+  const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
+  const sum = [L.length + (up ? 1 : 0) ? `<span><b>${L.length + (up ? 1 : 0)}</b> in progress</span>` : "", airing.length ? `<span><b>${airing.length}</b> airing</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+  let body = up ? upPhone(up) : "";
+  if (L.length) body += `<section class="psec"><div class="sh"><h2>Also watching</h2><span class="mut">${L.length}</span></div>${L.map(watchRow).join("")}</section>`;
+  if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
+  const recs = recsFor();
+  if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="fill"></span><button class="btn sm disc" data-a="deck" data-v="recs">${ico("up")}Discover</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
+  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
+    `<button class="rc" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
+  if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
+  return `<div class="home2 phone"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${body}</div>`;
+}
+/* Tablet portrait: what you're watching and the week side by side. */
+function homePair(L, airing) {
+  const now = Date.now(), soon = airing.filter((e) => airAt(e, now) > now - 3600e3).slice(0, 5);
+  if (!L.length && !soon.length) return "";
+  return `<div class="hpair"><section class="psec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span></div>${L.slice(0, 5).map(watchRow).join("") || '<p class="empty">Nothing else in progress.</p>'}</section>
+    <section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("") || '<p class="empty">Nothing airing this week.</p>'}</section></div>`;
+}
+
+/* The deck (E1, reworked — Elias 2026-10-27: "it should be a discovery
+   like tiktok"): one show per screen, swipe up for the next. Two sources:
+   "recs" — AniList's recommendations (Home → Recommended → Discover), with
+   + Planning; "lib" — the Library list you're on, as filtered (Library →
+   Swipe), with Play when it's on disk. Esc or the cross closes it. */
+function deckItems(src) {
+  if (src === "recs") {
+    const listed = new Set((S.data.spine?.entries || []).filter((e) => e.status).map((e) => e.id));
+    return (S.recs?.items || []).filter((r) => !listed.has(r.id)).map((r) => ({
+      id: r.id, title: r.title, art: r.poster || r.banner, color: r.color,
+      eye: r.because ? `because you liked ${r.because.title}` : "recommended for you",
+      facts: [FMT[r.format] || r.format, r.episodes ? `${r.episodes} ep` : "", r.year, r.average ? `★ ${r.average}` : ""].filter(Boolean).join(" · "),
+      genres: (r.genres || []).slice(0, 3), add: !S.recsAdded?.has(r.id), open: ["recopen", r.id] }));
+  }
+  const m = libModel();
+  return libList(m).map((e) => {
+    const sh = e.local_show_id ? showById(e.local_show_id) : null, t = sh ? pickTarget(sh) : null;
+    return { id: e.id, title: e.title, art: e.poster || e.banner, color: e.color, eye: statusLabel(e.status).toLowerCase(),
+      facts: [FMT[e.format] || e.format, e.year, e.episodes ? `${e.progress || 0} / ${e.episodes}` : ""].filter(Boolean).join(" · "),
+      genres: (e.genres || []).slice(0, 3), play: t && { id: t.ep.id, label: `${KIND_WORD[t.kind]} ${epCode(t.sea, t.ep)}` }, open: ["entry", e.id] };
+  });
+}
+const shuffled = (list) => { const a = [...list]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; } return a; };
+function deckFill(src, i, items) {
+  S.deck = { src, i: Math.min(i, items.length - 1) };
+  const feed = src === "recs", el = $("#deck");
+  const dot = (x) => `<i class="mdot"${x.color ? ` style="background:${esc(hexAccent(x.color) || "var(--accent)")}"` : ""}></i>`;
+  el.innerHTML = `<div class="deck" role="dialog" aria-modal="true" aria-label="${feed ? "Discover" : "Swipe through your list"}">
+    ${grab}<div class="dtop"><button class="btn ic" data-a="deckclose" aria-label="Close">${ico("close")}</button><b class="dttl">${feed ? "Discover" : esc(statusLabel(S.lib.tab) || "Library")}</b>${feed ? "" : `<span class="dcount mono"><b>${S.deck.i + 1}</b> / ${items.length}</span>`}</div>
+    <div class="dscroll">${items.map((x, k) => `<section class="dpage" style="--h:${hueOf(x.title)}"${x.art ? ` data-art="${esc(x.art)}"` : ""}><i class="dart"></i>
+        <div class="dbody"><div class="eye">${dot(x)}<span>${esc(x.eye)}</span></div><h2${x.title.length > 26 ? ' class="long"' : ""}>${esc(x.title)}</h2>
+        <div class="sub mono">${esc(x.facts)}</div>${x.genres.length ? `<div class="dgen">${x.genres.map((g) => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
+        <div class="cta">${x.play ? `<button class="btn pri big" data-a="deckplay" data-v="${esc(x.play.id)}">${ico("play")}<span>${esc(x.play.label)}</span></button>` : ""}${x.add != null ? `<button class="btn ${x.play ? "" : "pri "}big" data-a="deckadd" data-v="${x.id}" ${x.add ? "" : "disabled"}>${ico(x.add ? "plus" : "check")}<span>${x.add ? "Planning" : "On Planning"}</span></button>` : ""}<button class="btn big" data-a="deckopen" data-v="${esc(x.open.join(":"))}">Details</button></div></div>
+        ${k < items.length - 1 && (!feed || !k) ? `<span class="dnext">${ico("up")}${feed ? "Swipe up" : esc(items[k + 1].title)}</span>` : ""}</section>`).join("")}${feed ? `<section class="dpage dend"><div class="dbody"><h2>That's all for now</h2><div class="cta"><button class="btn pri big" data-a="deckagain">Shuffle again</button><button class="btn big" data-a="deckclose">Close</button></div></div></section>` : ""}</div></div>`;
+  const sc = el.querySelector(".dscroll"), pages = sc.children;
+  /* The cards around this one: art decoded before it's shown, and drawn on their own
+     layers, all once a swipe has settled, so nothing new lands while a card moves. */
+  const near = (k) => {
+    for (const p of sc.querySelectorAll(".dpage.near")) if (Math.abs([...pages].indexOf(p) - k) > 2) p.classList.remove("near");
+    for (let n = Math.max(0, k - 1); n <= k + 3 && n < pages.length; n++) {
+      const p = pages[n], u = p.dataset.art;
+      if (n <= k + 2) p.classList.add("near");
+      if (!u) continue;
+      delete p.dataset.art;
+      const im = new Image();
+      im.src = u;
+      im.decode().catch(() => {}).finally(() => p.style.setProperty("--art", cssUrl(u)));
+    }
+  };
+  const card = (k) => {
+    if (S.deck) S.deck.i = k;
+    near(k);
+    if (!feed) el.querySelector(".dcount b").textContent = k + 1;
+  };
+  near(S.deck.i);
+  if (mq("(pointer:coarse)")) deckPager(sc, card);
+  else {
+    sc.scrollTop = S.deck.i * sc.clientHeight;
+    let settle = 0;
+    sc.onscroll = () => { clearTimeout(settle); settle = setTimeout(() => card(Math.round(sc.scrollTop / sc.clientHeight)), 160); };
+  }
+  el.querySelector(".dtop .btn").focus({ preventScroll: true });
+}
+/* The deck's swipe on touch screens (the browser's scroll-snap ignores how fast the
+   finger moved). The card sticks to the finger, then a critically damped spring takes
+   over at the finger's own speed: no jump in speed on release, no bounce on landing.
+   The whole glide is one Web Animation of a transform, so the GPU plays it without
+   the main thread (scrollTop writes each frame lagged on the phone). One card per
+   swipe. Pull down on the first card stays the close gesture. */
+const DECK_SPRING = 16; // per second: mostly there in ~0.3 s
+function deckPager(sc, land) {
+  let drag = null, anim = null, y = S.deck.i * sc.clientHeight;
+  const put = (v) => { y = v; sc.style.transform = `translate3d(0,${-v}px,0)`; };
+  const halt = () => {
+    if (!anim) return;
+    put(-new DOMMatrix(getComputedStyle(sc).transform).m42);
+    anim.onfinish = null; anim.cancel(); anim = null;
+    land(Math.round(y / sc.clientHeight));
+  };
+  const glide = (k, v) => {
+    const to = k * sc.clientHeight, x0 = y - to, w = DECK_SPRING;
+    if (reduceMotion() || Math.abs(x0) < 0.5) { put(to); land(k); return; }
+    /* A flick faster than the spring can absorb would overshoot the card. */
+    const lim = w * Math.abs(x0), b = Math.max(-lim, Math.min(lim, v)) + w * x0, frames = [];
+    let t = 0;
+    for (;; t += 1 / 60) {
+      const x = (x0 + b * t) * Math.exp(-w * t);
+      frames.push({ transform: `translate3d(0,${-(to + x)}px,0)` });
+      if ((Math.abs(x) < 0.5 && t > 0.1) || t > 1) break;
+    }
+    put(to);
+    frames.push({ transform: sc.style.transform });
+    anim = sc.animate(frames, { duration: t * 1000, easing: "linear" });
+    anim.onfinish = () => { anim = null; land(k); };
+  };
+  sc._place = () => { halt(); put(S.deck.i * sc.clientHeight); };
+  put(y);
+  sc.ontouchstart = (e) => {
+    halt();
+    drag = e.touches.length === 1 ? { y: e.touches[0].clientY, x: e.touches[0].clientX, top: y, h: sc.clientHeight, max: (sc.children.length - 1) * sc.clientHeight, on: false, log: [] } : null;
+  };
+  sc.ontouchmove = (e) => {
+    if (!drag) return;
+    const fy = e.touches[0].clientY, dy = drag.y - fy;
+    if (!drag.on) {
+      if (Math.abs(dy) < 6) return;
+      if (Math.abs(e.touches[0].clientX - drag.x) > Math.abs(dy) || (dy < 0 && drag.top <= 2)) { drag = null; return; } // sideways, or the pull that closes
+      drag.on = true; drag.y = fy; return;
+    }
+    e.preventDefault();
+    put(Math.max(0, Math.min(drag.max, drag.top + dy)));
+    drag.log.push([e.timeStamp, fy]);
+    if (drag.log.length > 8) drag.log.shift();
+  };
+  sc.ontouchend = sc.ontouchcancel = () => {
+    const d = drag;
+    drag = null;
+    if (!d?.on) { // a tap may have caught the card mid-glide: land it
+      if (!anim) glide(Math.round(y / sc.clientHeight), 0);
+      return;
+    }
+    /* The finger's speed over its last 100 ms, in px/s toward the next card. */
+    const last = d.log[d.log.length - 1], first = last && d.log.find((p) => last[0] - p[0] <= 100);
+    const v = last && last[0] > first[0] ? ((first[1] - last[1]) / (last[0] - first[0])) * 1000 : 0;
+    const from = Math.round(d.top / d.h), moved = y - from * d.h;
+    const flick = Math.abs(v) > 400 && Math.abs(moved) > 16;
+    const dir = flick ? Math.sign(v) : Math.abs(moved) > d.h * 0.25 ? Math.sign(moved) : 0;
+    glide(Math.max(0, Math.min(sc.children.length - 1, from + dir)), v);
+  };
+}
+function openDeck(src = "recs", i = 0) {
+  /* Discover is a feed (TODO 92): a new order each time, no count, no look at what's next. */
+  const items = src === "recs" ? shuffled(deckItems(src)) : deckItems(src);
+  if (!items.length) { toast(src === "recs" ? "No recommendations yet — rate a few shows on AniList." : "Nothing in this list."); return; }
+  deckFill(src, i, items);
+  document.body.classList.add("deck-open");
+  ovOpen("deck", () => closeDeck());
+}
+addEventListener("resize", () => { const sc = $("#deck .dscroll"); if (!sc || !S.deck) return; if (sc._place) sc._place(); else sc.scrollTop = S.deck.i * sc.clientHeight; });
+function closeDeck(silent) { if (!S.deck) return; S.deck = null; $("#deck").innerHTML = ""; document.body.classList.remove("deck-open"); if (silent) ovDrop("deck"); else ovClosed("deck"); }
+document.addEventListener("keydown", (e) => {
+  if (!S.deck) return;
+  const sc = $("#deck .dscroll");
+  if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); closeDeck(); }
+  else if (sc && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); sc.scrollBy({ top: (e.key === "ArrowDown" ? 1 : -1) * sc.clientHeight, behavior: reduceMotion() ? "auto" : "smooth" }); }
+}, true);
+
+/* The week (E2): every next episode on your lists as a timeline with
+   countdowns, then the month with a dot on each day one airs. */
+/* The desktop calendar (TODO 106): a real month you can page through, with
+   every episode AniList has scheduled for what's on your lists. */
+const monthName = (d) => d.toLocaleDateString(undefined, { month: "long" });
+const airKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function loadSched() {
+  if (S.schedBusy) return;
+  S.schedBusy = true;
+  api("/api/schedule").then((r) => {
+    S.schedBusy = false; S.sched = { at: r.state === "loading" ? 0 : Date.now(), state: r.state, items: r.items || [] };
+    if (S.view === "week") render(true);
+    if (r.state === "loading") setTimeout(() => S.view === "week" && loadSched(), 2500);
+  }).catch(() => { S.schedBusy = false; });
+}
+/* Date key → the day's events, earliest first. The list's own next episodes
+   fill in until the schedule has loaded. */
+function calEvents() {
+  const byId = new Map(S.data.spine.entries.map((e) => [e.id, e])), mine = S.airCal.scope === "watching", days = new Map();
+  const add = (x) => {
+    const e = byId.get(x.id);
+    if (!e || (mine && !inProg(e.status))) return;
+    const d = x.at ? new Date(x.at * 1000) : new Date(`${x.date}T00:00:00`), k = airKey(d);
+    (days.get(k) || days.set(k, []).get(k)).push({ e, ep: x.ep, t: d.getTime(), start: !x.at });
+  };
+  if (S.sched?.items.length) S.sched.items.forEach(add);
+  else for (const e of airingList()) add({ id: e.id, ep: e.next_episode?.number, at: Math.floor(airAt(e) / 1000) });
+  for (const l of days.values()) l.sort((a, b) => a.t - b.t);
+  return days;
+}
+/* Context, from what AniList states: first and last episode, what you've seen. */
+const airTag = (x) => (x.start || x.ep === 1 ? "Premiere" : x.ep && x.ep === x.e.episodes ? "Finale" : "");
+const airSeen = (x) => !x.start && (x.e.progress || 0) >= x.ep;
+const airTime = (x) => new Date(x.t).toTimeString().slice(0, 5);
+const airStyle = (x) => (x.e.poster ? ` style="background-image:${esc(cssUrl(x.e.poster))}"` : "");
+const airTile = (x) => { const t = airTag(x); return `<i class="airt${airSeen(x) ? " is-seen" : ""}"${airStyle(x)}>${t ? `<em class="${t === "Finale" ? "is-end" : ""}">${t}</em>` : ""}</i>`; };
+/* What the schedule says about each show: aired so far, its last date. */
+function airFacts(days, now) {
+  const f = new Map();
+  for (const x of [...days.values()].flat()) {
+    const r = f.get(x.e.id) || f.set(x.e.id, { aired: 0, last: null }).get(x.e.id);
+    if (x.t <= now && x.ep > r.aired) r.aired = x.ep;
+    if (x.ep && x.ep === x.e.episodes) r.last = x.t;
+  }
+  return f;
+}
+const airBehind = (e, f) => (inProg(e.status) && f ? Math.max(0, f.aired - (e.progress || 0)) : 0);
+function airCard(x, facts, now) {
+  const e = x.e, f = facts.get(e.id), behind = airBehind(e, f), sec = (x.t - now) / 1000;
+  const tags = [statusLabel(e.status), e.episodes ? `${e.progress || 0} / ${e.episodes} seen` : e.progress ? `${e.progress} seen` : "", ({ installed: "on disk", partial: "partly on disk", online: "online" })[e.capability]].filter(Boolean);
+  const ends = f?.last && f.last > x.t ? `Finale ${new Date(f.last).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : "";
+  return `<button class="aircard" data-a="entry" data-v="${esc(e.id)}"><i class="airp"${airStyle(x)}></i><span class="airx"><b>${esc(e.title)}</b>
+    <small>${x.start ? "Starts" : `Episode ${esc(x.ep)}${e.episodes ? " of " + e.episodes : ""} · ${airTime(x)}`}${sec > 0 ? ` · <span class="ac">in ${esc(fmtIn(sec))}</span>` : ""}</small>
+    <span class="airtags">${airTag(x) ? `<u class="is-hot">${airTag(x)}</u>` : ""}${behind ? `<u class="is-hot">${behind} behind</u>` : ""}${tags.map((t) => `<u>${esc(t)}</u>`).join("")}${ends ? `<u>${esc(ends)}</u>` : ""}</span></span></button>`;
+}
+function airMonth(c, days, today) {
+  const first = new Date(c.y, c.m, 1), lead = (first.getDay() + 6) % 7, count = new Date(c.y, c.m + 1, 0).getDate(), rows = Math.ceil((lead + count) / 7);
+  const cells = Array.from({ length: rows * 7 }, (_, i) => {
+    const d = new Date(c.y, c.m, i - lead + 1), k = airKey(d), l = days.get(k) || [], shown = l.length > 3 ? l.slice(0, 2) : l;
+    const cls = [d.getMonth() !== c.m ? "is-out" : "", k === airKey(today) ? "is-today" : "", k === c.sel ? "is-sel" : ""].filter(Boolean).join(" ");
+    return `<button class="aird ${cls}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts">${shown.map(airTile).join("")}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
+  return `<div class="airgrid" style="--rows:${rows}">${DAYS.map((d) => `<b class="airw">${d}</b>`).join("")}${cells}</div>`;
+}
+function airWeek(c, days, today) {
+  const sel = new Date(`${c.sel}T00:00:00`), mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7);
+  return `<div class="airwk">${Array.from({ length: 7 }, (_, i) => { const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i), k = airKey(d), l = days.get(k) || [];
+    return `<div class="aircol${k === airKey(today) ? " is-today" : ""}"><div class="aircolh"><span>${DAYS[i]}</span><b>${d.getDate()}</b></div>${l.map((x) => `<button class="airbig${airSeen(x) ? " is-seen" : ""}" data-a="entry" data-v="${esc(x.e.id)}" title="${esc(x.e.title)}">${airTile(x)}<b>${esc(x.e.title)}</b><small>${x.start ? "Starts" : `E${esc(x.ep)} · ${airTime(x)}`}</small></button>`).join("")}</div>`; }).join("")}</div>`;
+}
+function CalDesk() {
+  const now = Date.now(), today = new Date(now), c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: airKey(today), scope: "all", mode: lsGet("airMode", "month") });
+  if (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3)) loadSched();
+  const days = calEvents(), facts = airFacts(days, now), week = c.mode === "week", first = new Date(c.y, c.m, 1);
+  const inMonth = [...days.entries()].filter(([k]) => k.startsWith(airKey(first).slice(0, 7))).flatMap(([, l]) => l);
+  const prem = inMonth.filter((x) => airTag(x) === "Premiere").length, fin = inMonth.filter((x) => airTag(x) === "Finale").length;
+  const shows = new Map(S.data.spine.entries.map((e) => [e.id, e])), behind = [...facts].reduce((n, [id, f]) => n + airBehind(shows.get(id), f), 0);
+  const sum = [`<span><b>${inMonth.filter((x) => !x.start).length}</b> episodes this month</span>`, prem ? `<span><b>${prem}</b> premiere${prem === 1 ? "" : "s"}</span>` : "", fin ? `<span><b>${fin}</b> finale${fin === 1 ? "" : "s"}</span>` : "", behind ? `<span><b>${behind}</b> to catch up</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+  const sel = new Date(`${c.sel}T00:00:00`), picked = days.get(c.sel) || [], seen = new Set();
+  const next = [...days.values()].flat().filter((x) => x.t > now).sort((a, b) => a.t - b.t).filter((x) => !seen.has(x.e.id) && seen.add(x.e.id)).slice(0, 4);
+  const seg = (a, cur, opts) => opts.map(([v, l]) => `<button class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" data-a="${a}" data-v="${v}">${l}</button>`).join("");
+  const mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7), sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6), md = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const title = week ? `${esc(md(mon))} <span>– ${esc(md(sun))}</span>` : `${esc(monthName(first))} <span>${c.y}</span>`;
+  const panel = `<aside class="airside"><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
+  return `<div class="airp2"><div class="airhead"><h1 class="hd">${title}</h1>
+    <button class="arr" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button class="arr" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button><button class="btn sm" data-a="airtoday">Today</button>
+    ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
+    <span class="seg" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><span class="seg" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
+    ${week ? "" : `<div class="sum airsum">${sum}</div>`}
+    ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
+}
+function Week() {
+  if (!isPhone() && mq("(min-width:1001px)") && aniMode()) return CalDesk();
+  const now = Date.now(), list = airingList();
+  const head = `<div class="hello"><h1 class="hd">Airing</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
+  if (!aniMode()) return `<div class="wk2">${head}<p class="empty">Connect AniList to see what airs next.</p></div>`;
+  const tl = list.map((e, k) => { const t = airAt(e, now), sec = (t - now) / 1000;
+    return `<div class="tli${k === 0 ? " first" : ""}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
+      <button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")}</small></span></button></div>`; }).join("");
+  const today = new Date(now), airs = list.map((e) => new Date(airAt(e, now)));
+  const month = (first, note) => { const y = first.getFullYear(), mo = first.getMonth(), lead = (first.getDay() + 6) % 7, days = new Date(y, mo + 1, 0).getDate();
+    const marks = new Set(airs.filter((d) => d.getFullYear() === y && d.getMonth() === mo).map((d) => d.getDate())), thisMo = y === today.getFullYear() && mo === today.getMonth();
+    const cells = Array.from({ length: Math.ceil((lead + days) / 7) * 7 }, (_, i) => { const d = i - lead + 1, inM = d >= 1 && d <= days;
+      return `<span class="${!inM ? "out" : ""}${thisMo && d === today.getDate() ? " today" : ""}${inM && marks.has(d) ? " has" : ""}">${inM ? d : ""}</span>`; }).join("");
+    return `<section class="psec"><div class="sh"><h2>${esc(first.toLocaleDateString(undefined, { month: "long" }))}</h2>${note ? '<span class="mut">a dot: an episode airs</span>' : ""}</div>
+      <div class="cal2">${DAYS.map((d) => `<b>${d.slice(0, 2)}</b>`).join("")}${cells}</div></section>`; };
+  const y = today.getFullYear(), mo = today.getMonth(), nextM = new Date(y, mo + 1, 1);
+  /* The next month joins once something airs in it. */
+  const cal = month(new Date(y, mo, 1), true) + (airs.some((d) => d >= nextM) ? month(nextM) : "");
+  return `<div class="wk2">${head}<div class="wkgrid"><div class="tline">${tl || '<p class="empty">Nothing airing right now.</p>'}</div><div class="wkcal">${cal}</div></div></div>`;
+}
+
+/* Tablet landscape: your lists beside the show page, so picking another
+   show only changes the right side. */
+const SIDE_TABS = [["watching", "Watching", (e) => inProg(e.status)], ["planning", "Planning", (e) => e.status === "PLANNING"], ["done", "Done", (e) => e.status === "COMPLETED"]];
+function paintSide() {
+  let el = $("#tside");
+  const on = isTabletL() && (S.view === "show" || S.view === "fr") && S.data?.spine?.entries?.length;
+  document.body.classList.toggle("has-side", !!on);
+  if (!on) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement("aside"); el.id = "tside"; document.body.append(el); }
+  const tab = SIDE_TABS.find(([k]) => k === S.sideTab) || SIDE_TABS[0];
+  const cur = S.view === "fr" ? frEntry()?.id : showById(S.showId)?.meta?.anilist_id;
+  const rows = libCards(S.data.spine.entries.filter(tab[2])).sort(SORT.updated).slice(0, 60);
+  const html = `<div class="tsh"><span class="seg" role="group" aria-label="List">${SIDE_TABS.map(([k, l]) => `<button class="${k === tab[0] ? "on" : ""}" data-a="sidetab" data-v="${k}">${l}</button>`).join("")}</span></div>
+    <div class="tsl">${rows.map((e) => `<button class="prow${e.id === cur || e.franchise_id === cur ? " on" : ""}" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>${e.episodes ? `${e.progress || 0} / ${e.episodes}` : esc(FMT[e.format] || e.format || "")}</small></span></button>`).join("") || '<p class="empty">Nothing here.</p>'}</div>`;
+  if (el._html !== html) { el._html = html; el.innerHTML = html; }
+}
+
+/* Phones: the show page's Play button and the library's filter sheet sit
+   fixed at the bottom. The page's entrance animation leaves a transform on
+   their ancestors (fixed would then mean "fixed to the page"), so both are
+   drawn in their own layer outside #app: copies whose data-a actions work
+   the same. Redrawn after every render and patch. */
+function paintPortals() {
+  const el = $("#portal");
+  if (!el) return;
+  let html = "";
+  if (isPhone() && (S.view === "show" || S.view === "fr")) {
+    const b = $("#app .sp2 .cta .btn.pri"), more = $("#app .frpage .cta [data-a=frmore]");
+    if (b) html += `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
+  }
+  const flt = isPhone() && S.view === "library" && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
+  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet">${flt.outerHTML.replace('<div class="filters">', '<div class="filters">' + grab + '<b class="fsh">Sort & filter</b>')}</div>`;
+  else document.body.classList.remove("flt-open");
+  if (el._html !== html) { el._html = html; el.innerHTML = html; }
+  document.body.classList.toggle("has-pbar", html.includes('class="pbar"'));
+}
+/* Search on touch screens (Elias, 2026-10-27: "rework the design of
+   search"): a full page over the art with the field at the thumb.
+   Before typing: recent searches, your lists, what you're watching.
+   Typing: library rows, AniList as a poster grid, matching settings. Same
+   rows (.mi, data-i) as the PC list, so Enter and the arrows still work. */
+const touchSearch = () => isPhone() || mq("(pointer:coarse)");
+const SR_RECENT = "srRecent";
+function srRemember(qq) {
+  qq = String(qq || "").trim();
+  if (qq.length < 2) return;
+  lsSet(SR_RECENT, [qq, ...lsGet(SR_RECENT, []).filter((x) => x.toLowerCase() !== qq.toLowerCase())].slice(0, 6));
+}
+function srHTMLTouch() {
+  const qq = S.q.trim(), ql = qq.toLowerCase();
+  srPv = [];
+  let i = 0, h = "";
+  const mi = (attrs, cls, inner) => { srPv.push(null); return `<div class="mi ${cls}" tabindex="-1" data-i="${i++}" ${attrs}>${inner}</div>`; };
+  const sec = (t, extra = "") => `<div class="srsec"><h2>${t}</h2><span class="fill"></span>${extra}</div>`;
+  if (!qq) {
+    const recent = lsGet(SR_RECENT, []);
+    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srchips">${recent.map((r) => `<button class="chip" data-a="srq" data-v="${esc(r)}">${ico("clock")}${esc(r)}</button>`).join("")}</div>`;
+    const sp = S.data?.spine;
+    if (aniMode() && sp?.entries?.length) {
+      const n = (k) => new Set(sp.entries.filter((e) => e.status === k).map(libKey)).size;
+      const lists = LISTS.filter(([k]) => n(k)).map(([k, l]) => `<button class="chip" data-a="srlist" data-v="${k}">${esc(l)}<span class="n">${n(k)}</span></button>`).join("");
+      h += sec("Your lists") + `<div class="srchips">${lists}<button class="chip" data-a="srgo" data-v="week">${ico("cal")}This week</button></div>`;
+    }
+    const up = S.data && nextUpInfo(), shows = S.data ? [up?.s, ...keepWatching(up && up.s.id).map((x) => x.s)].filter(Boolean).slice(0, 8) : [];
+    if (shows.length) h += sec("Watching") + `<div class="srposters">${shows.map((s) => mi(`data-a="open" data-v="${esc(s.id)}"`, "sp", `${poster(s.title, s.poster)}<b>${esc(s.title)}</b>`)).join("")}</div>`;
+    if (!h) h = '<p class="srnone">Type a show, a setting or a command.</p>';
+  } else {
+    const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
+      .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), s })).sort((a, b) => a.r - b.r).slice(0, 6);
+    const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
+    const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, k })).filter((y) => !have.has(y.x.id)).sort((a, b) => a.r - b.r).slice(0, 9);
+    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s);
+      return mi(`data-a="open" data-v="${esc(s.id)}"`, "srrow", `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>${ico("chevr")}`); }).join("");
+    if (remote.length) h += sec("On AniList") + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+      return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
+    const sets = SETTINGS_INDEX.filter(([t, tab, w]) => srMatch(`${t} ${w} ${tab}`.toLowerCase(), ql)).slice(0, 4);
+    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
+      return mi(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, "srrow set", `<i class="sic">${ico(SET_ICONS[tab] || "sliders")}</i><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : ico("chevr")}`); }).join("")}</div>`;
+    const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, 3);
+    if (cmds.length) h += sec("Do") + `<div class="srchips">${cmds.map(([[t], k]) => `<button class="chip" data-a="cmd" data-v="${k}">${ico("arrowr")}${esc(t)}</button>`).join("")}</div>`;
+    if (alSearchable() && (S.alBusy || (S.alq !== qq && qq.length >= 2))) h += '<p class="srnone"><i class="spin"></i> searching AniList…</p>';
+    if (!h) h = `<p class="srnone">Nothing for “${esc(qq)}”${alSearchable() ? " in your library, on AniList or in settings" : " in your library or settings"}.</p>`;
+  }
+  return `<div class="pal2 touch"><div class="plist">${grab}<h1 class="hd srhd">Search</h1>${h}</div></div>`;
+}
+/* The keyboard (Elias: "the entire page goes up when I open my keyboard").
+   index.html asks Chrome/Samsung Internet to shrink the page instead of
+   pushing it up (interactive-widget=resizes-content). Browsers that ignore
+   that (iPhone) still push: there, while search is open, the search page is
+   fitted to the part of the screen above the keyboard (visualViewport). */
+const vv = window.visualViewport;
+function fitPal() {
+  const p = $("#pal");
+  if (!p) return;
+  const on = vv && S.menu === "sr" && touchSearch() && Math.round(vv.height) < innerHeight;
+  p.style.height = on ? vv.height + "px" : "";
+  p.style.transform = on && vv.offsetTop ? `translateY(${vv.offsetTop}px)` : "";
+}
+vv?.addEventListener("resize", fitPal);
+vv?.addEventListener("scroll", fitPal);
+/* Opening a result remembers what was typed (Recent). */
+document.addEventListener("click", (e) => { if (S.menu === "sr" && S.q.trim() && e.target.closest?.("#sr .mi, #sr [data-a=cmd]")) srRemember(S.q); }, true);
+
+/* Settings on a phone (S5): a grouped list; a section opens as its own page. */
+function setSummary(k, s) {
+  const ani = S.ani || {}, st = s.stream || {}, sk = s.skip || {};
+  return {
+    appearance: "accent, background art, motion, zoom",
+    library: s.library_root || "no folder chosen yet",
+    mpv: `fullscreen: ${({ on: "on", off: "off", own: "my config" })[s.mpv?.fullscreen] || "on"}`,
+    playback: `openings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.op] || "ask"} · endings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.ed] || "ask"}`,
+    online: s.tools?.["ani-cli"] ? `${st.mode === "dub" ? "dub" : "sub"} · ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "ani-cli not installed",
+    anilist: ani.connected ? `connected as ${ani.user || "you"}` : "not connected",
+    phone: "pair a phone with a QR code",
+    keys: "for a keyboard",
+    data: "config file, data folder",
+  }[k] || "";
+}
+const SET_ICONS = { appearance: "edit", library: "folder", playback: "play", mpv: "tv", online: "download", anilist: "star", phone: "tv", keys: "search", data: "clock" };
+function settingsList(tabs, s) {
+  return `<div class="set2 phone"><div class="hello"><h1 class="hd">Settings</h1></div>
+    <button class="slsearch" data-a="sropen">${ico("search")}<span>search settings — try “vpn”</span></button>
+    <div class="slist">${tabs.filter(([k]) => k !== "keys").map(([k, l]) => `<button class="sli" data-a="setopen" data-v="${k}"><i class="sic">${ico(SET_ICONS[k] || "chevr")}</i><span><b>${l}</b><small>${esc(setSummary(k, s))}</small></span>${ico("chevr")}</button>`).join("")}</div></div>`;
+}
+
+/* ---------- phone remote (Decision 43) ---------- */
+/* On phones (and narrow or touch screens) a mini player sits above the
+   status line while mpv plays on the PC; tapping it opens the remote, a
+   full page in the show page's style over the playing show's art. The
+   page is built once per state change and patched in place (rebuilding it
+   replayed its entrance); the clock and progress tick between polls. */
+const phoneUI = () => !!S.settings?.phone || matchMedia("(max-width:700px), (pointer:coarse)").matches;
+const tclock = (x) => { x = Math.max(0, Math.floor(x || 0)); const h = Math.floor(x / 3600), m = Math.floor(x / 60) % 60, sec = String(x % 60).padStart(2, "0"); return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`; };
+const LANGS = { jpn: "Japanese", ja: "Japanese", eng: "English", en: "English", ger: "German", deu: "German", de: "German", spa: "Spanish", es: "Spanish", fre: "French", fra: "French", fr: "French", ita: "Italian", it: "Italian", por: "Portuguese", pt: "Portuguese", rus: "Russian", ru: "Russian", chi: "Chinese", zho: "Chinese", zh: "Chinese", kor: "Korean", ko: "Korean", ara: "Arabic", ar: "Arabic", und: "" };
+const langName = (c) => { if (!c) return ""; const k = c.toLowerCase(); if (k in LANGS) return LANGS[k]; try { return new Intl.DisplayNames(["en"], { type: "language" }).of(k) || c; } catch { return c; } };
+const trackName = (t, i) => { const l = langName(t.lang), ti = t.title || ""; return ti && l && !ti.toLowerCase().includes(l.toLowerCase()) ? `${ti} · ${l}` : ti || l || `Track ${i + 1}`; };
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+const SEGNAME = { op: "opening", ed: "ending" };
+const LIVE_KEYS = ["position", "duration", "paused", "volume", "tracks", "speed", "sub_delay", "segments", "stop_after"];
+function livePos() {
+  const l = S.live;
+  if (!l || typeof l.position !== "number") return 0;
+  const p = l.position + (l.paused || S.data?.now?.loading ? 0 : ((Date.now() - l.at) / 1000) * (l.speed || 1));
+  return l.duration ? Math.min(p, l.duration) : p;
+}
+/* The opening/ending playing right now (the same window mpv's own skip prompt uses). */
+const segNow = () => { const p = livePos(); return (S.live?.segments || []).find((x) => p >= x.start - 1 && p < x.end - 1) || null; };
+function liveFrom(now) {
+  if (!now.playing) { S.live = null; return; }
+  if (S.live?.hold > Date.now() && S.live.ep === now.episode_id) return; // a button just answered: keep its fresher state
+  S.live = { ep: now.episode_id, at: Date.now(), ...Object.fromEntries(LIVE_KEYS.map((k) => [k, now[k]])) };
+  S.live.paused = !!S.live.paused;
+}
+let rmtSig = "";
+function rmtEpisodes(ctx, nowId) {
+  if (!ctx) return "";
+  const { s, sea } = ctx, eps = [...sea.episodes].sort((x, y) => x.number - y.number);
+  const at = Math.max(0, eps.findIndex((e) => e.id === nowId));
+  const tiles = eps.map((ep, i) => {
+    const rt = epThumbOf(sea.thumbs, ep), art = rt || s.poster || s.banner, cur = ep.id === nowId;
+    const online = String(ep.id).startsWith("stream:"), mins = minsOf(ep.duration || ep.length);
+    const meta = cur ? "playing now" : `${mins ? mins + " min · " : ""}${online ? "online" : "disk"}`;
+    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : "playep", v: ep.id, i,
+      art, pos: rt ? "50% 50%" : "50% 22%", num: "E" + String(ep.number).padStart(2, "0"), watched: ep.watched && !cur, title: epTitle(s, sea, ep) || "Episode " + ep.number, meta, menu: "" })
+      .replace(/<button class="dots"[\s\S]*?<\/button>/, "");
+  }).join("");
+  return `<div class="eps-head"><h2>${esc(sea.label || sea.name || "Episodes")}</h2><span class="rk">${at + 1} of ${eps.length}</span></div><div class="eps strip mr" data-at="${at}">${tiles}</div>`;
+}
+function paintRemote() {
+  const el = $("#rmt"), now = S.data?.now;
+  if (!now || !phoneUI()) {
+    if (rmtSig) { el.innerHTML = ""; rmtSig = ""; document.body.classList.remove("rmt-on", "rmt-open"); if (S.rmtOpen) { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } }
+    S.rmtOpen = false;
+    return;
+  }
+  const ctx = findEpContext(now.episode_id), s = ctx?.s, l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
+  const hasNext = !!now.next && (now.next.source === "local" || now.next.source === "online");
+  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster]);
+  if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
+    rmtSig = sig;
+    document.body.classList.add("rmt-on");
+    const paused = !!l.paused, busy = now.loading ? "disabled" : "", epNo = ctx ? "E" + String(ctx.ep.number).padStart(2, "0") : now.label;
+    const pp = (c) => `<button class="btn pri ic ${c}" data-a="rmt" data-v="toggle" aria-label="${paused ? "Play" : "Pause"}" ${busy}>${ico(paused ? "play" : "pause")}</button>`;
+    const skip = (c) => `<button class="btn ${c}" data-a="rmt" data-v="skip" hidden>${ico("next")}<span>Skip opening</span></button>`;
+    const thumb = s?.poster ? `<img alt="" src="${esc(s.poster)}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
+    const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
+    const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
+    const opts = [
+      tr.audio.length > 1 ? `<div class="ropt"><span class="rk">audio</span>${seg("audio", tr.audio.map((t, i) => [t.id, trackName(t, i), t.selected]), "Audio")}</div>` : "",
+      tr.sub.length ? `<div class="ropt"><span class="rk">subtitles</span>${seg("sub", [["no", "Off", !subOn], ...tr.sub.map((t, i) => [t.id, trackName(t, i), t.selected])], "Subtitles")}</div>` : "",
+      subOn ? `<div class="ropt"><span class="rk">subtitle timing · this episode</span><div class="rstep"><button class="btn ic" data-a="rmtdelay" data-v="-0.1" aria-label="Subtitles 0.1 s earlier">${ico("minus")}</button><b>${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s</b><button class="btn ic" data-a="rmtdelay" data-v="0.1" aria-label="Subtitles 0.1 s later">${ico("plus")}</button>${delay ? '<button class="btn" data-a="rmtdelay" data-v="0">Reset</button>' : `<span class="rk">${"earlier ← → later"}</span>`}</div></div>` : "",
+      typeof l.speed === "number" ? `<div class="ropt"><span class="rk">speed</span>${seg("speed", SPEEDS.map((v) => [v, v + "×", Math.abs(v - speed) < 0.01]), "Speed")}</div>` : "",
+      typeof l.volume === "number" ? `<div class="ropt"><span class="rk">volume</span><label class="rvol">${ico("vol")}<input class="rrange" type="range" min="0" max="130" step="5" value="${Math.round(l.volume)}" data-a="rmtvol" aria-label="Volume"><span>${Math.round(l.volume)}%</span></label></div>` : "",
+    ].join("");
+    const segBand = (l.segments || []).filter(() => l.duration).map((x) => `<i class="rsegb" style="left:${(x.start / l.duration) * 100}%;width:${((x.end - x.start) / l.duration) * 100}%"></i>`).join("");
+    const view = `<div class="sp2 rv">
+        ${grab}<div class="rtop"><button class="backbtn" data-a="rmtclose">${ico("chevd")}Close</button><span class="rpc"><i class="led"></i>${now.loading ? "starting on the PC…" : "playing on the PC"}</span></div>
+        <div class="rhero"><div class="meta"><i class="mdot"></i><span>${esc(now.label)}${ctx?.ep && (ctx.ep.duration || ctx.ep.length) ? ` · ${minsOf(ctx.ep.duration || ctx.ep.length)} min` : ""}</span></div>
+          <h1>${esc(s?.title || now.show)}</h1>${ctx ? `<p class="eptitle">${esc(epTitle(s, ctx.sea, ctx.ep) || "Episode " + ctx.ep.number)}</p>` : ""}</div>
+        <div class="rseek"><div class="rtrack">${segBand}<input class="rrange" type="range" min="0" max="${Math.max(1, Math.round(l.duration || 0))}" step="1" value="${Math.round(livePos())}" data-a="rmtseek" aria-label="Position" ${l.duration && !now.loading ? "" : "disabled"}></div>
+          <div class="rtimes"><span class="rcur">${tclock(livePos())}</span><span class="rmid"></span><span class="rleft">-${tclock((l.duration || 0) - livePos())}</span></div></div>
+        <div class="rskip">${skip("big")}</div>
+        <div class="cta rctl"><button class="btn big ic" data-a="rmt" data-v="stop" aria-label="Stop">${ico("stop")}</button><button class="btn big ic" data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>${ico("rew")}</button>${pp("big rpp")}<button class="btn big ic" data-a="rmt" data-v="fwd" aria-label="Forward 10 seconds" ${busy}>${ico("fwd")}</button><button class="btn big ic" data-a="rmt" data-v="next" aria-label="Next episode" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}</button></div>
+        ${opts ? `<div class="ropts">${opts}</div>` : ""}
+        <div class="rsleep"><div><b>Stop after this episode</b><p>${l.stop_after ? `mpv closes when ${esc(epNo)} ends. No auto-play.` : "Otherwise the next episode starts by itself."}</p></div><button class="switch" role="switch" aria-checked="${!!l.stop_after}" aria-label="Stop after this episode" data-a="rmtsleep"></button></div>
+        ${rmtEpisodes(ctx, now.episode_id)}
+      </div>`;
+    const barIn = `${thumb}<div class="rt"><b>${esc(s?.title || now.show)}</b><span><i class="led"></i>${now.loading ? "starting on the PC…" : esc(epNo)}<span class="rbt"></span></span></div>${skip("rbskip")}${pp("rp")}<i class="rprog"><i></i></i>`;
+    /* Patch in place: rebuilding the bar or the page would replay their entrance. */
+    const focus = document.activeElement?.closest?.("#rmt [data-a]"), fk = focus && [focus.dataset.a, focus.dataset.v, focus.dataset.k];
+    let bar = el.querySelector(".rbar"), vw = el.querySelector(".rview");
+    if (!bar) { el.innerHTML = '<div class="rbar" data-a="rmtopen" role="button" tabindex="0" aria-label="Open the remote"></div>'; bar = el.firstChild; vw = null; }
+    bar.innerHTML = barIn;
+    if (!S.rmtOpen) vw?.remove();
+    else {
+      const fresh = !vw;
+      if (fresh) { bar.insertAdjacentHTML("afterend", '<div class="rview" role="dialog" aria-modal="true" aria-label="Remote"></div>'); vw = el.querySelector(".rview"); }
+      const strip = vw.querySelector(".eps.strip"), sl = strip?.scrollLeft;
+      vw.innerHTML = view;
+      for (const x of vw.querySelectorAll("[data-bg]")) { if (x.dataset.bg) { x.style.backgroundImage = cssUrl(x.dataset.bg); x.style.backgroundPosition = x.dataset.bp || "50% 50%"; } }
+      const st = vw.querySelector(".eps.strip");
+      if (st) st.scrollLeft = fresh || sl == null ? Math.max(0, Number(st.dataset.at) * 234 - 40) : sl;
+    }
+    if (fk) [...el.querySelectorAll("[data-a]")].find((x) => x.dataset.a === fk[0] && x.dataset.v === fk[1] && x.dataset.k === fk[2])?.focus({ preventScroll: true });
+    document.body.classList.toggle("rmt-open", !!S.rmtOpen);
+  }
+  rmtTick();
+}
+/* The clock between polls: progress, slider, times and the skip button. */
+function rmtTick() {
+  const el = $("#rmt"), l = S.live;
+  if (!rmtSig || !l) return;
+  const pos = livePos(), dur = l.duration || 0, pct = dur ? (pos / dur) * 100 : S.data?.now?.percent || 0, sg = segNow();
+  const bar = el.querySelector(".rprog i");
+  if (bar) bar.style.width = pct + "%";
+  const bt = el.querySelector(".rbt");
+  if (bt) bt.textContent = dur ? ` · ${tclock(pos)}` : "";
+  for (const b of el.querySelectorAll('[data-v="skip"]')) { b.hidden = !sg; if (sg) b.querySelector("span").textContent = `Skip ${SEGNAME[sg.kind] || "this"}`; }
+  const mid = el.querySelector(".rmid");
+  if (mid) mid.textContent = sg ? SEGNAME[sg.kind] || "" : "";
+  if (S.rmtDrag) return;
+  const r = el.querySelector('.rseek input');
+  if (r) { r.value = Math.round(pos); r.style.setProperty("--p", pct + "%"); el.querySelector(".rcur").textContent = tclock(pos); el.querySelector(".rleft").textContent = "-" + tclock(dur - pos); }
+  const v = el.querySelector('.rvol input');
+  if (v) v.style.setProperty("--p", (v.value / 130) * 100 + "%");
+}
+setInterval(() => { if (rmtSig && !S.live?.paused) rmtTick(); }, 500);
+async function remoteSend(action, value) {
+  const l = S.live;
+  if (action === "toggle" && l) { l.position = livePos(); l.at = Date.now(); l.paused = !l.paused; l.hold = Date.now() + 1500; paintRemote(); }
+  let r;
+  try { r = await api("/api/control", value === undefined ? { action } : { action, value }); } catch { r = { error: "Could not reach the PC." }; }
+  if (r.error) { toast(r.error); pollSoon(200); return; }
+  if (action === "stop" || action === "next") { toast(action === "next" ? "Starting the next episode…" : "Stopped"); if (action === "stop") { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } pollSoon(800); return; }
+  if (action === "stop_after") { if (l) { l.stop_after = r.stop_after; l.hold = Date.now() + 1500; } toast(r.stop_after ? "Stops after this episode" : "Auto-play is back on"); paintRemote(); return; }
+  if (r.position == null) { pollSoon(300); return; } // skipped an ending: the episode finished
+  S.live = { ...(l || {}), ep: S.data?.now?.episode_id, at: Date.now(), hold: Date.now() + 1500, ...Object.fromEntries(LIVE_KEYS.filter((k) => k in r).map((k) => [k, r[k]])) };
+  S.live.paused = !!S.live.paused;
+  paintRemote();
+}
+/* Dragging a slider: the numbers follow the finger, the change is sent on release. */
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.dataset?.a === "rmtseek") {
+    S.rmtDrag = true;
+    const dur = S.live?.duration || 0, v = Number(t.value);
+    t.style.setProperty("--p", (dur ? (v / dur) * 100 : 0) + "%");
+    $("#rmt .rcur").textContent = tclock(v); $("#rmt .rleft").textContent = "-" + tclock(dur - v);
+  } else if (t.dataset?.a === "rmtvol") { S.rmtDrag = true; t.style.setProperty("--p", (t.value / 130) * 100 + "%"); t.nextElementSibling.textContent = t.value + "%"; }
+});
+document.addEventListener("keydown", (e) => {
+  if (S.rmtOpen && e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); A.rmtclose(); }
+  else if (e.target.closest?.(".rbar") && (e.key === "Enter" || e.key === " ") && !e.target.closest("button")) { e.preventDefault(); A.rmtopen(); }
+}, true);
+/* A slider let go without moving sends no change: still end the hold. */
+for (const ev of ["pointerup", "touchend", "pointercancel"]) document.addEventListener(ev, () => { if (S.rmtDrag) setTimeout(() => { S.rmtDrag = false; paintRemote(); }, 50); }, true);
+addEventListener("resize", () => paintRemote());
 
 /* ---------- context menu ---------- */
 function openCm(id, x, y) {
@@ -1980,12 +2732,32 @@ function AniDlg() {
   <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
 }
 /* The tour's last page (mockup): what the hub found — ✓ found, ! needed, – optional. */
+const MPV_BTN = '<button class="btn sm" data-a="ext" data-v="https://mpv.io/installation/">Get mpv</button>';
+const UPSCAYL_BTN = '<button class="btn sm" data-a="ext" data-v="https://upscayl.org/download">Get Upscayl</button>';
+const tourRow = (st, k, v, more = "") => `<div class="${st}"><span class="okc">${st === "ok" ? ico("check") : st === "bad" ? "!" : "–"}</span><b>${k}</b><span class="v">${esc(v)}</span>${more}</div>`;
+/* The ani-cli button (Decision 47): the official script, only when clicked. */
+const aniWord = (s) => (s.stream?.own && !s.stream?.outdated ? "Check for updates" : s.stream?.own ? "Update ani-cli" : "Get ani-cli");
+const aniBtn = (s) => (s.stream?.can_get ? `<button class="btn sm" data-a="aniget" ${S.aniGet ? "disabled" : ""}>${S.aniGet ? "Getting it…" : aniWord(s)}</button>` : "");
+function aniLine(s) {
+  const v = s.stream?.version, has = !!s.tools?.["ani-cli"];
+  if (!has) return "Needed for episodes you don't have as files.";
+  if (s.stream?.outdated) return `Version ${v} is too old: online episodes won't work.`;
+  return `ani-cli${v ? " " + v : ""} found`;
+}
+function tourTools(s) {
+  const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? ` It also needs ${st.needs.join(", ")}.` : "";
+  return [
+    tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN),
+    tourRow(ani && !st.outdated ? "ok" : st.outdated ? "bad" : "opt", "Online episodes", aniLine(s) + need, ani && !st.outdated ? "" : aniBtn(s)),
+    tourRow(up ? "ok" : "opt", "Sharper banners", up ? "Upscayl found" : "Optional: install Upscayl for sharper show banners.", up ? tgl("upscale_banners", "Sharper banners", s.upscale_banners) : UPSCAYL_BTN),
+  ].join("");
+}
 function tourFound(s, a, n, ok) {
-  const row = (st, k, v) => `<div class="${st}"><span class="okc">${st === "ok" ? ico("check") : st === "bad" ? "!" : "–"}</span><b>${k}</b><span class="v">${esc(v)}</span></div>`;
+  const row = tourRow;
   return [
     row(ok ? "ok" : "bad", "Library", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : s.library_root ? `${s.library_root} · can't be read` : "no folder chosen yet"),
     row(s.tools?.mpv ? "ok" : "bad", "Player", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "mpv not found — install it to play files"),
-    row(s.tools?.["ani-cli"] ? "ok" : "opt", "Online episodes", s.tools?.["ani-cli"] ? `ani-cli${s.stream?.version ? " " + s.stream.version : ""} found` : "ani-cli not installed — optional"),
+    row(s.tools?.["ani-cli"] ? "ok" : "opt", "Online episodes", s.tools?.["ani-cli"] ? aniLine(s) : "not set up, optional"),
     row(a.connected ? "ok" : "opt", "AniList", a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected"),
   ].join("");
 }
@@ -1993,30 +2765,40 @@ function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
   const b = [
+    `<h2 id="dt">Welcome to AnimeHub</h2><p class="sub">Your anime in one place, played in mpv.</p>
+     <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
+     <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
+     <div>${ico("play")}<span><b>It keeps up</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
     `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}
      <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>`,
     `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
+    `<h2 id="dt">A few tools</h2><p class="sub">AnimeHub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
      <div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`,
   ][T.step];
-  return `<div class="steps">${[0, 1, 2].map((i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b}
-  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === 2 ? "Open library" : "Continue"}</button></div>`;
+  return `<div class="steps">${[0, 1, 2, 3, 4].map((i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b}
+  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === 4 ? "Open library" : "Continue"}</button></div>`;
 }
+const recEps = () => (S.rec.res.marks || []).reduce((sum, m) => sum + m.episodes, 0);
 function Rec() {
-  const { res, pick } = S.rec, n = res.conflicts.length;
-  const facts = res.facts.map((f) => f.kind === "progress" ? `<li>${esc(f.show)} — watch progress synced to EP ${f.local} (was ${f.remote})</li>` : `<li>${esc(f.show)} — episodes up to E${f.remote} marked watched locally</li>`).join("");
-  return `<h2 id="dt">${n ? `${n} difference${n === 1 ? "" : "s"} to review` : "AniList connected"}</h2>
-  <p class="sub">Watched-episode counts always keep the higher of the two — that part is automatic${facts ? ":" : "."}</p>${facts ? `<ul class="summary">${facts}</ul>` : ""}
+  const { res, pick, mark } = S.rec, n = res.conflicts.length, marks = res.marks || [], eps = recEps();
+  const facts = res.facts.map((f) => `<li>${esc(f.show)} — watch progress synced to EP ${f.local} (was ${f.remote})</li>`).join("");
+  const asks = marks.map((m) => `<li>${esc(m.show)} — ${m.episodes} episode${m.episodes === 1 ? "" : "s"}, up to E${m.remote}</li>`).join("");
+  const seg = (on, v, l) => `<button class="${on ? "on" : ""}" aria-pressed="${on}" data-a="recmark" data-v="${v}">${l}</button>`;
+  return `<h2 id="dt">${n ? `${n} difference${n === 1 ? "" : "s"} to review` : eps ? "Mark what you watched?" : "AniList connected"}</h2>
+  ${facts ? `<p class="sub">Episodes you watched here went to AniList:</p><ul class="summary">${facts}</ul>` : ""}
+  ${eps ? `<p class="sub"${facts ? ' style="margin-top:14px"' : ""}>Your AniList list is ahead of this app. Mark ${eps === 1 ? "this episode" : `these ${eps} episodes`} as watched here too?</p><ul class="summary">${asks}</ul>
+    ${n ? `<div class="bulk"><span class="seg" role="group" aria-label="Mark as watched here">${seg(mark, 1, "Mark as watched")}${seg(!mark, 0, "Leave as is")}</span></div>` : ""}` : ""}
   ${n ? `<p class="sub" style="margin-top:14px">These shows differ in list status or score — choose what to keep.</p>
     <div class="bulk"><button class="btn" data-a="recall" data-v="anilist">AniList wins everywhere</button><button class="btn" data-a="recall" data-v="local">Local wins everywhere</button></div>
     <div class="rh"><span>Show</span><span>AniList</span><span>Local</span><span>Keep</span></div>
     ${res.conflicts.map((c) => { const k = pick[c.media_id]; return `<div class="rr"><span class="who"><span><b>${esc(c.title)}</b><small>${esc(c.diff || "")}</small></span></span><span class="v ${k === "anilist" ? "keep" : ""}">${esc(recVal(c.remote))}</span><span class="v ${k === "local" ? "keep" : ""}">${esc(recVal(c.local))}</span>
       <span class="seg" role="group" aria-label="Keep for ${esc(c.title)}"><button class="${k === "anilist" ? "on" : ""}" aria-pressed="${k === "anilist"}" data-a="recset" data-m="${c.media_id}" data-v="anilist">AniList</button><button class="${k === "local" ? "on" : ""}" aria-pressed="${k === "local"}" data-a="recset" data-m="${c.media_id}" data-v="local">Local</button></span></div>`; }).join("")}` : ""}
-  <div class="actions"><button class="btn" data-a="recclose">Skip</button><button class="btn pri" data-a="recapply">${n ? `Apply ${n} choice${n === 1 ? "" : "s"}` : "Close"}</button></div>`;
+  <div class="actions"><button class="btn" data-a="recclose">${eps && !n ? "Leave as is" : "Skip"}</button><button class="btn pri" data-a="recapply">${n ? `Apply ${n} choice${n === 1 ? "" : "s"}` : eps ? "Mark as watched" : "Close"}</button></div>`;
 }
 /* You finished a show (Decision 25 → 38): poster, the big title, rate it
    (1–10 pills) with ♥ beside, and what comes next in its franchise. */
@@ -2044,7 +2826,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -2055,10 +2837,14 @@ function paintModal(focus) {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" || m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
-  if (focus) (el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
+  /* Touch: open at the top with nothing focused (focusing a field would
+     scroll the sheet and pop the keyboard up). */
+  if (focus) mq("(pointer:coarse)") ? el.querySelector(".dialog")?.focus({ preventScroll: true }) : (el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
 }
-function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; paintNav(); paintModal(true); }
-function closeModal() { S.modal = null; paintModal(); S.opener && S.opener.isConnected && S.opener.focus(); }
+function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
+/* Back gesture / swipe down on a dialog: the same as tapping beside it. */
+const modalDismiss = () => (S.modal?.t === "done" ? A.dnskip() : closeModal());
+function closeModal() { S.modal = null; paintModal(); ovClosed("modal"); S.opener && S.opener.isConnected && S.opener.focus(); }
 function confetti() {
   if (reduceMotion()) return;
   const f = $("#fx"), c = ["var(--accent)", "var(--accent-hi)", "var(--ok)", "var(--warn)", "var(--ink)"];
@@ -2090,9 +2876,9 @@ function maybeReconcile() {
   if (S.rec) return;
   api("/api/reconcile", {}).then((res) => { /* POST-only route: a GET is a 404 */
     if (!res || !res.pending) return;
-    if (!res.conflicts.length && !res.facts.length) { api("/api/reconcile/dismiss", {}).catch(() => {}); return; }
+    if (!res.conflicts.length && !res.facts.length && !res.marks?.length) { api("/api/reconcile/dismiss", {}).catch(() => {}); return; }
     if (S.modal) return; // retried on the next refresh
-    S.rec = { res, pick: Object.fromEntries(res.conflicts.map((c) => [c.media_id, "anilist"])) };
+    S.rec = { res, mark: true, pick: Object.fromEntries(res.conflicts.map((c) => [c.media_id, "anilist"])) };
     openModal({ t: "rec" });
   }).catch(() => {});
 }
@@ -2221,6 +3007,7 @@ const colorOfId = (id) => (id && S.data?.spine?.entries?.find((e) => e.id === id
 const showColor = (s) => colorOfId(s?.meta?.anilist_id);
 const lastShow = () => { for (const h of S.data?.history || []) { const c = findEpContext(h.id); if (c) return c.s; } return null; };
 function canvasArt() {
+  if (S.rmtOpen && S.data?.now) { const c = findEpContext(S.data.now.episode_id); if (c) return { blur: c.s.banner || c.s.poster, sharp: c.s.banner, color: showColor(c.s) }; }
   if (!S.data || S.view === "settings") return null;
   if (S.view === "fr") { const e = frEntry(), p = S.fr?.page; return { blur: e?.banner || p?.banner || e?.poster || p?.poster, sharp: e?.banner || p?.banner, color: e?.color || colorOfId(e?.id) }; }
   if (S.view === "show") { const s = showById(S.showId); return s && { blur: s.banner || s.poster, sharp: s.banner, color: showColor(s) }; }
@@ -2245,7 +3032,7 @@ function swapLayer(cls, url) {
 }
 function paintCanvas() {
   const art = canvasArt(), mode = lookGet("art");
-  if (!(S.view === "library" && S.libHover)) document.documentElement.classList.remove("amb-now"); // page changes fade the accent
+  document.documentElement.classList.add("amb-now"); // page changes step the accent too: the CSS fade restyled everything each frame
   swapLayer("cv-blur", mode === "off" ? null : art?.blur);
   swapLayer("cv-art", mode === "full" ? art?.sharp : null);
   accentFrom(art?.blur || art?.sharp, art?.color);
@@ -2259,7 +3046,7 @@ let ambStep = 0;
 function ambFade(to) {
   const root = document.documentElement, from = getComputedStyle(root).getPropertyValue("--amb").trim();
   clearInterval(ambStep);
-  if (!to || !from || reduceMotion()) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
+  if (!to || !from || reduceMotion() || mq("(pointer:coarse)")) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
   let k = 0;
   ambStep = setInterval(() => {
     k++;
@@ -2267,10 +3054,23 @@ function ambFade(to) {
     if (k >= 5) clearInterval(ambStep);
   }, 80);
 }
+/* The phone's status bar (theme-color) takes a deep tone of the page's
+   colour, so the top of the screen reads as one surface with the art. */
+function barTint(c) {
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (!m) return;
+  let hue = /hsl\((\d+)/.exec(c || "")?.[1];
+  const rgb = /rgb\((\d+),\s*(\d+),\s*(\d+)/.exec(c || "");
+  if (hue == null && rgb) {
+    const [r, g, b] = rgb.slice(1).map((v) => v / 255), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+    hue = !d ? null : Math.round((mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60);
+  }
+  m.content = hue != null ? `hsl(${hue} 28% 13%)` : "#101114";
+}
 function accentFrom(url, color) {
   const root = document.documentElement;
   ambWant = url || null;
-  const set = (c) => { if (root.classList.contains("amb-now")) return ambFade(c); clearInterval(ambStep); c ? root.style.setProperty("--amb", c) : root.style.removeProperty("--amb"); };
+  const set = (c) => { barTint(c); if (root.classList.contains("amb-now")) return ambFade(c); clearInterval(ambStep); c ? root.style.setProperty("--amb", c) : root.style.removeProperty("--amb"); };
   if (color) return set(hexAccent(color));
   if (!url) return set(null);
   if (url in ambMemo) return set(ambMemo[url]);
@@ -2283,7 +3083,7 @@ function accentFrom(url, color) {
   img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
 }
 const ambient = paintCanvas;
-const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings" };
+const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Airing" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
    it: the new HTML is matched against the live nodes (by data-a/data-v or
@@ -2353,7 +3153,7 @@ function render(inPlace = false) {
   paintNav();
   io && io.disconnect();
   const app = $("#app");
-  const html = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran }[S.view]();
+  const html = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran, week: Week }[S.view]();
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
   if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !reduceMotion()); app.innerHTML = html; }
@@ -2368,12 +3168,14 @@ function render(inPlace = false) {
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
   const t = S.view === "show" ? showById(S.showId)?.title : S.view === "fr" ? S.fr?.page?.title || frEntry()?.title : VIEW_TITLE[S.view];
   document.title = t ? `${t} · Anime Hub` : "Anime Hub";
+  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : S.view === "week" ? "Airing" : t);
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
   if (S.view === "fr" && frEntry()) loadEntry(frEntry().id);
   if (S.sel && S.sel.show !== selKey()) S.sel = null;
   paintSel();
   if (S.view === "stats" || S.view === "history") loadAlData();
   applyFocus();
+  paintPortals();
 }
 /* Background refreshes must not clobber a field the user is typing in. */
 function softRender() {
@@ -2393,15 +3195,31 @@ function dip(f) {
   if (reduceMotion()) return;
   a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter");
 }
-function clearSearch() { S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
+function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
+/* Switching Home · Library · Journal on a touch screen slides the page in
+   from the side of the tab you went to (one transform on #app, no fill,
+   so nothing stays transformed afterwards). */
+const TAB_AT = { home: 0, week: 0, library: 1, history: 2, stats: 2 };
+function tabSlide(from, to) {
+  if (reduceMotion() || !mq("(pointer:coarse), (max-width:700px)")) return;
+  const a = TAB_AT[from], b = TAB_AT[to], app = $("#app"), page = (v) => v === "show" || v === "fr";
+  /* Opening a show pushes it in from the right, like a native stack. */
+  const cls = page(to) && !page(from) ? "tab-l" : a == null || b == null || a === b ? null : b > a ? "tab-l" : "tab-r";
+  if (!cls) return;
+  app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add(cls);
+}
+const tabScroll = {};
 function nav(view, fn) {
+  const from = S.view;
+  if (TAB_AT[from] != null) tabScroll[from] = scrollY;
   dip(() => {
     const prev = S.view;
     S.navIn = true; S.view = view; clearSearch(); fIdx = -1;
     if (view === "library") S.fadeNext = true;
     if (fn) fn(prev);
-    render(); scrollTo(0, 0); pushNav();
+    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); pushNav();
   });
+  tabSlide(from, view);
 }
 function openShow(id) {
   /* A matched folder or an online show is one franchise page; only
@@ -2520,12 +3338,15 @@ function startMetaWatch() {
 }
 /* The pass's progress rides /api/now (TODO 61: it used to refetch the
    whole library every 2.5 s); the library is fetched once it is done. */
+let metaFold = 0;
 function metaTick() {
   api("/api/now").then((now) => {
     const m = now && now.meta;
     if (!m) { metaWatch = null; reload(); return; } // final settle: posters flip in
     Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_current: m.current, meta_phase: m.phase });
-    if (S.view === "library") { const n = $(".metanote span"); if (n) n.textContent = metaText(S.data); }
+    if (S.view === "library") { const n = $(".metanote"); if (n && S.data.meta_pending > 0) n.lastChild.textContent = metaText(S.data); else n?.remove(); }
+    /* Franchise cards fold together as the background build reaches them. */
+    if (m.phase === "franchises" && S.view === "library" && byFranchise() && Date.now() - metaFold > 15e3) { metaFold = Date.now(); reload(); }
     metaWatch = setTimeout(metaTick, 2500);
   }).catch(() => { metaWatch = null; });
 }
@@ -2547,6 +3368,7 @@ async function pollNow() {
       else if (vpnMoved && now.vpn.active && S.modal?.t === "skp") A.skpgo();
     }
     if (now.notice && now.notice.ts !== lastNotice) { lastNotice = now.notice.ts; toast(now.notice.msg); }
+    loadToast(now);
     if (!S.playBusy) {
       const nl = now.playing && now.loading ? now.episode_id : null;
       if (nl !== S.loadingEp) { S.loadingEp = nl; if (was === now.playing) pagePatch(); }
@@ -2555,6 +3377,7 @@ async function pollNow() {
     else if (now.playing) {
       const wasLoading = !!S.data.now?.loading;
       S.data.now = { episode_id: now.episode_id, show: now.show, label: now.label, percent: now.percent, loading: !!now.loading, next: now.next };
+      liveFrom(now);
       if (wasLoading !== !!now.loading) pagePatch();
       if (prevEp && prevEp !== now.episode_id) await reload(); // autoplay moved on: refresh ticks / next-up
     }
@@ -2570,11 +3393,14 @@ async function pollNow() {
     else if (dlChanged) pagePatch(); // progress on the tiles
     const sig = JSON.stringify([S.data?.now, S.outbox, S.dl, S.data?.vpn]);
     if (sig !== navSig) { navSig = sig; paintNav(); }
+    if (!now.playing) S.live = null;
+    else if (!S.live || S.live.ep !== now.episode_id) liveFrom(now);
+    paintRemote();
     if (now.completed) maybeCompletion(now.completed);
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000);
+  pollSoon(S.rmtOpen || S.data?.now ? 1000 : S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000); // while playing: Home follows mpv within a second
 }
 /* A banner was upscaled (or put back) under the same name: point every
    copy of its URL at the new ?v= stamp — the data the page draws from and
@@ -2599,6 +3425,7 @@ function swapArt(changed) {
 function pagePatch() {
   if (S.view === "show" && showById(S.showId)) patchShow();
   else if (S.view === "fr") frRepaint();
+  paintPortals();
 }
 /* Online episodes take a few seconds to start: the tile (and the hero
    button) show it loading until mpv reports playback. */
@@ -2609,19 +3436,21 @@ function markLoading(id) {
 /* skipOk: undefined = not asked yet, true/false = the AniSkip answer
    (yes to the online VPN dialog counts as yes). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk) {
+  if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk) });
   const online = id.startsWith("stream:");
   if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
   if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
   S.playBusy = true;
   if (online) markLoading(id);
+  const ctx = findEpContext(id);
+  loadShown = id; toast(online ? `Finding ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"} online…` : `Loading ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"}`, "busy");
   const body = { id, version };
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
   if (skipOk !== undefined) body.aniskip = skipOk;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
-  if (res.error) { markLoading(null); toast(res.error); }
-  else if (!online) toast("Launching mpv…");
+  if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
   pollSoon(600);
 }
 /* Queue ani-cli downloads; they land in the library folder as ordinary files. */
@@ -2656,13 +3485,40 @@ function commitMatch(id, aid) {
 const A = {
   strip: (v, t) => { const st = t.closest("section")?.querySelector(".strip") || $("#app .strip"); st && st.scrollBy({ left: +t.dataset.d * st.clientWidth * 0.8, behavior: reduceMotion() ? "auto" : "smooth" }); },
   fclear: () => { for (const k of ["fmt", "air", "year", "score"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); S.fadeNext = true; render(); },
+  airgo: (v) => {
+    const c = S.airCal;
+    if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
+    else { const d = new Date(c.y, c.m + +v, 1); c.y = d.getFullYear(); c.m = d.getMonth(); }
+    render(true);
+  },
+  airtoday: () => { const d = new Date(); Object.assign(S.airCal, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) }); render(true); },
+  airday: (v) => { S.airCal.sel = v; render(true); },
+  airscope: (v) => { S.airCal.scope = v; render(true); },
+  airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
+  gmore: () => { S.genOpen = !S.genOpen; render(); },
+  totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
   genre: (v, t) => {
     const on = !S.lib.genres.includes(v);
     S.lib.genres = on ? [...S.lib.genres, v] : S.lib.genres.filter((g) => g !== v);
     t.classList.toggle("on", on); t.setAttribute("aria-pressed", on);
     saveLib(); paintWall(); syncFilters();
   },
-  go: (v) => nav(v), open: (v) => openShow(v), back: () => nav(VIEWS.includes(S.showBack) ? S.showBack : "home"),
+  go: (v, t) => {
+    /* The settings icon again acts as back. */
+    if (v === "settings" && S.view === "settings") {
+      if (isPhone() && S.setOpen) A.setback(); else if (history.state?.inApp) history.back(); else nav("home");
+      return;
+    }
+    if (v === "settings") S.setOpen = false;
+    const same = v === S.view || (v === "history" && S.view === "stats");
+    /* The bottom bar (phones): the open tab again scrolls to the top; another
+       tab comes back where you left it, with a light tap. */
+    if (t?.closest?.("#tabbar")) {
+      if (same) { scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }); return; }
+      buzz();
+    }
+    nav(v);
+  }, open: (v) => openShow(v), back: () => nav(VIEWS.includes(S.showBack) ? S.showBack : "home"),
   entry: (v) => {
     const e = S.data.spine?.entries.find((x) => String(x.id) === v);
     if (!e) return;
@@ -2672,7 +3528,7 @@ const A = {
     if (sid) openShow(sid); else if (e.media_id) openFranchise(e.media_id);
   },
   tab: (v) => { S.lib.tab = v; saveLib(); S.fadeNext = true; render(); },
-  filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); paintWall(); syncFilters(); },
+  filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") return render(); paintWall(); syncFilters(); },
   hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(); },
   histmore: () => { S.histMax += 200; render(); },
   play: (v) => play(v), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
@@ -2751,6 +3607,7 @@ const A = {
   },
   dlcancel: (v) => { api("/api/download/cancel", { id: +v }).then(() => pollSoon(200)).catch(() => {}); },
   dlclear: () => { api("/api/download/clear", {}).then(() => { S.dl = S.dl.filter((j) => j.status === "running" || j.status === "queued"); paintNav(); }).catch(() => {}); },
+  tipgo: () => { const go = S.modal?.go; S.settings.play_tip_done = true; api("/api/settings", { play_tip_done: true }).catch(() => {}); closeModal(); go?.(); },
   spref: (v, t) => {
     api("/api/settings", { [t.dataset.k]: v }).then((r) => {
       if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
@@ -2896,11 +3753,46 @@ const A = {
   /* settings + account */
   adv: (v) => { if (S.settings) setToggle(v, !S.settings[v]); },
   srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
-  setgo: (v, t) => { const tab = t.dataset.t; clearSearch(); q.blur(); S.setTab = tab; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
+  setgo: (v, t) => { const tab = t.dataset.t; clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
-  srclose: () => { clearSearch(); paintNav(); q.blur(); },
+  srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
+  srq: (v) => { q.value = v; q.dispatchEvent(new Event("input")); q.focus(); },
+  srclr: () => { lsSet(SR_RECENT, []); paintNav(); },
+  srlist: (v) => { clearSearch(); q.blur(); S.lib.tab = v; saveLib(); nav("library"); },
+  srgo: (v) => { clearSearch(); q.blur(); nav(v); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
-  settab: (v) => { S.setTab = v; render(true); },
+  /* A new section node, so every section opens with the same .settings entrance. */
+  settab: (v) => { if (v !== S.setTab) $("#app .scol")?.remove(); S.setTab = v; render(true); },
+  setopen: (v) => { S.setTab = v; S.setOpen = true; S.navIn = true; ovOpen("set", () => A.setback()); render(); scrollTo(0, 0); },
+  setback: () => { S.setOpen = false; S.navIn = true; render(); scrollTo(0, 0); ovClosed("set"); },
+  deck: (v) => openDeck(v === "lib" ? "lib" : "recs"), deckclose: () => closeDeck(),
+  deckagain: () => deckFill("recs", 0, shuffled(deckItems("recs"))),
+  deckplay: (v) => { closeDeck(); play(v); },
+  deckopen: (v) => { const [a, id] = v.split(":"); closeDeck(true); A[a](id); }, // the page takes the deck's history entry
+  deckadd: (v, t) => {
+    t.disabled = true;
+    entrySave(+v, { status: "PLANNING" }).then((r) => {
+      if (!r || r.error) throw 0;
+      (S.recsAdded ||= new Set()).add(+v); buzz(); toast("Added to Planning");
+      t.innerHTML = `${ico("check")}<span>On Planning</span>`;
+      refreshData();
+    }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
+  },
+  sidetab: (v) => { S.sideTab = v; paintSide(); },
+  fltopen: () => { document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); paintPortals(); },
+  fltclose: () => { document.body.classList.remove("flt-open"); paintPortals(); ovClosed("flt"); },
+  rmton: () => remoteSet({ on: !S.remote?.on }),
+  rmtcode: () => remoteSet({ new_code: true }),
+  rmtdel: (v) => remoteSet({ remove: Number(v) }),
+  rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },
+  rmtclose: () => { S.rmtOpen = false; paintRemote(); paintCanvas(); ovClosed("rmt"); },
+  rmtsleep: () => remoteSend("stop_after", !S.live?.stop_after),
+  rmtdelay: (v) => remoteSend("sub_delay", Number(v) === 0 ? 0 : Math.round(((S.live?.sub_delay || 0) + Number(v)) * 10) / 10),
+  rmt: (v) => v === "back" ? remoteSend("seek", -10) : v === "fwd" ? remoteSend("seek", 10) : remoteSend(v),
+  rmtseek: (v) => { S.rmtDrag = false; remoteSend("seek_to", Number(v)); },
+  rmtvol: (v) => { S.rmtDrag = false; remoteSend("volume", Number(v)); },
+  rmttrack: (v, t) => remoteSend(t.dataset.k, v === "no" ? "no" : Number(v)),
+
   ani: () => openModal({ t: "ani" }),
   aniout: async () => {
     await api("/api/auth/logout", {}).catch(() => {});
@@ -2954,11 +3846,18 @@ const A = {
     dirSet(p.path);
   },
   dirconfirm: (v) => { if (v === "1") dirSet(S.dir.path); else { S.dir.confirm = false; paintDir(); } },
+  aniget: async () => {
+    S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);
+    const r = await api("/api/anicli-get", {}).catch(() => ({ error: "Could not reach the hub." }));
+    S.aniGet = false; await loadSettings();
+    toast(r.error || (r.changed === false ? `You have the latest ani-cli (${r.version})` : `ani-cli ${r.version || ""} is ready`), r.error ? "err" : undefined);
+    if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
+  },
   tourpick: (v) => { S.tour.choice = v; paintModal(); }, tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < 2) { T.step++; return paintModal(true); }
+    if (T.step < 4) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList
@@ -2968,12 +3867,14 @@ const A = {
   tourconnect: () => { api("/api/settings", { tour_done: true }).catch(() => {}); if (S.settings) S.settings.tour_done = true; closeModal(); openModal({ t: "ani" }); },
   recset: (v, t) => { S.rec.pick[t.dataset.m] = v; paintModal(); },
   recall: (v) => { for (const k of Object.keys(S.rec.pick)) S.rec.pick[k] = v; paintModal(); },
+  recmark: (v) => { S.rec.mark = v === "1"; paintModal(); },
   recclose: () => recDone(),
   recapply: () => {
     const list = Object.entries(S.rec.pick).map(([m, w]) => ({ media_id: Number(m), winner: w }));
-    api("/api/reconcile/apply", { decisions: list }).then((r) => {
+    api("/api/reconcile/apply", { decisions: list, mark_watched: S.rec.mark && recEps() > 0 }).then((r) => {
       if (r && r.error) return toast(r.error);
-      toast(`Reconciled — ${r.applied ?? list.length} shows updated`);
+      const done = [list.length ? `${r.applied ?? list.length} shows updated` : "", r.marked ? `${r.marked} episode${r.marked === 1 ? "" : "s"} marked watched` : ""].filter(Boolean).join(" · ");
+      if (done) toast(done);
       S.rec = null; S.alData = null; closeModal(); reload(); setTimeout(reload, 3000);
     }).catch(() => toast("Could not apply — is the hub running?"));
   },
@@ -3010,6 +3911,7 @@ const A = {
     S.fr.eid = mid; S.sel = null; paintSel();
     history.replaceState(navSnap(), "", navUrl());
     render();
+    $("#app .eps-head .on")?.scrollIntoView({ block: "nearest", inline: "center" }); // the phone's tabs are one sideways row
     frLoad(mid); // the hub starts this entry's online list and stills
   },
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
@@ -3033,7 +3935,7 @@ const A = {
 /* ---------- events ---------- */
 const isField = (t) => /^(SELECT|INPUT)$/.test(t.tagName);
 document.addEventListener("click", (e) => {
-  $("#cm").style.display = "none";
+  if ($("#cm").style.display === "block" && !$("#cm").classList.contains("closing")) { cmHide(); ovClosed("cm"); }
   if (S.menu && !e.target.closest(".rel,#srb,#pal .pbox")) { S.menu = null; paintNav(); }
   if (S.cal && !e.target.closest(".datef")) calClose();
   const t = e.target.closest("[data-a]");
@@ -3224,7 +4126,7 @@ q.addEventListener("input", () => {
 });
 q.addEventListener("focus", () => { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } });
 /* The palette opens centred over the page with its own line; the top bar only holds the button. */
-function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } q.focus(); }
+function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; ovOpen("sr", () => A.srclose()); paintNav(); } q.focus(); }
 q.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     const items = $$("#sr .mi");
@@ -3241,7 +4143,20 @@ q.addEventListener("keydown", (e) => {
   const first = $("#sr .mi");
   if (first) { e.preventDefault(); q.blur(); first.click(); }
 });
-addEventListener("scroll", () => document.body.classList.toggle("sc", scrollY > 8), { passive: true });
+/* The Library's go-to-top button, once you've scrolled past the first row or two. */
+function paintTop() {
+  let el = $("#totop");
+  if (!el) { el = document.createElement("button"); el.id = "totop"; el.dataset.a = "totop"; el.setAttribute("aria-label", "Back to top"); el.innerHTML = ico("up"); document.body.append(el); }
+  el.classList.toggle("on", S.view === "library" && scrollY > 500);
+}
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); }, { passive: true });
+addEventListener("resize", gtrayFit, { passive: true });
+/* Phones: the page's big title shrinks into the top bar as it scrolls away. */
+function paintPtitle(t) {
+  let el = $("#ptl");
+  if (!el) { el = document.createElement("b"); el.id = "ptl"; $("#nav").insertBefore(el, $("#links")); }
+  el.textContent = t || "";
+}
 
 /* keyboard: / search · Esc back · j/k/h/l or arrows move focus · Enter opens */
 const focusables = () => $$("#app .hc, #app .ag, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
@@ -3263,7 +4178,8 @@ function moveFocus(dir) {
   if (best >= 0) { fIdx = best; applyFocus(); }
 }
 document.addEventListener("keydown", (e) => {
-  const inInput = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  /* e.target too: search blurs its field on Enter before this runs. */
+  const inInput = [document.activeElement, e.target].some((x) => /^(INPUT|TEXTAREA|SELECT)$/.test(x.tagName));
   if (S.modal) {
     if (e.key === "Escape") { e.preventDefault(); const t = S.modal.t; t === "tour" ? finishTour(true) : t === "rec" ? recDone() : t === "done" ? A.dnskip() : closeModal(); }
     else if (e.key === "Tab") {
@@ -3280,7 +4196,7 @@ document.addEventListener("keydown", (e) => {
   if (!inInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
     const tab = TABS[+e.key - 1];
     if (tab && e.key !== "0") { e.preventDefault(); nav(tab[0]); return; }
-    if (e.key === ",") { e.preventDefault(); nav("settings"); return; }
+    if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }
     if (e.key === "?") { e.preventDefault(); S.menu = S.menu === "keys" ? null : "keys"; paintNav(); return; }
     /* The show page's keys (shown on its buttons): E edit, D download, ⇧W mark all, ↵ play. */
     if (S.view === "home") {
@@ -3311,13 +4227,266 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Enter" && document.activeElement.classList.contains("ep")) document.activeElement.click();
 });
 
+/* ---------- back gesture and swipes (Decision 44; Elias 2026-10-27: "a
+   universal back button… swipe from top to bottom so it closes… more of
+   these") ---------- */
+/* Layers (the remote, the deck, search, the filter sheet, a settings
+   section on a phone) put one entry on the browser history when they open,
+   so Android's back gesture / button closes the top layer first instead of
+   leaving the page. Closing one by hand takes its entry back off. */
+const OV = [];
+let ovSkip = 0;
+/* A layer closed and opened again in the same moment (one dialog handing
+   over to the next) keeps its history entry instead of stepping back. */
+const ovLeaving = new Set();
+function ovOpen(name, close) {
+  if (OV.some((o) => o.name === name)) return;
+  OV.push({ name, close });
+  if (ovLeaving.delete(name)) return;
+  history.pushState({ ...navSnap(), ov: name }, "", location.href);
+}
+function ovClosed(name) {
+  const k = OV.findIndex((o) => o.name === name);
+  if (k < 0) return;
+  OV.splice(k, 1); ovLeaving.add(name);
+  setTimeout(() => { if (ovLeaving.delete(name)) { ovSkip++; history.back(); } }, 0);
+}
+function ovDrop(name) { const k = OV.findIndex((o) => o.name === name); if (k >= 0) OV.splice(k, 1); }
+/* Swipe down to close: grab a layer at its top and pull. Past ~120 px (or a
+   quick flick) it slides away; otherwise it springs back. Horizontal
+   controls (sliders, segments, strips) keep their own drag. */
+const PULL = [
+  { sel: ".rview", scroller: (el) => el, close: () => A.rmtclose(), fade: () => ({ style: {} }) }, // stays solid, only shrinks
+  { sel: "#deck .deck", scroller: () => ({ scrollTop: S.deck?.i ? 3 : 0 }), close: () => closeDeck() }, // deckPager moves a transform, not a scroll
+  { sel: "#pal .pbox", scroller: (el) => el.querySelector(".plist"), close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
+  { sel: ".fsheet .filters", scroller: (el) => el, close: () => A.fltclose() },
+  { sel: "#modal .dialog", scroller: (el) => el, close: () => modalDismiss(), when: () => isPhone() && S.modal && S.modal.t !== "tour" },
+  { sel: "#cm", scroller: (el) => el, close: () => { cmHide(); ovClosed("cm"); }, when: () => isPhone() },
+];
+const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srchips, .dgen, .gtray, .switch";
+/* Pull to refresh (Home, Library, Journal, the week): installed web apps
+   get no browser pull-to-refresh, so the app draws its own — a circle that
+   drops in with the pull, turns with it, and spins while the hub reloads. */
+let ptrBusy = false;
+function ptrEl() {
+  let el = $("#ptr");
+  if (!el) { el = document.createElement("div"); el.id = "ptr"; el.setAttribute("aria-hidden", "true"); el.innerHTML = `<i>${ico("refresh")}</i>`; document.body.append(el); }
+  return el;
+}
+function ptrShow(dist) {
+  const el = ptrEl(), k = Math.min(dist / 70, 1);
+  el.className = "on" + (k >= 1 ? " armed" : "");
+  el.style.transform = `translate3d(-50%,${Math.round(dist - 56)}px,0)`;
+  el.style.opacity = String(Math.min(1, k * 1.4));
+  el.firstChild.style.transform = `rotate(${Math.round(dist * 3.2)}deg)`;
+}
+function ptrHide() { const el = $("#ptr"); if (!el) return; el.className = "out"; el.style.transform = "translate3d(-50%,-56px,0)"; el.style.opacity = "0"; }
+async function ptrRun() {
+  ptrBusy = true;
+  const el = ptrEl();
+  el.className = "on busy"; el.style.transform = "translate3d(-50%,18px,0)"; el.style.opacity = "1"; el.firstChild.style.transform = "";
+  const t0 = Date.now();
+  try {
+    if (S.view === "history" || S.view === "stats") S.alData = null;
+    S.recs = null;
+    await reload();
+  } catch {}
+  await sleep(Math.max(0, 600 - (Date.now() - t0))); // a moment of spin even when it was instant
+  ptrHide(); ptrBusy = false;
+}
+let pull = null;
+const buzz = () => { try { navigator.vibrate?.(8); } catch {} };
+/* The hint beside the screen edge while you swipe sideways: an arrow in a
+   glass circle that grows with the swipe and fills once letting go counts,
+   with the name of where you're going. */
+let swHint = null;
+function hintShow(side, label, prog) {
+  if (!swHint) { swHint = document.createElement("div"); swHint.id = "swhint"; swHint.setAttribute("aria-hidden", "true"); document.body.append(swHint); }
+  const armed = prog >= 1, k = Math.min(prog, 1);
+  if (swHint.dataset.k !== side + label) { swHint.dataset.k = side + label; swHint.innerHTML = `<i>${ico(side === "left" ? "chevl" : "chevr")}</i><span>${esc(label)}</span>`; }
+  const cls = `on ${side}${armed ? " armed" : ""}`;
+  if (swHint.className !== cls) swHint.className = cls;
+  swHint.style.opacity = (0.25 + k * 0.75).toFixed(3);
+  swHint.style.transform = `translateY(-50%) scale(${(0.6 + k * 0.4).toFixed(3)})`;
+}
+function hintHide() { if (swHint) { swHint.className = ""; swHint.style.opacity = swHint.style.transform = ""; } }
+/* Smoothness (Elias: "often the animation is a bit laggy"): while a finger
+   drags, the frosted glass on the bars goes plain (redrawing a blur under
+   a moving page is a phone GPU's most expensive job), the moving part is
+   told ahead (will-change), and styles are written once per frame. */
+let swFrame = 0, swWrite = null;
+function swSet(fn) { swWrite = fn; if (!swFrame) swFrame = requestAnimationFrame(() => { swFrame = 0; const f = swWrite; swWrite = null; f && f(); }); }
+function swBegin(el) { document.body.classList.add("swiping"); el.style.willChange = "transform"; }
+function swEnd(el) { document.body.classList.remove("swiping"); if (el) el.style.willChange = ""; }
+const TAB_NAME = { home: "Home", library: "Library", history: "Journal" };
+document.addEventListener("touchstart", (e) => {
+  pull = null;
+  if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
+  const t = e.target, L = PULL.find((p) => t.closest?.(p.sel) && (!p.when || p.when()));
+  /* Sideways swipes leave real sideways scrollers alone; the phone's
+     episode list is vertical (it only keeps the PC strip's class). */
+  const x = e.touches[0].clientX, y = e.touches[0].clientY;
+  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda")
+    && !(t.closest(".strip") && !(isPhone() && t.closest(".eps")));
+  if (L) {
+    const el = t.closest(L.sel), sc = L.scroller(el);
+    if ((sc && sc.scrollTop > 2) || t.closest(NO_PULL)) return;
+    pull = { kind: "close", L, el, x, y, t: Date.now(), dy: 0, live: false };
+  } else if (t.closest?.(".rbar") && !t.closest("button")) pull = { kind: "rbar", y };
+  else if (isPhone() && inApp && x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture
+    const ptrOK = scrollY <= 0 && ["home", "library", "history", "stats", "week"].includes(S.view) && !ptrBusy;
+    if (["home", "library", "history", "stats"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
+    else if (["show", "fr", "week", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
+  }
+}, { passive: true });
+/* Sideways: Home ⇄ Library ⇄ Journal, or back from a page. The page
+   follows the finger; past ~30 % of the width (or a flick) it goes. */
+function sideTarget(p, dx) {
+  if (p.kind === "back") return dx > 0 ? { label: "Back", side: "left" } : null;
+  const order = ["home", "library", "history"], at = order.indexOf(S.view === "stats" ? "history" : S.view), to = order[at + (dx < 0 ? 1 : -1)];
+  return to ? { to, label: TAB_NAME[to], side: dx < 0 ? "right" : "left" } : null;
+}
+document.addEventListener("touchmove", (e) => {
+  if (!pull) return;
+  const p = pull, x = e.touches[0].clientX, y = e.touches[0].clientY;
+  if (p.kind === "rbar") { if (y - p.y < -28) { pull = null; buzz(); A.rmtopen(); } return; }
+  if (p.kind === "ptr") {
+    e.preventDefault();
+    const dist = Math.min(Math.max(0, (y - p.y0) * 0.5), 110);
+    p.dist = dist;
+    swSet(() => ptrShow(dist));
+    if (dist >= 70 && !p.armed) { p.armed = true; buzz(); } else if (dist < 70) p.armed = false;
+    return;
+  }
+  if (p.kind === "tab" || p.kind === "back") {
+    const dx = x - p.x, dy = y - p.y;
+    /* Clearly sideways: the swipe is ours (else the browser takes it and
+       cancels the touch). Clearly up/down: it's a scroll, let it be. */
+    if (!p.side) {
+      if (p.ptrOK && dy > 10 && dy > Math.abs(dx) && scrollY <= 0) { p.kind = "ptr"; p.y0 = y; e.preventDefault(); return; }
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pull = null; return; }
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
+      else return;
+    }
+    e.preventDefault();
+    const d = x - p.x0, tg = sideTarget(p, d), lim = innerWidth * 0.3;
+    p.lx = x; p.ly = y; p.tg = tg;
+    /* Nothing that way (first/last tab): only a little give. */
+    const tx = tg ? d * (p.kind === "back" ? 1 : 0.55) : d * 0.12;
+    const prog = tg ? Math.abs(d) / lim : 0;
+    /* Back (Android's predictive back): the page shrinks toward 90 % and
+       shifts a little, rather than sliding off with the finger. */
+    const sc = p.kind === "back" && tg ? 1 - 0.1 * Math.min(prog, 1) : 1, bx = p.kind === "back" && tg ? Math.min(d * 0.3, innerWidth * 0.1) : tx;
+    swSet(() => {
+      $("#app").style.transform = `translate3d(${bx}px,0,0)${sc < 1 ? ` scale(${sc.toFixed(4)})` : ""}`;
+      if (p.kind === "back") $("#portal").style.opacity = String(1 - Math.min(Math.abs(d) / lim, 1));
+      if (tg) hintShow(tg.side, tg.label, prog); else hintHide();
+    });
+    if (prog >= 1 && !p.armed) { p.armed = true; buzz(); } else if (prog < 1) p.armed = false;
+    return;
+  }
+  if (p.kind !== "close") return;
+  const d = y - p.y, dx = x - p.x;
+  if (!p.live) {
+    if (Math.abs(dx) > Math.abs(d) || d < 0) { if (Math.abs(dx) > 10 || d < -6) pull = null; return; }
+    if (d < 8) return;
+    p.live = true; p.y = y; p.el.style.transition = "none"; swBegin(p.el);
+    p.el.style.transformOrigin = "50% 0";
+    document.body.classList.add("peek"); // what's behind the layer shows while you pull
+    if (document.activeElement?.blur && p.L.sel.startsWith("#pal")) document.activeElement.blur();
+  }
+  p.dy = Math.max(0, y - p.y);
+  e.preventDefault();
+  const k = Math.min(p.dy / 320, 1), fade = p.L.fade ? p.L.fade(p.el) : p.el, dy = p.dy;
+  /* It becomes a card: a little smaller, rounded, sliding down. */
+  swSet(() => {
+    p.el.style.transform = `translate3d(0,${dy}px,0) scale(${1 - k * 0.07})`;
+    p.el.style.borderRadius = `${Math.round(k * 28)}px`;
+    fade.style.opacity = String(1 - k * 0.45);
+  });
+  if (p.dy > 120 && !p.armed) { p.armed = true; buzz(); } else if (p.dy <= 120) p.armed = false;
+}, { passive: false });
+const unstyle = (...els) => { for (const el of els) if (el) { el.style.transform = el.style.opacity = el.style.transition = el.style.borderRadius = el.style.transformOrigin = ""; } };
+document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
+document.addEventListener("touchend", () => {
+  const p = pull;
+  pull = null;
+  if (!p) return;
+  cancelAnimationFrame(swFrame); swFrame = 0; swWrite = null;
+  if (p.side || p.live) swEnd(p.side ? $("#app") : p.el);
+  if (p.kind === "ptr") { if ((p.dist || 0) >= 70) ptrRun(); else ptrHide(); return; }
+  if (p.kind === "tab" || p.kind === "back") {
+    if (!p.side) return;
+    const app = $("#app"), d = (p.lx ?? p.x0) - p.x0, v = Math.abs(d) / Math.max(1, Date.now() - p.t), go = p.tg && (Math.abs(d) > innerWidth * 0.3 || (Math.abs(d) > 60 && v > 0.45));
+    hintHide();
+    const ease = "transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s";
+    if (!go) { app.style.transition = ease.replace(".22s cubic-bezier(.2,.8,.2,1)", ".38s cubic-bezier(.3,1.35,.5,1)"); app.style.transform = ""; app.style.opacity = ""; $("#portal").style.opacity = ""; setTimeout(() => unstyle(app), 400); return; }
+    /* Back slides off without fading (fading a whole page is costly), and the page
+       underneath is only rebuilt once this one has gone: rebuilding it froze the slide. */
+    const back = p.kind === "back";
+    app.style.transition = back ? "transform .2s cubic-bezier(.2,.8,.2,1)" : ease;
+    app.style.transform = back ? `translate3d(${innerWidth}px,0,0) scale(.88)` : `translateX(${Math.sign(d) * innerWidth * 0.5}px)`;
+    if (!back) app.style.opacity = "0";
+    setTimeout(() => {
+      if (!back) { unstyle(app, $("#portal")); nav(p.tg.to); return; }
+      /* popstate brings the page back into place, in the same frame as the new one. */
+      backSwiped = true;
+      history.back();
+      setTimeout(() => { if (backSwiped) { backSwiped = false; unstyle(app, $("#portal")); } }, 800);
+    }, back ? 200 : 170);
+    return;
+  }
+  if (p.kind !== "close" || !p.live) return;
+  const v = p.dy / Math.max(1, Date.now() - p.t), el = p.el, fade = p.L.fade ? p.L.fade(el) : el;
+  el.style.transition = fade.style.transition = "transform .26s cubic-bezier(.2,.8,.2,1), opacity .26s, border-radius .26s";
+  if (p.dy > 120 || (p.dy > 50 && v > 0.5)) {
+    el.style.transform = "translateY(100%) scale(.93)"; fade.style.opacity = "0";
+    /* the inline offset stays until the layer is gone: clearing it first made
+       a sheet's own close animation start from the top again */
+    setTimeout(() => { p.L.close(); setTimeout(() => { unstyle(el, fade); document.body.classList.remove("peek"); }, 280); }, 240);
+  } else {
+    el.style.transition = fade.style.transition = "transform .38s cubic-bezier(.3,1.35,.5,1), opacity .3s, border-radius .3s";
+    el.style.transform = ""; el.style.borderRadius = ""; fade.style.opacity = "";
+    setTimeout(() => { unstyle(el, fade); document.body.classList.remove("peek"); }, 400);
+  }
+});
+/* Long-press (touch): on an episode it opens the episode menu with a light
+   tap, like right-click on the PC. A hold never turns into a tap when the
+   finger lifts (it used to start the episode), and the browser's own
+   long-press menu stays away from the app. */
+let lp = null, lpUntil = 0;
+document.addEventListener("touchstart", (e) => {
+  clearTimeout(lp?.timer); lp = null;
+  if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
+  const t = e.target, x = e.touches[0].clientX, y = e.touches[0].clientY;
+  lp = { x, y, timer: setTimeout(() => {
+    if (!lp) return;
+    lp.fired = true;
+    const ep = t.closest?.(".ep[data-a=playep]");
+    if (ep && !pull?.side && !pull?.live && $("#cm").style.display !== "block") { buzz(); openCm(ep.dataset.v, x, y); }
+  }, 480) };
+}, { passive: true, capture: true });
+document.addEventListener("touchmove", (e) => { if (lp && Math.hypot(e.touches[0].clientX - lp.x, e.touches[0].clientY - lp.y) > 10) { clearTimeout(lp.timer); lp = null; } }, { passive: true, capture: true });
+document.addEventListener("touchend", () => { if (!lp) return; clearTimeout(lp.timer); if (lp.fired) lpUntil = Date.now() + 700; lp = null; }, { capture: true });
+document.addEventListener("click", (e) => { if (Date.now() < lpUntil) { e.preventDefault(); e.stopImmediatePropagation(); lpUntil = 0; } }, true);
+document.addEventListener("contextmenu", (e) => { if (mq("(pointer:coarse)") && !e.target.closest?.("input, textarea")) { e.preventDefault(); } }, true);
+/* Switches answer with a light tap (Android). */
+document.addEventListener("click", (e) => { if (e.target.closest?.(".switch") && mq("(pointer:coarse)")) buzz(); }, true);
+/* A back swipe lands on the page before with a slide in from the left. */
+let backSwiped = false;
+/* A grab handle shows that a layer can be pulled down. */
+const grab = '<i class="grabber" aria-hidden="true"></i>';
+
 /* ---------- browser history (back/forward, mouse side buttons, #deep links) ---------- */
 let navSeeded = false;
 const navSnap = () => ({ view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY });
 const navUrl = () => location.pathname + location.search + (S.view === "show" ? "#show=" + encodeURIComponent(S.showId) : S.view === "fr" ? "#f=" + S.fr.eid : VIEWS.includes(S.view) && S.view !== "home" ? "#" + S.view : "");
 function pushNav() {
   const h = navSnap();
-  if (navSeeded) history.pushState(h, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
+  /* Going somewhere from inside a layer (a result in search, Details in the
+     deck): the new page takes the layer's history entry. */
+  if (history.state?.ov) { OV.length = 0; history.replaceState(h, "", navUrl()); return; }
+  if (navSeeded) history.pushState({ ...h, inApp: true }, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
 }
 function applyNav(h) {
   S.navIn = true; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";
@@ -3327,13 +4496,21 @@ function applyNav(h) {
   history.replaceState(h, "", navUrl());
   scrollTo(0, h.scroll || 0);
 }
-addEventListener("popstate", (e) => applyNav(e.state || {}));
+addEventListener("popstate", (e) => {
+  const swiped = backSwiped, app = $("#app");
+  backSwiped = false;
+  if (ovSkip) { ovSkip--; if (swiped) unstyle(app, $("#portal")); return; } // a layer closed by hand took its own entry back
+  const top = OV.pop();
+  if (top) { top.close(); if (swiped) unstyle(app, $("#portal")); return; } // back closes the top layer first
+  applyNav(e.state || {});
+  if (swiped) { unstyle(app, $("#portal")); app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add("tab-r"); }
+});
 history.replaceState(navSnap(), "", location.href);
 navSeeded = true;
 
 /* ---------- boot ---------- */
 aniStatusRefresh();
-const hashShow = location.hash.match(/^#show=(.+)$/), hashFr = location.hash.match(/^#f=(\d+)$/), hashView = location.hash.match(/^#(library|history|stats|settings)$/);
+const hashShow = location.hash.match(/^#show=(.+)$/), hashFr = location.hash.match(/^#f=(\d+)$/), hashView = location.hash.match(/^#(library|history|stats|settings|week)$/);
 applyLook(); // index.html already did; this drops an unknown saved value
 applyZoom(); // before first paint, so the UI never flashes at 100 %
 reload().then(() => {
