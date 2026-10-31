@@ -27,6 +27,8 @@ n=0
 while [ ! -e "$HUB_ANICLI_GO" ]; do
     n=$((n + 1))
     [ "$n" -gt "$HUB_ANICLI_WAIT" ] && exit 0
+    [ -e "$HUB_ANICLI_GO.stop" ] && exit 0
+    [ -d "${HUB_ANICLI_GO%/*}" ] || exit 0
     sleep 0.1
 done
 while IFS= read -r flag; do
@@ -69,7 +71,13 @@ def wait_script():
 
 
 def end(slot):
-    """End a prepared run nobody will use."""
+    """End a prepared run nobody will use. The stop file comes first: on
+    Windows a process that is just starting can slip past taskkill, and the
+    wait script then ends by itself."""
+    try:
+        (slot["dir"] / "go.stop").touch()
+    except OSError:
+        pass
     anicli.stop_process_group(slot["proc"], system.SIGKILL)
     try:
         slot["proc"].wait(timeout=5)
