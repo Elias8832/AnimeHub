@@ -90,8 +90,16 @@ def end(slot):
 def clean(slot):
     """Remove a run's folder. Windows refuses while the ending run still
     holds its log open, so the rest happens in the background; never in the
-    way of a click. A folder that outlasts this goes at the next start."""
+    way of a click. A folder that outlasts this goes at the next start.
+    A failed removal still takes the stop file with it, and a wait script
+    that missed it would hold the log for good: it goes back every time."""
     folder = slot["dir"]
+
+    def stay_stopped():
+        try:
+            (folder / "go.stop").touch()
+        except OSError:
+            pass
 
     def sweep():
         for _ in range(50):
@@ -99,9 +107,11 @@ def clean(slot):
             shutil.rmtree(folder, ignore_errors=True)
             if not folder.exists():
                 return
+            stay_stopped()
 
     shutil.rmtree(folder, ignore_errors=True)
     if folder.exists():
+        stay_stopped()
         threading.Thread(target=sweep, daemon=True).start()
 
 
