@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import LOADED_AT, anicli, anilist, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale
+from . import LOADED_AT, anicli, anilist, background, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -497,7 +497,8 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
-                    "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online")
+                    "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online",
+                    "keep_running", "start_at_login")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
@@ -507,6 +508,10 @@ class Handler(BaseHTTPRequestHandler):
                 if key in body and not isinstance(body[key], bool):
                     self._bad("'%s' must be a boolean" % key)
                     return
+            # They change the PC and can stop the server under the phone (Decision 51).
+            if self.remote_device is not None and ("keep_running" in body or "start_at_login" in body):
+                self._bad("This can only be changed on the PC.")
+                return
             for key, allowed in choices.items():
                 if key in body and body[key] not in allowed:
                     self._bad("'%s' must be one of: %s" % (key, ", ".join(allowed)))
@@ -527,6 +532,12 @@ class Handler(BaseHTTPRequestHandler):
                 elif key == "upscale_banners":
                     try:
                         settings.set_upscale(body[key])
+                    except ValueError as e:
+                        self._bad(str(e))
+                        return
+                elif key in ("keep_running", "start_at_login"):
+                    try:
+                        settings.set_background(key, body[key])
                     except ValueError as e:
                         self._bad(str(e))
                         return
@@ -1100,6 +1111,7 @@ def main():
     threading.Thread(target=upscale.queue_all, daemon=True).start()
     # Episode lengths: measure the files the scans find.
     lengths.start()
+    threading.Thread(target=background.refresh, daemon=True).start()
     # The phone remote's Wi-Fi listener, when switched on (Decision 43).
     if remote.enabled():
         remote.start(RemoteHandler)

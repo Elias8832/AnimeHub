@@ -96,6 +96,8 @@ Most of it is in Settings. The file is `~/.config/anime-hub/config.json` (Window
 | `window` | `"app"`, `"browser"` or `"none"` |
 | `anilist_client_id` | your own AniList app id, only if you change `port` |
 | `remote_port` | the phone remote's Wi-Fi port (default `port` + 1) |
+| `keep_running` | the desktop app's server stays on after you close the window (default off; Settings → Phone remote) |
+| `start_at_login` | the desktop app's server starts at login, without a window (default off; Settings → Phone remote) |
 | `remote_hosts` | host names for reaching it through a proxy, e.g. `["pc.tailnet.ts.net"]` |
 
 Your data is all in `data_dir`. Deleting that folder is a full reset.

@@ -7,7 +7,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import anicli, database, lengths, library, system, upscale
+from . import anicli, background, database, lengths, library, system, upscale
 from .config import config, CONFIG, CONFIG_PATH
 
 
@@ -173,6 +173,10 @@ def settings_payload():
         "remember_tracks": automation_enabled("remember_tracks"),
         # additive (Decision 45): mpv options, "on" / "off" / "own"
         "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks")},
+        # additive (Decision 51): the server without the window; only the desktop app can
+        "background_ok": background.launcher() is not None,
+        "keep_running": config.KEEP_RUNNING,
+        "start_at_login": config.START_AT_LOGIN,
         "tour_done": get_setting("tour_done") == "1",
         # additive: the first-play explainer has been seen
         "play_tip_done": get_setting("play_tip_done") == "1",
@@ -306,6 +310,21 @@ def set_upscale(on):
         upscale.turned_on()
     else:
         threading.Thread(target=upscale.restore_originals, daemon=True).start()
+
+
+def set_background(key, on):
+    """Settings' two server switches (Decision 51). They live in the config
+    file because the desktop wrapper reads them, and it can't read the
+    database. The wrapper picks up a change within a second."""
+    if not background.launcher():
+        raise ValueError("Only the desktop app can do this.")
+    if key == "start_at_login":
+        try:
+            background.set_login(on)
+        except (OSError, subprocess.SubprocessError) as e:
+            raise ValueError(f"Could not change the login entry: {e}")
+    write_config_key(key, bool(on))
+    setattr(config, key.upper(), bool(on))
 
 
 def _write_extra(extra):

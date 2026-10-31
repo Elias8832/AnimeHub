@@ -21,7 +21,7 @@ SKIP_CREDITS_LUA = MPV / "skip-credits.lua"
 DEFAULT_PORT = 8787
 
 CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners",
-               "remote_hosts", "library_extra", "remote_port")
+               "remote_hosts", "library_extra", "remote_port", "keep_running", "start_at_login")
 
 # AnimeHub's public AniList OAuth client (redirect: http://localhost:8787/
 # auth/callback). Client ids are public by design — no secret involved;
@@ -84,6 +84,8 @@ def read_config(path=None):
                                      serve` (Decision 36); default none
       remote_port      int|None    — the phone remote's Wi-Fi port
                                      (Decision 43); default port + 1
+      keep_running     bool        — the server outlives the app's window (Decision 51)
+      start_at_login   bool        — the server starts at login, no window (Decision 51)
 
     anilist_username was removed (found live 2026-10-17: the README's
     example value pinned a stranger's public lists over Elias's connected
@@ -94,7 +96,7 @@ def read_config(path=None):
     cfg = {"library_root": None, "port": DEFAULT_PORT,
            "data_dir": None, "window": "app", "anilist_client_id": None,
            "upscale_banners": False, "remote_hosts": [], "library_extra": [],
-           "remote_port": None}
+           "remote_port": None, "keep_running": False, "start_at_login": False}
     warnings = []
     try:
         # utf-8-sig: Windows editors may start the file with a BOM.
@@ -149,6 +151,12 @@ def read_config(path=None):
         else:
             warn("anilist_client_id", "a positive integer (the AniList client id)")
 
+    for key in ("keep_running", "start_at_login"):
+        if key in raw:
+            if isinstance(raw[key], bool):
+                cfg[key] = raw[key]
+            else:
+                warn(key, "true or false")
     if raw.get("upscale_banners") not in (None, ""):
         u = raw["upscale_banners"]
         if isinstance(u, bool):
@@ -218,6 +226,8 @@ def apply_config(cfg):
     config.ANILIST_TOKEN_FILE = config.DATA / "anilist_token.json"
     # Opt-in banner upscaler (see store_show_meta): default off.
     config.UPSCALE_BANNERS = bool(cfg.get("upscale_banners"))
+    config.KEEP_RUNNING = bool(cfg.get("keep_running"))
+    config.START_AT_LOGIN = bool(cfg.get("start_at_login"))
     # The bundled client id makes connect a two-click affair on a fresh
     # install (Decision 20's setup-tour shape). It is a public identifier,
     # not a secret — every authorize URL carries it anyway. Its registered

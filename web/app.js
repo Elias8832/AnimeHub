@@ -1702,6 +1702,9 @@ function skipGroup(s) {
 /* Phone remote (Decision 43): a second door on the home Wi-Fi, off by
    default; phones pair with the QR code (or the address and code). While a
    code is up, Settings re-reads it every few seconds to see the phone arrive. */
+/* The server without the window (Decision 51): desktop app only. */
+const bgRows = (s) => srow("Keep running after closing", "The phone still works after you close the window. A tray icon shows it's running, with Open and Quit.", tgl("keep_running", "Keep running after closing", s.keep_running))
+  + srow("Start at login", "The server starts when you log in, without a window, and stays on until you pick Quit in the tray.", tgl("start_at_login", "Start at login", s.start_at_login));
 function phoneGroup() {
   const r = S.remote;
   if (!r) { api("/api/remote").then((x) => { S.remote = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Phone remote</h3><p class="sub">Loading…</p></div>'; }
@@ -1718,7 +1721,7 @@ function phoneGroup() {
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
     ${srow("Phone remote", "Pause, skip and pick tracks from your phone while an episode plays here. Phone and PC need the same Wi-Fi. No app to install.", `<button class="switch" role="switch" aria-checked="${r.on}" aria-label="Phone remote" data-a="rmton"></button>`)}
-    ${pair}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
+    ${pair}${S.settings?.background_ok ? bgRows(S.settings) : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
 }
 function phoneWatch() {
   phoneGroup.t = 0;
@@ -1885,7 +1888,7 @@ const SETTINGS_INDEX = [
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"],
-  ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
+  ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Keep running after closing", "phone", "keep running background server close phone", "keep_running"], ["Start at login", "phone", "start login boot autostart server phone", "start_at_login"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
 ];
 const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["mpv", "mpv"], ["online", "Online episodes"], ["anilist", "AniList"], ["phone", "Phone remote"], ["keys", "Keys"], ["data", "Data & setup"]];
 const COMMANDS = [
@@ -2785,10 +2788,12 @@ function tourFound(s, a, n, ok) {
     row(a.connected ? "ok" : "opt", "AniList", a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected"),
   ].join("");
 }
+/* The phone page needs the desktop app: without it the tour skips that page. */
+const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 4));
 function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
-  const b = [
+  const b = tourPages([
     `<h2 id="dt">Welcome to AnimeHub</h2><p class="sub">Your anime in one place, played in mpv.</p>
      <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
      <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
@@ -2799,13 +2804,15 @@ function Tour() {
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
     `<h2 id="dt">A few tools</h2><p class="sub">AnimeHub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
+    `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
      <div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`,
-  ][T.step];
-  return `<div class="steps">${[0, 1, 2, 3, 4].map((i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b}
-  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === 4 ? "Open library" : "Continue"}</button></div>`;
+  ], s);
+  const last = b.length - 1;
+  return `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b[T.step]}
+  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button></div>`;
 }
 const recEps = () => (S.rec.res.marks || []).reduce((sum, m) => sum + m.episodes, 0);
 function Rec() {
@@ -3886,7 +3893,7 @@ const A = {
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < 4) { T.step++; return paintModal(true); }
+    if (T.step < (S.settings?.background_ok ? 5 : 4)) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList
