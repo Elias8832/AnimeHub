@@ -152,6 +152,14 @@ class Prepared(unittest.TestCase):
         self.assertIsNotNone(slot["proc"].poll())
         self.assertTrue(wait_for(lambda: not slot["dir"].exists()))
 
+    def test_a_failed_removal_leaves_the_stop_file(self):
+        # Windows: the log is held open, everything else in the folder goes.
+        folder = Path(tempfile.mkdtemp(dir=support.TMP))
+        (folder / "go.stop").touch()
+        with mock.patch.object(prepare.shutil, "rmtree", lambda p, **kw: (p / "go.stop").unlink(missing_ok=True)):
+            prepare.clean({"dir": folder})
+            self.assertTrue((folder / "go.stop").exists())
+
     def test_the_setting_turns_it_off(self):
         with mock.patch.dict(settings.AUTOMATION_DEFAULTS, {"prepare_online": False}), \
                 mock.patch.object(anicli, "anicli_spawn") as spawn:
