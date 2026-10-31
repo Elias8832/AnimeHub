@@ -124,7 +124,7 @@ class RealMpv(unittest.TestCase):
     def setUpClass(cls):
         cls.mpv, cls.ffmpeg = system.find_program("mpv"), system.find_program("ffmpeg")
         if not (cls.mpv and cls.ffmpeg):
-            raise unittest.SkipTest("needs mpv and ffmpeg")
+            raise AssertionError("ANIME_HUB_REAL_TOOLS is set but mpv or ffmpeg is missing")  # never a quiet skip
         base = Path(tempfile.mkdtemp(dir=support.TMP))
         home = base / "mpv-home"
         home.mkdir()
