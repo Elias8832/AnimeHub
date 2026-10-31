@@ -712,28 +712,33 @@ class Handler(BaseHTTPRequestHandler):
                 progress._dismiss_completion(body["media_id"], body["count"])
                 self.send_json({"ok": True})
         elif route == "/api/reconcile":
-            # TODO 16 (Decision 14): connect-time merge. Facts apply inside
-            # (automatic — higher watched count wins, both directions);
-            # curation conflicts come back for the user to decide.
+            # TODO 16 (Decisions 14, 48): connect-time merge. Local progress
+            # goes to AniList inside (automatic); episodes AniList is ahead
+            # on and curation conflicts come back for the user to decide.
             try:
                 self.send_json(sync.reconcile_analyze())
             except Exception as e:
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/reconcile/apply":
-            # TODO 16: curation winners. Facts were already applied during
-            # analyze and are not user-decidable (Decision 14).
+            # TODO 16: curation winners, plus additive `mark_watched`: the
+            # answer to `marks` (Decision 48).
             decisions = body.get("decisions")
             if not isinstance(decisions, list):
                 self._bad("'decisions' must be a list")
                 return
+            mark = body.get("mark_watched", False)
+            if not isinstance(mark, bool):
+                self._bad("'mark_watched' must be a boolean")
+                return
             try:
+                marked = sync.reconcile_mark_watched() if mark else 0
                 applied = sync.reconcile_apply(decisions)
             except Exception as e:
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
                 return
             threading.Thread(target=anilist.refresh_user_data, kwargs={"force": True},
                              daemon=True).start()
-            self.send_json({"ok": True, "applied": applied})
+            self.send_json({"ok": True, "applied": applied, "marked": marked})
         elif route == "/api/outbox/flush":
             # TODO 14: the sync chip's "try now" — every held row, this moment.
             before = sync.outbox_count()

@@ -62,6 +62,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
 input[type=range],input[type=checkbox],input[type=radio]{background:none;box-shadow:none;padding:0;backdrop-filter:none;border-radius:0}
 .btn,.pill,.dl-btn,.rels button,.choice,.link-btn{position:relative;overflow:hidden;isolation:isolate}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:40px;padding:0 18px;border:0;border-radius:999px;font-weight:600;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+.btn[hidden]{display:none}
 .btn:hover:not(:disabled){background:var(--glass-h)}
 .btn:disabled{opacity:.5;cursor:default}
 .btn.pri{background:var(--ink);color:#111;font-weight:650;box-shadow:none}
@@ -441,7 +442,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 #app.nav-in .ep .tick{animation:popIn .35s var(--spring) both;animation-delay:calc(var(--i)*12ms + .2s)}
 #app.nav-in .tile{animation:rise .35s var(--ease) both}#app.nav-in .tile:nth-child(2){animation-delay:.03s}#app.nav-in .tile:nth-child(3){animation-delay:.06s}#app.nav-in .tile:nth-child(4){animation-delay:.09s}
 #app.nav-in .panel{animation:rise .35s .08s var(--ease) both}
-#app.nav-in .srow{animation:rise .3s var(--ease) both}
 #app.nav-in .tabs button{animation:rise .3s var(--ease) both}#app.nav-in .tabs button:nth-child(2){animation-delay:.02s}#app.nav-in .tabs button:nth-child(3){animation-delay:.04s}#app.nav-in .tabs button:nth-child(n+4){animation-delay:.06s}
 
 /* ───────── responsive (the app is often zoomed to 150–175%, so ~1100–1300px matters) ───────── */
@@ -1492,24 +1492,47 @@ body.rmt-open .rbar,body.rmt-open #nav,body.rmt-open #status,body.rmt-open #app{
 /* the deck */
 body.deck-open{overflow:hidden}
 .deck{position:fixed;inset:0;z-index:50;background:var(--bg);animation:rvIn .3s var(--ease) both}
+/* Swiping stays cheap for a phone's GPU (TODO 92): nothing blurs (blur on the buttons
+   was the lag, found by testing on the phone), only cards near the screen are drawn,
+   and the page behind the opaque deck isn't kept on screen. */
+.deck,.deck *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+body.deck-open:not(.peek) #canvas,body.deck-open:not(.peek) #app,body.deck-open:not(.peek) #nav,body.deck-open:not(.peek) #status,body.deck-open:not(.peek) #rmt{visibility:hidden}
 .dtop{position:absolute;left:0;right:0;top:0;z-index:3;display:flex;align-items:center;gap:14px;padding:calc(14px + env(safe-area-inset-top)) 16px 0}
 .dtop .dots{display:flex;gap:6px;flex:1;justify-content:center;margin-right:44px}
 .dtop .dots i{width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.35);transition:width .3s var(--ease),background .3s}
 .dtop .dots i.on{width:22px;background:var(--ink)}
 .dscroll{height:100%;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
 .dscroll::-webkit-scrollbar{display:none}
-.dpage{position:relative;height:100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden}
+/* deckPager moves the whole track by transform; only cards near the open one are drawn,
+   each on its own layer, ready before the swipe starts. */
+@media (pointer:coarse){
+  .deck{overflow:hidden}
+  .dscroll{overflow:visible;scroll-snap-type:none;touch-action:none;will-change:transform}
+  .dpage{content-visibility:hidden}
+  .dpage.near{content-visibility:visible;will-change:transform}
+}
+.dpage{position:relative;height:100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;content-visibility:auto;contain-intrinsic-size:auto 100vh}
 .dart{position:absolute;inset:0;background:var(--art,none) center/cover,hsl(var(--h,220) 30% 22%)}
-.dart:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,11,13,.4),transparent 22%,transparent 42%,rgba(10,11,13,.96) 82%)}
-.dbody{position:absolute;left:20px;right:20px;bottom:calc(84px + env(safe-area-inset-bottom))}
-.dbody .eye{display:flex;align-items:center;gap:8px;font:400 12px var(--mono);color:var(--ink-2)}
-.dbody h2{font:700 clamp(42px,14vw,64px)/.92 var(--display);text-transform:uppercase;margin:10px 0 8px;text-wrap:balance;text-shadow:0 4px 40px rgba(0,0,0,.4)}
+.dart:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,11,13,.6),transparent 18%)}
+.dbody{position:absolute;left:20px;right:20px;bottom:calc(56px + env(safe-area-inset-bottom));isolation:isolate}
+/* The shade follows the text, so a long title on bright art stays readable. */
+.dbody:before{content:"";position:absolute;z-index:-1;inset:-90px -20px -220px;background:linear-gradient(180deg,transparent,rgba(10,11,13,.78) 100px,rgba(10,11,13,.96) 200px)}
+.dbody .eye{display:flex;align-items:center;gap:8px;font:400 12px var(--mono);color:var(--ink)}
+.dbody .eye .mdot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}
+.dbody .eye span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dbody h2{font:700 clamp(42px,14vw,64px)/.92 var(--display);text-transform:uppercase;margin:10px 0 8px;text-wrap:balance}
+.dbody h2.long{font-size:clamp(32px,10vw,46px)}
 .dbody .sub{color:var(--ink-2);margin-bottom:14px}
 .dbody .tbar{display:flex;align-items:center;gap:10px;margin-bottom:18px}.dbody .tbar span{font:400 11px var(--mono);color:var(--mute)}.dbody .ticks{flex:1}
 .dbody .cta{display:flex;gap:10px}
 .dbody .cta .btn.pri{flex:1}
-.dnext{position:absolute;left:0;right:0;bottom:calc(26px + env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:center;gap:6px;font:400 11px var(--mono);color:var(--mute)}
-.dnext .ico{width:14px;height:14px}
+.dnext{position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:center;gap:6px;font:400 11px var(--mono);color:var(--mute)}
+.dnext .ico{width:14px;height:14px;animation:dbob 1.8s ease-in-out infinite}
+@keyframes dbob{50%{transform:translateY(-3px)}}
+.dend{background:var(--bg)}
+.dend .dbody{top:50%;bottom:auto;transform:translateY(-50%);text-align:center}
+.dend .dbody:before{display:none}
+:root[data-motion=calm] .dnext .ico{animation:none}
 /* the week */
 .wk2{padding:0 44px 120px}
 @media (min-width:1001px){.wkgrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:64px;align-items:start;max-width:1280px}.wkcal{position:sticky;top:90px}.wkcal .psec:first-child{margin-top:0}}
@@ -1731,9 +1754,10 @@ body.has-side #app{padding-left:340px}
 .dtop .dcount{font:500 12px var(--mono);color:var(--ink-2);padding:6px 11px;border-radius:999px;background:rgba(10,11,13,.5);backdrop-filter:blur(10px)}
 .dtop .dcount b{color:var(--ink)}
 .dbody .dgen{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 18px}
-.dbody .dgen .chip{height:26px;font-size:11px;background:rgba(10,11,13,.5)}
+.dbody .dgen .chip{height:26px;font-size:11px;border:0;color:var(--ink);background:rgba(255,255,255,.12)}
 .dbody .cta{flex-wrap:wrap}
 .dbody .cta .btn{flex:1}
+.dbody .cta .btn:not(.pri){background:rgba(255,255,255,.12)}
 /* the pull-down handle on layers that close with a swipe (touch only) */
 .grabber{display:none}
 @media (pointer:coarse){
@@ -1763,7 +1787,33 @@ body.has-side #app{padding-left:340px}
   .frpage .st2>button:nth-child(3) .k{display:none} /* the status needs no label */
   .frpage .eps-head{flex-direction:row;flex-wrap:nowrap;align-items:center;gap:8px;margin:22px -16px 8px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
   .frpage .eps-head::-webkit-scrollbar{display:none}
-  .frpage .tabs2{display:flex;flex-wrap:nowrap;gap:6px;flex:none}
+  .frpage .tabs2{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:2px;flex:none}
+  /* Round 2 (TODO 140): no logo over the art, back lines up with settings,
+     one action per job (AniList sits in ⋯, Add to Planning stays quiet beside Play). */
+  body:has(.frpage) #nav{pointer-events:none}
+  body:has(.frpage) #nav>*{pointer-events:auto}
+  body:has(.frpage) #nav .brand{visibility:hidden}
+  .sp2.frpage .backbtn{display:flex;width:fit-content;margin:-62px 0 0!important;background:rgba(10,11,13,.55)}
+  .frpage .meta .sep,.frpage .meta .mchip.al,.frpage .meta .mdot{display:none}
+  .frpage .meta,.frpage .desc{text-shadow:0 1px 8px rgba(0,0,0,.75)}
+  .frpage .desc{color:var(--ink)}
+  .frpage .st2.unl{margin-top:14px}
+  .frpage .st2.unl .k{display:none}
+  .frpage .st2.unl>.btn{height:36px;margin:0;padding:0 14px 0 10px!important;font:500 13px var(--ui);color:var(--ink);background:rgba(255,255,255,.12);box-shadow:none}
+  .frpage .st2.unl>.btn .ico{width:15px;height:15px}
+  .sp2 .eps.strip{gap:10px}
+  /* The list brings its own dark ground, so scrolling it over bright art keeps the text readable. */
+  .frpage .eps.strip{position:relative;isolation:isolate}
+  .frpage .eps.strip:before{content:"";position:absolute;z-index:-1;inset:-14px -16px -200px;background:linear-gradient(180deg,transparent,var(--bg) 36px);pointer-events:none}
+  /* The ring sits inside the tile: rows contain their paint on touch screens, which cut an outline off. */
+  .sp2 .ep.resume .epa,.sp2 .ep.sel .epa{outline:0}
+  .sp2 .ep.resume .epa:after,.sp2 .ep.sel .epa:after{content:"";position:absolute;inset:0;z-index:4;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--ink);pointer-events:none}
+  .sp2 .ep.sel .epa:after{box-shadow:inset 0 0 0 2px var(--accent)}
+  /* The list fades out behind Play and the tabs instead of showing through them. */
+  body.has-pbar .sp2{padding-bottom:190px}
+  .pbar:before{content:"";position:absolute;z-index:-1;left:-14px;right:-14px;top:-34px;bottom:calc(-88px - env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--bg) 58px);pointer-events:none}
+  .pbar .btn{height:50px}
+  .pbar .btn.ic{width:50px}
   .frpage .rels{flex-wrap:nowrap}
   .frpage .rels button{white-space:nowrap}
   .frpage .ctl{flex:none;margin:0;flex-wrap:nowrap}

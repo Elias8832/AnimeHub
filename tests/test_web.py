@@ -273,6 +273,21 @@ class SearchPalette(unittest.TestCase):
         self.assertIn("r.classList.add(\"flash\")", APP)
 
 
+class UsageNotices(unittest.TestCase):
+    def test_hidden_buttons_stay_hidden(self):
+        # .btn's display beat [hidden]: the remote showed Skip opening all episode (TODO 99).
+        self.assertIn(".btn[hidden]{display:none}", CSS)
+
+    def test_every_settings_section_opens_the_same(self):
+        # TODO 105: one entrance on the section; none on rows, which only some sections have.
+        self.assertIn('$("#app .scol")?.remove()', APP)
+        self.assertNotIn("#app.nav-in .srow", CSS)
+
+    def test_connect_asks_before_marking_watched(self):
+        # TODO 117, Decision 48.
+        self.assertIn("mark_watched: S.rec.mark && recEps() > 0", APP)
+
+
 class Polish(unittest.TestCase):
     """Elias's notes on the redesign (2026-10-24)."""
     def test_dropdowns_use_the_apps_list(self):

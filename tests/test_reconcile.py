@@ -89,10 +89,11 @@ class ReconcileAnalyzeTests(unittest.TestCase):
                 "SELECT payload FROM outbox").fetchone()[0])
         self.assertEqual(payload["patch"]["progress"], 12)
 
-    def test_facts_mark_remote_higher_locally(self):
-        """AniList progress 50 vs local 3 → episodes up to 50 become watched
-        facts locally (in the DB — the source the scanner reads back);
-        nothing above 50 is invented."""
+    def test_remote_higher_asks_before_marking(self):
+        """AniList progress 50 vs local 3 → nothing changes until the user
+        says yes (Decision 48), then episodes up to 50 become watched facts
+        locally (in the DB — the source the scanner reads back); nothing
+        above 50 is invented."""
         scan = show_fixture(n_eps=148, watched=(1, 2, 3))
         with database.db() as c:
             # production pre-state: eps 1-3 are watched facts in the DB
@@ -100,11 +101,25 @@ class ReconcileAnalyzeTests(unittest.TestCase):
                 "INSERT INTO episodes(id,watched) VALUES(?,1)",
                 [(f"hxh-ep{i}",) for i in (1, 2, 3)])
         res = self.analyze([scan], [entry_fixture(11061, progress=50)])
-        self.assertEqual(res["facts"][0]["kind"], "watched")
-        with database.db() as c:
-            watched_after = {r[0] for r in c.execute(
-                "SELECT id FROM episodes WHERE watched=1")}
-        self.assertEqual(watched_after, {f"hxh-ep{i}" for i in range(1, 51)})
+        self.assertEqual(res["facts"], [])
+        self.assertEqual(res["marks"], [{"show": res["marks"][0]["show"], "media_id": 11061,
+                                         "remote": 50, "episodes": 47}])
+        def watched():
+            with database.db() as c:
+                return {r[0] for r in c.execute("SELECT id FROM episodes WHERE watched=1")}
+        self.assertEqual(watched(), {f"hxh-ep{i}" for i in (1, 2, 3)})
+        with patch.object(library, "scan_library", return_value=[scan]), \
+             patch.object(library, "merge_db", lambda scan: None), \
+             patch.object(anilist, "anilist_user_data",
+                          return_value=remote_fixture([entry_fixture(11061, progress=50)])):
+            self.assertEqual(sync.reconcile_mark_watched(), 47)
+        self.assertEqual(watched(), {f"hxh-ep{i}" for i in range(1, 51)})
+
+    def test_mark_watched_needs_a_pending_connect(self):
+        sync.reconcile_clear()
+        with patch.object(anilist, "anilist_user_data") as data:
+            self.assertEqual(sync.reconcile_mark_watched(), 0)
+        data.assert_not_called()
 
     def test_converged_shows_produce_no_facts(self):
         res = self.analyze([show_fixture(watched=tuple(range(1, 13)))],
@@ -130,7 +145,7 @@ class ReconcileAnalyzeTests(unittest.TestCase):
     def test_mapped_seasons_reconcile_against_their_own_releases(self):
         """The same folder once its seasons are mapped (Frieren S1 154587,
         S2 182255): each season merges with its own entry — S1 pushes 28,
-        S2 adopts AniList's 4 locally."""
+        S2 offers AniList's 4 to mark locally."""
         seasons = [
             {"key": 1, "season": 1, "label": "Season 1",
              "releases": [{"id": 154587, "first_ep": 1, "last_ep": None, "offset": 0}],
@@ -145,12 +160,13 @@ class ReconcileAnalyzeTests(unittest.TestCase):
         res = self.analyze([scan], [entry_fixture(154587, progress=3, eps=28),
                                     entry_fixture(182255, progress=4, eps=10)])
         kinds = sorted((f["kind"], f["local"], f["remote"]) for f in res["facts"])
-        self.assertEqual(kinds, [("progress", 28, 3), ("watched", 0, 4)])
+        self.assertEqual(kinds, [("progress", 28, 3)])
+        self.assertEqual([(m["media_id"], m["episodes"]) for m in res["marks"]], [(182255, 4)])
         with database.db() as c:
             payload = json.loads(c.execute("SELECT payload FROM outbox").fetchone()[0])
             marked = {r[0] for r in c.execute("SELECT id FROM episodes WHERE watched=1")}
         self.assertEqual(payload["patch"]["progress"], 28)
-        self.assertEqual(marked, {f"s2-{i}" for i in range(1, 5)})
+        self.assertEqual(marked, set())  # asked first (Decision 48)
 
     def test_show_not_on_any_list_is_out_of_scope(self):
         """Pushing facts to an unlisted show would CREATE a list entry —
@@ -337,6 +353,11 @@ class ReconcileRouteTests(unittest.TestCase):
         sync.reconcile_mark_pending(42)
         code, body = self.request("POST", "/api/reconcile/apply",
                                   {"decisions": "all-anilist"})
+        self.assertEqual(code, 400)
+
+    def test_apply_rejects_a_non_boolean_mark_answer(self):
+        code, body = self.request("POST", "/api/reconcile/apply",
+                                  {"decisions": [], "mark_watched": "yes"})
         self.assertEqual(code, 400)
 
 

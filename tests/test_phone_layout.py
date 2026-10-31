@@ -46,6 +46,38 @@ class PhoneLayout(unittest.TestCase):
         self.assertIn("body.has-pbar .sp2 .cta .btn.pri{display:none}", CSS)
         self.assertIn(".fsheet .filters{display:flex", CSS)
 
+    def test_discover_is_a_feed(self):
+        # TODO 92: shuffled, no count, no next title; Library → Swipe keeps all three.
+        self.assertIn('src === "recs" ? shuffled(deckItems(src)) : deckItems(src)', APP)
+        self.assertIn('${feed ? "" : `<span class="dcount', APP)
+        self.assertIn('(!feed || !k)', APP)
+        self.assertIn('data-a="deckagain"', APP)  # the end card
+
+    def test_show_page_stays_clean(self):
+        # TODO 140: no logo over the art, one row of tabs, a ring that isn't cut off, a shade behind Play.
+        self.assertIn("body:has(.frpage) #nav .brand{visibility:hidden}", CSS)
+        self.assertIn(".frpage .tabs2{display:flex;flex-direction:row", CSS)
+        self.assertIn(".sp2 .ep.resume .epa:after", CSS)
+        self.assertIn(".pbar:before", CSS)
+
+    def test_deck_art_keeps_its_size(self):
+        # A zoom on the open card made pictures change size mid-swipe.
+        self.assertNotIn("dzoom", CSS)
+
+    def test_deck_swipe_keeps_the_fingers_speed(self):
+        # The browser's snap ignores the flick; deckPager's spring starts at the finger's speed.
+        self.assertIn("function deckPager(sc, land)", APP)
+        self.assertIn("scroll-snap-type:none;touch-action:none;will-change:transform", CSS)
+        self.assertIn("anim = sc.animate(frames", APP)  # the GPU plays the glide
+
+    def test_swiping_the_deck_stays_cheap(self):
+        self.assertIn(".deck,.deck *{-webkit-backdrop-filter:none!important", CSS)
+        self.assertIn("body.deck-open:not(.peek) #canvas", CSS)
+
+    def test_deck_loads_art_near_the_card_only(self):
+        self.assertIn('data-art="${esc(x.art)}"', APP)
+        self.assertNotIn('--art:${esc(cssUrl(x.art))}', APP)
+
     def test_deck_and_actions(self):
         for a in ("deck:", "deckclose:", "deckplay:", "deckopen:", "setopen:", "setback:", "sidetab:", "fltopen:", "fltclose:"):
             self.assertIn("  " + a if a == "deck:" else a, APP)

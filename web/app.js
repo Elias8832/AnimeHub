@@ -2183,7 +2183,7 @@ function deckItems(src) {
     return (S.recs?.items || []).filter((r) => !listed.has(r.id)).map((r) => ({
       id: r.id, title: r.title, art: r.poster || r.banner, color: r.color,
       eye: r.because ? `because you liked ${r.because.title}` : "recommended for you",
-      facts: [FMT[r.format] || r.format, r.year, r.average ? `★ ${r.average}` : ""].filter(Boolean).join(" · "),
+      facts: [FMT[r.format] || r.format, r.episodes ? `${r.episodes} ep` : "", r.year, r.average ? `★ ${r.average}` : ""].filter(Boolean).join(" · "),
       genres: (r.genres || []).slice(0, 3), add: !S.recsAdded?.has(r.id), open: ["recopen", r.id] }));
   }
   const m = libModel();
@@ -2194,30 +2194,123 @@ function deckItems(src) {
       genres: (e.genres || []).slice(0, 3), play: t && { id: t.ep.id, label: `${KIND_WORD[t.kind]} ${epCode(t.sea, t.ep)}` }, open: ["entry", e.id] };
   });
 }
-function openDeck(src = "recs", i = 0) {
-  const items = deckItems(src);
-  if (!items.length) { toast(src === "recs" ? "No recommendations yet — rate a few shows on AniList." : "Nothing in this list."); return; }
+const shuffled = (list) => { const a = [...list]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; } return a; };
+function deckFill(src, i, items) {
   S.deck = { src, i: Math.min(i, items.length - 1) };
-  const el = $("#deck");
-  el.innerHTML = `<div class="deck" role="dialog" aria-modal="true" aria-label="${src === "recs" ? "Discover" : "Swipe through your list"}">
-    ${grab}<div class="dtop"><button class="btn ic" data-a="deckclose" aria-label="Close">${ico("close")}</button><b class="dttl">${src === "recs" ? "Discover" : esc(statusLabel(S.lib.tab) || "Library")}</b><span class="dcount mono"><b>${S.deck.i + 1}</b> / ${items.length}</span></div>
-    <div class="dscroll">${items.map((x, k) => `<section class="dpage" style="${x.art ? `--art:${esc(cssUrl(x.art))}` : `--h:${hueOf(x.title)}`}"><i class="dart"></i>
-        <div class="dbody"><div class="eye"><i class="mdot"${x.color ? ` style="background:${esc(hexAccent(x.color) || "var(--accent)")}"` : ""}></i>${esc(x.eye)}</div><h2>${esc(x.title)}</h2>
+  const feed = src === "recs", el = $("#deck");
+  const dot = (x) => `<i class="mdot"${x.color ? ` style="background:${esc(hexAccent(x.color) || "var(--accent)")}"` : ""}></i>`;
+  el.innerHTML = `<div class="deck" role="dialog" aria-modal="true" aria-label="${feed ? "Discover" : "Swipe through your list"}">
+    ${grab}<div class="dtop"><button class="btn ic" data-a="deckclose" aria-label="Close">${ico("close")}</button><b class="dttl">${feed ? "Discover" : esc(statusLabel(S.lib.tab) || "Library")}</b>${feed ? "" : `<span class="dcount mono"><b>${S.deck.i + 1}</b> / ${items.length}</span>`}</div>
+    <div class="dscroll">${items.map((x, k) => `<section class="dpage" style="--h:${hueOf(x.title)}"${x.art ? ` data-art="${esc(x.art)}"` : ""}><i class="dart"></i>
+        <div class="dbody"><div class="eye">${dot(x)}<span>${esc(x.eye)}</span></div><h2${x.title.length > 26 ? ' class="long"' : ""}>${esc(x.title)}</h2>
         <div class="sub mono">${esc(x.facts)}</div>${x.genres.length ? `<div class="dgen">${x.genres.map((g) => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
         <div class="cta">${x.play ? `<button class="btn pri big" data-a="deckplay" data-v="${esc(x.play.id)}">${ico("play")}<span>${esc(x.play.label)}</span></button>` : ""}${x.add != null ? `<button class="btn ${x.play ? "" : "pri "}big" data-a="deckadd" data-v="${x.id}" ${x.add ? "" : "disabled"}>${ico(x.add ? "plus" : "check")}<span>${x.add ? "Planning" : "On Planning"}</span></button>` : ""}<button class="btn big" data-a="deckopen" data-v="${esc(x.open.join(":"))}">Details</button></div></div>
-        ${k < items.length - 1 ? `<span class="dnext">${ico("up")}${esc(items[k + 1].title)}</span>` : ""}</section>`).join("")}</div></div>`;
-  document.body.classList.add("deck-open");
-  ovOpen("deck", () => closeDeck());
-  const sc = el.querySelector(".dscroll");
-  sc.scrollTop = S.deck.i * sc.clientHeight;
-  sc.onscroll = () => {
-    const k = Math.round(sc.scrollTop / sc.clientHeight);
-    if (k === S.deck?.i) return;
-    S.deck.i = k;
-    el.querySelector(".dcount b").textContent = k + 1;
+        ${k < items.length - 1 && (!feed || !k) ? `<span class="dnext">${ico("up")}${feed ? "Swipe up" : esc(items[k + 1].title)}</span>` : ""}</section>`).join("")}${feed ? `<section class="dpage dend"><div class="dbody"><h2>That's all for now</h2><div class="cta"><button class="btn pri big" data-a="deckagain">Shuffle again</button><button class="btn big" data-a="deckclose">Close</button></div></div></section>` : ""}</div></div>`;
+  const sc = el.querySelector(".dscroll"), pages = sc.children;
+  /* The cards around this one: art decoded before it's shown, and drawn on their own
+     layers, all once a swipe has settled, so nothing new lands while a card moves. */
+  const near = (k) => {
+    for (const p of sc.querySelectorAll(".dpage.near")) if (Math.abs([...pages].indexOf(p) - k) > 2) p.classList.remove("near");
+    for (let n = Math.max(0, k - 1); n <= k + 3 && n < pages.length; n++) {
+      const p = pages[n], u = p.dataset.art;
+      if (n <= k + 2) p.classList.add("near");
+      if (!u) continue;
+      delete p.dataset.art;
+      const im = new Image();
+      im.src = u;
+      im.decode().catch(() => {}).finally(() => p.style.setProperty("--art", cssUrl(u)));
+    }
   };
+  const card = (k) => {
+    if (S.deck) S.deck.i = k;
+    near(k);
+    if (!feed) el.querySelector(".dcount b").textContent = k + 1;
+  };
+  near(S.deck.i);
+  if (mq("(pointer:coarse)")) deckPager(sc, card);
+  else {
+    sc.scrollTop = S.deck.i * sc.clientHeight;
+    let settle = 0;
+    sc.onscroll = () => { clearTimeout(settle); settle = setTimeout(() => card(Math.round(sc.scrollTop / sc.clientHeight)), 160); };
+  }
   el.querySelector(".dtop .btn").focus({ preventScroll: true });
 }
+/* The deck's swipe on touch screens (the browser's scroll-snap ignores how fast the
+   finger moved). The card sticks to the finger, then a critically damped spring takes
+   over at the finger's own speed: no jump in speed on release, no bounce on landing.
+   The whole glide is one Web Animation of a transform, so the GPU plays it without
+   the main thread (scrollTop writes each frame lagged on the phone). One card per
+   swipe. Pull down on the first card stays the close gesture. */
+const DECK_SPRING = 16; // per second: mostly there in ~0.3 s
+function deckPager(sc, land) {
+  let drag = null, anim = null, y = S.deck.i * sc.clientHeight;
+  const put = (v) => { y = v; sc.style.transform = `translate3d(0,${-v}px,0)`; };
+  const halt = () => {
+    if (!anim) return;
+    put(-new DOMMatrix(getComputedStyle(sc).transform).m42);
+    anim.onfinish = null; anim.cancel(); anim = null;
+    land(Math.round(y / sc.clientHeight));
+  };
+  const glide = (k, v) => {
+    const to = k * sc.clientHeight, x0 = y - to, w = DECK_SPRING;
+    if (reduceMotion() || Math.abs(x0) < 0.5) { put(to); land(k); return; }
+    /* A flick faster than the spring can absorb would overshoot the card. */
+    const lim = w * Math.abs(x0), b = Math.max(-lim, Math.min(lim, v)) + w * x0, frames = [];
+    let t = 0;
+    for (;; t += 1 / 60) {
+      const x = (x0 + b * t) * Math.exp(-w * t);
+      frames.push({ transform: `translate3d(0,${-(to + x)}px,0)` });
+      if ((Math.abs(x) < 0.5 && t > 0.1) || t > 1) break;
+    }
+    put(to);
+    frames.push({ transform: sc.style.transform });
+    anim = sc.animate(frames, { duration: t * 1000, easing: "linear" });
+    anim.onfinish = () => { anim = null; land(k); };
+  };
+  sc._place = () => { halt(); put(S.deck.i * sc.clientHeight); };
+  put(y);
+  sc.ontouchstart = (e) => {
+    halt();
+    drag = e.touches.length === 1 ? { y: e.touches[0].clientY, x: e.touches[0].clientX, top: y, h: sc.clientHeight, max: (sc.children.length - 1) * sc.clientHeight, on: false, log: [] } : null;
+  };
+  sc.ontouchmove = (e) => {
+    if (!drag) return;
+    const fy = e.touches[0].clientY, dy = drag.y - fy;
+    if (!drag.on) {
+      if (Math.abs(dy) < 6) return;
+      if (Math.abs(e.touches[0].clientX - drag.x) > Math.abs(dy) || (dy < 0 && drag.top <= 2)) { drag = null; return; } // sideways, or the pull that closes
+      drag.on = true; drag.y = fy; return;
+    }
+    e.preventDefault();
+    put(Math.max(0, Math.min(drag.max, drag.top + dy)));
+    drag.log.push([e.timeStamp, fy]);
+    if (drag.log.length > 8) drag.log.shift();
+  };
+  sc.ontouchend = sc.ontouchcancel = () => {
+    const d = drag;
+    drag = null;
+    if (!d?.on) { // a tap may have caught the card mid-glide: land it
+      if (!anim) glide(Math.round(y / sc.clientHeight), 0);
+      return;
+    }
+    /* The finger's speed over its last 100 ms, in px/s toward the next card. */
+    const last = d.log[d.log.length - 1], first = last && d.log.find((p) => last[0] - p[0] <= 100);
+    const v = last && last[0] > first[0] ? ((first[1] - last[1]) / (last[0] - first[0])) * 1000 : 0;
+    const from = Math.round(d.top / d.h), moved = y - from * d.h;
+    const flick = Math.abs(v) > 400 && Math.abs(moved) > 16;
+    const dir = flick ? Math.sign(v) : Math.abs(moved) > d.h * 0.25 ? Math.sign(moved) : 0;
+    glide(Math.max(0, Math.min(sc.children.length - 1, from + dir)), v);
+  };
+}
+function openDeck(src = "recs", i = 0) {
+  /* Discover is a feed (TODO 92): a new order each time, no count, no look at what's next. */
+  const items = src === "recs" ? shuffled(deckItems(src)) : deckItems(src);
+  if (!items.length) { toast(src === "recs" ? "No recommendations yet — rate a few shows on AniList." : "Nothing in this list."); return; }
+  deckFill(src, i, items);
+  document.body.classList.add("deck-open");
+  ovOpen("deck", () => closeDeck());
+}
+addEventListener("resize", () => { const sc = $("#deck .dscroll"); if (!sc || !S.deck) return; if (sc._place) sc._place(); else sc.scrollTop = S.deck.i * sc.clientHeight; });
 function closeDeck(silent) { if (!S.deck) return; S.deck = null; $("#deck").innerHTML = ""; document.body.classList.remove("deck-open"); if (silent) ovDrop("deck"); else ovClosed("deck"); }
 document.addEventListener("keydown", (e) => {
   if (!S.deck) return;
@@ -2690,17 +2783,22 @@ function Tour() {
   return `<div class="steps">${[0, 1, 2, 3, 4].map((i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b}
   <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === 4 ? "Open library" : "Continue"}</button></div>`;
 }
+const recEps = () => (S.rec.res.marks || []).reduce((sum, m) => sum + m.episodes, 0);
 function Rec() {
-  const { res, pick } = S.rec, n = res.conflicts.length;
-  const facts = res.facts.map((f) => f.kind === "progress" ? `<li>${esc(f.show)} — watch progress synced to EP ${f.local} (was ${f.remote})</li>` : `<li>${esc(f.show)} — episodes up to E${f.remote} marked watched locally</li>`).join("");
-  return `<h2 id="dt">${n ? `${n} difference${n === 1 ? "" : "s"} to review` : "AniList connected"}</h2>
-  <p class="sub">Watched-episode counts always keep the higher of the two — that part is automatic${facts ? ":" : "."}</p>${facts ? `<ul class="summary">${facts}</ul>` : ""}
+  const { res, pick, mark } = S.rec, n = res.conflicts.length, marks = res.marks || [], eps = recEps();
+  const facts = res.facts.map((f) => `<li>${esc(f.show)} — watch progress synced to EP ${f.local} (was ${f.remote})</li>`).join("");
+  const asks = marks.map((m) => `<li>${esc(m.show)} — ${m.episodes} episode${m.episodes === 1 ? "" : "s"}, up to E${m.remote}</li>`).join("");
+  const seg = (on, v, l) => `<button class="${on ? "on" : ""}" aria-pressed="${on}" data-a="recmark" data-v="${v}">${l}</button>`;
+  return `<h2 id="dt">${n ? `${n} difference${n === 1 ? "" : "s"} to review` : eps ? "Mark what you watched?" : "AniList connected"}</h2>
+  ${facts ? `<p class="sub">Episodes you watched here went to AniList:</p><ul class="summary">${facts}</ul>` : ""}
+  ${eps ? `<p class="sub"${facts ? ' style="margin-top:14px"' : ""}>Your AniList list is ahead of this app. Mark ${eps === 1 ? "this episode" : `these ${eps} episodes`} as watched here too?</p><ul class="summary">${asks}</ul>
+    ${n ? `<div class="bulk"><span class="seg" role="group" aria-label="Mark as watched here">${seg(mark, 1, "Mark as watched")}${seg(!mark, 0, "Leave as is")}</span></div>` : ""}` : ""}
   ${n ? `<p class="sub" style="margin-top:14px">These shows differ in list status or score — choose what to keep.</p>
     <div class="bulk"><button class="btn" data-a="recall" data-v="anilist">AniList wins everywhere</button><button class="btn" data-a="recall" data-v="local">Local wins everywhere</button></div>
     <div class="rh"><span>Show</span><span>AniList</span><span>Local</span><span>Keep</span></div>
     ${res.conflicts.map((c) => { const k = pick[c.media_id]; return `<div class="rr"><span class="who"><span><b>${esc(c.title)}</b><small>${esc(c.diff || "")}</small></span></span><span class="v ${k === "anilist" ? "keep" : ""}">${esc(recVal(c.remote))}</span><span class="v ${k === "local" ? "keep" : ""}">${esc(recVal(c.local))}</span>
       <span class="seg" role="group" aria-label="Keep for ${esc(c.title)}"><button class="${k === "anilist" ? "on" : ""}" aria-pressed="${k === "anilist"}" data-a="recset" data-m="${c.media_id}" data-v="anilist">AniList</button><button class="${k === "local" ? "on" : ""}" aria-pressed="${k === "local"}" data-a="recset" data-m="${c.media_id}" data-v="local">Local</button></span></div>`; }).join("")}` : ""}
-  <div class="actions"><button class="btn" data-a="recclose">Skip</button><button class="btn pri" data-a="recapply">${n ? `Apply ${n} choice${n === 1 ? "" : "s"}` : "Close"}</button></div>`;
+  <div class="actions"><button class="btn" data-a="recclose">${eps && !n ? "Leave as is" : "Skip"}</button><button class="btn pri" data-a="recapply">${n ? `Apply ${n} choice${n === 1 ? "" : "s"}` : eps ? "Mark as watched" : "Close"}</button></div>`;
 }
 /* You finished a show (Decision 25 → 38): poster, the big title, rate it
    (1–10 pills) with ♥ beside, and what comes next in its franchise. */
@@ -2778,9 +2876,9 @@ function maybeReconcile() {
   if (S.rec) return;
   api("/api/reconcile", {}).then((res) => { /* POST-only route: a GET is a 404 */
     if (!res || !res.pending) return;
-    if (!res.conflicts.length && !res.facts.length) { api("/api/reconcile/dismiss", {}).catch(() => {}); return; }
+    if (!res.conflicts.length && !res.facts.length && !res.marks?.length) { api("/api/reconcile/dismiss", {}).catch(() => {}); return; }
     if (S.modal) return; // retried on the next refresh
-    S.rec = { res, pick: Object.fromEntries(res.conflicts.map((c) => [c.media_id, "anilist"])) };
+    S.rec = { res, mark: true, pick: Object.fromEntries(res.conflicts.map((c) => [c.media_id, "anilist"])) };
     openModal({ t: "rec" });
   }).catch(() => {});
 }
@@ -3663,17 +3761,19 @@ const A = {
   srlist: (v) => { clearSearch(); q.blur(); S.lib.tab = v; saveLib(); nav("library"); },
   srgo: (v) => { clearSearch(); q.blur(); nav(v); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
-  settab: (v) => { S.setTab = v; render(true); },
+  /* A new section node, so every section opens with the same .settings entrance. */
+  settab: (v) => { if (v !== S.setTab) $("#app .scol")?.remove(); S.setTab = v; render(true); },
   setopen: (v) => { S.setTab = v; S.setOpen = true; S.navIn = true; ovOpen("set", () => A.setback()); render(); scrollTo(0, 0); },
   setback: () => { S.setOpen = false; S.navIn = true; render(); scrollTo(0, 0); ovClosed("set"); },
   deck: (v) => openDeck(v === "lib" ? "lib" : "recs"), deckclose: () => closeDeck(),
+  deckagain: () => deckFill("recs", 0, shuffled(deckItems("recs"))),
   deckplay: (v) => { closeDeck(); play(v); },
   deckopen: (v) => { const [a, id] = v.split(":"); closeDeck(true); A[a](id); }, // the page takes the deck's history entry
   deckadd: (v, t) => {
     t.disabled = true;
     entrySave(+v, { status: "PLANNING" }).then((r) => {
       if (!r || r.error) throw 0;
-      (S.recsAdded ||= new Set()).add(+v); toast("Added to Planning");
+      (S.recsAdded ||= new Set()).add(+v); buzz(); toast("Added to Planning");
       t.innerHTML = `${ico("check")}<span>On Planning</span>`;
       refreshData();
     }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
@@ -3767,12 +3867,14 @@ const A = {
   tourconnect: () => { api("/api/settings", { tour_done: true }).catch(() => {}); if (S.settings) S.settings.tour_done = true; closeModal(); openModal({ t: "ani" }); },
   recset: (v, t) => { S.rec.pick[t.dataset.m] = v; paintModal(); },
   recall: (v) => { for (const k of Object.keys(S.rec.pick)) S.rec.pick[k] = v; paintModal(); },
+  recmark: (v) => { S.rec.mark = v === "1"; paintModal(); },
   recclose: () => recDone(),
   recapply: () => {
     const list = Object.entries(S.rec.pick).map(([m, w]) => ({ media_id: Number(m), winner: w }));
-    api("/api/reconcile/apply", { decisions: list }).then((r) => {
+    api("/api/reconcile/apply", { decisions: list, mark_watched: S.rec.mark && recEps() > 0 }).then((r) => {
       if (r && r.error) return toast(r.error);
-      toast(`Reconciled — ${r.applied ?? list.length} shows updated`);
+      const done = [list.length ? `${r.applied ?? list.length} shows updated` : "", r.marked ? `${r.marked} episode${r.marked === 1 ? "" : "s"} marked watched` : ""].filter(Boolean).join(" · ");
+      if (done) toast(done);
       S.rec = null; S.alData = null; closeModal(); reload(); setTimeout(reload, 3000);
     }).catch(() => toast("Could not apply — is the hub running?"));
   },
@@ -3809,6 +3911,7 @@ const A = {
     S.fr.eid = mid; S.sel = null; paintSel();
     history.replaceState(navSnap(), "", navUrl());
     render();
+    $("#app .eps-head .on")?.scrollIntoView({ block: "nearest", inline: "center" }); // the phone's tabs are one sideways row
     frLoad(mid); // the hub starts this entry's online list and stills
   },
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
@@ -4154,7 +4257,7 @@ function ovDrop(name) { const k = OV.findIndex((o) => o.name === name); if (k >=
    controls (sliders, segments, strips) keep their own drag. */
 const PULL = [
   { sel: ".rview", scroller: (el) => el, close: () => A.rmtclose(), fade: () => ({ style: {} }) }, // stays solid, only shrinks
-  { sel: "#deck .deck", scroller: (el) => el.querySelector(".dscroll"), close: () => closeDeck() },
+  { sel: "#deck .deck", scroller: () => ({ scrollTop: S.deck?.i ? 3 : 0 }), close: () => closeDeck() }, // deckPager moves a transform, not a scroll
   { sel: "#pal .pbox", scroller: (el) => el.querySelector(".plist"), close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
   { sel: ".fsheet .filters", scroller: (el) => el, close: () => A.fltclose() },
   { sel: "#modal .dialog", scroller: (el) => el, close: () => modalDismiss(), when: () => isPhone() && S.modal && S.modal.t !== "tour" },
