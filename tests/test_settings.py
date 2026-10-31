@@ -227,9 +227,9 @@ class SettingsRouteTests(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=5) as res:
             return json.loads(res.read())
 
-    def post(self, body):
+    def post(self, body, path="/api/settings"):
         req = urllib.request.Request(
-            f"http://127.0.0.1:{self.bound}/api/settings",
+            f"http://127.0.0.1:{self.bound}{path}",
             data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json",
                      "Host": "127.0.0.1:8787"})
@@ -298,6 +298,16 @@ class SettingsRouteTests(unittest.TestCase):
         code, body = self.post({"aniskip_vpn_warn": False})
         self.assertFalse(body["aniskip_vpn_warn"])
         self.post({"skip_op": "prompt", "skip_ed": "prompt", "aniskip": False, "aniskip_vpn_warn": True})
+
+    def test_prepare_route_and_setting(self):
+        """Home's banner asks over POST; the switch is a plain boolean."""
+        with patch("animehub.streaming.prepare_page") as prep:
+            self.assertEqual(self.post({"id": "stream:1:2"}, "/api/prepare"), (200, {"ok": True}))
+        prep.assert_called_once_with("stream:1:2")
+        self.assertEqual(self.post({"id": 5}, "/api/prepare")[0], 400)
+        self.assertEqual(self.post({"prepare_online": "yes"})[0], 400)
+        code, body = self.post({"prepare_online": True})
+        self.assertTrue(body["prepare_online"])
 
     def test_upscale_setting(self):
         """Banner upscaling: off by default, in the payload, a boolean only."""

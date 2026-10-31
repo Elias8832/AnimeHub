@@ -25,7 +25,7 @@ os.environ["XDG_DATA_HOME"] = str(TMP / "data")
 sys.path.insert(0, str(ROOT))
 
 import animehub.server  # noqa: E402  (imports every module)
-from animehub import database, franchise, library  # noqa: E402
+from animehub import database, franchise, library, settings  # noqa: E402
 from animehub.config import config, CONFIG, apply_config  # noqa: E402
 
 
@@ -36,6 +36,10 @@ def _offline(*args, **kwargs):
 for _mod in list(sys.modules.values()):
     if _mod and _mod.__name__.startswith("animehub.") and hasattr(_mod, "urlopen"):
         _mod.urlopen = _offline
+
+
+# A prepared run starts the real ani-cli a moment later: only its own tests do that.
+settings.AUTOMATION_DEFAULTS["prepare_online"] = False
 
 
 @contextmanager

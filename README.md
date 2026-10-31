@@ -109,7 +109,7 @@ No tracking, no accounts, no ads. Your data stays on your PC.
 <details>
 <summary>What it talks to, and security</summary>
 
-- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (only when you get or update ani-cli). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on.
+- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (only when you get or update ani-cli). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on. Before you click, it contacts the site only while a VPN is up (Warn without VPN off lifts that): to link a show, refresh its episode list, or get the next episode ready.
 - **Access:** the server only listens on your PC. The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or AniList account.
 - **Proxy:** through `remote_hosts` there's no password, so everyone on that network can use it.
 - **AniList login:** a token in `anilist_token.json`, readable only by your user.

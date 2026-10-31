@@ -441,6 +441,10 @@ def _send_skips(proc, ep_id, sock_path, duration, prefs):
         util.log("skip ranges not sent: %s" % exc)
 
 
+# How far into an episode the next one gets ready (parity row 4).
+PREPARE_AT = 0.8
+
+
 def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     """Track one playback session over mpv's IPC socket. `startup` bounds
     the wait for the socket; `failure(rc)` words a session that ended
@@ -454,6 +458,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     skips_sent = False
     picks = {} if tracks.enabled() else None
     speed_set = False
+    prepared = False
     deadline = time.time() + startup
     connected = False
     while time.time() < deadline and proc.poll() is None:
@@ -531,6 +536,9 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                     except Exception as exc:
                         util.log("track memory: %s" % exc)
                         picks = None
+                if not prepared and duration and last_time / duration >= PREPARE_AT:
+                    prepared = True
+                    threading.Thread(target=streaming.prepare_after, args=(ep_id,), daemon=True).start()
                 now = util.utc_stamp()
                 with database.db() as c:
                     c.execute(

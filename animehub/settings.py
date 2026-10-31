@@ -38,6 +38,8 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # would learn what you watch and when, so opt-in; and
                        # without a VPN, ask before an episode uses it.
                        "aniskip": False, "aniskip_vpn_warn": True,
+                       # Get the next online episode ready before the click (prepare.py).
+                       "prepare_online": True,
                        # Read each episode's length from its file (lengths.py).
                        "measure_lengths": True,
                        # Pick the show's last audio/subtitle track again (tracks.py).
@@ -127,6 +129,14 @@ def vpn_status():
     return {"active": False, "iface": None, "known": True}
 
 
+def site_ok():
+    """May the hub reach the streaming site before anyone clicked (linking,
+    list refreshes, preparing)? The same rule as the play click's warning:
+    with a VPN up, on a system that can't tell, or with the warning off."""
+    vpn = vpn_status()
+    return vpn["active"] or not vpn["known"] or not automation_enabled("vpn_warn")
+
+
 def _vpn_status_windows():
     """vpn_status on Windows (TODO 74): an up adapter whose name or driver
     description reads as a VPN client's."""
@@ -155,6 +165,7 @@ def settings_payload():
         "anilist_watched": automation_enabled("anilist_watched"),
         "vpn_icon": automation_enabled("vpn_icon"),
         "vpn_warn": automation_enabled("vpn_warn"),
+        "prepare_online": automation_enabled("prepare_online"),
         "aniskip": automation_enabled("aniskip"),
         "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
         "upscale_banners": up["on"],
