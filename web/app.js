@@ -276,7 +276,14 @@ function seasonTicks(sea) {
     return `<i style="--i:${i};--pp:${Math.round(p * 100)}%" class="${x.watched ? "s" : p > 0.01 ? "p" : streamEp(x) ? "o" : "d"}"></i>`; }).join("")}</div>`;
 }
 function dayWord(h) { return h < 5 ? "Tonight" : h < 12 ? "This morning" : h < 18 ? "This afternoon" : "Tonight"; }
+/* The Continue banner's online episode gets ready before the click (Decision 49). */
+function prepareHero(ep) {
+  if (!streamEp(ep) || S.heroPrep === ep.id) return;
+  S.heroPrep = ep.id;
+  api("/api/prepare", { id: ep.id }).catch(() => {});
+}
 function heroHTML(up) {
+  prepareHero(up.ep);
   const s = up.s, ep = up.ep, sea = up.sea, art = homeThumb(sea, ep) && !s.banner ? homeThumb(sea, ep) : s.banner || s.poster;
   const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
   const len = ep.duration || ep.length, left = pct >= 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
@@ -1723,7 +1730,8 @@ function streamGroup(s) {
     ${srow("Audio", "Sub or dub for online episodes. Any episode's menu plays the other one.", `<span class="seg" role="group" aria-label="Default audio">${SLMODES.map(([m, l]) => `<button class="${st.mode === m ? "on" : ""}" aria-pressed="${st.mode === m}" data-a="spref" data-k="stream_mode" data-v="${m}" ${off ? "disabled" : ""}>${l}</button>`).join("")}</span>`)}
     ${srow("Downloads", "Saved into your library folder, one folder per show.", "")}
     ${srow("VPN in the status line", "Shows in the line at the bottom whether a VPN connection is up.", tgl("vpn_icon", "VPN in the status line", s.vpn_icon !== false, off))}
-    ${srow("Warn without VPN", "Asks before an online episode or download starts while no VPN is up.", tgl("vpn_warn", "Warn without VPN", s.vpn_warn !== false, off))}</div>`;
+    ${srow("Warn without VPN", "Asks before an online episode or download starts while no VPN is up.", tgl("vpn_warn", "Warn without VPN", s.vpn_warn !== false, off))}
+    ${srow("Start episodes faster", "Gets the next online episode ready before you click. Only while a VPN is up, unless Warn without VPN is off.", tgl("prepare_online", "Start episodes faster", s.prepare_online !== false, off))}</div>`;
 }
 /* Library folder picker (Decision 32): one inline folder browser shared by
    Settings and the tour's first step (ctx). It renders from S.dir and paints
@@ -1856,7 +1864,7 @@ const SETTINGS_INDEX = [
   ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "playback", "audio subtitle subs track language dub dual remember", "remember_tracks"],
   ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
-  ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"],
+  ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"], ["Start episodes faster", "online", "prepare next episode speed ready", "prepare_online"],
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"],

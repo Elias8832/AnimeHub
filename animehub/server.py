@@ -488,11 +488,16 @@ class Handler(BaseHTTPRequestHandler):
                     if aniskip_ok is not None:
                         player.answer_aniskip(body["id"], aniskip_ok)
                     self.send_json(player.start_play(body["id"], body.get("version", 0), from_start=start))
+        elif route == "/api/prepare":
+            # Additive: Home's Continue banner gets its online episode ready.
+            if self._fields(body, strings=("id",)):
+                streaming.prepare_page(body["id"])
+                self.send_json({"ok": True})
         elif route == "/api/settings":
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
-                    "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks")
+                    "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,

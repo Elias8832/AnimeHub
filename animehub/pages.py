@@ -4,7 +4,7 @@ import json
 import threading
 import time
 
-from . import anicli, anilist, database, franchise, library, mapping, progress, streaming, util
+from . import anicli, anilist, database, franchise, library, mapping, progress, settings, streaming, util
 from .config import config
 
 
@@ -270,7 +270,7 @@ _freshening = set()
 def stream_freshen_async(media_id):
     """Ask ani-cli again for an entry's online episodes once its list is
     stale (airing entries gain episodes), in the background."""
-    if media_id in _freshening or not anicli.anicli_path():
+    if media_id in _freshening or not anicli.anicli_path() or not settings.site_ok():
         return
     _freshening.add(media_id)
 
@@ -283,6 +283,14 @@ def stream_freshen_async(media_id):
             _freshening.discard(media_id)
 
     threading.Thread(target=run, daemon=True).start()
+
+
+def prepare_next_slot(page, mid):
+    """Get the entry's next episode ready when it would play online."""
+    e = next((x for x in page["entries"] if x["id"] == mid), None)
+    x = next((x for x in e["slots"] if not x["watched"]), None) if e else None
+    if x and x["online"] and not x["local"]:
+        streaming.prepare_page(x["online"]["id"])
 
 
 def franchise_view(mid, background=True, peek=False):
@@ -320,6 +328,8 @@ def franchise_view(mid, background=True, peek=False):
         streaming.stream_resolve_async(mid)
     elif mid in links and time.time() - links[mid]["episodes_ts"] > anicli.STREAM_EPISODES_TTL:
         stream_freshen_async(mid)
+    if mid in links and not peek:
+        prepare_next_slot(page, mid)
     if entries and mid not in arts and not peek:
         threading.Thread(target=mapping.refresh_entry_art, kwargs={"ids": {mid}}, daemon=True).start()
     failed = _build_failed.get(mid) if building and not entries and mid not in _building else None

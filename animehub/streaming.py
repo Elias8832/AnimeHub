@@ -10,7 +10,7 @@ import time
 import unicodedata
 from urllib.error import HTTPError
 
-from . import anicli, anilist, database, library, mapping, metadata, player, settings, system, upscale, util
+from . import anicli, anilist, database, library, mapping, metadata, player, prepare, settings, system, upscale, util
 from .config import config, SKIP_CREDITS_LUA
 
 
@@ -399,7 +399,7 @@ def stream_resolve_async(media_id):
     """Start linking a release in the background (a page was opened), so
     its real episode list is there before anyone clicks."""
     if (media_id in _resolving or stream_link_get(media_id) or not anicli.anicli_path()
-            or media_id in stream_missed_ids()):
+            or media_id in stream_missed_ids() or not settings.site_ok()):
         return
     _resolving.add(media_id)
 
@@ -616,13 +616,54 @@ def mpv_script_flag():
 _session_notice = {"msg": None, "ts": 0.0}
 
 
-def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=False):
+def _prepare_key(link, ep_id, mode):
+    """What a prepared run was started for: any of it changing makes it the
+    wrong run (another language, quality or search result)."""
+    return (ep_id, mode, anicli.stream_prefs()["quality"], link["query"], link["title"], link["idx"])
+
+
+def prepare_episode(ep_id, delay=0.0):
+    """Get an online episode ready to start. Quietly nothing when it can't
+    be, or may not: the click starts it the normal way then."""
+    mid = stream_media_id(ep_id) if ep_id.startswith("stream:") else None
+    link = stream_link_get(mid) if mid else None
+    if not link or not settings.automation_enabled("prepare_online") or not settings.site_ok():
+        return
+    token = ep_id.split(":", 2)[2]
+    if token in link["episodes"] and anicli.anicli_path():
+        sock = player.ipc_socket_path()
+        prepare.request(_prepare_key(link, ep_id, link["mode"]), link, token, link["mode"], sock,
+                        player.mpv_env(sock), delay)
+
+
+def prepare_page(ep_id):
+    """A page shows this episode as the next one. While something plays,
+    the next episode's run (player.watch_process) keeps the one slot."""
+    with player._active_lock:
+        busy = bool(player._active)
+    if not busy:
+        prepare_episode(ep_id, prepare.PAGE_DELAY)
+
+
+def prepare_after(ep_id):
+    """An episode is near its end: get what plays after it ready."""
+    try:
+        nxt = player.next_up(ep_id)
+        if nxt["source"] == "online":
+            prepare_episode(nxt["id"])
+    except Exception as e:
+        util.log("preparing after %s failed: %s" % (ep_id, e))
+
+
+def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=False, cold=False):
     """Play an online episode: link the release if nobody has yet, then let
     ani-cli resolve the episode and run mpv in the foreground
     (--exit-after-play) with the hub's IPC socket, resume point and
     skip-credits script in ANI_CLI_PLAYER_FLAGS. watch_process tracks the
     ani-cli process like a local mpv. A dub that isn't out yet falls back to
-    the sub once; a result ani-cli stopped listing is re-matched once."""
+    the sub once; a result ani-cli stopped listing is re-matched once. A
+    run prepared before the click (prepare.py) is used when it fits; cold
+    skips that, for the retry after one failed."""
     mid = stream_media_id(ep_id)
     token = ep_id.split(":", 2)[2] if mid else ""
     if not mid or not anicli.STREAM_EP_RE.match(token):
@@ -651,16 +692,12 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     label = session_label(sea, ep)
     code = f"E{token}"
     play_mode = "sub" if sub_once else link["mode"]
-    sock = player.ipc_socket_path()
+    prep = None if cold else prepare.take(_prepare_key(link, ep_id, play_mode))
+    sock = prep["sock"] if prep else player.ipc_socket_path()
     flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *player.resume_args(ep_id, from_start), *settings.mpv_flags()]
     script = mpv_script_flag()
     if script:
         flags.append(script)
-    user_flags = os.environ.get("ANI_CLI_PLAYER_FLAGS", "").strip()
-    if user_flags:
-        flags.append(user_flags)
-    env = anicli.anicli_env(link, ANI_CLI_PLAYER="mpv", ANI_CLI_PLAYER_FLAGS=" ".join(flags), ANI_CLI_MODE=play_mode,
-                            **player.mpv_env(sock))
     with database.db() as c:
         # Identity stamp (TODO 25): history stays readable without the link.
         c.execute("INSERT INTO episodes(id,show_id,label) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE"
@@ -671,22 +708,33 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
             old = next(iter(player._active.values()), None)
         if old:
             player.retire_session(old["proc"])
-        err, offset = None, 0
-        try:
-            err = open(errlog, "ab")
-            err.write(f"\n=== {util.utc_stamp()}  {s['title']} {code} ({play_mode})\n".encode())
-            err.flush()
-            offset = err.tell()
-        except OSError:
-            err = None
-        try:
-            proc = anicli.anicli_spawn(["--exit-after-play", "-e", token, link["query"]], env,
-                                subprocess.DEVNULL, err or subprocess.DEVNULL)
-        except anicli.AniCliError as e:
-            return {"error": friendly_stream_error(str(e), code)}
-        finally:
-            if err:
-                err.close()
+        if prep and not prepare.go(prep, flags):
+            prepare.end(prep)
+            prep = None
+            sock = player.ipc_socket_path()
+            flags[0] = f"--input-ipc-server={sock}"
+        if prep:
+            proc, errlog, offset = prep["proc"], prep["err"], 0
+        else:
+            user_flags = os.environ.get("ANI_CLI_PLAYER_FLAGS", "").strip()
+            env = anicli.anicli_env(link, ANI_CLI_PLAYER="mpv", ANI_CLI_PLAYER_FLAGS=" ".join([*flags, user_flags]).strip(),
+                                    ANI_CLI_MODE=play_mode, **player.mpv_env(sock))
+            err, offset = None, 0
+            try:
+                err = open(errlog, "ab")
+                err.write(f"\n=== {util.utc_stamp()}  {s['title']} {code} ({play_mode})\n".encode())
+                err.flush()
+                offset = err.tell()
+            except OSError:
+                err = None
+            try:
+                proc = anicli.anicli_spawn(["--exit-after-play", "-e", token, link["query"]], env,
+                                    subprocess.DEVNULL, err or subprocess.DEVNULL)
+            except anicli.AniCliError as e:
+                return {"error": friendly_stream_error(str(e), code)}
+            finally:
+                if err:
+                    err.close()
         with player._active_lock:
             player._active.clear()
             player._active[ep_id] = {"proc": proc, "ep_id": ep_id, "show_title": s["title"],
@@ -712,9 +760,17 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
                 return str(e)
             r = start_stream(ep_id, mode, sub_once, rematched=True, from_start=from_start)
             return r.get("error")
+        if prep:  # its link may have gone stale: the normal way decides
+            r = start_stream(ep_id, mode, sub_once, rematched, from_start, cold=True)
+            return r.get("error")
         return friendly_stream_error(msg, code)
 
-    threading.Thread(target=player.watch_process, args=(proc, ep_id, sock),
-                     kwargs={"startup": anicli.STREAM_STARTUP_TIMEOUT, "failure": failure},
-                     daemon=True).start()
+    def watch():
+        try:
+            player.watch_process(proc, ep_id, sock, startup=anicli.STREAM_STARTUP_TIMEOUT, failure=failure)
+        finally:
+            if prep:
+                prepare.clean(prep)
+
+    threading.Thread(target=watch, daemon=True).start()
     return {"ok": True, "stream": True}
