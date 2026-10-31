@@ -2006,3 +2006,17 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .aircolh{display:flex;align-items:baseline;gap:8px;margin-bottom:12px;font:400 12px var(--mono);color:var(--ink-2);text-shadow:0 1px 8px rgba(0,0,0,.7)}.aircolh b{font:700 30px/1 var(--display);color:var(--ink)}.is-today .aircolh b{color:var(--accent)}
 .airbig{display:block;width:100%;margin-bottom:16px;text-align:left}.airbig .airt{width:100%;height:auto;margin-bottom:8px;border-radius:14px}.airbig .airt em{font-size:11px;bottom:7px;left:7px;right:7px}.airbig.is-seen .airt{filter:saturate(.35) brightness(.55)}
 .airbig b,.airbig small{text-shadow:0 1px 8px rgba(0,0,0,.7)}.airbig b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.airbig small{font:400 11px var(--mono);color:var(--ink-2)}
+
+/* Blur over a moving page is what lags a phone's GPU (found on Discover, TODO 92): on
+   touch screens the bars and buttons floating over the page are solid instead, and
+   search dims the page without blurring it. Layers over a still page keep their glass. */
+@media (pointer:coarse){
+  #nav,body.sc #nav,#nav .setb,#nav .tools,#nav .search,#tabbar .tb,#tabbar .sq,.rbar,.pbar .btn,#totop,#toast,#status:before{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  body.sc #nav{background:#0d0e11}
+  #nav .setb{background:rgba(14,15,18,.72)}
+  #tabbar .tb,#tabbar .sq{background:#1c1d22}
+  #toast{background:#1c1d22}
+  #totop{background:var(--glass-pop)}
+  body.srch #app,body.srch #status{filter:brightness(.55)}
+  #app{will-change:transform} /* always its own layer: making one mid-swipe stalled the phone */
+}

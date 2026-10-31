@@ -4365,7 +4365,7 @@ document.addEventListener("touchmove", (e) => {
     if (!p.side) {
       if (p.ptrOK && dy > 10 && dy > Math.abs(dx) && scrollY <= 0) { p.kind = "ptr"; p.y0 = y; e.preventDefault(); return; }
       if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pull = null; return; }
-      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; swBegin($("#app")); }
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
       else return;
     }
     e.preventDefault();
@@ -4378,7 +4378,6 @@ document.addEventListener("touchmove", (e) => {
        shifts a little, rather than sliding off with the finger. */
     const sc = p.kind === "back" && tg ? 1 - 0.1 * Math.min(prog, 1) : 1, bx = p.kind === "back" && tg ? Math.min(d * 0.3, innerWidth * 0.1) : tx;
     swSet(() => {
-      if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`;
       $("#app").style.transform = `translate3d(${bx}px,0,0)${sc < 1 ? ` scale(${sc.toFixed(4)})` : ""}`;
       if (p.kind === "back") $("#portal").style.opacity = String(1 - Math.min(Math.abs(d) / lim, 1));
       if (tg) hintShow(tg.side, tg.label, prog); else hintHide();
@@ -4422,12 +4421,19 @@ document.addEventListener("touchend", () => {
     hintHide();
     const ease = "transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s";
     if (!go) { app.style.transition = ease.replace(".22s cubic-bezier(.2,.8,.2,1)", ".38s cubic-bezier(.3,1.35,.5,1)"); app.style.transform = ""; app.style.opacity = ""; $("#portal").style.opacity = ""; setTimeout(() => unstyle(app), 400); return; }
-    app.style.transition = ease; app.style.transform = p.kind === "back" ? `translate3d(${Math.round(innerWidth * 0.35)}px,0,0) scale(.88)` : `translateX(${Math.sign(d) * innerWidth * 0.5}px)`; app.style.opacity = "0";
+    /* Back slides off without fading (fading a whole page is costly), and the page
+       underneath is only rebuilt once this one has gone: rebuilding it froze the slide. */
+    const back = p.kind === "back";
+    app.style.transition = back ? "transform .2s cubic-bezier(.2,.8,.2,1)" : ease;
+    app.style.transform = back ? `translate3d(${innerWidth}px,0,0) scale(.88)` : `translateX(${Math.sign(d) * innerWidth * 0.5}px)`;
+    if (!back) app.style.opacity = "0";
     setTimeout(() => {
-      unstyle(app, $("#portal"));
-      if (p.kind === "tab") nav(p.tg.to);
-      else { backSwiped = true; history.back(); }
-    }, 170);
+      if (!back) { unstyle(app, $("#portal")); nav(p.tg.to); return; }
+      /* popstate brings the page back into place, in the same frame as the new one. */
+      backSwiped = true;
+      history.back();
+      setTimeout(() => { if (backSwiped) { backSwiped = false; unstyle(app, $("#portal")); } }, 800);
+    }, back ? 200 : 170);
     return;
   }
   if (p.kind !== "close" || !p.live) return;
@@ -4491,11 +4497,13 @@ function applyNav(h) {
   scrollTo(0, h.scroll || 0);
 }
 addEventListener("popstate", (e) => {
-  if (ovSkip) { ovSkip--; return; } // a layer closed by hand took its own entry back
+  const swiped = backSwiped, app = $("#app");
+  backSwiped = false;
+  if (ovSkip) { ovSkip--; if (swiped) unstyle(app, $("#portal")); return; } // a layer closed by hand took its own entry back
   const top = OV.pop();
-  if (top) { top.close(); return; } // back closes the top layer first
+  if (top) { top.close(); if (swiped) unstyle(app, $("#portal")); return; } // back closes the top layer first
   applyNav(e.state || {});
-  if (backSwiped) { backSwiped = false; const app = $("#app"); app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add("tab-r"); }
+  if (swiped) { unstyle(app, $("#portal")); app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add("tab-r"); }
 });
 history.replaceState(navSnap(), "", location.href);
 navSeeded = true;

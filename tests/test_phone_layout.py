@@ -70,6 +70,18 @@ class PhoneLayout(unittest.TestCase):
         self.assertIn("scroll-snap-type:none;touch-action:none;will-change:transform", CSS)
         self.assertIn("anim = sc.animate(frames", APP)  # the GPU plays the glide
 
+    def test_floating_bars_do_not_blur_on_touch(self):
+        # TODO 89, 91: blur over a moving page lags a phone's GPU.
+        block = CSS[CSS.index("/* Blur over a moving page"):]
+        for sel in ("body.sc #nav", "#tabbar .tb", ".rbar", ".pbar .btn"):
+            self.assertIn(sel, block)
+        self.assertIn("body.srch #app,body.srch #status{filter:brightness(.55)}", block)
+
+    def test_back_swipe_rebuilds_after_the_slide(self):
+        # TODO 89: rebuilding the page underneath froze the slide; popstate puts #app back.
+        self.assertIn("if (swiped) unstyle(app, $(\"#portal\"));", APP)
+        self.assertIn("#app{will-change:transform}", CSS)
+
     def test_swiping_the_deck_stays_cheap(self):
         self.assertIn(".deck,.deck *{-webkit-backdrop-filter:none!important", CSS)
         self.assertIn("body.deck-open:not(.peek) #canvas", CSS)
@@ -137,7 +149,7 @@ class BackAndSwipes(unittest.TestCase):
     def test_layers_take_a_history_entry(self):
         for name in ('ovOpen("rmt"', 'ovOpen("deck"', 'ovOpen("sr"', 'ovOpen("flt"', 'ovOpen("set"'):
             self.assertIn(name, APP)
-        self.assertIn("const top = OV.pop();\n  if (top) { top.close(); return; }", APP)
+        self.assertIn("const top = OV.pop();\n  if (top) { top.close();", APP)
         self.assertIn("if (history.state?.ov) { OV.length = 0; history.replaceState(h, \"\", navUrl()); return; }", APP)
 
     def test_swipes(self):
