@@ -95,7 +95,7 @@ def anicli_outdated():
 def anicli_status():
     """Additive in /api/settings: stream.own / outdated / can_get / needs."""
     return {"own": anicli_path() == str(own_anicli()), "outdated": anicli_outdated(), "can_get": not system.WINDOWS,
-            "needs": [t for t in ANICLI_TOOLS if not system.find_program(t)]}
+            "needs": system.script_needs(ANICLI_TOOLS)}
 
 
 def fetch_anicli():
@@ -163,7 +163,7 @@ def anicli_menu_helper():
         tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         tmp.write_bytes(script)
         tmp.chmod(0o755)
-        os.replace(tmp, path)
+        system.replace(tmp, path)
     return path
 
 

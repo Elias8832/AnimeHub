@@ -1,0 +1,60 @@
+# Every push: the whole suite on real Windows and on Linux, the real mpv tests,
+# and the Windows zip (TODO 148). Download the zip from the run's Artifacts.
+name: Tests
+
+on:
+  push:
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install mpv and FFmpeg
+        run: |
+          Invoke-RestMethod -Uri https://get.scoop.sh -OutFile "$env:RUNNER_TEMP\scoop.ps1"
+          & "$env:RUNNER_TEMP\scoop.ps1" -RunAsAdmin
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop bucket add extras
+          scoop install extras/mpv ffmpeg
+          "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH
+          "$env:USERPROFILE\scoop\apps\mpv\current" >> $env:GITHUB_PATH
+      - name: Tests
+        env:
+          ANIME_HUB_REAL_TOOLS: "1"
+        run: python -m unittest
+      - name: Build the zip
+        run: powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1
+      - name: Check the zip
+        run: python desktop\windows\smoke.py
+      - uses: actions/upload-artifact@v7
+        with:
+          path: desktop/target/AnimeHub-windows-x64.zip
+          archive: false
+          retention-days: 30
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Tests
+        run: python -m unittest

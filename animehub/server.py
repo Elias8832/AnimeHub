@@ -163,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_file(self, path, ctype, cache=False):
         try:
-            body = Path(path).read_bytes()
+            body = system.read_bytes(path)
         except OSError:
             self.send_error(404)
             return
@@ -186,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         try:
-            body = Path(path).read_bytes()
+            body = system.read_bytes(path)
         except OSError:
             self.send_error(404)
             return
@@ -221,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 if config.ANILIST_CACHE.exists():
                     try:
-                        stale = json.loads(config.ANILIST_CACHE.read_text(encoding="utf-8"))
+                        stale = json.loads(system.read_bytes(config.ANILIST_CACHE))
                         stale["stale"] = True
                         self.send_json(stale)
                         return

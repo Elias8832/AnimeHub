@@ -110,6 +110,55 @@ class DieBelowThresholdTests(unittest.TestCase):
                 "SELECT watched, position, duration, last_played FROM episodes WHERE id=?",
                 (ep_id,)).fetchone()
 
+    def test_one_missed_answer_keeps_the_session(self):
+        """Windows' pipe can be busy for a moment. That once ended the
+        session: the watcher stopped polling and killed mpv 10 s later."""
+        sock = Path(self.directory.name) / "fake.sock"
+        sock.write_text("")
+        answers = iter([OSError("busy")])
+
+        def fake_ipc(sock_path, cmd):
+            if cmd[:2] == ["get_property", "time-pos"]:
+                for error in answers:
+                    raise error
+                return {"data": 576.0}
+            if cmd[:2] == ["get_property", "duration"]:
+                return {"data": self.DURATION}
+            return {}
+
+        proc = Mock(hub_pty=None, hub_retired=False)
+        proc.poll.side_effect = [None, None, None]  # connect, the missed poll, a good poll
+        proc.wait.side_effect = [subprocess.TimeoutExpired("mpv", 2), 0, 0]  # after the miss, after the good poll, the end
+        with player._active_lock:
+            player._active["ep1"] = {"proc": proc, "ep_id": "ep1", "show_title": "Show", "label": "S1 · E1",
+                                     "percent": 0, "version": 0}
+        with patch.object(player, "mpv_ipc", side_effect=fake_ipc), \
+                patch.object(player.anicli, "stop_process_group") as stop:
+            player.watch_process(proc, "ep1", sock)
+        stop.assert_not_called()
+        self.assertEqual(self.episode_row("ep1")[1], 576.0)
+
+    def test_mpv_that_stopped_answering_is_given_up_on(self):
+        sock = Path(self.directory.name) / "fake.sock"
+        sock.write_text("")
+
+        def fake_ipc(sock_path, cmd):
+            if cmd[:2] == ["set_property", "pause"]:
+                return {}
+            raise TimeoutError("no answer")
+
+        proc = Mock(hub_pty=None, hub_retired=False)
+        proc.poll.return_value = None
+        # Two waits between the three misses, then the 10 s grace, then the kill's wait.
+        proc.wait.side_effect = [subprocess.TimeoutExpired("mpv", 2)] * 2 + [subprocess.TimeoutExpired("mpv", 10), 0]
+        with player._active_lock:
+            player._active["ep1"] = {"proc": proc, "ep_id": "ep1", "show_title": "Show", "label": "S1 · E1",
+                                     "percent": 0, "version": 0}
+        with patch.object(player, "mpv_ipc", side_effect=fake_ipc), \
+                patch.object(player.anicli, "stop_process_group") as stop:
+            player.watch_process(proc, "ep1", sock)
+        stop.assert_called_once()
+
     def test_stream_dying_below_threshold_saves_position_not_watched(self):
         """A stream that dies at 40 % keeps its resumable position and stays
         unwatched — the network drop must look like a manual quit."""

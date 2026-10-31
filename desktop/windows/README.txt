@@ -23,10 +23,15 @@ Windows' bash. The easiest way is Scoop (https://scoop.sh). In PowerShell:
 
 ani-cli brings mpv along. Only local files? Then mpv alone is enough:
 
-    scoop install extras/mpv
+    scoop bucket add extras
+    scoop install mpv
 
 The window is a Microsoft Edge app window (Edge comes with Windows); an
 installed Chrome or Brave is used first.
+
+Phone remote: the first time you switch it on, Windows Firewall asks about
+python.exe. Allow it. If Windows treats your home network as "Public", allow
+public networks too, or the phone can't reach the PC.
 
 
 Where things are

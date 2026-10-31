@@ -3,6 +3,7 @@ each platform, the one-at-a-time worker, and the Settings switch."""
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -178,6 +179,18 @@ class Worker(unittest.TestCase):
         self.assertEqual(banner.read_bytes(), fresh)
         self.assertFalse(upscale.original_of(banner).exists())
 
+    def test_switching_off_gives_the_page_a_new_stamp(self):
+        """The page swaps a picture only when its ?v= changed; the original's
+        mtime can equal the upscale's to the second."""
+        self.addCleanup(upscale.art["changed"].clear)
+        self.out(real(7600, 1600))
+        banner = self.posters / "a.banner.jpg"
+        banner.write_bytes(real(1900, 400))
+        upscale.upscale_banner(banner, self.tool)
+        first = upscale.art["changed"][banner.name]
+        upscale.restore_originals()
+        self.assertGreater(upscale.art["changed"][banner.name], first)
+
     def test_banner_age_follows_the_kept_original(self):
         """Stored links keep a banner younger than 30 days instead of
         fetching AniList's again (which undid the upscale every time)."""
@@ -250,6 +263,7 @@ class Served(unittest.TestCase):
 
 
 class SwapInPage(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_swap_art_rewrites_data_and_screen(self):
         """The page swaps a finished banner in place: its data and what is
         on screen point at the new ?v=, other pictures stay as they are."""

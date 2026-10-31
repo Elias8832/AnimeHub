@@ -2,6 +2,7 @@
 imports on Windows at all, and the process helpers take the Windows road
 there without touching the POSIX-only calls."""
 
+import errno
 import io
 import os
 import subprocess
@@ -171,6 +172,57 @@ class WindowsIpcTests(unittest.TestCase):
         with patch("builtins.open", side_effect=FileNotFoundError(2, "no pipe")):
             with self.assertRaises(FileNotFoundError):
                 system.ipc_exchange(system.ipc_address("x"), b"req\n", 1.0)
+
+    def test_busy_pipe_is_tried_again(self):
+        """Python reports ERROR_PIPE_BUSY as EINVAL. Two clients at once (the
+        watcher and the skip ranges) ended the session on Windows."""
+        busy = OSError(errno.EINVAL, "Invalid argument")
+        good = self.fake_pipe(b'{"data":1,"error":"success"}\n')
+        with patch("builtins.open", side_effect=[busy, FileNotFoundError(2, "gap"), good]):
+            self.assertIn(b'"data":1', system.ipc_exchange(system.ipc_address("x"), b"req\n", 2.0))
+
+    def test_pipe_stays_busy_until_the_timeout(self):
+        with patch("builtins.open", side_effect=OSError(errno.EINVAL, "Invalid argument")):
+            with self.assertRaises(OSError):
+                system.ipc_exchange(system.ipc_address("x"), b"req\n", 0.05)
+
+
+class WindowsFileTests(unittest.TestCase):
+    """Windows refuses more than POSIX does."""
+
+    def setUp(self):
+        p = patch.object(system, "WINDOWS", True)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_replace_waits_out_a_reader(self):
+        """A banner the hub is serving can't be replaced until it's closed:
+        one banner in 14 stayed upscaled with Sharper banners off."""
+        locked = PermissionError(13, "Access is denied")
+        with patch.object(system.os, "replace", side_effect=[locked, locked, None]) as replace, \
+                patch.object(system.time, "sleep"):
+            system.replace("a", "b")
+        self.assertEqual(replace.call_count, 3)
+
+    def test_replace_gives_up_in_the_end(self):
+        with patch.object(system.os, "replace", side_effect=PermissionError(13, "Access is denied")), \
+                patch.object(system.time, "sleep"):
+            with self.assertRaises(PermissionError):
+                system.replace("a", "b")
+
+    def test_folder_names_windows_can_make(self):
+        for title, name in (("Kaguya-sama: Love is War?", "Kaguya-sama  Love is War"), ("Re:ZERO", "Re ZERO"),
+                            ('A "quoted" title', "A  quoted  title"), ("Fate/stay night", "Fate stay night"),
+                            ("Trailing dots...", "Trailing dots"), ("Show. ", "Show")):
+            self.assertEqual(system.folder_name(title), name)
+
+    def test_only_git_for_windows_can_be_missing(self):
+        """curl, sed and grep come with Git for Windows' bash; they aren't on
+        PATH, and the tour asked people to install them."""
+        with patch.object(system, "git_bash", return_value=r"C:\Git\bin\bash.exe"):
+            self.assertEqual(system.script_needs(("curl", "sed", "grep")), [])
+        with patch.object(system, "git_bash", return_value=None):
+            self.assertEqual(system.script_needs(("curl", "sed", "grep")), ["Git for Windows"])
 
 
 class WindowsDesktopTests(unittest.TestCase):

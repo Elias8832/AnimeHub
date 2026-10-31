@@ -8,7 +8,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from . import database, sync, util
+from . import database, sync, system, util
 from .config import config
 
 
@@ -50,7 +50,7 @@ def anilist_cache_stale():
     outage must not silently flip the library into local mode). None only
     when nothing has ever been fetched."""
     try:
-        cached = json.loads(config.ANILIST_CACHE.read_text(encoding="utf-8"))
+        cached = json.loads(system.read_bytes(config.ANILIST_CACHE))
         if cached.get("user"):
             return cached
     except Exception:
@@ -547,7 +547,7 @@ def load_token():
     """The stored OAuth token dict, or None. A corrupt file counts as
     absent — auth state must degrade to 'not connected', never traceback."""
     try:
-        tok = json.loads(config.ANILIST_TOKEN_FILE.read_text(encoding="utf-8"))
+        tok = json.loads(system.read_bytes(config.ANILIST_TOKEN_FILE))
         if isinstance(tok, dict) and isinstance(tok.get("access_token"), str) and tok["access_token"]:
             return tok
     except Exception:
@@ -568,7 +568,7 @@ def store_token(access_token, expires_in=None, user=None):
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(json.dumps(rec))
     os.chmod(tmp, 0o600)  # an existing .tmp keeps its old mode through O_CREAT
-    os.replace(tmp, config.ANILIST_TOKEN_FILE)
+    system.replace(tmp, config.ANILIST_TOKEN_FILE)
     os.chmod(config.ANILIST_TOKEN_FILE, 0o600)
     return rec
 
@@ -750,7 +750,7 @@ def anilist_user_data(force=False):
         return {"user": None, "entries": []}
     if not force and config.ANILIST_CACHE.exists():
         try:
-            cached = json.loads(config.ANILIST_CACHE.read_text(encoding="utf-8"))
+            cached = json.loads(system.read_bytes(config.ANILIST_CACHE))
             if time.time() - cached.get("_ts", 0) < 600:
                 return {k: v for k, v in cached.items() if k != "_ts"}
         except Exception:
@@ -813,5 +813,5 @@ def anilist_user_data(force=False):
     # would briefly flip the spine into local mode.
     tmp = config.ANILIST_CACHE.with_suffix(".tmp")
     tmp.write_text(json.dumps(out | {"_ts": time.time()}), encoding="utf-8")
-    os.replace(tmp, config.ANILIST_CACHE)
+    system.replace(tmp, config.ANILIST_CACHE)
     return out

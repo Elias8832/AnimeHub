@@ -210,6 +210,7 @@ class Toast(unittest.TestCase):
         self.assertIn('tip: TipDlg', APP)
 
 
+@unittest.skipUnless(shutil.which("node"), "node not installed")
 class LibraryCards(unittest.TestCase):
     """TODO 128: each show gets its own card; franchises are a choice, and
     their cards sort by the entry they show."""
@@ -294,6 +295,7 @@ class Polish(unittest.TestCase):
         self.assertIn('<div id="ddm" role="listbox"></div>', HTML)
         self.assertIn('sel.dispatchEvent(new Event("change", { bubbles: true }));', APP)  # actions stay on the <select>
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_match_card_lengths(self):
         """The files' own lengths (played, else measured); "each" only when every file is known and agrees."""
         fn = re.search(r"function lensText\(eps\) \{.*?\n\}\n", APP, re.S).group(0)

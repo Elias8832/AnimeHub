@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import re
 import time
 import uuid
@@ -11,7 +10,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from . import anilist, database, franchise, library, mapping, pages, settings, upscale, util
+from . import anilist, database, franchise, library, mapping, pages, settings, system, upscale, util
 from .config import config
 
 
@@ -172,7 +171,7 @@ def download(url, dest):
         if body[:3] != b"\xff\xd8\xff" and body[:4] not in (b"\x89PNG", b"GIF8", b"RIFF"):
             return False
         temporary.write_bytes(body)
-        os.replace(temporary, dest)
+        system.replace(temporary, dest)
         return True
     except Exception:
         return False

@@ -11,11 +11,10 @@ work. No account → the Journal keeps the watch history on this device.
 """
 
 import json
-import os
 import threading
 import time
 
-from . import anilist, util
+from . import anilist, system, util
 from .config import config
 
 
@@ -39,7 +38,7 @@ def _path():
 
 def _read():
     try:
-        return json.loads(_path().read_text(encoding="utf-8"))
+        return json.loads(system.read_bytes(_path()))
     except Exception:
         return None
 
@@ -48,7 +47,7 @@ def _write(log):
     _path().parent.mkdir(parents=True, exist_ok=True)
     tmp = _path().with_suffix(".tmp")
     tmp.write_text(json.dumps(log), encoding="utf-8")
-    os.replace(tmp, _path())
+    system.replace(tmp, _path())
 
 
 def episodes_of(progress):

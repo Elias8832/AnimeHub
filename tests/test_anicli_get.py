@@ -6,9 +6,9 @@ import unittest
 from unittest import mock
 
 from tests import support  # noqa: F401  (isolated config/data first)
-from animehub import anicli
+from animehub import anicli, system
 
-GOOD = b"""#!/bin/sh
+GOOD =b"""#!/bin/sh
 version_number="5.1.0"
 ANI_CLI_MENU ANI_CLI_PLAYER_FLAGS ANI_CLI_PLAYER ANI_CLI_MODE ANI_CLI_QUALITY
 Select anime
@@ -28,6 +28,7 @@ class GetAniCli(unittest.TestCase):
         self.addCleanup(lambda: anicli.own_anicli().unlink(missing_ok=True))
         anicli._anicli_versions.clear()
 
+    @unittest.skipIf(system.WINDOWS, "Windows updates ani-cli with Scoop")
     def test_saves_a_runnable_copy_and_prefers_it(self):
         with mock.patch.object(anicli, "urlopen", return_value=reply(GOOD)), \
              mock.patch.object(anicli, "anicli_version", return_value="5.1.0"):
@@ -44,12 +45,19 @@ class GetAniCli(unittest.TestCase):
                 self.assertIn("error", anicli.fetch_anicli())
         self.assertFalse(anicli.own_anicli().exists())
 
+    @unittest.skipIf(system.WINDOWS, "Windows updates ani-cli with Scoop")
     def test_no_network_keeps_what_was_there(self):
         anicli.own_anicli().parent.mkdir(parents=True, exist_ok=True)
         anicli.own_anicli().write_bytes(GOOD)
         with mock.patch.object(anicli, "urlopen", side_effect=OSError):
             self.assertEqual(anicli.fetch_anicli(), {"error": "Could not reach GitHub."})
         self.assertEqual(anicli.own_anicli().read_bytes(), GOOD)
+
+    def test_windows_gets_no_button(self):
+        with mock.patch.object(system, "WINDOWS", True), mock.patch.object(anicli, "urlopen") as fetch:
+            self.assertFalse(anicli.anicli_status()["can_get"])
+            self.assertIn("Scoop", anicli.fetch_anicli()["error"])
+        fetch.assert_not_called()
 
     def test_old_versions_are_outdated(self):
         for version, old in (("4.14.0", True), ("5.0.9", True), ("5.1.0", False), ("6.0", False), (None, False)):

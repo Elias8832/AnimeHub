@@ -158,7 +158,7 @@ _records_lock = threading.Lock()
 
 def _records():
     try:
-        return json.loads((config.DATA / "upscaled.json").read_text(encoding="utf-8"))
+        return json.loads(system.read_bytes(config.DATA / "upscaled.json"))
     except (OSError, ValueError):
         return {}
 
@@ -167,7 +167,7 @@ def _save_records(rec):
     path = config.DATA / "upscaled.json"
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(rec, indent=1, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    system.replace(tmp, path)
 
 
 def banner_age(path):
@@ -237,7 +237,7 @@ def upscale_banner(path, tool=None):
             if upscale_looks_sane(src.read_bytes(), res):
                 if fresh:
                     shutil.copyfile(path, orig)
-                os.replace(out, path)
+                system.replace(out, path)
                 with _records_lock:
                     rec = _records()
                     rec[path.name] = {"model": model_id(name), "size": len(res)}
@@ -267,12 +267,12 @@ def restore_originals():
                 dims = _dims(banner)
                 if (dims and dims[0] >= UPSCALED_WIDTH and banner.name in rec
                         and rec[banner.name].get("size") == banner.stat().st_size):
-                    os.replace(orig, banner)
+                    system.replace(orig, banner)
                     _changed(banner)
                 else:
                     orig.unlink()
             except OSError:
-                pass
+                continue  # still upscaled: keep its record
             rec.pop(banner.name, None)
         _save_records(rec)
 
@@ -295,8 +295,9 @@ def _changed(path):
         v = int(path.stat().st_mtime)
     except OSError:
         return
-    art["changed"].pop(path.name, None)
-    art["changed"][path.name] = v
+    # A restored original can carry the upscale's mtime to the second, and
+    # the page only swaps a picture whose ?v= changed.
+    art["changed"][path.name] = v = max(v, int(time.time()), art["changed"].pop(path.name, 0) + 1)
     while len(art["changed"]) > 200:
         art["changed"].pop(next(iter(art["changed"])))
     art["stamp"] += 1

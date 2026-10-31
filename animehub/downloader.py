@@ -31,8 +31,7 @@ def stream_download_dir(link, scan):
     name = link["meta"].get("title") or link["title"] or link["query"]
     # Plain quotes, as people type folder names (AniList titles use ’ “ ”).
     name = name.translate(str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'}))
-    name = re.sub(r"[/\x00]", " ", name)
-    name = " ".join(name.split()).lstrip(".") or f"anilist-{link['media_id']}"
+    name = " ".join(system.folder_name(name).split()).lstrip(".") or f"anilist-{link['media_id']}"
     return config.LIBRARY / name
 
 

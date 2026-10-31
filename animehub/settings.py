@@ -229,7 +229,7 @@ def _user_dir(path):
     message meant for the UI."""
     p = os.path.expanduser(path.strip())
     if not os.path.isabs(p):
-        raise ValueError("Enter a full folder path, e.g. /home/you/Anime.")
+        raise ValueError("Enter a full folder path, e.g. %s." % (r"D:\Anime" if system.WINDOWS else "/home/you/Anime"))
     p = Path(os.path.normpath(p))
     if not p.is_dir():
         raise ValueError(f"Not a folder: {p}")
@@ -282,7 +282,7 @@ def write_config_key(key, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    system.replace(tmp, path)
 
 
 def set_upscale(on):

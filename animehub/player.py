@@ -491,10 +491,12 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
         if msg:
             _record_session_error(ep_id, msg)
     if connected:
+        missed = 0  # polls in a row mpv didn't answer: one is no reason to end the session
         while proc.poll() is None:
             try:
                 t = mpv_ipc(sock_path, ["get_property", "time-pos"])
                 d = mpv_ipc(sock_path, ["get_property", "duration"])
+                missed = 0
                 if t and isinstance(t.get("data"), (int, float)):
                     last_time = t["data"]
                     seen = True
@@ -545,7 +547,9 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                         entry.update(live)
                         entry["tracks"] = track_menu(track_list)
             except (FileNotFoundError, ConnectionRefusedError, socket.error):
-                break
+                missed += 1
+                if missed >= 3:
+                    break
             # Wait out the interval, but wake the instant mpv exits —
             # sleeping through it would delay the next episode by up to 2s.
             try:

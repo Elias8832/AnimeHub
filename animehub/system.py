@@ -2,6 +2,7 @@
 Windows port). The rest of the hub asks these helpers instead of checking
 sys.platform itself; on Linux every helper does what the code did before."""
 
+import errno
 import os
 import re
 import shutil
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 WINDOWS = sys.platform == "win32"
@@ -67,6 +69,31 @@ def utf8_stdio():
     for stream in (sys.stdout, sys.stderr):
         if stream is not None and hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
+def replace(src, dst):
+    """os.replace that outlasts Windows' file locks: there it fails while
+    anything has `dst` open (the hub serving that banner, a virus scanner),
+    so it tries again for a moment. POSIX never refuses."""
+    for wait in (0.02, 0.05, 0.1, 0.25, 0.5, 1.0) if WINDOWS else ():
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            time.sleep(wait)
+    os.replace(src, dst)
+
+
+def read_bytes(path):
+    """The other side of replace: on Windows, opening a file in the moment
+    it is being replaced fails too, which a reader took for "no such file"
+    (a banner's 404, the AniList cache "gone"). Tries again for a moment."""
+    for wait in (0.01, 0.02, 0.05, 0.1, 0.25) if WINDOWS else ():
+        try:
+            return Path(path).read_bytes()
+        except PermissionError:
+            time.sleep(wait)
+    return Path(path).read_bytes()
 
 
 def open_pty():
@@ -158,11 +185,31 @@ def _read_line(read):
     return buf
 
 
+def _pipe_open(path, timeout):
+    """Connect to mpv's pipe. mpv keeps one free end for the next client and
+    makes a new one only after a client took it, so a second client right
+    behind the first (the watcher and the skip ranges, a phone button) finds
+    it busy — Python says EINVAL for ERROR_PIPE_BUSY — or briefly gone.
+    Each is tried again; FileNotFoundError stays what mpv not being there
+    (yet, or any more) looks like, after a short wait."""
+    start = time.monotonic()
+    while True:
+        try:
+            return open(path, "r+b", buffering=0)
+        except FileNotFoundError:
+            if time.monotonic() - start >= 0.25:
+                raise
+        except OSError as e:
+            if e.errno != errno.EINVAL or time.monotonic() - start >= timeout:
+                raise
+        time.sleep(0.01)
+
+
 def _pipe_exchange(path, payload, timeout):
     """A pipe read has no timeout, so the exchange runs on its own thread,
     which also owns (and closes) the handle: if mpv never answers, the
     caller gets TimeoutError and the stuck thread ends with mpv."""
-    f = open(path, "r+b", buffering=0)  # FileNotFoundError until mpv made the pipe
+    f = _pipe_open(path, timeout)
     result = {}
 
     def run():
@@ -220,6 +267,15 @@ def app_browsers(names):
             if os.path.isabs(exe) and os.path.isfile(exe):
                 found.append(exe)
     return list(dict.fromkeys(found))
+
+
+def folder_name(name):
+    """A show's title as one folder name. Windows also refuses < > : " \\ | ? *
+    (a lot of titles have a colon), and a trailing dot or space vanishes
+    from the name, so the path no longer finds the folder."""
+    if WINDOWS:
+        return re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", name).rstrip(" .")
+    return re.sub(r"[/\x00]", " ", name)
 
 
 def browse_places():
@@ -311,6 +367,16 @@ def git_bash():
             cands.append(Path(os.environ[var], *rel, "bin", "bash.exe"))
     cands.append(Path.home() / "scoop" / "apps" / "git" / "current" / "bin" / "bash.exe")
     return next((str(c) for c in cands if c.is_file()), None)
+
+
+def script_needs(tools):
+    """Which of `tools` a shell script can't reach, named as the user would
+    install them. Windows: ani-cli runs in Git for Windows' bash, which
+    carries curl, sed and grep itself (they aren't on PATH there), so only
+    Git for Windows can be missing."""
+    if WINDOWS:
+        return [] if git_bash() else ["Git for Windows"]
+    return [t for t in tools if not find_program(t)]
 
 
 def script_argv(exe):

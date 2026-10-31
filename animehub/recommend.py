@@ -15,11 +15,10 @@ day, or until the seed shows change. No account → no recommendations
 import hashlib
 import json
 import math
-import os
 import threading
 import time
 
-from . import anilist, util
+from . import anilist, system, util
 from .config import config
 
 
@@ -93,7 +92,7 @@ def merge(seeds, data):
 
 def _read_cache():
     try:
-        return json.loads(_cache_path().read_text(encoding="utf-8"))
+        return json.loads(system.read_bytes(_cache_path()))
     except Exception:
         return None
 
@@ -102,7 +101,7 @@ def _write_cache(payload):
     _cache_path().parent.mkdir(parents=True, exist_ok=True)
     tmp = _cache_path().with_suffix(".tmp")
     tmp.write_text(json.dumps(payload), encoding="utf-8")
-    os.replace(tmp, _cache_path())
+    system.replace(tmp, _cache_path())
 
 
 @anilist.background_work

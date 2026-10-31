@@ -11,11 +11,10 @@ one builds.
 
 import hashlib
 import json
-import os
 import threading
 import time
 
-from . import anilist, util
+from . import anilist, system, util
 from .config import config
 
 TTL = 6 * 3600
@@ -68,12 +67,12 @@ def _write(payload):
     _cache_path().parent.mkdir(parents=True, exist_ok=True)
     tmp = _cache_path().with_suffix(".tmp")
     tmp.write_text(json.dumps(payload), encoding="utf-8")
-    os.replace(tmp, _cache_path())
+    system.replace(tmp, _cache_path())
 
 
 def _read():
     try:
-        return json.loads(_cache_path().read_text(encoding="utf-8"))
+        return json.loads(system.read_bytes(_cache_path()))
     except Exception:
         return None
 

@@ -2739,13 +2739,13 @@ const tourRow = (st, k, v, more = "") => `<div class="${st}"><span class="okc">$
 const aniWord = (s) => (s.stream?.own && !s.stream?.outdated ? "Check for updates" : s.stream?.own ? "Update ani-cli" : "Get ani-cli");
 const aniBtn = (s) => (s.stream?.can_get ? `<button class="btn sm" data-a="aniget" ${S.aniGet ? "disabled" : ""}>${S.aniGet ? "Getting it…" : aniWord(s)}</button>` : "");
 function aniLine(s) {
-  const v = s.stream?.version, has = !!s.tools?.["ani-cli"];
-  if (!has) return "Needed for episodes you don't have as files.";
-  if (s.stream?.outdated) return `Version ${v} is too old: online episodes won't work.`;
+  const v = s.stream?.version, has = !!s.tools?.["ani-cli"], scoop = s.stream?.can_get === false; // Windows has no button: the text says how
+  if (!has) return "Needed for episodes you don't have as files." + (scoop ? " Install it with Scoop (scoop.sh): scoop bucket add extras, then scoop install ani-cli." : "");
+  if (s.stream?.outdated) return `Version ${v} is too old: online episodes won't work.` + (scoop ? " Update it with Scoop: scoop update ani-cli." : "");
   return `ani-cli${v ? " " + v : ""} found`;
 }
 function tourTools(s) {
-  const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? ` It also needs ${st.needs.join(", ")}.` : "";
+  const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? `${ani && !st.outdated ? "." : ""} It also needs ${st.needs.join(", ")}.` : "";
   return [
     tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN),
     tourRow(ani && !st.outdated ? "ok" : st.outdated ? "bad" : "opt", "Online episodes", aniLine(s) + need, ani && !st.outdated ? "" : aniBtn(s)),
