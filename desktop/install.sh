@@ -9,7 +9,8 @@
 #                                                    of the repo, e.g. on a laptop)
 # After this, "Anime Hub" shows up in the app launcher / dock and closing
 # the window quits the whole app (the hub child included — the wrapper
-# keeps it on a kernel leash via PR_SET_PDEATHSIG).
+# keeps it on a kernel leash via PR_SET_PDEATHSIG), unless Settings → Phone
+# remote says to keep the server running.
 #
 # Run from the repo root:  desktop/install.sh
 # AUR packaging later replaces this with proper file placement.

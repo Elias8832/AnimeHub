@@ -168,6 +168,9 @@ class Listener(unittest.TestCase):
         self.assertIn("playing", json.loads(body))
         settings = json.loads(self.req("GET", "/api/settings", cookie=cookie)[2])
         self.assertTrue(settings["phone"])
+        # Decision 51: turning these off could stop the server under the phone.
+        for key in ("keep_running", "start_at_login"):
+            self.assertEqual(self.req("POST", "/api/settings", {key: True}, cookie=cookie)[0], 400)
         # Things that change the PC stay on the PC.
         self.assertEqual(self.req("GET", "/api/browse", cookie=cookie)[0], 403)
         self.assertEqual(self.req("GET", "/api/remote", cookie=cookie)[0], 403)

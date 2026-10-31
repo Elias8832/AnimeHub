@@ -2,7 +2,8 @@ Anime Hub - experimental Windows build
 ======================================
 
 Start: double-click AnimeHub.exe. Keep this folder together - AnimeHub.exe
-needs python\ and app\ beside it. Closing the window quits the app.
+needs python\ and app\ beside it. Closing the window quits the app, unless
+you switch on "Keep running after closing" in Settings > Phone remote.
 
 Start menu: double-click "Add to Start menu.cmd" once (again after moving
 this folder).

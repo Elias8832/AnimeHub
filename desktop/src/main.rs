@@ -2,7 +2,12 @@
    Spawns hub.py as a child (kernel-leashed via PR_SET_PDEATHSIG), waits for
    its port, then opens the UI in a dedicated-profile Chromium app-mode
    window — no tabs, no address bar, own window class. When that window
-   closes, the hub is killed: close = quit.
+   closes, the hub is killed: close = quit — unless "keep running after
+   closing" or "start at login" is on (Decision 51). Then this process stays,
+   without a window, holding the hub on its leash, and a later launch only
+   opens a window. Both switches off and no window left: the hub stops.
+   `--background` is the same with no window from the start (the login entry).
+   While it stays, a tray icon offers Open and Quit.
 
    Why not a Tauri/webkit2gtk window? Found live on NVIDIA + Wayland
    (RTX 4070 Ti SUPER, Hyprland, 2026-10-17): webkit2gtk's DMABUF renderer
@@ -26,6 +31,7 @@ use std::fs;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -39,8 +45,13 @@ use std::os::unix::process::CommandExt;
 #[cfg(unix)]
 use libc::flock;
 
+#[cfg(unix)]
+mod tray;
 #[cfg(windows)]
 mod windows;
+
+/// Set by the tray's Quit.
+pub static QUIT: AtomicBool = AtomicBool::new(false);
 
 /// The per-user data dir: XDG_DATA_HOME, else ~/.local/share (Windows:
 /// %LOCALAPPDATA%, as animehub/config.py — an absolute XDG_DATA_HOME
@@ -146,14 +157,105 @@ fn config_path() -> Option<PathBuf> {
     Some(base.join("anime-hub").join("config.json"))
 }
 
-fn configured_port() -> u16 {
+fn config_json() -> Option<serde_json::Value> {
     config_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         // A Windows editor may start the file with a BOM (config.py reads utf-8-sig).
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s.trim_start_matches('\u{feff}')).ok())
+}
+
+fn configured_port() -> u16 {
+    config_json()
         .and_then(|v| v.get("port").and_then(|p| p.as_u64()))
         .map(|p| p as u16)
         .unwrap_or(8787)
+}
+
+/// Should the hub stay up without a window? (Decision 51.) "Start at login"
+/// counts too: a server started for the phone must not die with the first window.
+fn background_wanted() -> bool {
+    config_json().is_some_and(|v| {
+        ["keep_running", "start_at_login"].iter().any(|k| v.get(k).and_then(|b| b.as_bool()) == Some(true))
+    })
+}
+
+/// Reads `--background` and `--config PATH` (the login entry's arguments).
+fn read_args() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(cfg) = args.iter().position(|a| a == "--config").and_then(|i| args.get(i + 1)) {
+        std::env::set_var("ANIME_HUB_CONFIG", cfg);
+    }
+    args.iter().any(|a| a == "--background")
+}
+
+/// What a login entry should run: the AppImage when this is one (the path
+/// inside it changes every start), else this program.
+fn launcher() -> Option<PathBuf> {
+    std::env::var_os("APPIMAGE").map(PathBuf::from).or_else(|| std::env::current_exe().ok())
+}
+
+/// With no window of this process left: hold the hub while it's wanted, and
+/// stop it when neither switch is on and no other launch shows a window.
+fn in_background(hub: &mut Option<Child>, window_open: impl Fn() -> bool) {
+    let mut icon = None;
+    loop {
+        let wanted = background_wanted();
+        if QUIT.load(Ordering::Relaxed) || (!wanted && !window_open()) {
+            kill_hub(hub); // close = quit
+            return;
+        }
+        if !hub.as_mut().is_some_and(|child| matches!(child.try_wait(), Ok(None))) {
+            return;
+        }
+        if wanted && icon.is_none() {
+            #[cfg(unix)]
+            let shown = tray::show();
+            #[cfg(windows)]
+            let shown = windows::show_tray();
+            icon = shown;
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// A later launch's window has nothing left to show once the hub is gone
+/// (the tray's Quit): wait for it to close, or close it. Only after the hub
+/// answered once, so a slow or failed start keeps the window and its message.
+fn wait_for_window(win: &mut Child, port: u16) {
+    let (mut seen, mut gone) = (false, 0);
+    while matches!(win.try_wait(), Ok(None)) {
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            (seen, gone) = (true, 0);
+        } else if seen {
+            gone += 1;
+            if gone >= 2 {
+                close_window(win);
+                break;
+            }
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    let _ = win.wait();
+}
+
+/// Asks the browser to end, so it doesn't report a crash next time.
+#[cfg(unix)]
+fn close_window(win: &mut Child) {
+    unsafe { libc::kill(win.id() as i32, libc::SIGTERM) };
+}
+
+#[cfg(windows)]
+fn close_window(win: &mut Child) {
+    let _ = win.kill();
+}
+
+/// The tray's Open: a launch like any other, so it opens the window the
+/// usual way. It lives as long as its window, not as long as this process.
+pub fn open_window() {
+    let Some(mut child) = launcher().and_then(|path| Command::new(path).spawn().ok()) else {
+        return;
+    };
+    thread::spawn(move || child.wait());
 }
 
 #[cfg(unix)]
@@ -208,6 +310,9 @@ fn spawn_hub(hub_py: &PathBuf) -> Option<Child> {
     let result = unsafe {
         let mut cmd = Command::new("python3");
         cmd.arg(hub_py).arg("--no-browser");
+        if let Some(path) = launcher() {
+            cmd.env("ANIME_HUB_WRAPPER", path);
+        }
         // The port was read from ANIME_HUB_CONFIG's file (configured_port):
         // the hub must read the same file, or the window waits on another port.
         if let Ok(cfg) = std::env::var("ANIME_HUB_CONFIG") {
@@ -264,6 +369,9 @@ fn spawn_hub(python: &PathBuf, hub_py: &PathBuf, port: u16, leash: &windows::Lea
     }
     let mut cmd = Command::new(python);
     cmd.arg(hub_py).arg("--no-browser");
+    if let Some(path) = launcher() {
+        cmd.env("ANIME_HUB_WRAPPER", path);
+    }
     if let Ok(cfg) = std::env::var("ANIME_HUB_CONFIG") {
         cmd.arg("--config").arg(cfg);
     }
@@ -445,11 +553,27 @@ fn fail(msg: &str) -> ! {
     std::process::exit(1);
 }
 
+/// A later launch holds this (shared) while its window is open, so the
+/// launch that owns the hub can see that a window still needs it.
+#[cfg(unix)]
+fn hold_window_lock(dir: &std::path::Path) -> Option<File> {
+    let file = File::create(dir.join("window.lock")).ok()?;
+    (unsafe { flock(file.as_raw_fd(), libc::LOCK_SH) } == 0).then_some(file)
+}
+
+#[cfg(unix)]
+fn window_lock_held(dir: &std::path::Path) -> bool {
+    File::create(dir.join("window.lock"))
+        .is_ok_and(|f| unsafe { flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0)
+}
+
 #[cfg(unix)]
 fn main() {
+    let background = read_args();
     let port = configured_port();
     let exe = match chromium_exe() {
         Some(e) => e,
+        None if background => String::new(), // no window to open
         None => fail(&format!(
             "no Chromium-family browser found (tried {}). \
              Install chromium, or start the hub directly: python3 <path-to>/hub.py",
@@ -476,25 +600,38 @@ fn main() {
     let lock = File::create(dir.join("wrapper.lock")).expect("lock file");
     let first = unsafe { flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0;
 
-    if first {
+    if background {
+        // Already running: nothing to do. No window, whatever happens.
+        if first {
+            let mut hub = spawn_hub(&hub_py);
+            in_background(&mut hub, || window_lock_held(&dir));
+        }
+    } else if first {
         let mut hub = spawn_hub(&hub_py);
         wait_for_port(port, 15);
         let mut win = app_window(&exe, port);
         let _ = win.wait();
-        kill_hub(&mut hub); // close = quit
+        in_background(&mut hub, || window_lock_held(&dir));
     } else {
+        // The first launch may still be starting its hub (a login entry).
+        wait_for_port(port, 15);
+        let _held = hold_window_lock(&dir);
         // This chromium hands the window to the running instance's profile
         // singleton and exits. Wait for that: returning now would fire its
         // PR_SET_PDEATHSIG and kill it before the handoff.
         let mut win = app_window(&exe, port);
-        let _ = win.wait();
+        wait_for_window(&mut win, port);
     }
 }
 
 #[cfg(windows)]
 fn main() {
+    let background = read_args();
     let port = configured_port();
     let exe = chromium_exe().unwrap_or_else(|| {
+        if background {
+            return String::new(); // no window to open
+        }
         fail("No Chromium-family browser found (Edge, Chrome, Brave or Chromium). \
               Microsoft Edge comes with Windows — reinstall it, or install Chrome.")
     });
@@ -527,9 +664,15 @@ fn main() {
             None => fail(&format!("Anime Hub could not start its server ({}).", python.display())),
         }
         wait_for_hub(port, hub.as_mut(), 120);
+        let profile = wrapper_profile(port);
+        if background {
+            trace(port, "started without a window");
+            in_background(&mut hub, || profile_in_use(&profile));
+            trace(port, "stopping the hub");
+            return;
+        }
         let mut win = app_window(&exe, port, &leash);
         trace(port, &format!("window opened (pid {})", win.id()));
-        let profile = wrapper_profile(port);
         let opened = Instant::now();
         let mut held = false; // a browser held the profile while ours ran
         while win.try_wait().ok().flatten().is_none() {
@@ -556,12 +699,13 @@ fn main() {
         while profile_in_use(&profile) {
             thread::sleep(Duration::from_millis(500));
         }
-        trace(port, "window closed, stopping the hub");
-        kill_hub(&mut hub); // close = quit
-    } else {
+        trace(port, "window closed");
+        in_background(&mut hub, || profile_in_use(&profile));
+        trace(port, "stopping the hub");
+    } else if !background {
         wait_for_hub(port, None, 120); // the first launch may still be starting its hub
         let mut win = app_window(&exe, port, &leash);
         trace(port, &format!("window asked for (pid {})", win.id()));
-        let _ = win.wait();
+        wait_for_window(&mut win, port);
     }
 }
