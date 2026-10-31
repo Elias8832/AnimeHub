@@ -538,7 +538,8 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                         picks = None
                 if not prepared and duration and last_time / duration >= PREPARE_AT:
                     prepared = True
-                    threading.Thread(target=streaming.prepare_after, args=(ep_id,), daemon=True).start()
+                    if settings.automation_enabled("prepare_online"):
+                        threading.Thread(target=streaming.prepare_after, args=(ep_id,), daemon=True).start()
                 now = util.utc_stamp()
                 with database.db() as c:
                     c.execute(

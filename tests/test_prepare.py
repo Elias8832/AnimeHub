@@ -4,7 +4,6 @@ VPN rule, the one slot, and a run through the real wait script."""
 import os
 import shutil
 import stat
-import subprocess
 import tempfile
 import time
 import unittest
@@ -151,10 +150,7 @@ class Prepared(unittest.TestCase):
         with mock.patch.object(settings, "vpn_status", return_value=NO_VPN):
             self.assertIsNone(prepare.take(self.key()))
         self.assertIsNotNone(slot["proc"].poll())
-        gone = wait_for(lambda: not slot["dir"].exists())
-        alive = "" if gone or not system.WINDOWS else subprocess.run(
-            ["tasklist", "/V", "/FO", "CSV"], capture_output=True, text=True, errors="replace").stdout
-        self.assertTrue(gone, [x for x in alive.splitlines() if any(w in x.lower() for w in ("bash", "sh.exe", "sleep", "mpv"))])
+        self.assertTrue(wait_for(lambda: not slot["dir"].exists()))
 
     def test_the_setting_turns_it_off(self):
         with mock.patch.dict(settings.AUTOMATION_DEFAULTS, {"prepare_online": False}), \
