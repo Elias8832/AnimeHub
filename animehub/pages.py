@@ -18,6 +18,12 @@ from .config import config
 
 FORMAT_LABELS = {"TV": "TV", "TV_SHORT": "Short", "ONA": "ONA", "OVA": "OVA", "SPECIAL": "Special",
                  "MOVIE": "Movie", None: "Announced"}
+# What AniList calls an entry, shown on the small tiles of the watch order
+# (TODO 132). First match wins.
+ORDER_NOTES = {"SUMMARY": "Recap", "SIDE_STORY": "Side story", "SPIN_OFF": "Spin-off",
+               "ALTERNATIVE": "Other version", "PREQUEL": "Prequel"}
+BELONGS = {"ALTERNATIVE", "SUMMARY", "SIDE_STORY", "PARENT"}
+STORY_FORMATS = (("TV", "TV_SHORT", "ONA", "MOVIE", None), ("SPECIAL", "OVA"))
 
 
 def franchise_root(entries):
@@ -131,6 +137,105 @@ def entry_slots(m, local, link, rows, art, online_ok):
     return slots
 
 
+def story_line(entries):
+    """The main story: from the franchise's first season along AniList's
+    sequel links, movies included, the earliest sequel first (a recap
+    special only when nothing else follows). Unlike mapping.main_line,
+    which numbers seasons, this keeps Sword Art Online's Ordinal Scale.
+    An entry saying "my prequel is X" counts as X's sequel link too. A
+    movie with a series version not yet on the line gives way to the
+    series (Demon Slayer's Mugen Train), and the walk goes on from
+    whichever of the two has a sequel."""
+    by_id = {m["id"]: m for m in entries}
+    seen = set()
+
+    def after(cur):
+        near = [(e["relationType"], by_id[e["node"]["id"]]) for e in mapping._edges(cur)
+                if e["node"]["id"] in by_id and e["node"]["id"] not in seen]
+        next_up = [m for rel, m in near if rel == "SEQUEL"]
+        next_up += [m for m in entries if m["id"] not in seen and m not in next_up and any(
+            e["relationType"] == "PREQUEL" and e["node"]["id"] == cur["id"] for e in mapping._edges(m))]
+        for formats in STORY_FORMATS:
+            group = [m for m in next_up if m.get("format") in formats]
+            if group:
+                return min(group, key=franchise._franchise_order)
+        return next((m for rel, m in near if rel == "OTHER" and m.get("format") in STORY_FORMATS[0]
+                     and franchise.numbered_season_of(cur, m)), None)
+
+    def series_of(movie):
+        ids = {e["node"]["id"] for e in mapping._edges(movie) if e["relationType"] == "ALTERNATIVE"}
+        ids |= {m["id"] for m in entries if any(e["relationType"] == "ALTERNATIVE" and e["node"]["id"] == movie["id"]
+                                                for e in mapping._edges(m))}
+        return next((m for m in entries if m["id"] in ids and m["id"] not in seen and m.get("format") == "TV"), None)
+
+    line, cur = [], franchise_root(entries)
+    while cur:
+        series = series_of(cur) if cur.get("format") == "MOVIE" else None
+        seen.add(cur["id"])
+        if series:
+            seen.add(series["id"])
+        line.append(series or cur)
+        cur = (series and after(series)) or after(cur)
+    return line
+
+
+def watch_order(entries):
+    """The show's watch order (TODO 132): the main story (`main`), each
+    other entry right after the part of it AniList links it to, then what
+    links to none of it, then spin-offs and other versions with pages of
+    their own. AniList's links only: nothing here reads a title or guesses
+    where a movie fits, and `note` is AniList's name for the relation."""
+    if not entries:
+        return []
+    line = story_line(entries)
+    place = {m["id"]: i for i, m in enumerate(line)}
+    # What an entry is a version, recap or side story of says more than what
+    # follows it: Mugen Train's TV cut is Entertainment District's prequel,
+    # but it belongs beside the movie it re-tells.
+    close, links = {}, {}  # entry id -> entries linked to it, either way
+    for m in entries:
+        for e in mapping._edges(m):
+            nid = (e.get("node") or {}).get("id")
+            for table in (close, links) if e.get("relationType") in BELONGS else (links,):
+                table.setdefault(nid, set()).add(m["id"])
+                table.setdefault(m["id"], set()).add(nid)
+    # Nearest to the main story first: Fate/Zero links to its Season 2 only.
+    todo = [m["id"] for m in entries if m["id"] not in place]
+    while True:
+        found = {}
+        for i in todo:
+            spots = [place[o] for o in close.get(i, ()) if o in place] or [place[o] for o in links.get(i, ()) if o in place]
+            if spots:
+                found[i] = max(spots)
+        if not found:
+            break
+        place.update(found)
+        todo = [i for i in todo if i not in found]
+    ids = {m["id"] for m in entries}
+    main = {m["id"] for m in line}
+    notes, linked = {}, {}
+    for m in entries:
+        for e in mapping._edges(m):
+            node, rel = e.get("node") or {}, e.get("relationType")
+            if node.get("type") == "ANIME" and rel in ("SPIN_OFF", "ALTERNATIVE") and node.get("id") not in ids \
+                    and node.get("format") in franchise.FRANCHISE_FORMATS:
+                linked.setdefault(node["id"], node)
+            if rel in ORDER_NOTES:
+                notes.setdefault(node.get("id"), set()).add(rel)
+    def key(m):
+        spot = place.get(m["id"], len(line) if m["id"] in ids else len(line) + 1)
+        return (spot, m["id"] not in main, franchise._franchise_order(m))
+    def row(m):
+        said = notes.get(m["id"], ())
+        return {"id": m["id"], "title": (franchise._titles(m) or [None])[0],
+                "format_label": FORMAT_LABELS.get(m.get("format"), m.get("format")),
+                "year": (m.get("startDate") or {}).get("year"), "status": m.get("status"),
+                "poster": (m.get("coverImage") or {}).get("extraLarge"), "main": m["id"] in main,
+                "note": None if m["id"] in main else next((v for k, v in ORDER_NOTES.items() if k in said), None),
+                "on_page": m["id"] in ids}
+    return [row(m) for m in sorted([*entries, *linked.values()], key=key)]
+
+
 def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=frozenset()):
     """The page model (pure): `entries` in page order (franchise_of), `scan`
     after merge_db (season ranges, watch facts), `links` media id → ani-cli
@@ -139,8 +244,9 @@ def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=froz
     there, `missed` entries ani-cli has no match for. Returns {"title",
     "poster", "banner", "entries": [facts + "group" ("main" seasons /
     "extra"), "label", "season", "slots", "online"], "other_local":
-    [{"show_id", "season", "label", "episodes"}]}: files of the
-    franchise's folders that are no entry, never hidden."""
+    [{"show_id", "season", "label", "episodes"}]: files of the
+    franchise's folders that are no entry, never hidden; "order":
+    watch_order}."""
     ids = {m["id"] for m in entries}
     root = franchise_root(entries)
     line = [m["id"] for m in mapping.main_line(root["id"], entries)] if root else []
@@ -184,7 +290,7 @@ def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=froz
         main[0][0]["label"] = franchise._titles(main[0][1])[0]
     facts = _entry_facts(root) if root else {}
     return {"title": facts.get("title"), "poster": facts.get("poster"), "banner": facts.get("banner"),
-            "entries": out, "other_local": other}
+            "entries": out, "other_local": other, "order": watch_order(entries)}  # order: additive (TODO 132)
 
 
 _building = set()

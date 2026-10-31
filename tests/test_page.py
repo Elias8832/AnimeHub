@@ -331,6 +331,48 @@ class OnlineOnly(unittest.TestCase):
         self.assertEqual([(u["media_id"], [n for _, n in u["eps"]], u["total"]) for u in units], [(5, [1, 2], 12)])
 
 
+class WatchOrder(unittest.TestCase):
+    def entry(self, mid, year, fmt="TV", edges=()):
+        return {"id": mid, "title": {"romaji": f"Show {mid}"}, "format": fmt, "status": "FINISHED",
+                "startDate": {"year": year},
+                "relations": {"edges": [{"relationType": r, "node": {"type": "ANIME", "format": "TV", **n}}
+                                        for r, n in edges]}}
+
+    def test_series_beats_its_movie_version(self):
+        # Demon Slayer: Season 1's sequels are the movie and its TV cut.
+        rows = pages.watch_order([
+            self.entry(1, 2019, edges=[("SEQUEL", {"id": 2}), ("SEQUEL", {"id": 3})]),
+            self.entry(2, 2020, "MOVIE", edges=[("SEQUEL", {"id": 4}), ("ALTERNATIVE", {"id": 3})]),
+            self.entry(3, 2021, edges=[("ALTERNATIVE", {"id": 2})]),
+            self.entry(4, 2021, edges=[("PREQUEL", {"id": 3})])])
+        # The series is the main story; its movie sits small beside it.
+        self.assertEqual([(r["id"], r["main"], r["note"]) for r in rows],
+                         [(1, True, None), (3, True, None), (2, False, "Other version"), (4, True, None)])
+
+    def test_movie_without_a_series_stays_in_the_story(self):
+        rows = pages.watch_order([self.entry(1, 2012, edges=[("SEQUEL", {"id": 2})]),
+                                  self.entry(2, 2017, "MOVIE", edges=[("SEQUEL", {"id": 3})]), self.entry(3, 2018)])
+        self.assertEqual([r["id"] for r in rows if r["main"]], [1, 2, 3])
+
+    def test_extras_follow_what_they_link_to_not_their_date(self):
+        spin = {"id": 9, "startDate": {"year": 2015}, "title": {"english": "Spin"},
+                "coverImage": {"extraLarge": "/spin.jpg"}}
+        rows = pages.watch_order([
+            self.entry(1, 2013, edges=[("SEQUEL", {"id": 2}), ("SUMMARY", {"id": 3}), ("SPIN_OFF", spin)]),
+            self.entry(2, 2014, edges=[("SIDE_STORY", {"id": 5})]),
+            self.entry(3, 2020, "SPECIAL"),
+            self.entry(5, 2010, "OVA"),
+            self.entry(6, 2011, "OVA", edges=[("PARENT", {"id": 5})]),
+            self.entry(7, 2012, "OVA")])
+        self.assertEqual([(r["id"], r["note"]) for r in rows],
+                         [(1, None), (3, "Recap"), (2, None), (5, "Side story"), (6, None), (7, None), (9, "Spin-off")])
+        self.assertEqual((rows[-1]["poster"], rows[-1]["on_page"]), ("/spin.jpg", False))
+
+    def test_on_the_page(self):
+        page = page_of(161645)
+        self.assertEqual({r["id"] for r in page["order"] if r["on_page"]}, {e["id"] for e in page["entries"]})
+
+
 class Pure(unittest.TestCase):
     def setUp(self):
         c = support.case("apothecary")
