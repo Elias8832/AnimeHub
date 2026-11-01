@@ -259,6 +259,24 @@ class NaturalEndTests(LifecycleBase):
         self.assertEqual((sent["title"], sent["current"], sent["episodes"]), ("Show", "ep1", episodes))
         self.assertEqual(player._active["ep1"]["menu"], {"ep1": episodes[0]})
 
+    def test_mpv_list_hides_titles_of_unstarted_episodes(self):
+        """Decision 57: the switch reaches mpv's Episodes panel too."""
+        slots = [{"id": "a", "number": 1, "title": "Seen", "watched": True, "local": True},
+                 {"id": "b", "number": 2, "title": "Playing", "watched": False, "local": True},
+                 {"id": "c", "number": 3, "title": "Started", "watched": False, "local": True, "position": 60, "duration": 1440},
+                 {"id": "d", "number": 4, "title": "The Twist", "watched": False, "local": True, "position": 0, "duration": 1440},
+                 {"id": "e", "number": 5, "title": "Never Played", "watched": False, "local": True}]
+        page = {"entries": [{"id": 7, "slots": slots, "online": {"available": False}}]}
+
+        def titles(hide):
+            with patch.object(player, "entry_of_episode", return_value=(7, 2)), \
+                    patch.object(player.pages, "franchise_view", return_value=page), \
+                    patch.object(player.settings, "automation_enabled", return_value=hide):
+                return [x["title"] for x in player.episode_menu("b")]
+
+        self.assertEqual(titles(False), ["Seen", "Playing", "Started", "The Twist", "Never Played"])
+        self.assertEqual(titles(True), ["Seen", "Playing", "Started", None, None])
+
     def test_sleep_timer_outlives_the_episode(self):
         """Decision 53: each episode is its own mpv, so the hub keeps the time."""
         self.addCleanup(player.set_sleep, 0)

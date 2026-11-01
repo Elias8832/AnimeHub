@@ -52,6 +52,24 @@ def mpv_ipc(sock_path, command, timeout=2.0):
     return None
 
 
+def screenshots_folder(sock_path):
+    """mpv saves screenshots where it was started, which is anywhere: send
+    them to Pictures/AnimeHub (mpv makes the folder on the first one). A
+    folder set in the user's mpv.conf stays. Over the socket, not a flag:
+    this way it can read mpv.conf's value, and ani-cli's flags can't hold
+    a path with a space. The older option name: new mpv still takes it,
+    old mpv takes no other."""
+    try:
+        for _ in range(3):  # an event can arrive ahead of the reply (TODO 149)
+            reply = mpv_ipc(sock_path, ["get_property", "screenshot-directory"])
+            if reply and "data" in reply:
+                if not reply["data"]:
+                    mpv_ipc(sock_path, ["set_property", "screenshot-directory", str(system.pictures_dir() / "AnimeHub")])
+                return
+    except OSError as exc:
+        util.log("screenshot folder not set: %s" % exc)
+
+
 def season_rank(sea):
     """One authoritative season order (TODO 24) — the UI shows a folder's
     seasons in the order the scan gives them: main seasons first, parts
@@ -365,13 +383,24 @@ def episode_menu(ep_id):
         page = pages.franchise_view(at[0], background=False)
         e = next((x for x in page["entries"] if x["id"] == at[0]), None)
         if e:
-            return [{"id": x["id"], "number": x["number"], "title": x.get("title"), "watched": bool(x.get("watched")),
+            hide = settings.automation_enabled("hide_spoilers")
+            return [{"id": x["id"], "number": x["number"], "watched": bool(x.get("watched")),
+                     "title": None if hide and x["id"] != ep_id and _unseen(x) else x.get("title"),
                      "online": not x["local"]}
                     for x in e["slots"] if x["id"] and (x["local"] or (x["online"] and e["online"]["available"]))]
     s, ep = library.episode_by_id(ep_id)
     sea = next((x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"])), None) if ep else None
     return [{"id": x["id"], "number": x["number"], "title": None, "watched": False, "online": False}
             for x in sorted(sea["episodes"], key=lambda x: x["number"])] if sea else []
+
+
+def _unseen(x):
+    """Not watched and not started: hide_spoilers keeps its title back
+    (Decision 57; the page's `spoils`)."""
+    if x.get("watched"):
+        return False
+    length = x.get("duration")
+    return not length or (x.get("position") or 0) / length <= 0.01
 
 
 def send_info(proc, ep_id, sock_path):
@@ -587,6 +616,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
         except (FileNotFoundError, ConnectionRefusedError, socket.error):
             time.sleep(0.25)
     if connected:
+        screenshots_folder(sock_path)
         try:
             nxt = next_up(ep_id)
             with _active_lock:

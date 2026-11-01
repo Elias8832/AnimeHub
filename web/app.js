@@ -118,6 +118,11 @@ function epTitle(show, sea, ep) {
 /* Mirrors the hub's resume rule (player.resume_args): a position past 1 % resumes
    — on a watched episode too while it's under 92 % (a rewatch you stopped). */
 const resumable = (ep) => !!ep.duration && ep.position / ep.duration > 0.01 && (!ep.watched || ep.position / ep.duration < 0.92);
+/* Hide spoilers (Decision 57): an episode you haven't started shows no title
+   or picture. The tile keeps its art and only blurs it, so marking it
+   watched reveals it in place (the art never depends on the watch state). */
+const spoils = (ep) => !!S.data?.hide_spoilers && !ep.watched && !resumable(ep);
+const epName = (s, sea, ep) => (spoils(ep) ? null : epTitle(s, sea, ep));
 
 /* What a show's big button plays. Seasons come in the hub's order
    (season_rank): main seasons first, extras last. */
@@ -269,6 +274,7 @@ function isPlayingShow(id) {
    inside), continue watching, this week's airings, ready to start. */
 const kbH = (k) => `<kbd class="kb">${k}</kbd>`;
 const homeThumb = (sea, ep) => { const t = sea?.thumbs; return !t ? null : Array.isArray(t) ? t[ep.number - 1] || null : t[String(ep.number)] || null; };
+const safeThumb = (sea, ep) => (spoils(ep) ? null : homeThumb(sea, ep));
 /* One tick per episode of the season: seen · partly seen · on disk · online. */
 function seasonTicks(sea) {
   const eps = (sea?.episodes || []).slice(0, 60);
@@ -284,7 +290,7 @@ function prepareHero(ep) {
 }
 function heroHTML(up) {
   prepareHero(up.ep);
-  const s = up.s, ep = up.ep, sea = up.sea, art = homeThumb(sea, ep) && !s.banner ? homeThumb(sea, ep) : s.banner || s.poster;
+  const s = up.s, ep = up.ep, sea = up.sea, art = safeThumb(sea, ep) && !s.banner ? safeThumb(sea, ep) : s.banner || s.poster;
   const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
   const len = ep.duration || ep.length, left = pct >= 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
   const src = streamEp(ep) ? "online" : "on disk";
@@ -293,7 +299,7 @@ function heroHTML(up) {
   return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
     <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
-    <div class="sub">${esc(epCode(sea, ep))} · ${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</div>
+    <div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
     <div class="facts">${[left, src].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
     ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
     <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span>${kbH("↵")}</button><button class="btn big" data-a="open" data-v="${esc(s.id)}">Open show${kbH("O")}</button></div>
@@ -316,10 +322,10 @@ function keepWatching(skipId) {
 }
 function contCard({ s, t }, k) {
   const ep = t.ep, p = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
-  const art = homeThumb(t.sea, ep) || s.banner || s.poster;
-  const meta = [epTitle(s, t.sea, ep), p > 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
+  const art = safeThumb(t.sea, ep) || s.banner || s.poster;
+  const meta = [epName(s, t.sea, ep), p > 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
   return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}" data-a="open" data-v="${esc(s.id)}" tabindex="0">
-    <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:${homeThumb(t.sea, ep) ? "50% 50%" : "50% 30%"}"></span>` : ""}
+    <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:${safeThumb(t.sea, ep) ? "50% 50%" : "50% 30%"}"></span>` : ""}
     <span class="enum">${esc(epCode(t.sea, ep))}</span>${p > 1 && !ep.watched ? `<i class="eprog"><i style="width:${p}%"></i></i>` : ""}
     <span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="${esc(KIND_WORD[t.kind])}">${ico("play")}</span></div>
     <h3>${esc(s.title)}</h3><small>${esc(meta)}</small></div>`;
@@ -734,11 +740,11 @@ function epTile(s, sea, ep, tgId, i = 0) {
   const part = resumable(ep);
   const files = ep.files || [], loading = epLoading(ep.id);
   const picking = S.sel?.show === s.id, picked = picking && S.sel.ids.has(ep.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", ep.watched ? "watched" : "", ep.id === tgId && resumable(ep) ? "resume" : "", art ? "" : "noart", loading ? "loading" : ""].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", ep.watched ? "watched" : "", ep.id === tgId && resumable(ep) ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
   const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep);
   const meta = loading ? "loading…" : part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}${files.length > 1 ? ` · ${files.length} versions` : ""}`;
   return tileHTML({ cls, a: "playep", v: ep.id, i, art, pos, num: "E" + String(ep.number).padStart(2, "0"), pct: part ? pct : 0, loading, watched: ep.watched && !part,
-    picking, picked, title: epTitle(s, sea, ep) || "Episode " + ep.number, meta, menu: `Episode ${ep.number} menu` });
+    picking, picked, title: epName(s, sea, ep) || "Episode " + ep.number, meta, menu: `Episode ${ep.number} menu` });
 }
 /* Multi-select (S.sel = { show, ids, anchor }): tiles toggle instead of
    playing; shift extends a range within the season, the bar acts on all. */
@@ -970,7 +976,7 @@ function slotTile(p, e, x, tgId, i = 0) {
   const pct = x.duration ? Math.min(100, (100 * x.position) / x.duration) : 0, part = resumable(x);
   const ok = playableSlot(e, x), loading = slotIds(x).some(epLoading), job = x.online && !x.local && dlJob(x.online.id);
   const picking = S.sel?.show === frSelKey(), picked = picking && S.sel.ids.has(x.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", x.watched ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off"].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", x.watched ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
   const files = x.local?.files || [], mins = minsOf(x.duration || x.length, e.duration);
   const src = x.local ? `disk · ${fileLangs({ files })}` : ok ? `online · ${e.online.mode || S.settings?.stream?.mode || "sub"}` : "not available";
   const meta = loading ? "loading…" : job ? (job.status === "running" ? `downloading · ${Math.floor(job.percent)}%` : "waiting to download")
@@ -978,7 +984,7 @@ function slotTile(p, e, x, tgId, i = 0) {
   const movie = e.format === "MOVIE" && e.slots.length <= 1;
   return tileHTML({ cls, a: ok ? "playep" : "unavail", v: x.id, i, art, pos, num: movie ? "Movie" : "E" + String(x.number).padStart(2, "0"),
     pct: part ? pct : 0, dlPct: job?.status === "running" ? job.percent : null, loading, watched: x.watched && !part, picking, picked,
-    title: x.title || (movie ? e.label : "Episode " + x.number), meta, menu: `Episode ${x.number} menu` });
+    title: (!spoils(x) && x.title) || (movie ? e.label : "Episode " + x.number), meta, menu: `Episode ${x.number} menu` });
 }
 /* Files of the franchise's folders that are no entry ("Specials"): plain
    tiles, and the way to say which entry they are. */
@@ -1149,7 +1155,7 @@ function frCm(id, x0, y0) {
   const online = !!(x.online && S.data.stream_ready && e.online.available);
   const mode = e.online.mode || S.settings?.stream?.mode || "sub", other = mode === "dub" ? "sub" : "dub";
   const movie = e.format === "MOVIE" && e.slots.length <= 1;
-  m.innerHTML = `<div class="cap">${esc(movie ? e.label : "E" + String(x.number).padStart(2, "0"))}${x.title ? " · " + esc(x.title) : ""}</div>`
+  m.innerHTML = `<div class="cap">${esc(movie ? e.label : "E" + String(x.number).padStart(2, "0"))}${x.title && !spoils(x) ? " · " + esc(x.title) : ""}</div>`
     + cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, other, local: !!x.local, playable: playableSlot(e, x),
       dl: online && !x.local && !dlJob(x.online.id), fix: !!S.data.stream_ready && !!x.online });
   cmShow(m, x0, y0);
@@ -1617,7 +1623,7 @@ function Sett() {
   if (isPhone() && !S.setOpen) return settingsList(tabs, s);
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
   const sec = {
-    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
+    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Hide spoilers", "Episodes you haven't started show no title, and their pictures are blurred. Also in mpv's episode list.", tgl("hide_spoilers", "Hide spoilers", s.hide_spoilers))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}<div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div>`,
     playback: `${skipGroup(s)}`,
@@ -1896,7 +1902,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
    preview of the picked row and its keys. */
 const SETTINGS_INDEX = [
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
-  ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
+  ["Hide spoilers", "appearance", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
   ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "playback", "audio subtitle subs track language dub dual remember", "remember_tracks"],
   ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Smooth controls while playing", "mpv", "mpv smooth lag laggy video sync display refresh"], ["Starting volume", "mpv", "mpv volume start remember last"], ["Skip buttons", "mpv", "mpv skip seconds forward back length"], ["Loaded part on the seek bar", "mpv", "mpv buffer cache loaded preload seek bar"], ["Mouse in the player", "mpv", "mpv mouse click double scroll wheel"], ["Subtitle look", "mpv", "mpv subtitle size colour color outline style font"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
@@ -2073,7 +2079,7 @@ function nxVpn() {
   return v.active ? `<span class="okv mono">vpn on · ${esc(v.iface)}</span>` : vpnWait();
 }
 function NextDlg() {
-  const p = S.modal.p, c = p.id && findEpContext(p.id), art = c ? (homeThumb(c.sea, c.ep) || c.s.banner || c.s.poster) : null, v = S.data?.vpn;
+  const p = S.modal.p, c = p.id && findEpContext(p.id), art = c ? (safeThumb(c.sea, c.ep) || c.s.banner || c.s.poster) : null, v = S.data?.vpn;
   /* kind "aniskip" (Decision 39): autoplay found no VPN and has no AniSkip
      answer for this chain yet; an online next episode asks it too. */
   const ask = p.kind === "aniskip", online = String(p.id).startsWith("stream:"), noVpn = v?.known && !v.active, skp = noVpn && (ask || aniskipAsk());
@@ -2183,12 +2189,12 @@ function watchRow({ s, t }) {
     <button class="btn ic" data-a="play" data-v="${esc(t.ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></div>`;
 }
 function upPhone(up) {
-  const s = up.s, ep = up.ep, sea = up.sea, art = s.banner || homeThumb(sea, ep) || s.poster;
+  const s = up.s, ep = up.ep, sea = up.sea, art = s.banner || safeThumb(sea, ep) || s.poster;
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
   return `<div class="upp"><button class="upa2" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
     <div class="upb"><div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
-    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epTitle(s, sea, ep) || "Episode " + ep.number)}</div>
+    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
     ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
     <button class="btn pri big wide" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div>`;
 }
@@ -2635,8 +2641,8 @@ function rmtEpisodes(ctx, nowId) {
     const rt = epThumbOf(sea.thumbs, ep), art = rt || s.poster || s.banner, cur = ep.id === nowId;
     const online = String(ep.id).startsWith("stream:"), mins = minsOf(ep.duration || ep.length);
     const meta = cur ? "playing now" : `${mins ? mins + " min · " : ""}${online ? "online" : "disk"}`;
-    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : "playep", v: ep.id, i,
-      art, pos: rt ? "50% 50%" : "50% 22%", num: "E" + String(ep.number).padStart(2, "0"), watched: ep.watched && !cur, title: epTitle(s, sea, ep) || "Episode " + ep.number, meta, menu: "" })
+    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : "", rt && !cur && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : "playep", v: ep.id, i,
+      art, pos: rt ? "50% 50%" : "50% 22%", num: "E" + String(ep.number).padStart(2, "0"), watched: ep.watched && !cur, title: (cur ? epTitle(s, sea, ep) : epName(s, sea, ep)) || "Episode " + ep.number, meta, menu: "" })
       .replace(/<button class="dots"[\s\S]*?<\/button>/, "");
   }).join("");
   return `<div class="eps-head"><h2>${esc(sea.label || sea.name || "Episodes")}</h2><span class="rk">${at + 1} of ${eps.length}</span></div><div class="eps strip mr" data-at="${at}">${tiles}</div>`;
@@ -2756,7 +2762,7 @@ function openCm(id, x, y) {
   if (S.view === "fr" && frCm(id, x, y)) return;
   const ctx = findEpContext(id);
   if (!ctx) return;
-  const { s, ep, sea } = ctx, m = $("#cm"), title = epTitle(s, sea, ep);
+  const { s, ep, sea } = ctx, m = $("#cm"), title = epName(s, sea, ep);
   m.innerHTML = `<div class="cap">${esc(epCode(sea, ep))}${title ? " · " + esc(title) : ""}</div>` + cmItems({ id, ep, files: ep.files || [], verId: id, online: false });
   cmShow(m, x, y);
 }
@@ -3561,6 +3567,7 @@ async function setToggle(key, on) {
   const r = await api("/api/settings", { [key]: on }).catch(() => null);
   if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); return; }
   S.settings = r;
+  if (key === "hide_spoilers" && S.data) S.data.hide_spoilers = on;
   if (key === "anilist_watched") await refreshData();
   if (S.view === "settings") render();
   if (S.modal?.t === "tour") paintModal();

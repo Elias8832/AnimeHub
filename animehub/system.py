@@ -285,6 +285,33 @@ def folder_name(name):
     return re.sub(r"[/\x00]", " ", name)
 
 
+def pictures_dir():
+    """The user's pictures folder, which needn't exist yet. Its name changes
+    with the language (Bilder, Images) and Windows can move it into OneDrive,
+    so ask the system. Linux: a folder set to the home folder itself means
+    the desktop has it switched off."""
+    home = Path.home()
+    if WINDOWS:
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(1024)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 0x27, None, 0, buf) == 0 and buf.value:  # CSIDL_MYPICTURES
+                return Path(buf.value)
+        except (OSError, AttributeError):
+            pass
+        return home / "Pictures"
+    base = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(base) if base and os.path.isabs(base) else home / ".config"
+    try:
+        text = (base / "user-dirs.dirs").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
+    m = re.search(r'^\s*XDG_PICTURES_DIR="(.*)"', text, re.M)
+    value = m.group(1).replace("${HOME}", "$HOME").replace("$HOME", str(home)) if m else ""
+    path = Path(value)
+    return path if path.is_absolute() and path != home else home / "Pictures"
+
+
 def browse_places():
     """The folder picker's shortcuts (Decision 32): Home plus where other
     disks show up — /mnt, /media, /run/media/$USER on Linux, the drive
