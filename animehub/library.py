@@ -598,6 +598,17 @@ def curation_all():
                     "started_at,finished_at,updated_at FROM curation")}
 
 
+def _online_twin_extra(s, aid, twin_eps):
+    """What the online show of a folder's entry adds to the folder's card:
+    (watched, episodes). For that entry the card takes the higher of disk
+    and online, each count on its own; the folder's other seasons stay."""
+    held = next((u["eps"] for u in mapping.release_units(s) if u["media_id"] == aid), None)
+    held = [ep for ep, _ in held] if held else list(eps_of(s))
+    seen = sum(1 for ep in held if ep.get("watched"))
+    return (max(0, sum(1 for ep in twin_eps if ep.get("watched")) - seen),
+            max(0, len(twin_eps) - len(held)))
+
+
 def spine_build_local(scan, curations, streams=()):
     """Decision 6's no-AniList mode: the SAME spine shape AniList mode
     renders, driven purely by local watch state. Entries are disk shows
@@ -608,23 +619,32 @@ def spine_build_local(scan, curations, streams=()):
     for online episodes (ani-cli): disk shows may carry their release's
     online episodes ("partial" then), and online-only shows (`streams`)
     join once watched — browsing a page must not add it to the library.
+    A folder and an online show of the same entry are one card (TODO 152),
+    see _online_twin_extra.
     Pure function: scan from scan_library(), curations from curation_all()."""
     out = []
     online = [x for x in streams if any(ep.get("last_played") or ep.get("watched") for ep in eps_of(x))]
-    for s in list(scan) + online:
+    on_disk_ids = {(s.get("meta") or {}).get("anilist_id") for s in scan}
+    twins = {x["meta"]["anilist_id"]: x for x in online if (x.get("meta") or {}).get("anilist_id") in on_disk_ids - {None}}
+    for s in list(scan) + [x for x in online if x not in twins.values()]:
         eps = [ep for sea in s["seasons"] for ep in sea["episodes"]]
         aid = (s.get("meta") or {}).get("anilist_id")
+        twin = twins.pop(aid, None)  # the first folder of an entry takes it
         cur = curations.get("aid:%d" % aid if aid else "sid:%s" % s["id"]) or {}
         watched = [ep for ep in eps if ep.get("watched")]
-        started = bool(watched) or any(ep.get("last_played") for ep in eps)
-        total = len(eps)
+        twin_eps = list(eps_of(twin)) if twin else []
+        started = bool(watched) or any(ep.get("last_played") or ep.get("watched") for ep in twin_eps) \
+            or any(ep.get("last_played") for ep in eps)
+        extra_watched, extra_total = _online_twin_extra(s, aid, twin_eps) if twin else (0, 0)
+        progress = len(watched) + extra_watched
+        total = len(eps) + extra_total
         status = cur.get("status")
         if status not in anilist.ENTRY_STATUS:
-            status = ("COMPLETED" if total and len(watched) == total
+            status = ("COMPLETED" if total and progress == total
                       else "CURRENT" if started else "PLANNING")
         # Recently-updated sort feeds off the newest activity: the last
         # playback stamp or the last curation edit, whichever is newer.
-        last = max([ep["last_played"] for ep in eps if ep.get("last_played")]
+        last = max([ep["last_played"] for ep in eps + twin_eps if ep.get("last_played")]
                    + [cur.get("updated_at") or ""])
         try:
             updated = datetime.strptime(
@@ -634,7 +654,7 @@ def spine_build_local(scan, curations, streams=()):
         meta = s.get("meta") or {}
         on_disk = sum(1 for ep in eps if streaming.disk_ep(ep))
         out.append({"id": s["id"], "title": s["title"],
-                    "status": status, "progress": len(watched),
+                    "status": status, "progress": progress,
                     "score": cur.get("score") or 0, "episodes": total,
                     "format": meta.get("format") or
                               ("MOVIE" if s.get("kind") == "movie" else None),
