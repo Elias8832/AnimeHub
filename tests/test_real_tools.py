@@ -305,6 +305,26 @@ class RealMpv(unittest.TestCase):
         with database.db() as c:
             self.assertEqual(c.execute("SELECT watched FROM episodes WHERE id=?", (eps[0]["id"],)).fetchone(), (1,))
 
+    def test_screenshots_go_to_pictures(self):
+        pictures = Path(tempfile.mkdtemp(dir=support.TMP)) / "My Pictures"
+        with mock.patch.object(system, "pictures_dir", return_value=pictures):
+            player.start_play(self.episodes()[0]["id"])
+            sock = self.playing()["sock"]
+        folder = pictures / "AnimeHub"
+        self.assertEqual(player.mpv_ipc(sock, ["get_property", "screenshot-directory"])["data"], str(folder))
+        self.assertFalse(folder.exists())  # no empty folder for people who never take one
+        player.mpv_ipc(sock, ["screenshot", "video"])
+        self.assertTrue(wait_for(lambda: any(folder.glob("mpv-shot*")), 8), "no screenshot in the folder")
+
+    def test_a_folder_from_mpv_conf_stays(self):
+        player.start_play(self.episodes()[0]["id"])
+        sock = self.playing()["sock"]
+        own = str(Path(support.TMP) / "own")
+        player.mpv_ipc(sock, ["set_property", "screenshot-directory", own])
+        with mock.patch.object(system, "pictures_dir", return_value=Path("elsewhere")):
+            player.screenshots_folder(sock)
+        self.assertEqual(player.mpv_ipc(sock, ["get_property", "screenshot-directory"])["data"], own)
+
     def test_marks_land_on_the_seek_bar(self):
         player.start_play(self.episodes()[0]["id"])
         sock = self.playing()["sock"]

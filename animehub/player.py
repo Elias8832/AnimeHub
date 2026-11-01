@@ -52,6 +52,24 @@ def mpv_ipc(sock_path, command, timeout=2.0):
     return None
 
 
+def screenshots_folder(sock_path):
+    """mpv saves screenshots where it was started, which is anywhere: send
+    them to Pictures/AnimeHub (mpv makes the folder on the first one). A
+    folder set in the user's mpv.conf stays. Over the socket, not a flag:
+    this way it can read mpv.conf's value, and ani-cli's flags can't hold
+    a path with a space. The older option name: new mpv still takes it,
+    old mpv takes no other."""
+    try:
+        for _ in range(3):  # an event can arrive ahead of the reply (TODO 149)
+            reply = mpv_ipc(sock_path, ["get_property", "screenshot-directory"])
+            if reply and "data" in reply:
+                if not reply["data"]:
+                    mpv_ipc(sock_path, ["set_property", "screenshot-directory", str(system.pictures_dir() / "AnimeHub")])
+                return
+    except OSError as exc:
+        util.log("screenshot folder not set: %s" % exc)
+
+
 def season_rank(sea):
     """One authoritative season order (TODO 24) — the UI shows a folder's
     seasons in the order the scan gives them: main seasons first, parts
@@ -587,6 +605,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
         except (FileNotFoundError, ConnectionRefusedError, socket.error):
             time.sleep(0.25)
     if connected:
+        screenshots_folder(sock_path)
         try:
             nxt = next_up(ep_id)
             with _active_lock:

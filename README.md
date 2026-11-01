@@ -11,7 +11,7 @@ This app is early in development — expect bugs and breaking changes.
 
 - **One page per show.** Every season, movie and special together, with your AniList entry right there.
 - **Your files and online episodes in one list.** Missing an episode? Watch or download it from the same page. Auto-play carries on from a file to an online episode.
-- **Made for mpv.** Resume, skip openings and endings with Enter, marks on the timeline, next episode. Your own `mpv.conf` still loads.
+- **Made for mpv.** Resume, skip openings and endings with Enter, marks on the timeline, next episode. Screenshots go to `Pictures/AnimeHub`. Your own `mpv.conf` still loads.
 - **AniList stays in sync.** Progress and scores go back to your list, even after being offline.
 - **A calendar of what's airing**, and a Journal of what you watched.
 - **Your phone as a remote.** No app to install, and it has its own phone layout.
