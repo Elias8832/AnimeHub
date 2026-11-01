@@ -259,6 +259,66 @@ class LocalSpineTests(unittest.TestCase):
                             tzinfo=_dt.timezone.utc).timestamp()
         self.assertEqual(spine["entries"][0]["updated"], want)
 
+    @staticmethod
+    def online_twin(media_id, n, watched=(), last_played=None):
+        show = local_show_watched(f"aid:{media_id}", n, watched=set(watched), last_played=last_played)
+        show["meta"] = {"anilist_id": media_id}
+        return show
+
+    @staticmethod
+    def folder(media_id, n, watched=()):
+        show = local_show_watched("disk", n, watched=set(watched))
+        show["meta"] = {"anilist_id": media_id}
+        return show
+
+    def test_folder_and_online_show_of_one_entry_are_one_card(self):
+        """TODO 152: Chainsaw Man, 12/12 on disk and 11/12 online."""
+        spine = library.spine_build_local([self.folder(7, 12, range(12))], {},
+                                          [self.online_twin(7, 12, range(11))])
+        self.assertEqual(len(spine["entries"]), 1)
+        e = spine["entries"][0]
+        self.assertEqual((e["id"], e["progress"], e["episodes"]), ("disk", 12, 12))
+        self.assertEqual((e["status"], e["capability"]), ("COMPLETED", "installed"))
+
+    def test_card_takes_the_higher_count_from_online_too(self):
+        """Blue Box: 7 files, 4 seen; all 25 seen online."""
+        e = library.spine_build_local([self.folder(7, 7, range(4))], {},
+                                      [self.online_twin(7, 25, range(25))])["entries"]
+        self.assertEqual(len(e), 1)
+        self.assertEqual((e[0]["progress"], e[0]["episodes"]), (25, 25))
+        self.assertEqual((e[0]["status"], e[0]["capability"]), ("COMPLETED", "partial"))
+        self.assertEqual(e[0]["installed"], 7)
+
+    def test_online_activity_counts_for_the_one_card(self):
+        e = library.spine_build_local([self.folder(7, 12)], {},
+                                      [self.online_twin(7, 12, (), "2026-10-10 12:00:00")])["entries"][0]
+        self.assertEqual(e["status"], "CURRENT")
+        self.assertGreater(e["updated"], 0)
+
+    def test_online_only_show_keeps_its_card(self):
+        entries = library.spine_build_local([self.folder(7, 12)], {},
+                                            [self.online_twin(8, 12, range(3))])["entries"]
+        self.assertEqual(sorted(str(e["id"]) for e in entries), ["aid:8", "disk"])
+
+    def test_two_folders_of_one_entry_count_online_once(self):
+        other = self.folder(7, 6)
+        other["id"] = "disk2"
+        entries = library.spine_build_local([self.folder(7, 12), other], {},
+                                            [self.online_twin(7, 12, range(3))])["entries"]
+        self.assertEqual([e["progress"] for e in entries], [3, 0])
+
+    def test_online_season_counts_only_against_its_own_part_of_the_folder(self):
+        """A folder of two entries: the online show of the first compares
+        with those episodes, the second entry's stay on top."""
+        show = self.folder(7, 20, range(12, 15))
+        show["seasons"][0]["releases"] = [
+            {"id": 7, "first_ep": 1, "last_ep": 12, "offset": 0, "total": 12},
+            {"id": 8, "first_ep": 13, "last_ep": None, "offset": -12, "total": 8}]
+        for i, ep in enumerate(show["seasons"][0]["episodes"]):
+            ep["number"] = i + 1
+        e = library.spine_build_local([show], {}, [self.online_twin(7, 12, range(5))])["entries"][0]
+        self.assertEqual((e["progress"], e["episodes"]), (8, 20))
+
     def test_unknown_stamp_sorts_last(self):
         spine = library.spine_build_local([local_show_watched("fresh", 3)], {})
         self.assertEqual(spine["entries"][0]["updated"], 0)
