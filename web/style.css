@@ -2067,16 +2067,16 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .lkbar q{position:absolute;top:50%;width:calc(22*var(--u));height:calc(22*var(--u));margin:calc(-11*var(--u));border-radius:50%;background:#fff;quotes:none;box-shadow:0 0 calc(16*var(--u)) var(--accent)}
 .lkbar q:before,.lkbar q:after{content:none}
 .dialog .choice .lkv .lkplay{display:inline-grid;place-items:center;flex:none;border-radius:9em;color:#111;background:#f3f3f1;width:calc(116*var(--u));height:calc(62*var(--u))}
-.dialog .choice .lkv .lkplay.ghost{color:#fff;background:rgba(255,255,255,.2);width:calc(96*var(--u));height:calc(96*var(--u))}
+.dialog .choice .lkv .lkplay.ghost{color:#fff;background:rgba(255,255,255,.2);width:calc(78*var(--u));height:calc(78*var(--u))}
 .lkv em{display:block;flex:none;width:calc(100*var(--u));height:calc(9*var(--u));border-radius:9em;background:linear-gradient(90deg,#fff 75%,rgba(255,255,255,.22) 0)}
 .lkshade{position:absolute;z-index:1;left:0;right:0;bottom:0;height:46%;background:linear-gradient(transparent,rgba(0,0,0,.62))}
 .lkttl,.lksbar,.lksrow,.lkdock{z-index:2}
 .dialog .choice .lkv .lkttl small{color:#fff;text-shadow:0 0 calc(10*var(--u)) rgba(0,0,0,.85)}
 .lksbar,.lksrow,.lkdock{position:absolute;display:flex;align-items:center}
-.lksbar{left:4%;right:4%;bottom:21%;gap:calc(22*var(--u))}
-.lksrow{left:3%;right:3%;bottom:5%;display:grid;grid-template-columns:1fr auto 1fr}
+.lksbar{left:4%;right:4%;bottom:19.5%;gap:calc(22*var(--u))}
+.lksrow{left:3%;right:3%;bottom:2.5%;display:grid;grid-template-columns:1fr auto 1fr}
 .dialog .choice .lkv .lkgrp{display:flex;align-items:center;gap:calc(22*var(--u))}.dialog .choice .lkv .lkgrp.lkend{justify-content:flex-end}
-.lkdock{left:0;right:0;bottom:0;height:calc(84*var(--u));padding:0 calc(24*var(--u));gap:calc(14*var(--u));background:rgba(14,15,18,.82);box-shadow:inset 0 1px 0 rgba(255,255,255,.12);border-radius:calc(22*var(--u)) calc(22*var(--u)) 0 0}
+.lkdock{left:0;right:0;bottom:0;height:calc(84*var(--u));padding:0 calc(24*var(--u));gap:calc(14*var(--u));background:rgba(14,15,18,.82);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
 .lkdock .lki{width:calc(29*var(--u));height:calc(29*var(--u))}
 .dialog .choice .lkv .lkdock .lkplay{width:calc(84*var(--u));height:calc(48*var(--u))}
 .dialog .choice .lkv .lkdock .lktime{font-size:calc(22*var(--u))}

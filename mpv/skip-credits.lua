@@ -23,14 +23,13 @@ local current = nil
 -- does; it lights up under the mouse and stays while the mouse is on it.
 -- Coordinates are in a 720-high space whose width follows the window's
 -- aspect.
--- BOTTOM keeps it above the player look's script's seek bar.
 local RES_Y, FS, KFS = 720, 22, 16
-local H, PAD, GAP, KW, KH, MARGIN, BOTTOM = 46, 22, 12, 30, 26, 36, 118
+local H, PAD, GAP, KW, KH, MARGIN, BOTTOM = 46, 22, 12, 30, 26, 36, 92
 local pill = mp.create_osd_overlay("ass-events")
 local ruler = mp.create_osd_overlay("ass-events")
 ruler.compute_bounds, ruler.hidden = true, true
 local shown, hide_timer = nil, nil
-local skip, segment_at -- defined below
+local skip, segment_at, show -- defined below
 
 local function rounded(w, h, r)
     local c = r * 0.5523
@@ -47,8 +46,16 @@ local function text_width(tags, text, res_x)
     return #text * 0.55 * FS
 end
 
+-- A player look draws the button itself, as part of its controls: this script
+-- only tells it what to say and when (Decision 56).
+local look = false
+
+local function tell_look(label, click, idle)
+    mp.commandv("script-message", "anime-hub-skip-state", label or "", click and "1" or "0", idle and "1" or "0")
+end
+
 local function draw()
-    if not shown then return end
+    if not shown or look then return end
     local dim = mp.get_property_native("osd-dimensions") or {}
     local res_x = (dim.w and dim.h and dim.h > 0) and math.floor(RES_Y * dim.w / dim.h) or 1280
     local label_tags = "\\fs" .. FS .. "\\b1\\bord0\\shad0"
@@ -85,9 +92,10 @@ end
 
 local function hide()
     if hide_timer then hide_timer:kill() hide_timer = nil end
-    if shown and shown.key then mp.remove_key_binding("anime-hub-skip-click") end
+    if shown and shown.key and not look then mp.remove_key_binding("anime-hub-skip-click") end
     shown = nil
     pill:remove()
+    if look then tell_look() end
 end
 
 local function expire()
@@ -96,12 +104,18 @@ local function expire()
         hide_timer = mp.add_timeout(1, expire)
     else
         hide()
+        if look and current then tell_look(nil, false, true) end -- the mouse can bring it back
     end
 end
 
-local function show(label, key, seconds)
+show = function(label, key, seconds)
     hide()
     shown = { label = label, key = key }
+    if look then
+        tell_look(label, key)
+        hide_timer = mp.add_timeout(seconds, expire)
+        return
+    end
     if key then
         -- A plain (not forced) binding: a click binding in your own
         -- input.conf still wins. Clicks outside the button do nothing.
@@ -152,10 +166,27 @@ end
 -- The right-click menu's Finish episode is Enter's "finished". A pick from the player look's script's Episodes list quits with the episode's id in
 -- a file, and the hub starts it.
 mp.register_script_message("anime-hub-finish", finish)
--- A player look with a lower dock moves the button down with it.
-mp.register_script_message("anime-hub-skip-bottom", function(px)
-    BOTTOM = tonumber(px) or BOTTOM
-    draw()
+mp.register_script_message("anime-hub-skip-look", function()
+    if look then return end
+    -- A button already up (a look that spoke late) moves over to the look.
+    local up = shown
+    if up then
+        if up.key then mp.remove_key_binding("anime-hub-skip-click") end
+        pill:remove()
+    end
+    look = true
+    if up then tell_look(up.label, up.key) end
+end)
+mp.register_script_message("anime-hub-skip-hover", function(on)
+    if shown then shown.hover = on == "1" end
+end)
+mp.register_script_message("anime-hub-skip-click", function()
+    local seg = segment_at(mp.get_property_number("time-pos"))
+    if seg then skip(seg) end
+end)
+mp.register_script_message("anime-hub-skip-wake", function()
+    local seg = segment_at(mp.get_property_number("time-pos"))
+    if seg then show(seg.finish and "Finish episode" or ("Skip " .. NAMES[seg.kind]), true, 8) end
 end)
 mp.register_script_message("anime-hub-go", function(id)
     local marker = marker_path()

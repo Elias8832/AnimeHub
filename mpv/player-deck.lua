@@ -631,7 +631,7 @@ local function draw_track(ev, x, y, w, position, duration)
     st.track = { x = x, y = y, w = w, duration = duration }
     local on = (inside(x - 6, y - 10, w + 12, 24) or st.seeking) and not st.menu
     st.fat = settle(st.fat or 0, on and 1 or 0, 0.3)
-    local h = 5 + 3 * st.fat
+    local h = 5
     local cy = y + 2
     local color = accent()
     if not duration or duration <= 0 then
@@ -742,7 +742,7 @@ local function draw_dock(ev)
     local track_x = start_x + time_w
     local track_w = speaker_x - 24 - time_w - loaded_w - track_x
     fill(ev, box(track_x + track_w * here - 150, top - 12, 300, 26, 13), accent(), 0x9C, "\\blur22")
-    fill(ev, box(-40, top, w + 80, DOCK + 60, 16), GLASS, GLASS_A, EDGE)
+    fill(ev, box(-40, top, w + 80, DOCK + 60, 16), GLASS, GLASS_A) -- no edge line: the skip tab grows out of it
 
     local left = clock(position)
     local right = st.remaining and duration and position and ("-" .. clock(duration - position)) or clock(duration)
@@ -868,6 +868,109 @@ local function draw()
     screen:update()
 end
 
+-- The skip button: a piece of the player that grows out of it, on Apple's
+-- sheet curve. skip-credits.lua decides when and says what; this draws it.
+local tab = { to = 0, from = 0, t0 = -10, dur = 0.5, text = "" }
+local tab_layer = mp.create_osd_overlay("ass-events")
+tab_layer.z = 20
+local TAB_H, TAB_R, TAB_FLARE = 34, 12, 12
+
+local function curve_x(t) return 3 * (1 - t) ^ 2 * t * 0.32 + 3 * (1 - t) * t ^ 2 * 0 + t ^ 3 end
+local function curve_y(t) return 3 * (1 - t) ^ 2 * t * 0.72 + 3 * (1 - t) * t ^ 2 + t ^ 3 end
+
+local function apple(x)
+    -- cubic-bezier(.32, .72, 0, 1)
+    local lo, hi = 0, 1
+    for _ = 1, 14 do
+        local mid = (lo + hi) / 2
+        if curve_x(mid) < x then lo = mid else hi = mid end
+    end
+    return curve_y((lo + hi) / 2)
+end
+
+local function tab_now()
+    local k = math.min(1, (mp.get_time() - tab.t0) / tab.dur)
+    return tab.from + (tab.to - tab.from) * apple(k), k < 1
+end
+
+local function tab_path(l, t, R, b)
+    local r, c, q = TAB_R, TAB_FLARE, 0.45
+    return string.format("m %.2f %.2f b %.2f %.2f %.2f %.2f %.2f %.2f l %.2f %.2f b %.2f %.2f %.2f %.2f %.2f %.2f "
+        .. "l %.2f %.2f b %.2f %.2f %.2f %.2f %.2f %.2f l %.2f %.2f b %.2f %.2f %.2f %.2f %.2f %.2f ",
+        l - c, b, l - c * q, b, l, b - c * q, l, b - c,
+        l, t + r, l, t + r * q, l + r * q, t, l + r, t,
+        R - r, t, R - r * q, t, R, t + r * q, R, t + r,
+        R, b - c, R, b - c * q, R + c * q, b, R + c, b)
+end
+
+local tab_timer
+local function tab_over()
+    local h = tab.hit
+    return h and st.mouse.hover ~= false and st.mouse.x >= h.x and st.mouse.x <= h.x + h.w
+        and st.mouse.y >= h.y and st.mouse.y <= h.y + h.h
+end
+
+local function tab_draw()
+    local v, moving = tab_now()
+    if tab.to == 0 and not moving then
+        tab.hit = nil
+        tab_layer:remove()
+        return false
+    end
+    local w = 34 + #tab.text * 6.2 + (tab.click and 22 or 0)
+    local R = (st.w - 26) - TAB_FLARE
+    local l, b = R - w, math.min(H, H - DOCK + dy())
+    local t = b - TAB_H * v
+    if not moving then l, R, t = snap(l), snap(R), snap(t) end
+    local over = tab.click and tab_over()
+    if over ~= tab.over then
+        tab.over = over
+        mp.commandv("script-message", "anime-hub-skip-hover", over and "1" or "0")
+    end
+    local ev = { string.format("{\\an7\\pos(0,0)\\clip(0,0,%d,%.2f)\\bord0\\shad0\\1c&H%s&\\1a&H%02X&\\p1}%s{\\p0}",
+        st.w, b + 1 / st.scale, over and "2A2625" or GLASS, over and 0x18 or GLASS_A, tab_path(l, t, R, t + TAB_H + 1 / st.scale)) }
+    ev[#ev + 1] = string.format("{\\an4\\pos(%.2f,%.2f)\\clip(0,0,%d,%.2f)\\fn%s\\fs16\\b1\\bord0\\shad0\\1c&H%s&}%s",
+        l + 17, t + TAB_H / 2, st.w, b, "Hanken Grotesk", "F1F3F3", tab.text)
+    if tab.click then
+        ev[#ev + 1] = string.format("{\\an7\\pos(%.2f,%.2f)\\clip(0,0,%d,%.2f)\\bord0\\shad0\\1c&H%s&\\p1}%s{\\p0}",
+            snap(R - 30), snap(t + TAB_H / 2 - 8), st.w, b, accent(), icon_shape("forward", 16))
+    end
+    tab_layer.res_x, tab_layer.res_y, tab_layer.data = st.w, 720, table.concat(ev, "\n")
+    tab_layer:update()
+    tab.hit = v > 0.5 and tab.click and { x = l, y = t, w = w, h = TAB_H } or nil
+    return moving
+end
+
+local function tab_tick()
+    tab_timer = nil
+    if tab_draw() then tab_timer = mp.add_timeout(0.008, tab_tick) end
+end
+
+local function tab_go(on)
+    if tab.to == on then return end
+    tab.from, tab.to, tab.t0, tab.dur = (tab_now()), on, mp.get_time(), on == 1 and 0.55 or 0.32
+    if not tab_timer then tab_tick() end
+end
+
+local function tab_sync()
+    tab_go(tab.label and not st.menu and 1 or 0)
+    if not tab_timer then tab_draw() end
+end
+
+mp.register_script_message("anime-hub-skip-state", function(label, click, idle)
+    tab.label = label ~= "" and label or nil
+    tab.idle = idle == "1"
+    if tab.label then tab.text, tab.click = tab.label, click == "1" end
+    tab_sync()
+end)
+
+local function tab_wake()
+    if tab.idle then
+        tab.idle = false
+        mp.commandv("script-message", "anime-hub-skip-wake")
+    end
+end
+
 -- Showing and hiding --------------------------------------------------------
 
 local SUB_LIFT, sub_home = 8, nil
@@ -885,18 +988,27 @@ end
 local tick, hide_timer
 local FRAME = 0.008 -- no more than 120 redraws a second
 
+-- The dock rides the same curve as the skip tab, timed by the clock.
+local slide = { from = 0, to = 0, t0 = -10, dur = 0.35 }
+
 local function step()
     tick = nil
-    st.slide = settle(st.slide, st.want and 1 or 0, 0.24)
-    if st.slide <= 0.005 and not st.want then
-        st.slide = 0
+    local to, now = st.want and 1 or 0, mp.get_time()
+    if slide.to ~= to then
+        slide.from, slide.to, slide.t0, slide.dur = st.slide, to, now, to == 1 and 0.35 or 0.32
+    end
+    local k = (now - slide.t0) / slide.dur
+    st.slide = k >= 1 and to or slide.from + (to - slide.from) * apple(k)
+    if st.slide == 0 and not st.want then
         screen:remove()
         st.hits = {}
+        tab_sync()
         return
     end
-    st.last_draw = mp.get_time()
-    draw()
-    if moving then tick = mp.add_timeout(FRAME, step) end
+    st.last_draw = now
+    draw() -- clears moving, so the slide's own motion is checked here
+    tab_sync()
+    if moving or st.slide ~= to then tick = mp.add_timeout(FRAME, step) end
 end
 
 redraw = function()
@@ -942,6 +1054,10 @@ local function top_hit()
 end
 
 local function press()
+    if tab_over() then
+        mp.commandv("script-message", "anime-hub-skip-click")
+        return
+    end
     local h, was = top_hit(), st.menu
     if not h then
         st.menu = nil
@@ -1071,7 +1187,7 @@ local bound = false
 rebind = function()
     -- Only on the dock or with a menu open, so everywhere else the picture
     -- does what the user's settings and input.conf say.
-    local on = st.slide > 0 and (st.menu ~= nil or st.drag ~= nil or st.mouse.y >= H - DOCK)
+    local on = (st.slide > 0 and (st.menu ~= nil or st.drag ~= nil or st.mouse.y >= H - DOCK)) or tab_over() and true or false
     if on ~= bound then
     bound = on
     if on then
@@ -1125,6 +1241,8 @@ mp.observe_property("mouse-pos", "native", function(_, m)
         if st.menu.child then st.menu.child.kbd = false end
         st.menu.in_child = false
     end
+    if moved then tab_wake() end
+    if not tab_timer then tab_draw() end
     if m.hover == false and not stays() then
         st.want = false
         lift(false)
@@ -1197,6 +1315,7 @@ mp.register_script_message("anime-hub-info", function(raw)
 end)
 
 mp.register_script_message("anime-hub-segments", function(raw)
+    mp.commandv("script-message", "anime-hub-skip-look") -- before any button is due
     local data = utils.parse_json(raw or "")
     parts = {}
     if type(data) == "table" and data.marks == true and type(data.segments) == "table" then
@@ -1226,10 +1345,8 @@ mp.register_event("start-file", function()
 end)
 
 mp.register_event("file-loaded", function()
-    local d = mp.get_property_native("osd-dimensions") or {}
-    mp.msg.warn(string.format("deck: drawing at %sx%s", tostring(d.w), tostring(d.h)))
     mp.commandv("script-message", "osc-visibility", "never", "no-osd")
     mp.commandv("script-message-to", "thumbfast", "thumbfast-info")
-    mp.commandv("script-message", "anime-hub-skip-bottom", "92")  -- above the hover labels
+    mp.commandv("script-message", "anime-hub-skip-look")
     poke()
 end)

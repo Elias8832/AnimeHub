@@ -210,6 +210,8 @@ local function shape(path, color, base, extra)
     return string.format("{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H%s&\\1a&H%s&%s\\p1}%s{\\p0}", color, alpha(base), extra or "", path)
 end
 
+local function tab_lift() return 31 * (ui.tab_v or 0) end
+
 local function text(x, y, an, size, color, s, font, bold, base)
     return string.format("{\\an%d\\pos(%.1f,%.1f)\\fn%s\\fs%d\\b%d\\bord0\\shadow1\\4c&H000000&\\4a&H%s&\\1c&H%s&\\1a&H%s&}%s",
         an, snap(x), snap(y), font or UI, size, bold and 1 or 0, alpha(math.max(150, base or 0)), color, alpha(base or 0), s)
@@ -366,6 +368,47 @@ local function lens(a, b, cy, h, swell, at)
     return poly(pts)
 end
 
+-- The skip pill sits next to the line, never on it. Cut, not shortened: the
+-- bar keeps its scale.
+local function cut(x) return ui.tab_left and math.min(x, ui.tab_left) or x end
+
+-- "BBGGRR" into numbers, and back.
+local function rgb(hex)
+    return tonumber(hex:sub(5, 6), 16), tonumber(hex:sub(3, 4), 16), tonumber(hex:sub(1, 2), 16)
+end
+
+local function bar_look(x)
+    -- What draw_bar's layers add up to at x: red, green, blue, strength 0-1.
+    local b = ui.bar
+    local r, g, bl, o = 255, 255, 255, (255 - 190) / 255
+    if not b or not b.duration or b.duration <= 0 then return r, g, bl, (255 - 200) / 255 end
+    local t = b.duration * (x - b.x0) / (b.x1 - b.x0)
+    local mark = false
+    for _, seg in ipairs(segments) do
+        if t >= seg.start and t < seg.stop then mark = true end
+    end
+    if mark then
+        r, g, bl = rgb(accent())
+        o = (255 - 102) / 255
+    end
+    local tr, tg, tb = r, g, bl
+    if t <= (ui.drag_to or mp.get_property_number("time-pos") or 0) then return tr, tg, tb, 1 end
+    if not info.prefs or info.prefs.loaded ~= "off" then
+        for _, range in ipairs(ui.loaded or {}) do
+            if t >= range.start and t < range["end"] then
+                local top = (255 - 164) / 255 -- white over what is there
+                local all = top + o * (1 - top)
+                r = (255 * top + r * o * (1 - top)) / all
+                g = (255 * top + g * o * (1 - top)) / all
+                bl = (255 * top + bl * o * (1 - top)) / all
+                o = all
+                break
+            end
+        end
+    end
+    return r, g, bl, o
+end
+
 local function draw_bar(ev, x0, x1, position, duration, heat, hover_x)
     local w, cy = x1 - x0, BAR_Y + BAR_H / 2
     ui.bar = { x0 = x0, x1 = x1, duration = duration }
@@ -375,13 +418,13 @@ local function draw_bar(ev, x0, x1, position, duration, heat, hover_x)
     end
     local pos = math.max(0, math.min(position or 0, duration))
     local color, head = accent(), x0 + w * pos / duration
-    local swell = 7 * heat
+    local swell = 0
     local ranges = (not info.prefs or info.prefs.loaded ~= "off") and ui.loaded or {}
     -- Only under the mouse: chasing the playing position would never settle,
     -- and the screen would redraw at full speed for as long as the bar shows.
     local at = hover_x and spring("bar:x", hover_x, 0.3) or head
     if not hover_x then springs["bar:x"] = nil end
-    local h = BAR_H + 2 * heat
+    local h = BAR_H
     for _, p in ipairs(bar_pieces(duration)) do
         local a, b = x0 + w * p.from / duration, x0 + w * p.to / duration - 3
         if b - a > 0.5 then
@@ -390,16 +433,16 @@ local function draw_bar(ev, x0, x1, position, duration, heat, hover_x)
             for _, r in ipairs(ranges) do -- what mpv has loaded so far
                 local from, to = math.max(a, x0 + w * r.start / duration), math.min(b, x0 + w * r["end"] / duration)
                 if to > from then
-                    ev[#ev + 1] = shape(outline, "FFFFFF", 164, string.format("\\clip(%.1f,0,%.1f,720)", from, to))
+                    ev[#ev + 1] = shape(outline, "FFFFFF", 164, string.format("\\clip(%.1f,0,%.1f,720)", from, cut(to)))
                 end
             end
             local ahead = hover_x and math.min(b, hover_x)
             if ahead and ahead > a then -- how far a click would land
-                ev[#ev + 1] = shape(outline, tint, 150, string.format("\\clip(%.1f,0,%.1f,720)", a - 2, ahead))
+                ev[#ev + 1] = shape(outline, tint, 150, string.format("\\clip(%.1f,0,%.1f,720)", a - 2, cut(ahead)))
             end
             local fill = math.min(b, head)
             if fill > a then
-                ev[#ev + 1] = shape(outline, tint, 0, string.format("\\clip(%.1f,0,%.1f,720)", a - 2, fill))
+                ev[#ev + 1] = shape(outline, tint, 0, string.format("\\clip(%.1f,0,%.1f,720)", a - 2, cut(fill)))
             end
         end
     end
@@ -865,16 +908,26 @@ local function draw_front()
     local extra = loaded and 62 or 0
     if ui.remaining and duration and position then right = "-" .. clock(duration - position) end
     local right_w = 12 + #right * 10
-    local right_hot = inside(w - SIDE - extra - right_w, BAR_Y - 12, right_w, 30)
-    ev[#ev + 1] = text(w - SIDE - extra, BAR_Y + BAR_H / 2, 6, 18, right_hot and "FFFFFF" or "C6C9C9", right, UI, true)
-    hit[#hit + 1] = { x = w - SIDE - extra - right_w, y = BAR_Y - 12, w = right_w, h = 30,
+    -- The skip pill takes their place on the line, so they step up above it.
+    local time_y = BAR_Y + BAR_H / 2 - tab_lift()
+    local right_hot = inside(w - SIDE - extra - right_w, time_y - 15, right_w, 30)
+    ev[#ev + 1] = text(w - SIDE - extra, time_y, 6, 18, right_hot and "FFFFFF" or "C6C9C9", right, UI, true)
+    hit[#hit + 1] = { x = w - SIDE - extra - right_w, y = time_y - 15, w = right_w, h = 30,
         run = function() ui.remaining = not ui.remaining end }
-    if loaded then ev[#ev + 1] = text(w - SIDE, BAR_Y + BAR_H / 2, 6, 15, "92908C", "+" .. clock(loaded), UI) end
+    if loaded then ev[#ev + 1] = text(w - SIDE, time_y, 6, 15, "92908C", "+" .. clock(loaded), UI) end
     local inset = 14 + math.max(#left, #right) * 9.5
     local on_bar = ui.mouse.hover ~= false and ui.mouse.y >= BAR_Y - 12 and ui.mouse.y <= BAR_Y + BAR_H + 12
         and ui.mouse.x >= SIDE + inset and ui.mouse.x <= w - SIDE - inset - extra
+    local bar_from = #ev + 1
     draw_bar(ev, SIDE + inset, w - SIDE - inset - extra, ui.drag_to or position, duration,
         spring("hover:bar", (on_bar or ui.drag_to) and 1 or 0), on_bar and ui.mouse.x or nil)
+    if ui.tab_left then
+        for i = bar_from, #ev do
+            if not ev[i]:find("\\clip", 1, true) then
+                ev[i] = ev[i]:gsub("^{", string.format("{\\clip(0,0,%.1f,720)", ui.tab_left), 1)
+            end
+        end
+    end
 
     local volume = mp.get_property_number("volume", 100)
     local muted = mp.get_property_bool("mute")
@@ -1028,6 +1081,176 @@ redraw = function()
     draw_front()
     draw_hover()
     keep_moving()
+    if ui.tab_sync then ui.tab_sync() end
+end
+
+-- The skip button: a pill that runs out of the seek bar's end over the time,
+-- on Apple's sheet curve. A short taper joins it to the line while the line is
+-- there; without it, a plain pill stays in the same place. skip-credits.lua decides when and says what; this draws it.
+local tab = { to = 0, from = 0, t0 = -10, dur = 0.5, text = "" }
+local tab_layer = mp.create_osd_overlay("ass-events")
+tab_layer.z = 5 -- under the bar's hover preview
+local TAB_H, TAB_NECK = 34, 16
+
+local function curve_x(t) return 3 * (1 - t) ^ 2 * t * 0.32 + 3 * (1 - t) * t ^ 2 * 0 + t ^ 3 end
+local function curve_y(t) return 3 * (1 - t) ^ 2 * t * 0.72 + 3 * (1 - t) * t ^ 2 + t ^ 3 end
+
+local function apple(x)
+    -- cubic-bezier(.32, .72, 0, 1)
+    local lo, hi = 0, 1
+    for _ = 1, 14 do
+        local mid = (lo + hi) / 2
+        if curve_x(mid) < x then lo = mid else hi = mid end
+    end
+    return curve_y((lo + hi) / 2)
+end
+
+local function tab_now()
+    local k = math.min(1, (mp.get_time() - tab.t0) / tab.dur)
+    return tab.from + (tab.to - tab.from) * apple(k), k < 1
+end
+
+local function tab_path(L, R, cy, hh, m)
+    -- The pill, with a short taper out of its left end into the line. One
+    -- shape, so the taper can't lag. m = 0 closes it into a plain round end.
+    local function mix(a, b) return a + (b - a) * m end
+    local k = 0.55
+    local x0, y0 = mix(L, L - TAB_NECK), mix(0, BAR_H / 2)
+    local c1x, c1y = mix(L, L - TAB_NECK * 0.25), mix(hh * k, BAR_H / 2)
+    local c2x, ex = mix(L + hh * (1 - k), L + 1), L + hh
+    return string.format("m %.2f %.2f b %.2f %.2f %.2f %.2f %.2f %.2f l %.2f %.2f "
+        .. "b %.2f %.2f %.2f %.2f %.2f %.2f b %.2f %.2f %.2f %.2f %.2f %.2f "
+        .. "l %.2f %.2f b %.2f %.2f %.2f %.2f %.2f %.2f ",
+        x0, cy - y0, c1x, cy - c1y, c2x, cy - hh, ex, cy - hh, R - hh, cy - hh,
+        R - hh * (1 - k), cy - hh, R, cy - hh * k, R, cy,
+        R, cy + hh * k, R - hh * (1 - k), cy + hh, R - hh, cy + hh,
+        ex, cy + hh, c2x, cy + hh, c1x, cy + c1y, x0, cy + y0)
+end
+
+-- 1 while the seek bar is there to join, 0 when the pill stands alone.
+local function tab_glue()
+    local to = ui.want and 1 or 0
+    local g = tab.glue
+    local function at()
+        return g.from + (g.to - g.from) * apple(math.min(1, (mp.get_time() - g.t0) / 0.3))
+    end
+    if not g then
+        g = { from = to, to = to, t0 = -10 }
+        tab.glue = g
+    elseif g.to ~= to then
+        g.from, g.to, g.t0 = at(), to, mp.get_time()
+    end
+    return at(), mp.get_time() - g.t0 < 0.3
+end
+
+local function tab_arrow() return icon_shape("forward", 16) end
+
+local tab_timer
+local function tab_over()
+    local h = tab.hit
+    return h and ui.mouse.hover ~= false and ui.mouse.x >= h.x and ui.mouse.x <= h.x + h.w
+        and ui.mouse.y >= h.y and ui.mouse.y <= h.y + h.h
+end
+
+local function tab_draw()
+    local v, moving = tab_now()
+    local glue, gluing = tab_glue()
+    moving = moving or gluing
+    if tab.to == 0 and not moving then
+        tab.hit = nil
+        tab_layer:remove()
+        ui.tab_left, ui.tab_v = nil, nil
+        ui.tab_redraw()
+        return false
+    end
+    local full = 36 + #tab.text * 6.2 + (tab.click and 22 or 0)
+    local cy = BAR_Y + BAR_H / 2
+    -- The line's end swells and runs on to the right, over the time and the
+    -- loaded figure, until it fills their place.
+    local hh = BAR_H / 2 + (TAB_H / 2 - BAR_H / 2) * v
+    -- x1 - 4: the bar's last stretch stops just short of x1.
+    local x1, right = (ui.bar and ui.bar.x1 or ui.w - SIDE - 120) - 4, ui.w - SIDE + TAB_NECK
+    local left = math.min(x1, right - full - TAB_NECK)
+    -- Where the taper meets the line; a whole unit, as a plain \clip takes.
+    local X = math.floor(x1 + (left - x1) * v)
+    local L = X + TAB_NECK
+    local R = math.max(L + hh * 2, x1 + (right - x1) * v)
+    if not moving then L = snap(L) end
+    if ui.tab_left ~= X or ui.tab_v ~= v then
+        ui.tab_left, ui.tab_v = X, v
+        ui.tab_redraw()
+    end
+    local over = tab.click and tab_over()
+    if over ~= tab.over then
+        tab.over = over
+        mp.commandv("script-message", "anime-hub-skip-hover", over and "1" or "0")
+    end
+    local base = math.floor(255 * (1 - math.min(1, v / 0.2)))
+    local path, ev = tab_path(L, R, cy, hh, glue), {}
+    local fill = over and accent() or "F1F3F3"
+    local function piece(x0, x1, color, a)
+        ev[#ev + 1] = string.format("{\\an7\\pos(0,0)\\clip(m %.3f %d l %.3f %d %.3f %d %.3f %d)\\bord0\\shad0\\1c&H%s&\\1a&H%02X&\\p1}%s{\\p0}",
+            x0, cy - 20, x1, cy - 20, x1, cy + 20, x0, cy + 20, color, a, path)
+    end
+    if glue > 0.02 then
+        -- The taper starts as whatever the bar is where it meets it, and
+        -- turns into the pill one screen pixel at a time.
+        local px, r0, g0, b0, o0 = 1 / ui.scale, bar_look(X - 1)
+        local r1, g1, b1 = rgb(fill)
+        local x0, x1 = math.floor(X / px) * px, math.ceil((L + hh * 0.6) / px) * px
+        local n = math.floor((x1 - x0) / px + 0.5)
+        for i = 1, n do
+            local k = (i - 0.5) / n
+            k = 1 - (1 - k * k * (3 - 2 * k)) * glue
+            piece(x0 + (i - 1) * px, x0 + i * px,
+                string.format("%02X%02X%02X", b0 + (b1 - b0) * k, g0 + (g1 - g0) * k, r0 + (r1 - r0) * k),
+                math.max(base, math.floor(255 * (1 - (o0 + (1 - o0) * k)))))
+        end
+        piece(x1, R + 1, fill, base)
+    else
+        piece(L - 1, R + 1, fill, base)
+    end
+    local a = math.floor(255 * (1 - math.max(0, math.min(1, (v - 0.5) / 0.5))))
+    ev[#ev + 1] = string.format("{\\an4\\pos(%.2f,%.2f)\\clip(%.2f,0,%.2f,720)\\fn%s\\fs16\\b1\\bord0\\shad0\\1c&H17181B&\\1a&H%02X&}%s",
+        left + TAB_NECK + 18, cy, L, R, "Hanken Grotesk", a, tab.text)
+    if tab.click then
+        ev[#ev + 1] = string.format("{\\an7\\pos(%.2f,%.2f)\\clip(%.2f,0,%.2f,720)\\bord0\\shad0\\1c&H17181B&\\1a&H%02X&\\p1}%s{\\p0}",
+            snap(right - 30), snap(cy - 8), L, R, a, tab_arrow())
+    end
+    tab_layer.res_x, tab_layer.res_y, tab_layer.data = ui.w, 720, table.concat(ev, "\n")
+    tab_layer:update()
+    tab.hit = v > 0.5 and tab.click and { x = L, y = cy - TAB_H / 2, w = R - L, h = TAB_H } or nil
+    return moving
+end
+
+local function tab_tick()
+    tab_timer = nil
+    if tab_draw() then tab_timer = mp.add_timeout(0.008, tab_tick) end
+end
+
+local function tab_go(on)
+    if tab.to == on then return end
+    tab.from, tab.to, tab.t0, tab.dur = (tab_now()), on, mp.get_time(), on == 1 and 0.55 or 0.32
+    if not tab_timer then tab_tick() end
+end
+
+local function tab_sync()
+    tab_go(tab.label and not ui.menu and 1 or 0)
+    if not tab_timer then tab_tick() end
+end
+
+mp.register_script_message("anime-hub-skip-state", function(label, click, idle)
+    tab.label = label ~= "" and label or nil
+    tab.idle = idle == "1"
+    if tab.label then tab.text, tab.click = tab.label, click == "1" end
+    tab_sync()
+end)
+
+local function tab_wake()
+    if tab.idle then
+        tab.idle = false
+        mp.commandv("script-message", "anime-hub-skip-wake")
+    end
 end
 
 -- Showing and hiding ----------------------------------------------------
@@ -1037,13 +1260,17 @@ local want = false
 
 local function must_stay()
     return ui.menu or ui.drag_to or ui.slide or ui.menu_drag or mp.get_property_bool("pause")
-        or (ui.mouse.hover ~= false and ui.mouse.y >= ZONE_Y)
+        or (ui.mouse.hover ~= false and ui.mouse.y >= ZONE_Y - tab_lift())
 end
 
 local set_bindings -- defined below
 
+ui.tab_sync = tab_sync
+ui.tab_redraw = function() if ui.opacity > 0 then redraw() end end
+
 local function fade()
     local target = want and 1 or 0
+    ui.want = want
     if ui.opacity == target then
         if fade_timer then fade_timer:kill() fade_timer = nil end
         if target == 0 then
@@ -1055,6 +1282,7 @@ local function fade()
         return
     end
     ui.opacity = want and math.min(1, ui.opacity + FADE_STEP) or math.max(0, ui.opacity - FADE_STEP)
+    tab_sync()
     draw_back()
     if ui.opacity > 0 then redraw() end
 end
@@ -1107,6 +1335,10 @@ local function set_level(x)
 end
 
 local function on_press()
+    if tab_over() then
+        mp.commandv("script-message", "anime-hub-skip-click")
+        return
+    end
     local mx, my = ui.mouse.x, ui.mouse.y
     local m = ui.menu
     local function in_box(b) return b and mx >= b[1] and mx <= b[1] + b[3] and my >= b[2] and my <= b[2] + b[4] end
@@ -1275,7 +1507,7 @@ local bound = false
 set_bindings = function()
     -- Only while the mouse is on the controls (or a menu is open), so a click
     -- on the picture still does what the user's input.conf says.
-    local on = ui.opacity > 0 and (ui.menu ~= nil or ui.dragging or ui.slide or ui.mouse.y >= ZONE_Y)
+    local on = (ui.opacity > 0 and (ui.menu ~= nil or ui.dragging or ui.slide or ui.mouse.y >= ZONE_Y - tab_lift())) or tab_over() and true or false
     if on ~= bound then
     bound = on
     -- A held button on the controls must not grab the window instead: the
@@ -1336,6 +1568,8 @@ mp.observe_property("mouse-pos", "native", function(_, m)
     if ui.slide then set_level(x) end
     if ui.menu_drag then ui.menu_drag(x) end
     set_bindings()
+    if moved then tab_wake() end
+    if not tab_timer then tab_draw() end
     if moved and ui.menu then
         ui.menu.kbd, ui.menu.in_child = false, false
         if ui.menu.child then ui.menu.child.kbd = false end
@@ -1408,6 +1642,7 @@ mp.register_script_message("anime-hub-info", function(raw)
 end)
 
 mp.register_script_message("anime-hub-segments", function(raw)
+    mp.commandv("script-message", "anime-hub-skip-look") -- before any button is due
     local data = utils.parse_json(raw or "")
     segments = {}
     if type(data) ~= "table" or data.marks ~= true or type(data.segments) ~= "table" then return end
@@ -1441,6 +1676,7 @@ mp.register_event("file-loaded", function()
     -- Skins built on mpv's own OSC (ModernZ among them) step aside for us;
     -- thumbfast, if there, says what it can do.
     mp.commandv("script-message", "osc-visibility", "never", "no-osd")
+    mp.commandv("script-message", "anime-hub-skip-look")
     mp.commandv("script-message-to", "thumbfast", "thumbfast-info")
     poke()
 end)
