@@ -145,6 +145,7 @@ class RealPlayerScripts(unittest.TestCase):
                 self.assertNotIn("error loading", (run.stdout + run.stderr).lower())
 
 
+@unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
 class RealMpv(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
