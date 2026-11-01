@@ -1681,7 +1681,7 @@ function lookSeg(k, opts) {
 /* Opening/ending skipping in mpv (Decision 39). AniSkip is opt-in: it would learn what you watch. */
 const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
 /* mpv's own section (Decision 45): each option is on, off, or left to your mpv.conf. */
-const PLAYER_LOOKS = { soft: "Soft", deck: "Deck" };
+const PLAYER_LOOKS = { soft: "Float", deck: "Dock" };
 const mpick = (m, k, label, opts) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
 const MPVMODES = [["on", "On"], ["off", "Off"], ["own", "My config"]];
 function mpvGroup(s) {
@@ -2806,7 +2806,40 @@ function tourFound(s, a, n, ok) {
   ].join("");
 }
 /* The phone page needs the desktop app: without it the tour skips that page. */
-const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 4));
+const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 6));
+/* A small drawing of each player look for the tour: the real layout over a neutral scene, no show's art. */
+const PL_ICONS = {
+  subs: '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M6.5 10.500h5M6.500 14h2M13 14h4"/>',
+  wave: '<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>',
+  tune: '<path d="M3.500 7.500h17M3.500 16.500h17"/><circle cx="16" cy="7.500" r="2.500" fill="currentColor"/><circle cx="8" cy="16.500" r="2.500" fill="currentColor"/>',
+  list: '<path d="M4 6h16M4 12h16M4 18h9"/>',
+  full: '<path d="M4 9V8a4 4 0 0 1 4-4h1M15 4h1a4 4 0 0 1 4 4v1M20 15v1a4 4 0 0 1-4 4h-1M9 20H8a4 4 0 0 1-4-4v-1"/>',
+  vol: '<path d="M4 9.500h3.500L12 5.500v13l-4.500-4H4z" fill="currentColor"/><path d="M15.500 9a4 4 0 0 1 0 6"/>',
+  back: '<path d="M11.500 6l-6 6 6 6M19 6l-6 6 6 6"/>',
+  fwd: '<path d="M12.500 6l6 6-6 6M5 6l6 6-6 6"/>',
+  play: '<path d="M7 5l12 7-12 7z" fill="currentColor"/>',
+};
+const plIco = (k) => `<svg class="lki" viewBox="0 0 24 24" aria-hidden="true">${PL_ICONS[k]}</svg>`;
+const plBar = `<span class="lkbar"><s style="left:0;width:7%"></s><s style="left:8%;width:6%"></s><s style="left:15%;width:73%"></s><s style="left:89%;width:6%"></s><s style="left:96%;width:4%"></s><i style="width:7%"></i><u style="left:8%;width:6%"></u><i style="left:15%;width:27%"></i><b style="left:89%;width:6%"></b><q style="left:42%"></q></span>`;
+const PL_LOOKS = {
+  soft: () => `<div class="lkv soft"><span class="lkttl">Your show<small>Season 1 · E3</small></span><div class="lkshade"></div>
+    <div class="lksbar"><span>10:40</span>${plBar}<span>24:30</span></div>
+    <div class="lksrow"><span class="lkgrp">${plIco("list")}${plIco("vol")}<em></em></span><span class="lkgrp">${plIco("back")}<span class="lkplay ghost">${plIco("play")}</span>${plIco("fwd")}</span><span class="lkgrp lkend">${plIco("subs")}${plIco("wave")}${plIco("tune")}${plIco("full")}</span></div></div>`,
+  deck: () => `<div class="lkv deck"><span class="lkttl">Your show<small>Season 1 · E3</small></span>
+    <div class="lkdock">${plIco("back")}<span class="lkplay">${plIco("play")}</span>${plIco("fwd")}<span class="lktime">10:40</span>${plBar}<span class="lktime">24:30</span>${plIco("vol")}<em></em>${plIco("subs")}${plIco("wave")}${plIco("tune")}${plIco("list")}${plIco("full")}</div></div>`,
+};
+const TOUR_OWN = { mpv_fullscreen: "own", mpv_smooth: "own" }, TOUR_HUB = { mpv_fullscreen: "on", mpv_smooth: "on" };
+function tourMpv(s) {
+  const m = s.mpv || {}, own = m.fullscreen === "own" && m.smooth === "own";
+  const card = (v, on, title, line) => `<button class="choice ${on ? "on" : ""}" aria-pressed="${on}" data-a="tourmpv" data-v="${v}"><b>${title}</b><span>${line}</span></button>`;
+  return `<div class="choices">${card("hub", !own, "Anime Hub's settings", "Episodes start fullscreen, and the controls stay smooth while playing.")}${card("own", own, "My own settings", "mpv.conf decides. Good if you have tuned mpv yourself.")}</div>`;
+}
+function tourLooks(s) {
+  const m = s.mpv || {}, own = m.design === "own";
+  const card = (v, title, line) => `<button class="choice lkcard ${!own && (m.look || "soft") === v ? "on" : ""}" aria-pressed="${!own && (m.look || "soft") === v}" data-a="tourlook" data-v="${v}">${PL_LOOKS[v]()}<b>${title}</b><span>${line}</span></button>`;
+  return `<div class="choices lkpick">${card("soft", PLAYER_LOOKS.soft, "Controls float over the picture, with lively hover effects.")}${card("deck", PLAYER_LOOKS.deck, "One slim bar along the bottom, with the most room for the seek bar.")}
+    <button class="choice lkown ${own ? "on" : ""}" aria-pressed="${own}" data-a="tourlook" data-v="own"><b>Keep my own mpv look</b><span>For a skin you already use. Anime Hub adds no controls.</span></button></div>`;
+}
 function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
@@ -2821,6 +2854,8 @@ function Tour() {
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
     `<h2 id="dt">A few tools</h2><p class="sub">AnimeHub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
+    `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
+    `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
     `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
@@ -3914,11 +3949,24 @@ const A = {
     toast(r.error || (r.changed === false ? `You have the latest ani-cli (${r.version})` : `ani-cli ${r.version || ""} is ready`), r.error ? "err" : undefined);
     if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
   },
-  tourpick: (v) => { S.tour.choice = v; paintModal(); }, tourback: () => { S.tour.step--; paintModal(true); },
+  tourpick: (v) => { S.tour.choice = v; paintModal(); },
+  tourmpv: (v) => {
+    api("/api/settings", v === "own" ? TOUR_OWN : TOUR_HUB).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; paintModal();
+    }).catch(() => toast("Could not save — is the hub running?"));
+  },
+  tourlook: (v) => {
+    const own = v === "own";
+    api("/api/settings", own ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; paintModal();
+    }).catch(() => toast("Could not save — is the hub running?"));
+  }, tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < (S.settings?.background_ok ? 5 : 4)) { T.step++; return paintModal(true); }
+    if (T.step < (S.settings?.background_ok ? 7 : 6)) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList

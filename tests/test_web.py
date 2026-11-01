@@ -356,6 +356,17 @@ class Polish(unittest.TestCase):
     def test_library_hover_fades_in_steps(self):
         self.assertIn("if (root.classList.contains(\"amb-now\")) return ambFade(c);", APP)
 
+    def test_tour_lets_you_pick_the_player(self):
+        """Every look the hub offers has a drawing in the tour, and the phone
+        page's filter still points at the phone page."""
+        from animehub import settings
+        for look in settings.PLAYER_LOOKS:
+            self.assertIn(f"  {look}: () => `<div class=\"lkv {look}\">", APP)
+        self.assertIn("${tourLooks(s)}", APP)
+        self.assertIn("pages.filter((_, i) => i !== 6)", APP)
+        self.assertIn("${tourMpv(s)}", APP)
+        self.assertIn('{ mpv_design: "on", mpv_look: v }', APP)
+
     def test_tour_lists_what_it_found(self):
         self.assertIn('<div class="sum2">${tourFound(s, a, n, ok)}</div>', APP)
         self.assertIn('`mpv${s.mpv_version ? " " + s.mpv_version : ""} found`', APP)
