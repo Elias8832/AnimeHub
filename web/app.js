@@ -189,6 +189,13 @@ function applyWatch(shows, ids, watched, reset) {
    in shell mode ctrl+scroll / ctrl± / ctrl+0 drive it. */
 const ZOOM_MIN = 50, ZOOM_MAX = 200, ZOOM_STEP = 10;
 function zoomStep(cur, dir) { return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur + dir * ZOOM_STEP)); }
+/* Where a dropdown opens under its chip. Rects and the window size are real
+   pixels; the list's style is in page pixels, which <html>'s zoom scales up. */
+function ddPlace(box, z, vw, vh) {
+  const width = Math.max(box.width / z, 170), left = Math.max(10, Math.min(box.left / z, vw / z - width - 10));
+  const below = vh - box.bottom - 12, up = below < 220 * z && box.top > below;
+  return { width, left, top: up ? null : box.bottom / z + 6, bottom: up ? (vh - box.top) / z + 6 : null };
+}
 /* A season tab's count (TODO 7): how many episodes the entry has — its
    AniList total, else the aired ones, else what the page lists — never
    what's left to watch. One-episode entries (movies) show none. */
@@ -4073,15 +4080,12 @@ function ddClose(refocus) {
   ddSel = null;
 }
 function ddOpen(sel) {
-  const m = $("#ddm"), r = sel.getBoundingClientRect(), box = sel.closest(".fl") || sel;
-  const br = box.getBoundingClientRect();
+  const m = $("#ddm"), p = ddPlace((sel.closest(".fl") || sel).getBoundingClientRect(), zoomGet() / 100, innerWidth, innerHeight);
   ddSel = sel;
   m.innerHTML = [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}>${esc(o.textContent)}</button>`).join("");
-  const w = Math.max(br.width, 170), left = Math.min(br.left, innerWidth - w - 10);
-  m.style.minWidth = w + "px"; m.style.left = Math.max(10, left) + "px";
-  const below = innerHeight - r.bottom - 12, h = Math.min(m.scrollHeight || 320, 320);
-  if (below < Math.min(h, 220) && br.top > below) { m.style.top = ""; m.style.bottom = innerHeight - br.top + 6 + "px"; m.style.transformOrigin = "bottom left"; }
-  else { m.style.bottom = ""; m.style.top = br.bottom + 6 + "px"; m.style.transformOrigin = "top left"; }
+  m.style.minWidth = p.width + "px"; m.style.left = p.left + "px";
+  m.style.top = p.top === null ? "" : p.top + "px"; m.style.bottom = p.bottom === null ? "" : p.bottom + "px";
+  m.style.transformOrigin = p.top === null ? "bottom left" : "top left";
   m.classList.remove("open"); void m.offsetWidth; m.classList.add("open");
   (m.querySelector("button.on") || m.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true });
 }
@@ -4094,7 +4098,9 @@ function ddPick(i) {
 }
 document.addEventListener("mousedown", (e) => {
   const sel = e.target.closest?.("select") || e.target.closest?.("label.fl")?.querySelector("select"); // the chip's label opens it too
-  if (!sel || sel.disabled || ddPtr !== "mouse" || e.button !== 0) return;
+  /* Outside clicks close on the press: the click that follows a press on a
+     chip's label would otherwise shut the list that press just opened. */
+  if (!sel || sel.disabled || ddPtr !== "mouse" || e.button !== 0) { if (ddSel && !e.target.closest?.("#ddm")) ddClose(false); return; }
   e.preventDefault();
   if (ddSel === sel) return ddClose(true);
   sel.focus({ preventScroll: true }); ddOpen(sel);
@@ -4102,7 +4108,7 @@ document.addEventListener("mousedown", (e) => {
 document.addEventListener("click", (e) => {
   const b = e.target.closest?.("#ddm button");
   if (b) { ddPick(b.dataset.i); return; }
-  if (ddSel && !e.target.closest?.("select")) ddClose(false);
+  if (ddSel && e.target.closest?.("label.fl")) e.preventDefault(); // the label would pull focus off the open list
 }, true);
 document.addEventListener("keydown", (e) => {
   const t = e.target;
