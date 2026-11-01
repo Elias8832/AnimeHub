@@ -265,15 +265,61 @@ class SettingsRouteTests(unittest.TestCase):
         self.assertEqual(code, 400)
 
     def test_mpv_options(self):
-        self.assertEqual(settings.mpv_flags(), ["--fs"])  # fullscreen by default
+        design = ["--osc=no", "--no-osd-bar", "--video-sync=display-vdrop"]
+        self.assertEqual(settings.mpv_flags(), ["--fs", *design])  # fullscreen and our controls by default
         code, body = self.post({"mpv_fullscreen": "off", "mpv_marks": False})
         self.assertEqual(code, 200)
-        self.assertEqual(body["mpv"], {"fullscreen": "off", "marks": False})
-        self.assertEqual(settings.mpv_flags(), ["--no-fs"])
+        self.assertEqual({k: body["mpv"][k] for k in ("fullscreen", "design", "marks", "look")}, {"fullscreen": "off", "design": "on", "marks": False, "look": "soft"})
+        self.assertEqual(settings.mpv_flags(), ["--no-fs", *design])
         self.post({"mpv_fullscreen": "own"})
-        self.assertEqual(settings.mpv_flags(), [])  # left to mpv.conf
+        self.assertEqual(settings.mpv_flags(), design)  # fullscreen left to mpv.conf
         self.assertEqual(self.post({"mpv_fullscreen": "maybe"})[0], 400)
-        self.post({"mpv_fullscreen": "on", "mpv_marks": True})
+        self.post({"mpv_design": "off"})
+        self.assertEqual(settings.mpv_flags(), ["--osc=yes", "--osd-bar", "--video-sync=display-vdrop"])  # mpv's plain controls
+        self.post({"mpv_design": "own", "mpv_smooth": "off"})
+        self.assertEqual(settings.mpv_flags(), ["--video-sync=audio"])  # the user's own skin, mpv's own timing
+        self.post({"mpv_smooth": "own"})
+        self.assertEqual(settings.mpv_flags(), [])
+        self.post({"mpv_smooth": "on"})
+        self.post({"mpv_fullscreen": "on", "mpv_design": "on", "mpv_marks": True})
+
+    def test_player_choices(self):
+        """Decision 53: "My config" sends nothing; choices are a closed list."""
+        keys = ("mpv_sub_size", "mpv_sub_color", "mpv_sub_outline", "mpv_sub_styled", "mpv_start_volume")
+        self.addCleanup(self.post, {key: "own" for key in keys})
+        before = settings.mpv_flags()
+        self.post({"mpv_sub_size": "large", "mpv_sub_color": "yellow", "mpv_sub_styled": "override", "mpv_start_volume": "50"})
+        self.assertEqual(settings.mpv_flags()[len(before):],
+                         ["--sub-font-size=50", "--sub-color=1.0/0.9/0.3", "--sub-ass-override=force", "--volume=50"])
+        self.assertTrue(all(" " not in flag for flag in settings.mpv_flags()))  # ani-cli splits on spaces
+        self.assertEqual(self.post({"mpv_sub_size": "huge"})[0], 400)
+        self.post({"mpv_start_volume": "last"})
+        self.assertNotIn("--volume", " ".join(settings.mpv_flags()))  # nothing remembered yet
+        settings.remember_volume(62.4)
+        self.assertIn("--volume=62", settings.mpv_flags())
+        self.addCleanup(settings.set_setting, "mpv_last_volume", "")
+
+    def test_player_look_reads_skip_and_mouse(self):
+        self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_wheel": "own"})
+        self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "double": "own", "wheel": "own", "loaded": "on"})
+        self.post({"mpv_skip_seconds": "30", "mpv_click": "pause", "mpv_wheel": "seek"})
+        self.assertEqual(settings.player_prefs(), {"skip": 30, "click": "pause", "double": "own", "wheel": "seek", "loaded": "on"})
+
+    def test_controls_follow_the_setting(self):
+        """Decision 52: the script and its fonts load only with the design
+        on, and a flag that can't be written without spaces stays out."""
+        from animehub import player
+        args = player.design_args()
+        self.assertEqual([a.split("=")[0] for a in args], ["--script", "--script", "--osd-fonts-dir"])
+        self.assertEqual(player.design_args(lambda path: None), [])
+        self.assertIn("player-soft.lua", args[0])
+        self.assertEqual(self.post({"mpv_look": "deck"})[0], 200)
+        self.assertIn("player-deck.lua", player.design_args()[0])
+        self.post({"mpv_look": "soft"})
+        self.assertEqual(self.post({"mpv_look": "nope"})[0], 400)
+        self.post({"mpv_design": "own"})
+        self.addCleanup(self.post, {"mpv_design": "on"})
+        self.assertEqual(player.design_args(), [])
 
     def test_first_play_tip_is_remembered(self):
         self.assertEqual(self.post({"play_tip_done": True})[1]["play_tip_done"], True)

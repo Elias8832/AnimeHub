@@ -23,8 +23,9 @@ local current = nil
 -- does; it lights up under the mouse and stays while the mouse is on it.
 -- Coordinates are in a 720-high space whose width follows the window's
 -- aspect.
+-- BOTTOM keeps it above the player look's script's seek bar.
 local RES_Y, FS, KFS = 720, 22, 16
-local H, PAD, GAP, KW, KH, MARGIN, BOTTOM = 46, 22, 12, 30, 26, 36, 92
+local H, PAD, GAP, KW, KH, MARGIN, BOTTOM = 46, 22, 12, 30, 26, 36, 118
 local pill = mp.create_osd_overlay("ass-events")
 local ruler = mp.create_osd_overlay("ass-events")
 ruler.compute_bounds, ruler.hidden = true, true
@@ -130,18 +131,40 @@ mp.observe_property("mouse-pos", "native", function(_, m)
     end
 end)
 
-local function finish()
+local function marker_path()
     -- The hub names the marker (a Windows pipe has no folder beside it);
     -- older hubs look beside the socket.
     local marker = os.getenv("ANIME_HUB_SKIP_MARKER")
     local sock = mp.get_property("input-ipc-server")
     if (not marker or marker == "") and sock and sock ~= "" then marker = sock .. ".skip" end
+    return marker
+end
+
+local function finish()
+    local marker = marker_path()
     if marker and marker ~= "" then
         local f = io.open(marker, "w")
         if f then f:close() end
     end
     mp.commandv("quit")
 end
+
+-- The right-click menu's Finish episode is Enter's "finished". A pick from the player look's script's Episodes list quits with the episode's id in
+-- a file, and the hub starts it.
+mp.register_script_message("anime-hub-finish", finish)
+-- A player look with a lower dock moves the button down with it.
+mp.register_script_message("anime-hub-skip-bottom", function(px)
+    BOTTOM = tonumber(px) or BOTTOM
+    draw()
+end)
+mp.register_script_message("anime-hub-go", function(id)
+    local marker = marker_path()
+    local f = marker and marker ~= "" and io.open(marker .. ".go", "w")
+    if not f then return end
+    f:write(id)
+    f:close()
+    mp.commandv("quit")
+end)
 
 skip = function(seg)
     seg.done = true

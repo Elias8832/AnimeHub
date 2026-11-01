@@ -472,6 +472,7 @@ class Handler(BaseHTTPRequestHandler):
                 start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
                 # additive: the user's answer to AniSkip without a VPN (Decision 39)
                 aniskip_ok = body.get("aniskip")
+                accent = body.get("accent")  # additive: the show's colour, for mpv's controls (Decision 52)
                 if not isinstance(start, bool):
                     self._bad("'from_start' must be a boolean")
                 elif aniskip_ok is not None and not isinstance(aniskip_ok, bool):
@@ -483,10 +484,12 @@ class Handler(BaseHTTPRequestHandler):
                         player.answer_aniskip(body["id"], aniskip_ok)
                     # An online episode in the other language ("Play dubbed").
                     player.dismiss_next_prompt()
+                    player.remember_accent(body["id"], accent)
                     self.send_json(streaming.start_stream(body["id"], mode, from_start=start))
                 else:
                     if aniskip_ok is not None:
                         player.answer_aniskip(body["id"], aniskip_ok)
+                    player.remember_accent(body["id"], accent)
                     self.send_json(player.start_play(body["id"], body.get("version", 0), from_start=start))
         elif route == "/api/prepare":
             # Additive: Home's Continue banner gets its online episode ready.
@@ -503,6 +506,8 @@ class Handler(BaseHTTPRequestHandler):
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
                        **{key: settings.MPV_MODES for key in settings.MPV_OPTIONS},
+                       "mpv_look": tuple(settings.PLAYER_LOOKS),
+                       **{key: allowed for key, (_, allowed) in settings.MPV_CHOICES.items()},
                        "upscale_style": tuple(upscale.STYLES)}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):

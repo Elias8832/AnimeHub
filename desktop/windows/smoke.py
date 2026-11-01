@@ -18,7 +18,7 @@ from pathlib import Path
 
 ZIP = Path(__file__).resolve().parents[2] / "desktop" / "target" / "AnimeHub-windows-x64.zip"
 NEEDED = ("AnimeHub.exe", "README.txt", "Add to Start menu.cmd", "python/python.exe", "app/hub.py",
-          "app/animehub/server.py", "app/web/index.html", "app/mpv/skip-credits.lua", "app/LICENSE")
+          "app/animehub/server.py", "app/web/index.html", "app/mpv/skip-credits.lua", "app/mpv/player-soft.lua", "app/mpv/player-deck.lua", "app/mpv/player-mouse.lua", "app/mpv/fonts/HankenGrotesk-Regular.ttf", "app/LICENSE")
 ICONS = 3
 
 

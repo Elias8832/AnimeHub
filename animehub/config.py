@@ -18,6 +18,11 @@ APP_DIR = Path(__file__).resolve().parent.parent
 WEB = APP_DIR / "web"
 MPV = APP_DIR / "mpv"
 SKIP_CREDITS_LUA = MPV / "skip-credits.lua"
+# The player's looks (Decision 52): id → its script. A look is a whole script,
+# so one can differ from another as much as it likes.
+PLAYER_LOOKS = {"soft": MPV / "player-soft.lua", "deck": MPV / "player-deck.lua"}
+PLAYER_MOUSE_LUA = MPV / "player-mouse.lua"
+PLAYER_FONTS = MPV / "fonts"
 DEFAULT_PORT = 8787
 
 CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners",

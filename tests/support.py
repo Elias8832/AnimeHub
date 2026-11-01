@@ -29,6 +29,11 @@ from animehub import database, franchise, library, settings  # noqa: E402
 from animehub.config import config, CONFIG, apply_config  # noqa: E402
 
 
+# Its thread would outlive a test and its throwaway database. Tests call
+# player._send_info directly.
+animehub.server.player.send_info = lambda *args: None
+
+
 def _offline(*args, **kwargs):
     raise AssertionError("tests must not use the network — record a fixture instead")
 

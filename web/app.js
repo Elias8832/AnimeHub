@@ -1681,13 +1681,30 @@ function lookSeg(k, opts) {
 /* Opening/ending skipping in mpv (Decision 39). AniSkip is opt-in: it would learn what you watch. */
 const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
 /* mpv's own section (Decision 45): each option is on, off, or left to your mpv.conf. */
+const PLAYER_LOOKS = { soft: "Soft", deck: "Deck" };
+const mpick = (m, k, label, opts) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
 const MPVMODES = [["on", "On"], ["off", "Off"], ["own", "My config"]];
 function mpvGroup(s) {
   const m = s.mpv || {};
   const seg = (k, label) => `<span class="seg" role="group" aria-label="${label}">${MPVMODES.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
   return `<div class="group"><h3>mpv</h3><p class="sub">Your own mpv.conf always loads. The hub only overrides what's set to On or Off here.</p>
     ${srow("Fullscreen", "How episodes start.", seg("fullscreen", "Fullscreen"))}
-    ${srow("Opening and ending on the timeline", "Marks them on mpv's seek bar and names them under the mouse. Needs skipping on (Playback).", tgl("mpv_marks", "Opening and ending on the timeline", m.marks !== false))}</div>`;
+    ${srow("Anime Hub controls", "On: the hub's own player design. Off: mpv's plain controls. My config: your own mpv skin.", seg("design", "Anime Hub controls"))}
+    ${m.design === "on" ? srow("Player look", "How the controls look in mpv. Used from the next episode you start.", `<span class="seg" role="group" aria-label="Player look">${(m.looks || []).map((v) => `<button class="${m.look === v ? "on" : ""}" aria-pressed="${m.look === v}" data-a="spref" data-k="mpv_look" data-v="${v}">${PLAYER_LOOKS[v] || v}</button>`).join("")}</span>`) : ""}
+    ${srow("Smooth controls while playing", "Redraws the controls every screen refresh, not only with each video frame. Off: mpv's normal timing.", seg("smooth", "Smooth controls while playing"))}
+    ${srow("Opening and ending on the timeline", "Marks them on mpv's seek bar and names them under the mouse. Needs skipping on (Playback).", tgl("mpv_marks", "Opening and ending on the timeline", m.marks !== false))}
+    ${srow("Starting volume", "My config: whatever mpv.conf says. Last: where you left it.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Last"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
+    ${m.design === "on" ? `<div class="group"><h3>Player controls</h3><p class="sub">Work with the hub's controls. Used from the next episode you start.</p>
+    ${srow("Loaded part on the seek bar", "A lighter stretch shows how much of the episode mpv has loaded.", mpick(m, "loaded", "Loaded part on the seek bar", [["on", "On"], ["off", "Off"]]))}
+    ${srow("Skip buttons", "How far the skip buttons jump.", mpick(m, "skip_seconds", "Skip buttons", [["5", "5 s"], ["10", "10 s"], ["15", "15 s"], ["30", "30 s"]]))}
+    ${srow("Click on the picture", "", mpick(m, "click", "Click on the picture", [["own", "My config"], ["pause", "Pause"]]))}
+    ${srow("Double-click on the picture", "", mpick(m, "double", "Double-click on the picture", [["own", "My config"], ["fullscreen", "Fullscreen"], ["off", "Nothing"]]))}
+    ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}</div>` : ""}
+    <div class="group"><h3>Subtitle look</h3><p class="sub">Most anime subtitles carry their own style, so these change little unless Styled subtitles is set to Replace.</p>
+    ${srow("Size", "", mpick(m, "sub_size", "Subtitle size", [["own", "My config"], ["small", "Small"], ["normal", "Normal"], ["large", "Large"]]))}
+    ${srow("Colour", "", mpick(m, "sub_color", "Subtitle colour", [["own", "My config"], ["white", "White"], ["yellow", "Yellow"]]))}
+    ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", [["own", "My config"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]]))}
+    ${srow("Styled subtitles", "Replace swaps a release's own style for this one. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`;
 }
 function skipGroup(s) {
   const sk = s.skip || {};
@@ -1882,7 +1899,7 @@ const SETTINGS_INDEX = [
   ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
   ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "playback", "audio subtitle subs track language dub dual remember", "remember_tracks"],
-  ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
+  ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Smooth controls while playing", "mpv", "mpv smooth lag laggy video sync display refresh"], ["Starting volume", "mpv", "mpv volume start remember last"], ["Skip buttons", "mpv", "mpv skip seconds forward back length"], ["Loaded part on the seek bar", "mpv", "mpv buffer cache loaded preload seek bar"], ["Mouse in the player", "mpv", "mpv mouse click double scroll wheel"], ["Subtitle look", "mpv", "mpv subtitle size colour color outline style font"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
   ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"], ["Start episodes faster", "online", "prepare next episode speed ready", "prepare_online"],
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
@@ -3469,6 +3486,12 @@ function markLoading(id) {
   S.loadingEp = id;
   pagePatch();
 }
+/* The accent on screen as #rrggbb, for mpv's controls (Decision 52). */
+function hexAccent() {
+  const c = document.createElement("canvas").getContext("2d");
+  c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#000";
+  return /^#[0-9a-f]{6}$/i.test(c.fillStyle) ? c.fillStyle : null;
+}
 /* skipOk: undefined = not asked yet, true/false = the AniSkip answer
    (yes to the online VPN dialog counts as yes). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk) {
@@ -3484,6 +3507,8 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk) {
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
   if (skipOk !== undefined) body.aniskip = skipOk;
+  const accent = hexAccent();
+  if (accent) body.accent = accent;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
   if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
