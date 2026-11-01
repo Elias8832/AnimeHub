@@ -383,13 +383,24 @@ def episode_menu(ep_id):
         page = pages.franchise_view(at[0], background=False)
         e = next((x for x in page["entries"] if x["id"] == at[0]), None)
         if e:
-            return [{"id": x["id"], "number": x["number"], "title": x.get("title"), "watched": bool(x.get("watched")),
+            hide = settings.automation_enabled("hide_spoilers")
+            return [{"id": x["id"], "number": x["number"], "watched": bool(x.get("watched")),
+                     "title": None if hide and x["id"] != ep_id and _unseen(x) else x.get("title"),
                      "online": not x["local"]}
                     for x in e["slots"] if x["id"] and (x["local"] or (x["online"] and e["online"]["available"]))]
     s, ep = library.episode_by_id(ep_id)
     sea = next((x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"])), None) if ep else None
     return [{"id": x["id"], "number": x["number"], "title": None, "watched": False, "online": False}
             for x in sorted(sea["episodes"], key=lambda x: x["number"])] if sea else []
+
+
+def _unseen(x):
+    """Not watched and not started: hide_spoilers keeps its title back
+    (Decision 57; the page's `spoils`)."""
+    if x.get("watched"):
+        return False
+    length = x.get("duration")
+    return not length or (x.get("position") or 0) / length <= 0.01
 
 
 def send_info(proc, ep_id, sock_path):

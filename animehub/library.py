@@ -742,6 +742,7 @@ def full_library():
             now = {"episode_id": a["ep_id"], "show": a["show_title"], "label": a["label"],
                    "percent": a.get("percent") or 0, "loading": bool(a.get("loading"))}
     return {"shows": scan, "continue": continue_row[:20], "history": history,
+            "hide_spoilers": settings.automation_enabled("hide_spoilers"),  # additive (Decision 57): the first paint needs it
             "vpn": settings.vpn_status(),
             # Legacy fields kept as empty lists since the streaming strip
             # (TODO 18, Decision 18.5). Streamed episodes ride in

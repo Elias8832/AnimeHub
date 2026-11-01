@@ -38,6 +38,8 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # would learn what you watch and when, so opt-in; and
                        # without a VPN, ask before an episode uses it.
                        "aniskip": False, "aniskip_vpn_warn": True,
+                       # Unwatched episodes show no title or picture (Decision 57).
+                       "hide_spoilers": False,
                        # Get the next online episode ready before the click (prepare.py).
                        "prepare_online": True,
                        # Read each episode's length from its file (lengths.py).
@@ -233,6 +235,7 @@ def settings_payload():
         "aniskip": automation_enabled("aniskip"),
         "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
         "upscale_banners": up["on"],
+        "hide_spoilers": automation_enabled("hide_spoilers"),
         "measure_lengths": automation_enabled("measure_lengths"),
         "remember_tracks": automation_enabled("remember_tracks"),
         # additive (Decision 45): mpv options, "on" / "off" / "own"

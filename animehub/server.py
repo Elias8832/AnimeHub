@@ -500,7 +500,7 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
-                    "upscale_banners", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online",
+                    "upscale_banners", "hide_spoilers", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online",
                     "keep_running", "start_at_login")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
