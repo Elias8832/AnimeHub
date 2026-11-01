@@ -429,6 +429,7 @@ class WatcherTests(DbTests):
              patch.object(player.threading, "Thread", Now), \
              patch.object(player, "next_up", return_value={"source": None}):
             player.watch_process(proc, "ep1", sock)
+        sent = [x for x in sent if x[1] != "anime-hub-info"]  # the player look's script's own message
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0][1], "anime-hub-segments")
         self.assertEqual(json.loads(sent[0][2])["segments"][0]["kind"], "op")

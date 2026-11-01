@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 from . import anicli, background, database, lengths, library, system, upscale
-from .config import config, CONFIG, CONFIG_PATH
+from .config import config, CONFIG, CONFIG_PATH, PLAYER_LOOKS
 
 
 def get_setting(key):
@@ -56,12 +56,68 @@ SKIP_MODES = ("off", "prompt", "auto")
 # mpv options the hub can set (Decision 45): each is on, off, or "own" =
 # left to the user's mpv.conf. Setting → (default, flag when on, flag when off).
 MPV_MODES = ("on", "off", "own")
-MPV_OPTIONS = {"mpv_fullscreen": ("on", "--fs", "--no-fs")}
+MPV_OPTIONS = {"mpv_fullscreen": ("on", "--fs", "--no-fs"),
+               # The hub's own controls (Decision 52). Off = mpv's plain ones.
+               "mpv_design": ("on", ("--osc=no", "--no-osd-bar"), ("--osc=yes", "--osd-bar")),
+               # While playing, mpv only redraws its overlay with a new video
+               # frame: 24 times a second, however fast the screen is. Synced to
+               # the display it redraws every refresh (Decision 55).
+               "mpv_smooth": ("on", "--video-sync=display-vdrop", "--video-sync=audio")}
 
 
 def mpv_mode(key):
     v = get_setting(key)
     return v if v in MPV_MODES else MPV_OPTIONS[key][0]
+
+
+# Settings → mpv beyond on/off/own (Decision 53). Setting → (default, choices).
+# "own" sends nothing: mpv.conf and input.conf decide, as in Decision 45.
+MPV_CHOICES = {"mpv_start_volume": ("own", ("own", "last", "25", "50", "75", "100")),
+               "mpv_sub_size": ("own", ("own", "small", "normal", "large")),
+               "mpv_sub_color": ("own", ("own", "white", "yellow")),
+               "mpv_sub_outline": ("own", ("own", "thin", "normal", "thick")),
+               "mpv_sub_styled": ("own", ("own", "override")),
+               # Read by the player look, not flags.
+               "mpv_skip_seconds": ("10", ("5", "10", "15", "30")),
+               "mpv_click": ("own", ("own", "pause")),
+               "mpv_double": ("own", ("fullscreen", "off", "own")),
+               "mpv_wheel": ("own", ("volume", "seek", "own")),
+               "mpv_loaded": ("on", ("on", "off"))}
+_CHOICE_FLAGS = {"mpv_sub_size": {"small": "--sub-font-size=30", "normal": "--sub-font-size=38", "large": "--sub-font-size=50"},
+                 "mpv_sub_color": {"white": "--sub-color=1.0/1.0/1.0", "yellow": "--sub-color=1.0/0.9/0.3"},
+                 "mpv_sub_outline": {"thin": "--sub-outline-size=1", "normal": "--sub-outline-size=2", "thick": "--sub-outline-size=3.5"},
+                 "mpv_sub_styled": {"override": "--sub-ass-override=force"}}
+
+
+def mpv_choice(key):
+    v = get_setting(key)
+    return v if v in MPV_CHOICES[key][1] else MPV_CHOICES[key][0]
+
+
+def start_volume_flag():
+    v = mpv_choice("mpv_start_volume")
+    if v == "last":
+        v = get_setting("mpv_last_volume")
+    return f"--volume={v}" if isinstance(v, (int, float, str)) and str(v).replace(".", "", 1).isdigit() else None
+
+
+def remember_volume(volume):
+    """The volume a session ended on, for "Remember last volume"."""
+    if mpv_choice("mpv_start_volume") == "last" and isinstance(volume, (int, float)) and not isinstance(volume, bool):
+        set_setting("mpv_last_volume", str(round(volume)))
+
+
+def player_prefs():
+    """What the player look reads itself: skip length and the mouse."""
+    return {"skip": int(mpv_choice("mpv_skip_seconds")), "click": mpv_choice("mpv_click"),
+            "double": mpv_choice("mpv_double"), "wheel": mpv_choice("mpv_wheel"),
+            "loaded": mpv_choice("mpv_loaded")}
+
+
+def player_look():
+    """Which of the hub's player looks is picked (Decision 52)."""
+    v = get_setting("mpv_look")
+    return v if v in PLAYER_LOOKS else next(iter(PLAYER_LOOKS))
 
 
 def mpv_flags():
@@ -71,7 +127,15 @@ def mpv_flags():
     for key, (_, on, off) in MPV_OPTIONS.items():
         mode = mpv_mode(key)
         if mode != "own":
-            out.append(on if mode == "on" else off)
+            flags = on if mode == "on" else off
+            out.extend((flags,) if isinstance(flags, str) else flags)
+    for key, flags in _CHOICE_FLAGS.items():
+        flag = flags.get(mpv_choice(key))
+        if flag:
+            out.append(flag)
+    volume = start_volume_flag()
+    if volume:
+        out.append(volume)
     return out
 
 
@@ -172,7 +236,9 @@ def settings_payload():
         "measure_lengths": automation_enabled("measure_lengths"),
         "remember_tracks": automation_enabled("remember_tracks"),
         # additive (Decision 45): mpv options, "on" / "off" / "own"
-        "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks")},
+        "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks"),
+                "look": player_look(), "looks": list(PLAYER_LOOKS),
+                **{key[4:]: mpv_choice(key) for key in MPV_CHOICES}},
         # additive (Decision 51): the server without the window; only the desktop app can
         "background_ok": background.launcher() is not None,
         "keep_running": config.KEEP_RUNNING,

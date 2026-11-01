@@ -12,7 +12,7 @@ import time
 import uuid
 
 from . import anicli, database, library, mapping, pages, progress, settings, skips, streaming, system, tracks, util
-from .config import config, SKIP_CREDITS_LUA
+from .config import config, PLAYER_FONTS, PLAYER_LOOKS, PLAYER_MOUSE_LUA, SKIP_CREDITS_LUA
 
 
 _active = {}
@@ -326,6 +326,126 @@ def dismiss_next_prompt():
     _next_prompt["id"] = None
 
 
+def design_args(path=str):
+    """The hub's player controls and their fonts (Decision 52), when
+    Settings → mpv has them on. `path` turns a file into what the flag may
+    hold; None leaves that flag out (ani-cli's whitespace rule)."""
+    look = PLAYER_LOOKS[settings.player_look()]
+    if settings.mpv_mode("mpv_design") != "on" or not look.exists():
+        return []
+    scripts = [path(x) for x in (look, PLAYER_MOUSE_LUA) if x.exists()]
+    fonts = path(PLAYER_FONTS)
+    return [*(f"--script={x}" for x in scripts if x), *([f"--osd-fonts-dir={fonts}"] if fonts else [])]
+
+
+_ACCENT = re.compile(r"#[0-9a-fA-F]{6}\Z")
+# The show's colour from the app, kept while the hub runs so episodes that
+# chain on by themselves keep it. show id → "#rrggbb".
+_accents = {}
+
+
+def remember_accent(ep_id, accent):
+    """The colour the app shows for this episode's show (additive `accent`
+    on /api/play). Only the app samples art, so nothing else knows it."""
+    show = _accent_key(ep_id)
+    if show is not None and isinstance(accent, str) and _ACCENT.match(accent):
+        _accents[show] = accent
+
+
+def _accent_key(ep_id):
+    at = entry_of_episode(ep_id)
+    return at[0] if at else ep_id
+
+
+def episode_menu(ep_id):
+    """The Episodes button's list: what can play in this episode's season,
+    oldest first. [{"id", "number", "title", "watched", "online"}]."""
+    at = entry_of_episode(ep_id)
+    if at:
+        page = pages.franchise_view(at[0], background=False)
+        e = next((x for x in page["entries"] if x["id"] == at[0]), None)
+        if e:
+            return [{"id": x["id"], "number": x["number"], "title": x.get("title"), "watched": bool(x.get("watched")),
+                     "online": not x["local"]}
+                    for x in e["slots"] if x["id"] and (x["local"] or (x["online"] and e["online"]["available"]))]
+    s, ep = library.episode_by_id(ep_id)
+    sea = next((x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"])), None) if ep else None
+    return [{"id": x["id"], "number": x["number"], "title": None, "watched": False, "online": False}
+            for x in sorted(sea["episodes"], key=lambda x: x["number"])] if sea else []
+
+
+def send_info(proc, ep_id, sock_path):
+    """Tell the hub's controls what's playing. Own thread and best effort,
+    like send_skips: without it they show mpv's media title."""
+    threading.Thread(target=_send_info, args=(proc, ep_id, sock_path), daemon=True).start()
+
+
+# The sleep timer from mpv's Playback tab (Decision 53). Kept here, not in
+# mpv: every episode is its own mpv, and the time runs across them.
+_sleep = {"at": None, "minutes": 0}
+
+
+def set_sleep(minutes):
+    _sleep.update(at=time.time() + minutes * 60 if minutes else None, minutes=minutes)
+
+
+def sleep_info():
+    left = _sleep["at"] - time.time() if _sleep["at"] else None
+    return {"minutes": _sleep["minutes"], "left": left} if left and left > 0 else None
+
+
+def sleep_due():
+    """True once, when the timer has run out."""
+    if _sleep["at"] and time.time() >= _sleep["at"]:
+        set_sleep(0)
+        return True
+    return False
+
+
+def _send_info(proc, ep_id, sock_path):
+    try:
+        episodes = episode_menu(ep_id)
+        with _active_lock:
+            entry = _active.get(ep_id)
+            if entry is None or entry.get("proc") is not proc:
+                return
+            entry["menu"] = {x["id"]: x for x in episodes}
+            info = {"title": entry.get("show_title"), "episode": entry.get("label"), "current": ep_id,
+                    "accent": _accents.get(_accent_key(ep_id)), "episodes": episodes,
+                    "prefs": settings.player_prefs(), "sleep": sleep_info()}
+        mpv_ipc(sock_path, ["script-message", "anime-hub-info", json.dumps(info)])
+    except Exception as exc:
+        util.log("player info not sent: %s" % exc)
+
+
+def _picked_episode(sock_path, menu):
+    """The episode chosen in mpv's list (or its Previous button), left by
+    skip-credits.lua in a file. Only ids the hub offered count."""
+    go = system.ipc_go(sock_path)
+    try:
+        picked = go.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    go.unlink(missing_ok=True)
+    return picked if picked in (menu or ()) else None
+
+
+def _chain_to(ep_id, nxt, version):
+    """Start nxt ({"id", "source", ...}) after ep_id, asking first where a
+    click on Play would: a file going online, or AniSkip without a VPN."""
+    if nxt["source"] == "online" and not ep_id.startswith("stream:"):
+        _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"),
+                            kind="online", ts=time.time())
+    elif nxt["id"]:
+        carry_aniskip(ep_id, nxt["id"])
+        if aniskip_question(nxt["id"]):
+            # No VPN and nobody answered yet: wait and ask, as above.
+            _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"),
+                                kind="aniskip", ts=time.time())
+        else:
+            start_play(nxt["id"], version)
+
+
 def autoplay_next(ep_id, version=0):
     """Chain into the episode after ep_id, carrying the chosen file version
     (TODO 24): the same index into the next episode's parallel file list
@@ -335,18 +455,7 @@ def autoplay_next(ep_id, version=0):
     chaining into an online episode waits for the user (next-episode
     prompt)."""
     try:
-        nxt = next_up(ep_id)
-        if nxt["source"] == "online" and not ep_id.startswith("stream:"):
-            _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"),
-                                kind="online", ts=time.time())
-        elif nxt["id"]:
-            carry_aniskip(ep_id, nxt["id"])
-            if aniskip_question(nxt["id"]):
-                # No VPN and nobody answered yet: wait and ask, as above.
-                _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"),
-                                    kind="aniskip", ts=time.time())
-            else:
-                start_play(nxt["id"], version)
+        _chain_to(ep_id, next_up(ep_id), version)
     except Exception as e:
         print(f"Autoplay: {e}", file=sys.stderr, flush=True)
 
@@ -458,6 +567,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     skips_sent = False
     picks = {} if tracks.enabled() else None
     speed_set = False
+    last_volume = sleep_seen = None
     prepared = False
     deadline = time.time() + startup
     connected = False
@@ -521,6 +631,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                 if not skips_sent and duration:
                     skips_sent = True
                     send_skips(proc, ep_id, sock_path, duration)
+                    send_info(proc, ep_id, sock_path)
                 # Paused, volume and tracks for the phone remote; the
                 # track-list also feeds the track memory.
                 live, track_list = read_live(sock_path, position=False)
@@ -530,6 +641,20 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                     if _speed["value"] != 1.0 and live.get("speed") == 1.0:
                         mpv_ipc(sock_path, ["set_property", "speed", _speed["value"]])
                         live["speed"] = _speed["value"]
+                elif isinstance(live.get("speed"), (int, float)):
+                    _speed["value"] = live["speed"]  # also what mpv's own panel picked
+                if isinstance(live.get("volume"), (int, float)):
+                    last_volume = live["volume"]
+                asked = (mpv_ipc(sock_path, ["get_property", "user-data/anime-hub/sleep"]) or {}).get("data")
+                if isinstance(asked, (int, float)) and asked != sleep_seen:
+                    sleep_seen = asked
+                    set_sleep(int(asked))
+                if sleep_due():
+                    with _active_lock:
+                        entry = _active.get(ep_id)
+                        if entry is not None and entry.get("proc") is proc:
+                            entry["stop_after"] = True
+                    mpv_ipc(sock_path, ["quit"])
                 if picks is not None:
                     try:
                         follow_tracks(sock_path, ep_id, picks, track_list)
@@ -584,6 +709,11 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     # The old >=90% rule still marks watched for manual quits that get far
     # enough into the episode.
     marker = system.ipc_marker(sock_path)
+    with _active_lock:
+        entry = _active.get(ep_id, {})
+        menu, show = (entry.get("menu"), entry.get("show_title")) if entry.get("proc") is proc else (None, None)
+    picked = None if retired else _picked_episode(sock_path, menu)
+    settings.remember_volume(last_volume)
     done = (duration and duration - last_time <= 3) or marker.exists()
     if not retired and duration and (done or last_time / duration >= 0.9):
         pos_save = duration if done and last_time / duration < 0.9 else last_time
@@ -618,11 +748,18 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
             version = entry.get("version", 0)
             _active.pop(ep_id, None)
             autoplay = not _active and bool(done) and not retired and not entry.get("stop_after")
-    if autoplay:
+    if picked and not _active:
+        try:
+            _chain_to(ep_id, {"id": picked, "source": "online" if menu[picked]["online"] else "local", "show": show,
+                              "label": f'E{menu[picked]["number"]}'}, version)
+        except Exception as e:
+            print(f"Episode pick: {e}", file=sys.stderr, flush=True)
+    elif autoplay:
         autoplay_next(ep_id, version)
     try:
         system.ipc_remove(sock_path)
         marker.unlink(missing_ok=True)
+        system.ipc_go(sock_path).unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -675,6 +812,7 @@ def start_play(ep_id, version=0, from_start=False):
     # the --start the hub decided on.
     if SKIP_CREDITS_LUA.exists():
         args.append(f"--script={SKIP_CREDITS_LUA}")
+    args += design_args()
     # One serialized transition (TODO 24): supersede → spawn → register.
     # Without the lock, concurrent play requests spawn two live mpv
     # processes and a watcher can reach auto-next mid-replacement.

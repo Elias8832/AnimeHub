@@ -12,6 +12,7 @@ One session transition, one generation guard, one resume rule:
   section the user sees next;
 - auto-next carries the chosen file version; missing mpv is an actionable
   error, not a traceback."""
+import json
 import os
 import signal
 import subprocess
@@ -230,6 +231,51 @@ class NaturalEndTests(LifecycleBase):
                 patch.object(player, "autoplay_next") as auto:
             player.watch_process(proc, "ep1", sock)
         auto.assert_called_once_with("ep1", 2)
+
+    def test_episode_picked_in_mpv_starts_after_it_quits(self):
+        """Decision 52: the Episodes list quits mpv with the id in a file.
+        The pick is no finish: nothing is marked and the id must be one the
+        hub offered."""
+        menu = {"ep2": {"online": False, "number": 2}}
+        sock = str(Path(self.directory.name) / "s")
+        go = system.ipc_go(sock)
+        go.write_text("ep2", encoding="utf-8")
+        self.assertEqual(player._picked_episode(sock, menu), "ep2")
+        self.assertFalse(go.exists())
+        go.write_text("somewhere-else", encoding="utf-8")
+        self.assertIsNone(player._picked_episode(sock, menu))
+        self.assertIsNone(player._picked_episode(sock, menu))  # no file, nothing picked
+
+    def test_controls_are_told_what_plays(self):
+        proc = object()
+        episodes = [{"id": "ep1", "number": 1, "title": None, "watched": False, "online": False}]
+        self.addCleanup(player._active.clear)
+        player._active["ep1"] = {"proc": proc, "show_title": "Show", "label": "Season 1 · E1"}
+        with patch.object(player, "episode_menu", return_value=episodes), patch.object(player, "mpv_ipc") as ipc:
+            player._send_info(proc, "ep1", "sock")
+            player._send_info(object(), "ep1", "sock")  # a replaced session stays quiet
+        self.assertEqual(ipc.call_count, 1)
+        sent = json.loads(ipc.call_args[0][1][2])
+        self.assertEqual((sent["title"], sent["current"], sent["episodes"]), ("Show", "ep1", episodes))
+        self.assertEqual(player._active["ep1"]["menu"], {"ep1": episodes[0]})
+
+    def test_sleep_timer_outlives_the_episode(self):
+        """Decision 53: each episode is its own mpv, so the hub keeps the time."""
+        self.addCleanup(player.set_sleep, 0)
+        player.set_sleep(30)
+        self.assertEqual(player.sleep_info()["minutes"], 30)
+        self.assertFalse(player.sleep_due())
+        player._sleep["at"] = 1  # long past
+        self.assertTrue(player.sleep_due())
+        self.assertFalse(player.sleep_due())  # once only
+        self.assertIsNone(player.sleep_info())
+
+    def test_accent_is_a_colour_or_nothing(self):
+        with patch.object(player, "entry_of_episode", return_value=(7, 1)):
+            player.remember_accent("ep1", "#f2a46f")
+            player.remember_accent("ep1", "red; drop")
+        self.addCleanup(player._accents.clear)
+        self.assertEqual(player._accents, {7: "#f2a46f"})
 
     def test_stop_after_this_episode_skips_autoplay(self):
         """The phone remote's "Stop after this episode" (Decision 43): the

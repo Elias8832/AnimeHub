@@ -130,6 +130,22 @@ class RealDisk(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
+class RealPlayerScripts(unittest.TestCase):
+    def test_controls_load_in_real_mpv(self):
+        """Decision 52: mpv runs the player look and finds its fonts' folder."""
+        mpv = system.find_program("mpv")
+        if not (os.environ.get("ANIME_HUB_REAL_TOOLS") and mpv):
+            self.skipTest("needs ANIME_HUB_REAL_TOOLS and mpv")
+        for look in player.PLAYER_LOOKS.values():
+            with self.subTest(look.name):
+                run = subprocess.run([mpv, "--no-config", "--vo=null", "--ao=null", "--osc=no", "--msg-level=all=warn", "--frames=5",
+                                      "av://lavfi:testsrc=d=1", f"--script={look}", f"--script={player.PLAYER_MOUSE_LUA}",
+                                      f"--osd-fonts-dir={player.PLAYER_FONTS}"], capture_output=True, text=True, timeout=30)
+                self.assertNotIn("Lua error", run.stdout + run.stderr)
+                self.assertNotIn("error loading", (run.stdout + run.stderr).lower())
+
+
+@unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
 class RealMpv(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

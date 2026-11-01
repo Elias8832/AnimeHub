@@ -142,6 +142,13 @@ def ipc_ready(address):
     return True if WINDOWS else address.exists()
 
 
+def ipc_go(address):
+    """Where skip-credits.lua leaves the episode picked in mpv: beside the
+    marker, the same way on every system."""
+    marker = ipc_marker(address)
+    return marker.with_name(marker.name + ".go")
+
+
 def ipc_marker(address):
     """The skip-credits lua's "finished by the hotkey" marker file: beside
     the socket on POSIX; a pipe can't have a file beside it, so on Windows

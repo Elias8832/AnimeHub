@@ -1681,13 +1681,30 @@ function lookSeg(k, opts) {
 /* Opening/ending skipping in mpv (Decision 39). AniSkip is opt-in: it would learn what you watch. */
 const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
 /* mpv's own section (Decision 45): each option is on, off, or left to your mpv.conf. */
+const PLAYER_LOOKS = { soft: "Float", deck: "Dock" };
+const mpick = (m, k, label, opts) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
 const MPVMODES = [["on", "On"], ["off", "Off"], ["own", "My config"]];
 function mpvGroup(s) {
   const m = s.mpv || {};
   const seg = (k, label) => `<span class="seg" role="group" aria-label="${label}">${MPVMODES.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
   return `<div class="group"><h3>mpv</h3><p class="sub">Your own mpv.conf always loads. The hub only overrides what's set to On or Off here.</p>
     ${srow("Fullscreen", "How episodes start.", seg("fullscreen", "Fullscreen"))}
-    ${srow("Opening and ending on the timeline", "Marks them on mpv's seek bar and names them under the mouse. Needs skipping on (Playback).", tgl("mpv_marks", "Opening and ending on the timeline", m.marks !== false))}</div>`;
+    ${srow("Anime Hub controls", "On: the hub's own player design. Off: mpv's plain controls. My config: your own mpv skin.", seg("design", "Anime Hub controls"))}
+    ${m.design === "on" ? srow("Player look", "How the controls look in mpv. Used from the next episode you start.", `<span class="seg" role="group" aria-label="Player look">${(m.looks || []).map((v) => `<button class="${m.look === v ? "on" : ""}" aria-pressed="${m.look === v}" data-a="spref" data-k="mpv_look" data-v="${v}">${PLAYER_LOOKS[v] || v}</button>`).join("")}</span>`) : ""}
+    ${srow("Smooth controls while playing", "Redraws the controls every screen refresh, not only with each video frame. Off: mpv's normal timing.", seg("smooth", "Smooth controls while playing"))}
+    ${srow("Opening and ending on the timeline", "Marks them on mpv's seek bar and names them under the mouse. Needs skipping on (Playback).", tgl("mpv_marks", "Opening and ending on the timeline", m.marks !== false))}
+    ${srow("Starting volume", "My config: whatever mpv.conf says. Last: where you left it.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Last"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
+    ${m.design === "on" ? `<div class="group"><h3>Player controls</h3><p class="sub">Work with the hub's controls. Used from the next episode you start.</p>
+    ${srow("Loaded part on the seek bar", "A lighter stretch shows how much of the episode mpv has loaded.", mpick(m, "loaded", "Loaded part on the seek bar", [["on", "On"], ["off", "Off"]]))}
+    ${srow("Skip buttons", "How far the skip buttons jump.", mpick(m, "skip_seconds", "Skip buttons", [["5", "5 s"], ["10", "10 s"], ["15", "15 s"], ["30", "30 s"]]))}
+    ${srow("Click on the picture", "", mpick(m, "click", "Click on the picture", [["own", "My config"], ["pause", "Pause"]]))}
+    ${srow("Double-click on the picture", "", mpick(m, "double", "Double-click on the picture", [["own", "My config"], ["fullscreen", "Fullscreen"], ["off", "Nothing"]]))}
+    ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}</div>` : ""}
+    <div class="group"><h3>Subtitle look</h3><p class="sub">Most anime subtitles carry their own style, so these change little unless Styled subtitles is set to Replace.</p>
+    ${srow("Size", "", mpick(m, "sub_size", "Subtitle size", [["own", "My config"], ["small", "Small"], ["normal", "Normal"], ["large", "Large"]]))}
+    ${srow("Colour", "", mpick(m, "sub_color", "Subtitle colour", [["own", "My config"], ["white", "White"], ["yellow", "Yellow"]]))}
+    ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", [["own", "My config"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]]))}
+    ${srow("Styled subtitles", "Replace swaps a release's own style for this one. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`;
 }
 function skipGroup(s) {
   const sk = s.skip || {};
@@ -1882,7 +1899,7 @@ const SETTINGS_INDEX = [
   ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
   ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "playback", "audio subtitle subs track language dub dual remember", "remember_tracks"],
-  ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
+  ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Smooth controls while playing", "mpv", "mpv smooth lag laggy video sync display refresh"], ["Starting volume", "mpv", "mpv volume start remember last"], ["Skip buttons", "mpv", "mpv skip seconds forward back length"], ["Loaded part on the seek bar", "mpv", "mpv buffer cache loaded preload seek bar"], ["Mouse in the player", "mpv", "mpv mouse click double scroll wheel"], ["Subtitle look", "mpv", "mpv subtitle size colour color outline style font"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
   ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"], ["Start episodes faster", "online", "prepare next episode speed ready", "prepare_online"],
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
@@ -2789,7 +2806,40 @@ function tourFound(s, a, n, ok) {
   ].join("");
 }
 /* The phone page needs the desktop app: without it the tour skips that page. */
-const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 4));
+const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 6));
+/* A small drawing of each player look for the tour: the real layout over a neutral scene, no show's art. */
+const PL_ICONS = {
+  subs: '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M6.5 10.500h5M6.500 14h2M13 14h4"/>',
+  wave: '<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>',
+  tune: '<path d="M3.500 7.500h17M3.500 16.500h17"/><circle cx="16" cy="7.500" r="2.500" fill="currentColor"/><circle cx="8" cy="16.500" r="2.500" fill="currentColor"/>',
+  list: '<path d="M4 6h16M4 12h16M4 18h9"/>',
+  full: '<path d="M4 9V8a4 4 0 0 1 4-4h1M15 4h1a4 4 0 0 1 4 4v1M20 15v1a4 4 0 0 1-4 4h-1M9 20H8a4 4 0 0 1-4-4v-1"/>',
+  vol: '<path d="M4 9.500h3.500L12 5.500v13l-4.500-4H4z" fill="currentColor"/><path d="M15.500 9a4 4 0 0 1 0 6"/>',
+  back: '<path d="M11.500 6l-6 6 6 6M19 6l-6 6 6 6"/>',
+  fwd: '<path d="M12.500 6l6 6-6 6M5 6l6 6-6 6"/>',
+  play: '<path d="M7 5l12 7-12 7z" fill="currentColor"/>',
+};
+const plIco = (k) => `<svg class="lki" viewBox="0 0 24 24" aria-hidden="true">${PL_ICONS[k]}</svg>`;
+const plBar = `<span class="lkbar"><s style="left:0;width:7%"></s><s style="left:8%;width:6%"></s><s style="left:15%;width:73%"></s><s style="left:89%;width:6%"></s><s style="left:96%;width:4%"></s><i style="width:7%"></i><u style="left:8%;width:6%"></u><i style="left:15%;width:27%"></i><b style="left:89%;width:6%"></b><q style="left:42%"></q></span>`;
+const PL_LOOKS = {
+  soft: () => `<div class="lkv soft"><span class="lkttl">Your show<small>Season 1 · E3</small></span><div class="lkshade"></div>
+    <div class="lksbar"><span>10:40</span>${plBar}<span>24:30</span></div>
+    <div class="lksrow"><span class="lkgrp">${plIco("list")}${plIco("vol")}<em></em></span><span class="lkgrp">${plIco("back")}<span class="lkplay ghost">${plIco("play")}</span>${plIco("fwd")}</span><span class="lkgrp lkend">${plIco("subs")}${plIco("wave")}${plIco("tune")}${plIco("full")}</span></div></div>`,
+  deck: () => `<div class="lkv deck"><span class="lkttl">Your show<small>Season 1 · E3</small></span>
+    <div class="lkdock">${plIco("back")}<span class="lkplay">${plIco("play")}</span>${plIco("fwd")}<span class="lktime">10:40</span>${plBar}<span class="lktime">24:30</span>${plIco("vol")}<em></em>${plIco("subs")}${plIco("wave")}${plIco("tune")}${plIco("list")}${plIco("full")}</div></div>`,
+};
+const TOUR_OWN = { mpv_fullscreen: "own", mpv_smooth: "own" }, TOUR_HUB = { mpv_fullscreen: "on", mpv_smooth: "on" };
+function tourMpv(s) {
+  const m = s.mpv || {}, own = m.fullscreen === "own" && m.smooth === "own";
+  const card = (v, on, title, line) => `<button class="choice ${on ? "on" : ""}" aria-pressed="${on}" data-a="tourmpv" data-v="${v}"><b>${title}</b><span>${line}</span></button>`;
+  return `<div class="choices">${card("hub", !own, "Anime Hub's settings", "Episodes start fullscreen, and the controls stay smooth while playing.")}${card("own", own, "My own settings", "mpv.conf decides. Good if you have tuned mpv yourself.")}</div>`;
+}
+function tourLooks(s) {
+  const m = s.mpv || {}, own = m.design === "own";
+  const card = (v, title, line) => `<button class="choice lkcard ${!own && (m.look || "soft") === v ? "on" : ""}" aria-pressed="${!own && (m.look || "soft") === v}" data-a="tourlook" data-v="${v}">${PL_LOOKS[v]()}<b>${title}</b><span>${line}</span></button>`;
+  return `<div class="choices lkpick">${card("soft", PLAYER_LOOKS.soft, "Controls float over the picture, with lively hover effects.")}${card("deck", PLAYER_LOOKS.deck, "One slim bar along the bottom, with the most room for the seek bar.")}
+    <button class="choice lkown ${own ? "on" : ""}" aria-pressed="${own}" data-a="tourlook" data-v="own"><b>Keep my own mpv look</b><span>For a skin you already use. Anime Hub adds no controls.</span></button></div>`;
+}
 function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
@@ -2804,6 +2854,8 @@ function Tour() {
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
     `<h2 id="dt">A few tools</h2><p class="sub">AnimeHub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
+    `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
+    `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
     `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
@@ -3469,6 +3521,12 @@ function markLoading(id) {
   S.loadingEp = id;
   pagePatch();
 }
+/* The accent on screen as #rrggbb, for mpv's controls (Decision 52). */
+function hexAccent() {
+  const c = document.createElement("canvas").getContext("2d");
+  c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#000";
+  return /^#[0-9a-f]{6}$/i.test(c.fillStyle) ? c.fillStyle : null;
+}
 /* skipOk: undefined = not asked yet, true/false = the AniSkip answer
    (yes to the online VPN dialog counts as yes). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk) {
@@ -3484,6 +3542,8 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk) {
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
   if (skipOk !== undefined) body.aniskip = skipOk;
+  const accent = hexAccent();
+  if (accent) body.accent = accent;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
   if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
@@ -3889,11 +3949,24 @@ const A = {
     toast(r.error || (r.changed === false ? `You have the latest ani-cli (${r.version})` : `ani-cli ${r.version || ""} is ready`), r.error ? "err" : undefined);
     if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
   },
-  tourpick: (v) => { S.tour.choice = v; paintModal(); }, tourback: () => { S.tour.step--; paintModal(true); },
+  tourpick: (v) => { S.tour.choice = v; paintModal(); },
+  tourmpv: (v) => {
+    api("/api/settings", v === "own" ? TOUR_OWN : TOUR_HUB).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; paintModal();
+    }).catch(() => toast("Could not save — is the hub running?"));
+  },
+  tourlook: (v) => {
+    const own = v === "own";
+    api("/api/settings", own ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; paintModal();
+    }).catch(() => toast("Could not save — is the hub running?"));
+  }, tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < (S.settings?.background_ok ? 5 : 4)) { T.step++; return paintModal(true); }
+    if (T.step < (S.settings?.background_ok ? 7 : 6)) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList

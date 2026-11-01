@@ -698,6 +698,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     script = mpv_script_flag()
     if script:
         flags.append(script)
+    flags += player.design_args(system.space_free_path)
     with database.db() as c:
         # Identity stamp (TODO 25): history stays readable without the link.
         c.execute("INSERT INTO episodes(id,show_id,label) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE"
