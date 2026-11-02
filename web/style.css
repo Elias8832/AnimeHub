@@ -1056,6 +1056,7 @@ body.srch #pal{display:grid}
 @keyframes palin{from{opacity:0;transform:translateY(-8px) scale(.98)}}
 .pal2 .plist{overflow-y:auto;padding:8px 10px;border-right:1px solid rgba(255,255,255,.08);scrollbar-width:thin}
 .pal2 .psec{font:500 11px var(--mono);color:var(--mute);padding:12px 12px 6px;display:flex;gap:8px;align-items:center}
+.pal2 .psec .link-btn{margin-left:auto;padding:0 8px;font:inherit}
 .pal2 .mi{display:flex;align-items:center;gap:12px;padding:7px 12px;border-radius:12px;font-size:14px;cursor:pointer}
 .pal2.in .mi{animation:rise .3s var(--ease) both;animation-delay:calc(var(--i) * 20ms)}
 .pal2 .mi.sel{background:var(--pick)}
@@ -1069,6 +1070,9 @@ body.srch #pal{display:grid}
 .pal2 .mi .r{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
 .pal2 .tag{font:500 10px var(--mono);padding:3px 8px;border-radius:999px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.3);color:var(--ink-2)}
 .pal2 .mi .switch{transform:scale(.8)}
+.pal2 .srx{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;color:var(--mute);opacity:0;cursor:pointer}
+.pal2 .srx .ico{width:14px;height:14px}
+.pal2 .mi.sel .srx,.pal2 .srx:focus-visible{opacity:1}.pal2 .srx:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 .pal2 .pview{padding:18px;overflow:hidden}
 .pal2 .pview .pa{display:block;height:190px;border-radius:14px;background:var(--s2) center/cover;box-shadow:var(--edge);margin-bottom:16px}
 .pal2 .pview h3{font:700 30px/1 var(--display);text-transform:uppercase;margin:0 0 8px}
