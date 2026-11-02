@@ -131,7 +131,7 @@ class TabSlideAndSearch(unittest.TestCase):
 
     def test_touch_search(self):
         self.assertIn('sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";', APP)
-        for a in ("srq:", "srclr:", "srlist:", "srgo:"):
+        for a in ("srshow:", "srclr:", "srlist:", "srgo:"):
             self.assertIn(a, APP)
         self.assertIn('#pal .pclose:after{content:"Cancel"', CSS)
 

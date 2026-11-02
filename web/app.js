@@ -1951,6 +1951,12 @@ function srHTML() {
   srPv = [];
   let i = 0, h = "";
   const row = (attrs, inner, pv) => { srPv.push(pv); return `<div class="mi" style="--i:${i}" data-i="${i++}" ${attrs}>${inner}</div>`; };
+  if (!q) {
+    const recent = srShows();
+    if (recent.length) h += `<div class="psec">recent<button class="link-btn" data-a="srclr">clear</button></div>` + recent.map((x) => { const sub = srSub(x);
+      return row(`data-a="srshow" data-v="${esc(x.k)}"`, `${poster(x.t, x.p, { c: "t" })}<span class="tx"><b>${esc(x.t)}</b><small>${esc(sub)}</small></span><span class="r"><button class="srx" data-a="srforget" data-v="${esc(x.k)}" aria-label="Remove ${esc(x.t)} from recent">${ico("close")}</button></span>`,
+        { art: x.b || x.p, t: x.t, m: sub, k: [["Open", "↵"]] }); }).join("");
+  }
   if (q) {
     const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
       .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), local: true, s }));
@@ -2551,12 +2557,22 @@ function paintPortals() {
    Typing: library rows, AniList as a poster grid, matching settings. Same
    rows (.mi, data-i) as the PC list, so Enter and the arrows still work. */
 const touchSearch = () => isPhone() || mq("(pointer:coarse)");
-const SR_RECENT = "srRecent";
-function srRemember(qq) {
-  qq = String(qq || "").trim();
-  if (qq.length < 2) return;
-  lsSet(SR_RECENT, [qq, ...lsGet(SR_RECENT, []).filter((x) => x.toLowerCase() !== qq.toLowerCase())].slice(0, 6));
+/* Search history: the last shows opened through search (library or AniList),
+   per device (localStorage), PC and touch share it. A library show keeps only
+   its key: title and art come from the library, and a show that left is hidden. */
+/* @srhist:start */
+const SR_SHOWS = "srShows";
+function srAdd(x) { lsSet(SR_SHOWS, [x, ...lsGet(SR_SHOWS, []).filter((y) => y.k !== x.k)].slice(0, 6)); }
+function srForget(k) { lsSet(SR_SHOWS, lsGet(SR_SHOWS, []).filter((y) => y.k !== k)); }
+function srShows() {
+  return lsGet(SR_SHOWS, []).flatMap((x) => {
+    if (x.k[0] !== "s") return [x];
+    const s = showById(x.k.slice(2));
+    return s ? [{ k: x.k, t: s.title, p: s.poster, b: s.banner, s }] : [];
+  });
 }
+const srSub = (x) => { if (!x.s) return "on anilist"; const sp = spineOf(x.s); return sp ? statusLabel(sp.status) : `${epTotal(x.s)} episodes`; };
+/* @srhist:end */
 function srHTMLTouch() {
   const qq = S.q.trim(), ql = qq.toLowerCase();
   srPv = [];
@@ -2564,8 +2580,8 @@ function srHTMLTouch() {
   const mi = (attrs, cls, inner) => { srPv.push(null); return `<div class="mi ${cls}" tabindex="-1" data-i="${i++}" ${attrs}>${inner}</div>`; };
   const sec = (t, extra = "") => `<div class="srsec"><h2>${t}</h2><span class="fill"></span>${extra}</div>`;
   if (!qq) {
-    const recent = lsGet(SR_RECENT, []);
-    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srchips">${recent.map((r) => `<button class="chip" data-a="srq" data-v="${esc(r)}">${ico("clock")}${esc(r)}</button>`).join("")}</div>`;
+    const recent = srShows();
+    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srposters">${recent.map((x) => mi(`data-a="srshow" data-v="${esc(x.k)}"`, "sp", `${poster(x.t, x.p)}<b>${esc(x.t)}</b>`)).join("")}</div>`;
     const sp = S.data?.spine;
     if (aniMode() && sp?.entries?.length) {
       const n = (k) => new Set(sp.entries.filter((e) => e.status === k).map(libKey)).size;
@@ -2609,8 +2625,15 @@ function fitPal() {
 }
 vv?.addEventListener("resize", fitPal);
 vv?.addEventListener("scroll", fitPal);
-/* Opening a result remembers what was typed (Recent). */
-document.addEventListener("click", (e) => { if (S.menu === "sr" && S.q.trim() && e.target.closest?.("#sr .mi, #sr [data-a=cmd]")) srRemember(S.q); }, true);
+/* Opening a show from the results puts it in Recent; settings and commands don't count. */
+document.addEventListener("click", (e) => {
+  const m = e.target.closest?.("#sr .mi");
+  if (!m || S.menu !== "sr" || !S.q.trim()) return;
+  const v = m.dataset.v, x = m.dataset.a === "catpick" ? S.alres?.[+v] : null, s = m.dataset.a === "open" ? showById(v) : null;
+  if (s) srAdd({ k: "s:" + s.id });
+  else if (x) srAdd({ k: "a:" + x.id, t: candLabel(x), p: x.coverImage?.extraLarge, b: x.bannerImage });
+}, true);
+try { localStorage.removeItem("srRecent"); } catch {} // the old list of typed words
 
 /* Settings on a phone (S5): a grouped list; a section opens as its own page. */
 function setSummary(k, s) {
@@ -3902,8 +3925,15 @@ const A = {
   setgo: (v, t) => { const tab = t.dataset.t; clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
   srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
-  srq: (v) => { q.value = v; q.dispatchEvent(new Event("input")); q.focus(); },
-  srclr: () => { lsSet(SR_RECENT, []); paintNav(); },
+  srshow: (v) => {
+    const x = lsGet(SR_SHOWS, []).find((y) => y.k === v);
+    if (!x) return;
+    srAdd(x);
+    clearSearch();
+    if (v[0] === "s") openShow(v.slice(2)); else openFranchise(+v.slice(2));
+  },
+  srclr: () => { lsSet(SR_SHOWS, []); paintNav(); if (!touchSearch()) q.focus(); },
+  srforget: (v) => { srForget(v); paintNav(); if (!touchSearch()) q.focus(); },
   srlist: (v) => { clearSearch(); q.blur(); S.lib.tab = v; saveLib(); nav("library"); },
   srgo: (v) => { clearSearch(); q.blur(); nav(v); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
