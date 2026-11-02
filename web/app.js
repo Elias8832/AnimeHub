@@ -234,6 +234,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
    screen unless one colour is picked. */
 const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["classic", "tabs", "line", "capsule", "island"] };
 const ACCENTS = ["#f2a46f", "#b8d7c6", "#9ccbe8", "#e58ccf", "#e6c27c", "#c3a6f2"];
+/* The tab's icon wears the chosen accent (TODO 139, Decision 59); "follow" keeps the default. */
+const ACCENT_ICONS = { "#f2a46f": "orange", "#b8d7c6": "sage", "#9ccbe8": "blue", "#e58ccf": "pink", "#e6c27c": "gold", "#c3a6f2": "violet" };
+const accentIcon = (a) => ACCENT_ICONS[a] ? `/icons/${ACCENT_ICONS[a]}.svg` : "/icon.svg?v=2";
 const lookGet = (k) => { const v = lsGet(k, LOOKS[k][0]); return LOOKS[k].includes(v) ? v : LOOKS[k][0]; };
 const accentGet = () => { const v = lsGet("accent", "follow"); return ACCENTS.includes(v) ? v : "follow"; };
 const grainGet = () => lsGet("grain", true) !== false;
@@ -4222,6 +4225,7 @@ function applyLook() {
   const d = document.documentElement, a = accentGet();
   d.dataset.motion = lookGet("motion"); d.dataset.art = lookGet("art"); d.dataset.bar = lookGet("bar"); d.dataset.grain = grainGet() ? "on" : "off";
   a === "follow" ? d.style.removeProperty("--fixed") : d.style.setProperty("--fixed", a);
+  $('link[rel="icon"]')?.setAttribute("href", accentIcon(a));
 }
 function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; }
 function zoomSet(z) { lsSet("hubZoom", z); applyZoom(); const el = $("#zoomval"); if (el) el.textContent = z + "%"; }

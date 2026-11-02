@@ -401,6 +401,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file_body(json.dumps(MANIFEST).encode(), "application/manifest+json")
         elif route == "/icon.svg":
             self.send_file(WEB / "icon.svg", "image/svg+xml", cache=True)
+        elif route.startswith("/icons/") and route.endswith(".svg"):
+            # One app icon per accent colour (TODO 139). Basename only, as for fonts.
+            self.send_file(WEB / "icons" / os.path.basename(route), "image/svg+xml", cache=True)
         elif route == "/sw.js":
             # Lets phones install the app (Decision 44); never cached, so an
             # update reaches the phone on its next visit.
