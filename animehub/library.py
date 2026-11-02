@@ -527,6 +527,7 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
             cap = "none"
         out.append({"id": e["id"], "title": e.get("title"), "status": e.get("status"),
                     "progress": e.get("progress") or 0, "score": e.get("score") or 0,
+                    "average": e.get("average"),  # additive: AniList's community score
                     "episodes": e.get("episodes"), "format": e.get("format"),
                     "year": e.get("year"), "airing": e.get("airing"),
                     "genres": e.get("genres") or [],
@@ -656,6 +657,7 @@ def spine_build_local(scan, curations, streams=()):
         out.append({"id": s["id"], "title": s["title"],
                     "status": status, "progress": progress,
                     "score": cur.get("score") or 0, "episodes": total,
+                    "average": meta.get("score"),  # AniList's averageScore, as in spine_build
                     "format": meta.get("format") or
                               ("MOVIE" if s.get("kind") == "movie" else None),
                     "year": meta.get("year"), "airing": None,
