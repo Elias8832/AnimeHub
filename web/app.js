@@ -10,7 +10,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } ca
 const S = {
   data: null, view: "home", showId: null, seasonIdx: 0, showBack: "home", cat: null,
   q: "", menu: null, alres: null, alq: null, alBusy: false,
-  ani: null, settings: null, alData: null, modal: null, entry: null,
+  ani: null, settings: null, setQ: "", alData: null, modal: null, entry: null,
   lib: (({ year, score, average, genres, air, ...l }) => ({ tab: null, src: "all", fmt: "all", sort: "updated", group: "all", ...l,
          air: air === "FINISHED_AIRING" ? "FINISHED" : air || "all", genres: Array.isArray(genres) ? genres : [],
          year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all", average: Array.isArray(average) ? average : "all" }))(lsGet("hubLib", {})),
@@ -1641,41 +1641,76 @@ function updateRows(s) {
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
   return srow("Version", `AnimeHub v${esc(u.version || "")}`, `<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`)
-    + srow("Tell me about new versions", "Once a day, ask GitHub for new releases. GitHub sees your IP address, nothing about your library.", tgl("update_check", "Tell me about new versions", u.check))
-    + srow("Only with a VPN", "Nothing goes to GitHub unless a VPN is on: no check, no update.", tgl("update_vpn_only", "Only with a VPN", u.vpn_only))
+    + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", tgl("update_check", "Tell me about new versions", u.check))
+    + srow("Only with a VPN", "No check or update without a VPN.", tgl("update_vpn_only", "Only with a VPN", u.vpn_only))
     + (f ? srow(`v${esc(f.version)} is out`, how, more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>Update</button>` : "")) : "");
 }
 const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), `${path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : ""}<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "found" : "not found"}</span>`);
-function Sett() {
-  const s = S.settings, ani = S.ani || {};
-  if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
+/* What each section holds. Built whole for the filter too, which keeps only the rows that match. */
+function setSections(s) {
+  const ani = S.ani || {};
   const stateTxt = { ok: "Watching this folder.", unconfigured: "No library folder is configured yet.", missing: "The folder is not accessible right now.", partial: "Some folders could not be read — part of the library may be missing." };
   const changed = s.scan?.root === "changed", conn = !!ani.connected, off = !conn;
-  /* Settings (Decision 38): one section at a time; every setting is also in the search. */
-  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone); // a paired phone can't change the remote (Decision 43)
-  if (isPhone() && !S.setOpen) return settingsList(tabs, s);
-  const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : "appearance";
-  const sec = {
-    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show on screen, or keep one colour everywhere.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Full: the show's picture behind the page. Soft: only a dim haze of its colours. Off: plain dark.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "How search and settings sit in the top bar. Island: the whole bar is one floating pill.", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Hide spoilers", "Episodes you haven't started show no title, and their pictures are blurred. Also in mpv's episode list.", tgl("hide_spoilers", "Hide spoilers", s.hide_spoilers))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm keeps the small animations but drops drifting and pulsing. Off turns them all off.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "Scales the whole interface on this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
+  return {
+    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show, or keep one colour.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture. Also in mpv's list.", tgl("hide_spoilers", "Hide spoilers", s.hide_spoilers))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "On this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
-      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}<div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div>`,
-    playback: `${skipGroup(s)}`,
-    mpv: mpvGroup(s),
+      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}`,
+    player: playerGroup(s),
+    skipping: skipGroup(s),
+    subs: subsGroup(s),
     online: `${streamGroup(s)}`,
     phone: s.phone ? "" : phoneGroup(),
     anilist: `<div class="group"><h3>AniList</h3>${srow("Account", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on local watch state.",
       conn ? `<span><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>')}
   <div class="adv2${off ? " dis" : ""}">${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
-    ${srow("Track episodes", "After playback marks an episode watched, publish the highest watched episode to AniList.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}
-    ${srow("Watched marks from AniList", "Episodes up to your AniList progress show as watched, the rest as unwatched. Off: the marks saved on this device. Switching back loses nothing.", tgl("anilist_watched", "Watched marks from AniList", s.anilist_watched))}
-    ${srow("Add shows automatically", "A first watch of a matched show that isn't on your lists adds it to Watching. Off by default.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}
+    ${srow("Track episodes", "Sends your highest watched episode to AniList.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}
+    ${srow("Watched marks from AniList", "Marks follow your AniList progress. Off: the marks on this device.", tgl("anilist_watched", "Watched marks from AniList", s.anilist_watched))}
+    ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}
     ${srow(`Sync ratings<span class="soon">not built yet</span>`, "Keep scores in step between AniList and this device.", tgl("ratings", "Sync ratings", false, true))}</div></div>`,
-    keys: `<div class="group"><h3>Keys</h3><p class="sub">Press <kbd class="kb">?</kbd> anywhere for this list.</p><div class="keys big">${KEYS.map(([n, k]) => `<span>${esc(n)}</span><kbd class="kb">${esc(k)}</kbd>`).join("")}</div></div>`,
-    data: `<div class="group"><h3>Updates</h3>${updateRows(s)}</div><div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div><div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div>`,
+    data: `<div class="group"><h3>Updates</h3>${updateRows(s)}</div><div class="group"><h3>Detected tools</h3>${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Appearance).")}</div><div class="group"><h3>Files</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div>${isPhone() ? "" : `<div class="group"><h3>Keys</h3><p class="sub">Press <kbd class="kb">?</kbd> anywhere for this list.</p><div class="keys big">${KEYS.map(([n, k]) => `<span>${esc(n)}</span><kbd class="kb">${esc(k)}</kbd>`).join("")}</div></div>`}<div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div>`,
   };
-  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
-  <div class="setg"><nav class="snav">${tabs.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
-  <div class="settings scol" data-sec="${tab}">${sec[tab]}</div></div></div>`;
+}
+/* The filter: every word must be in a row's title, text or search words.
+   A group whose name matches stays whole. */
+const setHit = (words, text) => { const l = text.toLowerCase(); return words.every((w) => l.includes(w)); };
+const setWords = (t) => SETTINGS_INDEX.filter(([n]) => t.startsWith(n)).map((x) => x[0] + " " + x[2]).join(" ");
+function setResults(s, tabs) {
+  const words = S.setQ.toLowerCase().split(/\s+/).filter(Boolean), sec = setSections(s), box = document.createElement("div");
+  let html = "";
+  for (const [k, label] of tabs) {
+    box.innerHTML = sec[k] || "";
+    for (const g of [...box.querySelectorAll(".group")]) {
+      const h = g.querySelector("h3"), name = h?.textContent || "", rows = [...g.querySelectorAll(".srow")];
+      if (setHit(words, `${label} ${name} ${setWords(name)}`)) { /* keep it all */ }
+      else if (rows.length) {
+        const keep = rows.filter((r) => { const t = r.querySelector("b")?.textContent || ""; return setHit(words, `${r.textContent} ${setWords(t)}`); });
+        if (!keep.length) { g.remove(); continue; }
+        rows.filter((r) => !keep.includes(r)).forEach((r) => r.remove());
+        g.querySelectorAll(".sub,.pairbox,.dirpick").forEach((x) => x.remove());
+      } else if (!setHit(words, g.textContent)) { g.remove(); continue; }
+      if (h && name !== label) h.innerHTML = `<small>${esc(label)}</small>${esc(name)}`;
+      else if (h) h.textContent = label;
+    }
+    html += box.innerHTML;
+  }
+  const n = (box.innerHTML = html, box.querySelectorAll(".srow").length);
+  return html.trim() ? (n ? `<p class="setcount">${n} ${n === 1 ? "setting" : "settings"}</p>` : "") + html : `<p class="setnone">Nothing for “${esc(S.setQ)}”. Try one word, like “subtitle” or “vpn”.</p>`;
+}
+const setClear = () => { S.setQ = ""; const f = $("#setq"); if (f) f.value = ""; };
+document.addEventListener("input", (e) => { if (e.target.id === "setq") { S.setQ = e.target.value; render(true); scrollTo(0, 0); } });
+const setSearch = () => `<label class="slsearch">${ico("search")}<input id="setq" type="search" value="${esc(S.setQ)}" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">${S.setQ ? `<button data-a="setclear" aria-label="Clear">${ico("close")}</button>` : `<kbd class="kb" aria-hidden="true">/</kbd>`}</label>`;
+/* Sections sorted by what you're after, under plain headings. */
+const setHeads = (tabs) => [...new Set(tabs.map((t) => t[2]))].map((g) => [g, tabs.filter((t) => t[2] === g)]);
+function Sett() {
+  const s = S.settings;
+  if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
+  /* Settings (Decision 38, regrouped in 61): one section at a time; every setting can be found from the box on top. */
+  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone); // a paired phone can't change the remote (Decision 43)
+  if (isPhone() && !S.setOpen) return settingsList(tabs, s);
+  const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
+  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span></div></div>
+  <div class="setg"><nav class="snav">${isPhone() ? "" : setSearch()}${setHeads(tabs).map(([g, ts]) => `<h4>${g}</h4>${ts.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}`).join("")}</nav>
+  <div class="settings scol" data-sec="${find ? "find" : tab}">${find ? setResults(s, tabs) : setSections(s)[tab]}</div></div></div>`;
 }
 /* Episode lengths read from the files (ffprobe, else mpv), once per file.
    While it works, Settings re-reads its progress every few seconds. */
@@ -1698,7 +1733,7 @@ function lengthRow(s) {
 function upscaleRow(s) {
   const u = s.upscale || {}, missing = !u.found;
   const txt = {
-    off: "Upscayl redraws show banners 4× bigger on your graphics card.",
+    off: "Upscayl redraws banners 4× bigger on your graphics card.",
     missing: "Install Upscayl to use this. It redraws show banners 4× bigger on your graphics card.",
     idle: `On. New banners are redrawn as they arrive.${u.done ? ` ${u.done} done.` : ""}`,
     working: `Working: ${u.done || 0} done, ${u.left || 0} left. Pauses while an episode plays.`,
@@ -1710,7 +1745,7 @@ function upscaleRow(s) {
   }, 4000);
   const look = [["natural", "Natural"], ["digital", "Digital art"]].map(([v, l]) => `<button class="${u.style === v ? "on" : ""}" aria-pressed="${u.style === v}" data-a="spref" data-k="upscale_style" data-v="${v}" ${u.on ? "" : "disabled"}>${l}</button>`).join("");
   return srow("Sharper banners", txt, (missing ? UPSCAYL_BTN : "") + tgl("upscale_banners", "Sharper banners", u.on, missing && !u.on))
-    + srow("Banner look", "Natural keeps soft shading as it is. Digital art draws crisper lines and takes about 3× longer (Upscayl's Digital Art with TTA Mode).", `<span class="seg" role="group" aria-label="Banner look">${look}</span>`);
+    + srow("Banner look", "Digital art is crisper and takes about 3× longer.", `<span class="seg" role="group" aria-label="Banner look">${look}</span>`);
 }
 /* A segmented control for one Appearance preference. */
 function lookSeg(k, opts) {
@@ -1721,39 +1756,47 @@ function lookSeg(k, opts) {
 const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
 /* mpv's own section (Decision 45): each option is on, off, or left to your mpv.conf. */
 const PLAYER_LOOKS = { soft: "Float", deck: "Dock" };
+const PLAYER_LINES = { soft: "Controls float over the picture.", deck: "One slim bar along the bottom." };
 const mpick = (m, k, label, opts) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
 const MPVMODES = [["on", "On"], ["off", "Off"], ["own", "My config"]];
-function mpvGroup(s) {
-  const m = s.mpv || {};
-  const seg = (k, label) => `<span class="seg" role="group" aria-label="${label}">${MPVMODES.map(([v, l]) => `<button class="${m[k] === v ? "on" : ""}" aria-pressed="${m[k] === v}" data-a="spref" data-k="mpv_${k}" data-v="${v}">${l}</button>`).join("")}</span>`;
-  return `<div class="group"><h3>mpv</h3><p class="sub">Your own mpv.conf always loads. The hub only overrides what's set to On or Off here.</p>
-    ${srow("Fullscreen", "How episodes start.", seg("fullscreen", "Fullscreen"))}
-    ${srow("Anime Hub controls", "On: the hub's own player design. Off: mpv's plain controls. My config: your own mpv skin.", seg("design", "Anime Hub controls"))}
-    ${m.design === "on" ? srow("Player look", "How the controls look in mpv. Used from the next episode you start.", `<span class="seg" role="group" aria-label="Player look">${(m.looks || []).map((v) => `<button class="${m.look === v ? "on" : ""}" aria-pressed="${m.look === v}" data-a="spref" data-k="mpv_look" data-v="${v}">${PLAYER_LOOKS[v] || v}</button>`).join("")}</span>`) : ""}
-    ${srow("Smooth controls while playing", "Redraws the controls every screen refresh, not only with each video frame. Off: mpv's normal timing.", seg("smooth", "Smooth controls while playing"))}
-    ${srow("Opening and ending on the timeline", "Marks them on mpv's seek bar and names them under the mouse. Needs skipping on (Playback).", tgl("mpv_marks", "Opening and ending on the timeline", m.marks !== false))}
-    ${srow("Starting volume", "My config: whatever mpv.conf says. Last: where you left it.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Last"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
-    ${m.design === "on" ? `<div class="group"><h3>Player controls</h3><p class="sub">Work with the hub's controls. Used from the next episode you start.</p>
-    ${srow("Loaded part on the seek bar", "A lighter stretch shows how much of the episode mpv has loaded.", mpick(m, "loaded", "Loaded part on the seek bar", [["on", "On"], ["off", "Off"]]))}
-    ${srow("Skip buttons", "How far the skip buttons jump.", mpick(m, "skip_seconds", "Skip buttons", [["5", "5 s"], ["10", "10 s"], ["15", "15 s"], ["30", "30 s"]]))}
+const mpvSeg = (m, k, label) => mpick(m, k, label, MPVMODES);
+function playerGroup(s) {
+  const m = s.mpv || {}, hub = m.design === "on";
+  return `<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. On or Off here overrides it.</p>
+    ${srow("Fullscreen", "", mpvSeg(m, "fullscreen", "Fullscreen"))}
+    ${srow("Starting volume", "Last: where you left it.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Last"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
+    <div class="group"><h3>Controls</h3><p class="sub">Apply from the next episode.</p>
+    ${srow("Anime Hub controls", "On: the hub's design. Off: mpv's plain controls. My config: your own skin.", mpvSeg(m, "design", "Anime Hub controls"))}
+    ${hub ? `<div class="srow lkrow"><div><b>Player look</b></div><div class="ctl lkpick" role="group" aria-label="Player look">${(m.looks || []).map((v) => `<button class="choice lkcard ${m.look === v ? "on" : ""}" aria-pressed="${m.look === v}" data-a="spref" data-k="mpv_look" data-v="${v}">${PL_LOOKS[v]?.() || ""}<b>${PLAYER_LOOKS[v] || v}</b><span>${PLAYER_LINES[v] || ""}</span></button>`).join("")}</div></div>` : ""}
+    ${srow("Smooth controls while playing", "Stops the controls lagging while a video plays.", mpvSeg(m, "smooth", "Smooth controls while playing"))}
+    ${hub ? srow("Loaded part on the seek bar", "A lighter stretch shows how much mpv has loaded.", mpick(m, "loaded", "Loaded part on the seek bar", [["on", "On"], ["off", "Off"]])) : ""}
+    ${hub ? srow("Skip buttons", "How far they jump.", mpick(m, "skip_seconds", "Skip buttons", [["5", "5 s"], ["10", "10 s"], ["15", "15 s"], ["30", "30 s"]])) : ""}</div>
+    ${hub ? `<div class="group"><h3>Mouse</h3>
     ${srow("Click on the picture", "", mpick(m, "click", "Click on the picture", [["own", "My config"], ["pause", "Pause"]]))}
     ${srow("Double-click on the picture", "", mpick(m, "double", "Double-click on the picture", [["own", "My config"], ["fullscreen", "Fullscreen"], ["off", "Nothing"]]))}
-    ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}</div>` : ""}
-    <div class="group"><h3>Subtitle look</h3><p class="sub">Most anime subtitles carry their own style, so these change little unless Styled subtitles is set to Replace.</p>
+    ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}</div>` : ""}`;
+}
+function subsGroup(s) {
+  const m = s.mpv || {};
+  return `<div class="group"><h3>Audio and subtitle tracks</h3>
+    ${srow("Remember audio and subtitles", "Switch tracks once and the show's next episodes use the same ones.", tgl("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>
+    <div class="group"><h3>Subtitle look</h3><p class="sub">Little changes unless Styled subtitles is set to Replace.</p>
     ${srow("Size", "", mpick(m, "sub_size", "Subtitle size", [["own", "My config"], ["small", "Small"], ["normal", "Normal"], ["large", "Large"]]))}
     ${srow("Colour", "", mpick(m, "sub_color", "Subtitle colour", [["own", "My config"], ["white", "White"], ["yellow", "Yellow"]]))}
     ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", [["own", "My config"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]]))}
-    ${srow("Styled subtitles", "Replace swaps a release's own style for this one. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`;
+    ${srow("Styled subtitles", "Replace uses this style instead. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`;
 }
 function skipGroup(s) {
   const sk = s.skip || {};
   const seg = (k, label) => `<span class="seg" role="group" aria-label="${label}">${SKIPMODES.map(([m, l]) => `<button class="${sk[k] === m ? "on" : ""}" aria-pressed="${sk[k] === m}" data-a="spref" data-k="skip_${k}" data-v="${m}">${l}</button>`).join("")}</span>`;
-  return `<div class="group"><h3>Playback</h3>
+  const m = s.mpv || {};
+  return `<div class="group"><h3>Openings and endings</h3>
     ${srow("Skip openings", "Ask: shows a skip button. Auto: skips right away.", seg("op", "Skip openings"))}
     ${srow("Skip endings", "Anything after the ending still plays.", seg("ed", "Skip endings"))}
-    ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees which episode you start, its length and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
-    ${srow("Ask without VPN", "Asks before AniSkip is used without a VPN.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}
-    ${srow("Remember audio and subtitles", "Switch tracks in mpv once, and the show's next episodes start with the same audio and subtitles.", tgl("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>`;
+    ${srow("Opening and ending on the timeline", "Marks them on mpv's seek bar. Needs skipping on.", tgl("mpv_marks", "Opening and ending on the timeline", m.marks !== false))}</div>
+    <div class="group"><h3>AniSkip</h3>
+    ${srow("Times from AniSkip", "For files without chapters and online episodes. AniSkip sees the episode, its length and your IP address.", tgl("aniskip", "Times from AniSkip", s.aniskip === true))}
+    ${srow("Ask without VPN", "Asks first when no VPN is on.", tgl("aniskip_vpn_warn", "Ask without VPN", s.aniskip_vpn_warn !== false, s.aniskip !== true))}</div>`;
 }
 /* Phone remote (Decision 43): a second door on the home Wi-Fi, off by
    default; phones pair with the QR code (or the address and code). While a
@@ -1776,7 +1819,7 @@ function phoneGroup() {
   const devs = r.devices.length ? r.devices.map((d) => srow(esc(d.name), `Paired ${esc(when(d.created))} · last used ${esc(when(d.last_seen))}`, `<button class="btn" data-a="rmtdel" data-v="${d.id}">Remove</button>`)).join("")
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
-    ${srow("Phone remote", "Pause, skip and pick tracks from your phone while an episode plays here. Phone and PC need the same Wi-Fi. No app to install.", `<button class="switch" role="switch" aria-checked="${r.on}" aria-label="Phone remote" data-a="rmton"></button>`)}
+    ${srow("Phone remote", "Control playback from your phone. Same Wi-Fi, no app.", `<button class="switch" role="switch" aria-checked="${r.on}" aria-label="Phone remote" data-a="rmton"></button>`)}
     ${pair}${S.settings?.background_ok ? bgRows(S.settings) : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
 }
 function phoneWatch() {
@@ -1801,13 +1844,12 @@ function streamGroup(s) {
   const st = s.stream || {}, off = !s.tools?.["ani-cli"];
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
   const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), aniBtn(s)) : st.own ? srow("ani-cli", esc(aniLine(s)), aniBtn(s)) : "";
-  return `${getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3>${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
-    ${srow("Quality", "For watching and downloading online episodes.", `<select aria-label="Stream quality" data-a="spref" data-k="stream_quality" ${off ? "disabled" : ""}>${(st.qualities || []).map((q) => `<option value="${q}" ${q === st.quality ? "selected" : ""}>${QLABEL[q] || q + "p"}</option>`).join("")}</select>`)}
-    ${srow("Audio", "Sub or dub for online episodes. Any episode's menu plays the other one.", `<span class="seg" role="group" aria-label="Default audio">${SLMODES.map(([m, l]) => `<button class="${st.mode === m ? "on" : ""}" aria-pressed="${st.mode === m}" data-a="spref" data-k="stream_mode" data-v="${m}" ${off ? "disabled" : ""}>${l}</button>`).join("")}</span>`)}
-    ${srow("Downloads", "Saved into your library folder, one folder per show.", "")}
-    ${srow("VPN in the status line", "Shows in the line at the bottom whether a VPN connection is up.", tgl("vpn_icon", "VPN in the status line", s.vpn_icon !== false, off))}
-    ${srow("Warn without VPN", "Asks before an online episode or download starts while no VPN is up.", tgl("vpn_warn", "Warn without VPN", s.vpn_warn !== false, off))}
-    ${srow("Start episodes faster", "Gets the next online episode ready before you click. Only while a VPN is up, unless Warn without VPN is off.", tgl("prepare_online", "Start episodes faster", s.prepare_online !== false, off))}</div>`;
+  return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show.</p>${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
+    ${srow("Quality", "For watching and downloading.", `<select aria-label="Stream quality" data-a="spref" data-k="stream_quality" ${off ? "disabled" : ""}>${(st.qualities || []).map((q) => `<option value="${q}" ${q === st.quality ? "selected" : ""}>${QLABEL[q] || q + "p"}</option>`).join("")}</select>`)}
+    ${srow("Audio", "Any episode's menu plays the other one.", `<span class="seg" role="group" aria-label="Default audio">${SLMODES.map(([m, l]) => `<button class="${st.mode === m ? "on" : ""}" aria-pressed="${st.mode === m}" data-a="spref" data-k="stream_mode" data-v="${m}" ${off ? "disabled" : ""}>${l}</button>`).join("")}</span>`)}
+    ${srow("VPN in the status line", "Shows in the bottom line whether a VPN is up.", tgl("vpn_icon", "VPN in the status line", s.vpn_icon !== false, off))}
+    ${srow("Warn without VPN", "Asks before an online episode or download starts with no VPN.", tgl("vpn_warn", "Warn without VPN", s.vpn_warn !== false, off))}
+    ${srow("Start episodes faster", "Gets the next online episode ready early. Only with a VPN, unless Warn without VPN is off.", tgl("prepare_online", "Start episodes faster", s.prepare_online !== false, off))}${off ? "" : getRow}</div>`;
 }
 /* Library folder picker (Decision 32): one inline folder browser shared by
    Settings and the tour's first step (ctx). It renders from S.dir and paints
@@ -1887,7 +1929,7 @@ async function dirSet(path) {
   await loadSettings();
   await reload();
   api("/api/refresh", {}).catch(() => {});
-  if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render();
+  if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
 }
 /* Extra library folders (Decision 42): added through the same browser, removed from their row. */
 async function extraAdd(path) {
@@ -1900,7 +1942,7 @@ async function extraAdd(path) {
   await loadSettings();
   await reload();
   api("/api/refresh", {}).catch(() => {});
-  if (S.view === "settings") render();
+  if (S.view === "settings") render(true);
 }
 async function extraRemove(id) {
   let r;
@@ -1909,13 +1951,13 @@ async function extraRemove(id) {
   toast("Folder removed — its watch history is kept");
   await loadSettings();
   await reload();
-  if (S.view === "settings") render();
+  if (S.view === "settings") render(true);
 }
 function extraGroup(s) {
   const xs = s.library_extra || [], name = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
   const rows = xs.map((x) => srow(esc(name(x.path)), `<code>${esc(x.path)}</code>${x.state === "missing" ? ' <span class="chip warn">not reachable</span>' : ""}`,
     `<button class="btn" data-a="xremove" data-v="${x.id}">Remove</button>`)).join("");
-  return `<div class="group"><h3>Extra folders</h3><p class="sub">More folders with anime, e.g. on another drive. Their shows join your library; downloads go where a show already is.</p>${rows}
+  return `<div class="group"><h3>Extra folders</h3><p class="sub">Their shows join your library. Downloads go where a show already is.</p>${rows}
     ${srow("Add a folder", xs.length ? "Another folder with anime." : "No extra folders yet.", `<div class="path">${libPath("extra", {})}${dirBtn("extra")}</div>`)}${DirPick("extra")}</div>`;
 }
 async function loadSettings() {
@@ -1937,18 +1979,18 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
 const SETTINGS_INDEX = [
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Hide spoilers", "appearance", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
-  ["Library folder", "library", "folder path library directory browse"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "library", "mpv ani-cli upscayl tools player"],
-  ["Skip openings", "playback", "skip opening op chapter mpv"], ["Skip endings", "playback", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "playback", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "playback", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "playback", "audio subtitle subs track language dub dual remember", "remember_tracks"],
-  ["Fullscreen", "mpv", "mpv fullscreen window player config"], ["Smooth controls while playing", "mpv", "mpv smooth lag laggy video sync display refresh"], ["Starting volume", "mpv", "mpv volume start remember last"], ["Skip buttons", "mpv", "mpv skip seconds forward back length"], ["Loaded part on the seek bar", "mpv", "mpv buffer cache loaded preload seek bar"], ["Mouse in the player", "mpv", "mpv mouse click double scroll wheel"], ["Subtitle look", "mpv", "mpv subtitle size colour color outline style font"], ["Opening and ending on the timeline", "mpv", "mpv timeline chapters marks opening ending seek bar"],
-  ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language"],
+  ["Library folder", "library", "folder path library directory browse rescan scan"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "data", "mpv ani-cli upscayl tools player"],
+  ["Skip openings", "skipping", "skip opening op chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "skipping", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dub dual remember", "remember_tracks"],
+  ["Anime Hub controls", "player", "mpv controls design skin osc interface"], ["Player look", "player", "mpv look design style float dock skin"], ["Fullscreen", "player", "mpv fullscreen window player config"], ["Smooth controls while playing", "player", "mpv smooth lag laggy video sync display refresh"], ["Starting volume", "player", "mpv volume start remember last"], ["Skip buttons", "player", "mpv skip seconds forward back length"], ["Loaded part on the seek bar", "player", "mpv buffer cache loaded preload seek bar"], ["Mouse", "player", "mpv mouse click double scroll wheel"], ["Subtitle look", "subs", "mpv subtitle size colour color outline style font"], ["Opening and ending on the timeline", "skipping", "mpv timeline chapters marks opening ending seek bar"],
+  ["Quality", "online", "quality resolution 1080 720 stream download"], ["Audio", "online", "sub dub audio language online"],
   ["VPN in the status line", "online", "vpn status icon", "vpn_icon"], ["Warn without VPN", "online", "vpn warn ask", "vpn_warn"], ["Start episodes faster", "online", "prepare next episode speed ready", "prepare_online"],
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"],
-  ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Only with a VPN", "data", "update updates vpn github ip", "update_vpn_only"], ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Keep running after closing", "phone", "keep running background server close phone", "keep_running"], ["Start at login", "phone", "start login boot autostart server phone", "start_at_login"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
+  ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Only with a VPN", "data", "update updates vpn github ip", "update_vpn_only"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["Keep running after closing", "phone", "keep running background server close phone", "keep_running"], ["Start at login", "phone", "start login boot autostart server phone", "start_at_login"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
 ];
 const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}v${esc(f.version)} is out</button>` : ""; };
-const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["mpv", "mpv"], ["online", "Online episodes"], ["anilist", "AniList"], ["phone", "Phone remote"], ["keys", "Keys"], ["data", "Data & setup"]];
+const SET_TABS = [["player", "Player", "Watching"], ["skipping", "Skipping", "Watching"], ["subs", "Audio & subtitles", "Watching"], ["online", "Online episodes", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["anilist", "AniList", "Your hub"], ["phone", "Phone remote", "This PC"], ["data", "System", "This PC"]];
 const COMMANDS = [
   ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
@@ -2091,17 +2133,17 @@ function TipDlg() {
   <p class="sub">Press Enter in mpv:</p>
   <div class="ptip"><div><kbd class="kb">↵</kbd><span><b>In an opening or ending</b>Skips it. A button shows up in the corner too.</span></div>
   <div><kbd class="kb">↵</kbd><span><b>Anywhere else</b>Finishes the episode, marks it watched and plays the next one.</span></div></div>
-  <div class="actions"><span class="note2 mono">change this in Settings → Playback</span><button class="btn pri" data-a="tipgo">Got it, play</button></div>`;
+  <div class="actions"><span class="note2 mono">change this in Settings → Skipping</span><button class="btn pri" data-a="tipgo">Got it, play</button></div>`;
 }
 function UpDlg() {
   return `<h2 id="dt">Tell you about new versions?</h2>
   <p class="sub">Once a day, AnimeHub can ask GitHub for new releases. GitHub sees your IP address, nothing about your library.</p>
-  <div class="actions three"><span class="note2 mono">change this in Settings → Data &amp; setup</span><button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button></div>`;
+  <div class="actions three"><span class="note2 mono">change this in Settings → System</span><button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button></div>`;
 }
 function SkpDlg() {
   return `<h2 id="dt">No VPN detected</h2>
   <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
-  <div class="actions three"><span class="note2 mono">switch this off in Settings → Playback</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skpBtns("skpgo", "skpno")}</div>`;
+  <div class="actions three"><span class="note2 mono">switch this off in Settings → Skipping</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skpBtns("skpgo", "skpno")}</div>`;
 }
 const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/><path d="M12 8v4M12 15.5v.01"/></svg>';
 const vpnWait = () => `<div class="warn2"><span class="wi">${SHIELD}</span><div><b>No VPN is on</b><span>Turn it on and this starts by itself.</span><div class="watching"><i class="spin"></i>watching for a VPN…</div></div></div>`;
@@ -2109,7 +2151,7 @@ function VpnDlg() {
   const skp = S.modal.skp;
   return `<h2 id="dt">No VPN detected</h2>
   <p class="sub">${ipLine(true, skp)}</p>${vpnWait()}
-  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">switch this off in Settings → Online episodes${skp ? " / Playback" : ""}</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skp ? skpBtns("vpngo", "vpnno") : '<button class="btn pri" data-a="vpngo">Continue anyway</button>'}</div>`;
+  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">switch this off in Settings → Online episodes${skp ? " / Skipping" : ""}</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skp ? skpBtns("vpngo", "vpnno") : '<button class="btn pri" data-a="vpngo">Continue anyway</button>'}</div>`;
 }
 /* Next-episode prompt (TODO 10): the last file finished and the next
    episode is online only — autoplay waits for Continue / Stop here. */
@@ -2649,22 +2691,22 @@ try { localStorage.removeItem("srRecent"); } catch {} // the old list of typed w
 function setSummary(k, s) {
   const ani = S.ani || {}, st = s.stream || {}, sk = s.skip || {};
   return {
+    player: `fullscreen: ${({ on: "on", off: "off", own: "my config" })[s.mpv?.fullscreen] || "on"}`,
+    skipping: `openings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.op] || "ask"} · endings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.ed] || "ask"}`,
+    subs: "remember tracks, subtitle look",
+    online: s.tools?.["ani-cli"] ? `${st.mode === "dub" ? "dub" : "sub"} · ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "ani-cli not installed",
     appearance: "accent, background art, motion, zoom",
     library: s.library_root || "no folder chosen yet",
-    mpv: `fullscreen: ${({ on: "on", off: "off", own: "my config" })[s.mpv?.fullscreen] || "on"}`,
-    playback: `openings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.op] || "ask"} · endings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.ed] || "ask"}`,
-    online: s.tools?.["ani-cli"] ? `${st.mode === "dub" ? "dub" : "sub"} · ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "ani-cli not installed",
     anilist: ani.connected ? `connected as ${ani.user || "you"}` : "not connected",
     phone: "pair a phone with a QR code",
-    keys: "for a keyboard",
-    data: "updates, config file, data folder",
+    data: "updates, tools, files",
   }[k] || "";
 }
-const SET_ICONS = { appearance: "edit", library: "folder", playback: "play", mpv: "tv", online: "download", anilist: "star", phone: "tv", keys: "search", data: "clock" };
+const SET_ICONS = { appearance: "edit", library: "folder", player: "play", skipping: "next", subs: "vol", online: "download", anilist: "star", phone: "grid", data: "sliders" };
 function settingsList(tabs, s) {
-  return `<div class="set2 phone"><div class="hello"><h1 class="hd">Settings</h1></div>
-    <button class="slsearch" data-a="sropen">${ico("search")}<span>search settings — try “vpn”</span></button>
-    <div class="slist">${tabs.filter(([k]) => k !== "keys").map(([k, l]) => `<button class="sli" data-a="setopen" data-v="${k}"><i class="sic">${ico(SET_ICONS[k] || "chevr")}</i><span><b>${l}</b><small>${esc(setSummary(k, s))}</small></span>${ico("chevr")}</button>`).join("")}</div></div>`;
+  const find = !!S.setQ.trim();
+  return `<div class="set2 phone"><div class="hello"><h1 class="hd">Settings</h1></div>${setSearch()}
+    ${find ? `<div class="settings scol" data-sec="find">${setResults(s, tabs)}</div>` : setHeads(tabs).map(([g, ts]) => `<h4 class="slhead">${g}</h4><div class="slist">${ts.map(([k, l]) => `<button class="sli" data-a="setopen" data-v="${k}"><i class="sic">${ico(SET_ICONS[k] || "chevr")}</i><span><b>${l}</b><small>${esc(setSummary(k, s))}</small></span>${ico("chevr")}</button>`).join("")}</div>`).join("")}</div>`;
 }
 
 /* ---------- phone remote (Decision 43) ---------- */
@@ -3645,7 +3687,7 @@ async function setToggle(key, on) {
   if (key === "hide_spoilers" && S.data) S.data.hide_spoilers = on;
   if (key === "update_check" && on) upCheck(false);
   if (key === "anilist_watched") await refreshData();
-  if (S.view === "settings") render();
+  if (S.view === "settings") render(true);
   if (S.modal?.t === "tour") paintModal();
 }
 function commitMatch(id, aid) {
@@ -3688,7 +3730,7 @@ const A = {
       if (isPhone() && S.setOpen) A.setback(); else if (history.state?.inApp) history.back(); else nav("home");
       return;
     }
-    if (v === "settings") S.setOpen = false;
+    if (v === "settings") { S.setOpen = false; setClear(); }
     const same = v === S.view || (v === "history" && S.view === "stats");
     /* The bottom bar (phones): the open tab again scrolls to the top; another
        tab comes back where you left it, with a light tap. */
@@ -3790,7 +3832,7 @@ const A = {
   spref: (v, t) => {
     api("/api/settings", { [t.dataset.k]: v }).then((r) => {
       if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
-      S.settings = r; if (S.view === "settings") render();
+      S.settings = r; if (S.view === "settings") render(true);
     }).catch(() => toast("Could not save — is the hub running?"));
   },
   sync: () => {
@@ -3930,9 +3972,9 @@ const A = {
     }).catch(() => { t.disabled = false; toast("Could not save — is the hub running?"); });
   },
   /* settings + account */
-  adv: (v) => { if (S.settings) setToggle(v, !S.settings[v]); },
+  adv: (v, t) => { if (S.settings) setToggle(v, t.getAttribute("aria-checked") !== "true"); }, // the switch knows its state: some live under s.mpv
   srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
-  setgo: (v, t) => { const tab = t.dataset.t; clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
+  setgo: (v, t) => { const tab = t.dataset.t; setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
   srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
   srshow: (v) => {
@@ -3948,7 +3990,8 @@ const A = {
   srgo: (v) => { clearSearch(); q.blur(); nav(v); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
   /* A new section node, so every section opens with the same .settings entrance. */
-  settab: (v) => { if (v !== S.setTab) $("#app .scol")?.remove(); S.setTab = v; render(true); },
+  settab: (v) => { if (v !== S.setTab || S.setQ) $("#app .scol")?.remove(); setClear(); S.setTab = v; render(true); scrollTo(0, 0); },
+  setclear: () => { setClear(); render(true); $("#setq")?.focus(); },
   setopen: (v) => { S.setTab = v; S.setOpen = true; S.navIn = true; ovOpen("set", () => A.setback()); render(); scrollTo(0, 0); },
   setback: () => { S.setOpen = false; S.navIn = true; render(); scrollTo(0, 0); ovClosed("set"); },
   deck: (v) => openDeck(v === "lib" ? "lib" : "recs"), deckclose: () => closeDeck(),
@@ -4040,7 +4083,7 @@ const A = {
     if (on) upCheck(false);
   },
   upcheck: () => upCheck(true),
-  upopen: () => { S.setTab = "data"; nav("settings"); },
+  upopen: () => { setClear(); S.setTab = "data"; nav("settings"); },
   upnotes: () => { const f = S.settings?.update?.found; if (f?.url) openExternal(f.url); },
   upinstall: async () => {
     const r = await api("/api/update-install", {}).catch(() => ({ error: "Could not reach the hub." }));
@@ -4418,6 +4461,8 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Enter" && /^libpath-(settings|extra)$/.test(document.activeElement.id)) { e.preventDefault(); A.dirbrowse(null, document.activeElement); return; }
   if (e.key === "Enter" && document.activeElement.id?.startsWith("mq-")) { e.preventDefault(); A.msearch(document.activeElement.id.slice(3)); return; }
+  if (e.key === "Escape" && document.activeElement?.id === "setq") { e.preventDefault(); e.stopImmediatePropagation(); if (S.setQ) A.setclear(); else document.activeElement.blur(); return; }
+  if (e.key === "/" && !inInput && $("#setq")) { e.preventDefault(); $("#setq").focus(); return; }
   if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }
   if (!inInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
     const tab = TABS[+e.key - 1];
