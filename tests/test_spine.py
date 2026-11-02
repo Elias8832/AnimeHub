@@ -227,6 +227,15 @@ class LocalSpineTests(unittest.TestCase):
         e = spine["entries"][0]
         self.assertEqual(e["score"], 8.5)
 
+    def test_average_score_comes_from_the_match(self):
+        scan = [{"id": "m", "title": "M", "kind": "show", "poster": None, "banner": None,
+                 "meta": {"anilist_id": 99, "score": 81},
+                 "seasons": [{"key": 1, "season": 1, "label": "Season 1",
+                              "episodes": [{"id": "m-0", "number": 1,
+                                            "watched": 0, "last_played": None}]}]}]
+        self.assertEqual(library.spine_build_local(scan, {})["entries"][0]["average"], 81)
+        self.assertEqual(library.spine_build([dict(entry(99), average=81)], [])["entries"][0]["average"], 81)
+
     def test_everything_is_installed_and_deep_linked(self):
         spine = library.spine_build_local([local_show_watched("a", 5),
                                        local_show_watched("b", 7)], {})

@@ -20,7 +20,7 @@ ANILIST_URL = "https://graphql.anilist.co"
 ANILIST_USER_QUERY = """query($name:String){
 User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
 MediaListCollection(userName:$name, type:ANIME){
-lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }
+lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status averageScore season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }
 }}"""
 MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
 coverImage{extraLarge color} bannerImage description
@@ -771,6 +771,8 @@ def anilist_user_data(force=False):
                     "progress": e.get("progress") or 0,
                     "score": e.get("score") or 0,
                     "score100": e.get("score100"),
+                    # Additive: AniList's community score, 0-100.
+                    "average": e["media"].get("averageScore"),
                     "episodes": e["media"].get("episodes"),
                     "format": e["media"].get("format"),
                     "duration": e["media"].get("duration"),
