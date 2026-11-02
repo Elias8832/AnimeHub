@@ -616,6 +616,9 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .ep.resume .epa{outline:2px solid var(--ink);outline-offset:3px}
 .sp2 .ep.resume .epa .epimg{border-radius:16px}
 .sp2 .ep.off .epimg{filter:grayscale(.8) brightness(.5)}
+/* Hide spoilers (Decision 57): the scale keeps the blur's soft edge outside the tile. */
+.ep.spoil .epimg,.sp2 .ep.spoil .epimg,.sp2 .ep.spoil:hover .epimg{filter:blur(14px) brightness(.8);transform:scale(1.25)}
+.sp2 .ep.off.spoil .epimg{filter:blur(14px) grayscale(.8) brightness(.5)}
 .sp2 .enum{left:10px;bottom:9px;font:500 11px var(--mono);padding:3px 8px;border-radius:999px;background:var(--glass-h);backdrop-filter:blur(10px);box-shadow:var(--edge)}
 .sp2 .tick{right:9px;top:9px;bottom:auto;width:22px;height:22px;border:0;background:var(--accent);color:#111;transition:opacity .2s}
 .sp2 .ep:hover .tick{opacity:0}
@@ -1937,6 +1940,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .sp2 .eps.strip .ep{padding-right:40px}
   .sp2 .eps.strip .ep .epa{overflow:visible}
   .sp2 .eps.strip .ep .epimg{border-radius:inherit;overflow:hidden}
+  .sp2 .eps.strip .ep.spoil .epimg{transform:none;clip-path:inset(0 round 16px)}
   .sp2 .eps.strip .ep .eprog{border-radius:0 0 16px 16px;overflow:hidden}
   .sp2 .eps.strip .ep .dots{left:calc(100vw - 32px - 40px + 6px);right:auto;top:50%;margin-top:-17px;width:34px;height:34px;opacity:1;transform:none;background:none;backdrop-filter:none;color:var(--mute)}
   .sp2 .eps.strip .ep .dots .ico{width:18px;height:18px}

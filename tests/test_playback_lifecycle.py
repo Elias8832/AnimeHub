@@ -18,7 +18,7 @@ import signal
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, Mock, patch
 
 from tests import support
@@ -258,6 +258,44 @@ class NaturalEndTests(LifecycleBase):
         sent = json.loads(ipc.call_args[0][1][2])
         self.assertEqual((sent["title"], sent["current"], sent["episodes"]), ("Show", "ep1", episodes))
         self.assertEqual(player._active["ep1"]["menu"], {"ep1": episodes[0]})
+
+    def test_screenshot_folder_reaches_mpv_with_forward_slashes(self):
+        """mpv makes a missing parent only between "/": with backslashes,
+        no folder and no picture (seen on real Windows, run 41492559848)."""
+        calls = []
+
+        def ipc(sock, command):
+            calls.append(command)
+            return {"data": ""} if command[0] == "get_property" else {"error": "success"}
+
+        with patch.object(player.system, "pictures_dir", return_value=PureWindowsPath(r"C:\Users\Me\My Pictures")), \
+                patch.object(player, "mpv_ipc", side_effect=ipc):
+            player.screenshots_folder("sock")
+        self.assertEqual(calls[-1], ["set_property", "screenshot-directory", "C:/Users/Me/My Pictures/AnimeHub"])
+
+    def test_screenshot_folder_survives_a_busy_pipe(self):
+        replies = [OSError("no answer"), {"data": ""}, {"error": "success"}]
+        with patch.object(player, "mpv_ipc", side_effect=replies) as ipc, patch.object(player.time, "sleep"):
+            player.screenshots_folder("sock")
+        self.assertEqual(ipc.call_args[0][1][0], "set_property")
+
+    def test_mpv_list_hides_titles_of_unstarted_episodes(self):
+        """Decision 57: the switch reaches mpv's Episodes panel too."""
+        slots = [{"id": "a", "number": 1, "title": "Seen", "watched": True, "local": True},
+                 {"id": "b", "number": 2, "title": "Playing", "watched": False, "local": True},
+                 {"id": "c", "number": 3, "title": "Started", "watched": False, "local": True, "position": 60, "duration": 1440},
+                 {"id": "d", "number": 4, "title": "The Twist", "watched": False, "local": True, "position": 0, "duration": 1440},
+                 {"id": "e", "number": 5, "title": "Never Played", "watched": False, "local": True}]
+        page = {"entries": [{"id": 7, "slots": slots, "online": {"available": False}}]}
+
+        def titles(hide):
+            with patch.object(player, "entry_of_episode", return_value=(7, 2)), \
+                    patch.object(player.pages, "franchise_view", return_value=page), \
+                    patch.object(player.settings, "automation_enabled", return_value=hide):
+                return [x["title"] for x in player.episode_menu("b")]
+
+        self.assertEqual(titles(False), ["Seen", "Playing", "Started", "The Twist", "Never Played"])
+        self.assertEqual(titles(True), ["Seen", "Playing", "Started", None, None])
 
     def test_sleep_timer_outlives_the_episode(self):
         """Decision 53: each episode is its own mpv, so the hub keeps the time."""

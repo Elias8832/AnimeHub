@@ -62,6 +62,28 @@ test("watched state never changes the artwork mapping", () => {
   assert.ok(!/class="tick"/.test(unwatched));
 });
 
+test("hide spoilers: an unstarted episode blurs, keeps its art and loses its title", () => {
+  const ctx = context();
+  const sea = { label: "Season 1", season: 1, episodes: [episode(1), episode(2, true), episode(3)], thumbs: { 1: "/a.jpg", 2: "/b.jpg" }, titles: { 1: "The Twist", 2: "Seen", 3: "No Art" } };
+  sea.episodes[2].position = 0;
+  const s = show(sea), tile = (n) => ctx.epTile(s, sea, sea.episodes[n], null);
+  const off = tile(0);
+  assert.match(off, /The Twist/);
+  assert.doesNotMatch(off, /spoil/);
+  ctx.S.data = { hide_spoilers: true };
+  const on = tile(0);
+  assert.match(on, /class="ep spoil"/);
+  assert.match(on, /<b>Episode 1<\/b>/);
+  assert.doesNotMatch(on, /The Twist/);
+  assert.match(on, /data-bg="\/a\.jpg"/); // same art: marking it watched only lifts the blur
+  assert.match(tile(1), /Seen/); // watched
+  assert.doesNotMatch(tile(1), /spoil/);
+  assert.doesNotMatch(tile(2), /No Art|spoil/); // a poster needs no blur, the title still goes
+  sea.episodes[0].position = 600; // started
+  assert.match(tile(0), /The Twist/);
+  assert.doesNotMatch(tile(0), /spoil/);
+});
+
 test("no-thumb fallback is the show poster, same crop on every tile", () => {
   /* Slicing the banner per episode gave every tile a different, magnified
      crop — "the episodes get different images… it zooms in" (2026-10-17). */

@@ -38,6 +38,10 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # would learn what you watch and when, so opt-in; and
                        # without a VPN, ask before an episode uses it.
                        "aniskip": False, "aniskip_vpn_warn": True,
+                       # Unwatched episodes show no title or picture (Decision 57).
+                       "hide_spoilers": False,
+                       # Asks GitHub for new versions: never unasked (Decision 58).
+                       "update_check": False, "update_vpn_only": False,
                        # Get the next online episode ready before the click (prepare.py).
                        "prepare_online": True,
                        # Read each episode's length from its file (lengths.py).
@@ -147,6 +151,11 @@ def skip_prefs():
     return out
 
 
+def _update_payload():
+    from . import update  # update.py needs this module
+    return update.payload()
+
+
 def automation_enabled(key):
     default = AUTOMATION_DEFAULTS[key]
     raw = get_setting(key)
@@ -233,6 +242,7 @@ def settings_payload():
         "aniskip": automation_enabled("aniskip"),
         "aniskip_vpn_warn": automation_enabled("aniskip_vpn_warn"),
         "upscale_banners": up["on"],
+        "hide_spoilers": automation_enabled("hide_spoilers"),
         "measure_lengths": automation_enabled("measure_lengths"),
         "remember_tracks": automation_enabled("remember_tracks"),
         # additive (Decision 45): mpv options, "on" / "off" / "own"
@@ -243,6 +253,10 @@ def settings_payload():
         "background_ok": background.launcher() is not None,
         "keep_running": config.KEEP_RUNNING,
         "start_at_login": config.START_AT_LOGIN,
+        "update": _update_payload(),
+        # Flat as well: a Settings switch reads its own key (`adv` in app.js).
+        "update_check": automation_enabled("update_check"),
+        "update_vpn_only": automation_enabled("update_vpn_only"),
         "tour_done": get_setting("tour_done") == "1",
         # additive: the first-play explainer has been seen
         "play_tip_done": get_setting("play_tip_done") == "1",

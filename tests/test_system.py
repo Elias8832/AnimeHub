@@ -362,6 +362,37 @@ class ServerBindTests(unittest.TestCase):
             system.http_server_class()(("127.0.0.1", other.server_address[1]), BaseHTTPRequestHandler)
 
 
+@unittest.skipIf(system.WINDOWS, "the XDG file is Linux only")
+class PicturesDirTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name)
+        (self.home / ".config").mkdir()
+        env = patch.dict(os.environ, {"HOME": str(self.home)})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("XDG_CONFIG_HOME", None)
+
+    def dirs(self, text):
+        (self.home / ".config" / "user-dirs.dirs").write_text(text, encoding="utf-8")
+
+    def test_the_folder_keeps_its_language(self):
+        self.dirs('# comment\nXDG_MUSIC_DIR="$HOME/Musik"\nXDG_PICTURES_DIR="$HOME/Bilder"\n')
+        self.assertEqual(system.pictures_dir(), self.home / "Bilder")
+
+    def test_a_full_path_counts(self):
+        self.dirs('XDG_PICTURES_DIR="/mnt/data/Pics"\n')
+        self.assertEqual(system.pictures_dir(), Path("/mnt/data/Pics"))
+
+    def test_switched_off_or_missing_means_pictures(self):
+        pictures = self.home / "Pictures"
+        self.assertEqual(system.pictures_dir(), pictures)  # no file at all
+        for text in ('XDG_PICTURES_DIR="$HOME/"\n', 'XDG_PICTURES_DIR="${HOME}"\n', 'XDG_MUSIC_DIR="$HOME/Musik"\n'):
+            self.dirs(text)
+            self.assertEqual(system.pictures_dir(), pictures, text)
+
+
 class PosixUnchangedTests(unittest.TestCase):
     @unittest.skipIf(system.WINDOWS, "POSIX only")
     def test_posix_keeps_new_session_and_pty(self):

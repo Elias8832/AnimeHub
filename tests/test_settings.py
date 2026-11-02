@@ -373,6 +373,26 @@ class SettingsRouteTests(unittest.TestCase):
         redo.assert_called_once()
         self.post({"upscale_style": "natural"})
 
+    def test_hide_spoilers_setting(self):
+        """Off by default, a boolean only, and in the library payload: the
+        first paint comes before Settings loads (Decision 57)."""
+        self.assertFalse(self.get("/api/settings")["hide_spoilers"])
+        self.assertFalse(library.full_library()["hide_spoilers"])
+        self.assertEqual(self.post({"hide_spoilers": "yes"})[0], 400)
+        code, body = self.post({"hide_spoilers": True})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["hide_spoilers"])
+        self.assertTrue(library.full_library()["hide_spoilers"])
+
+    def test_update_switches_turn_off_again(self):
+        """The page's switch sends the opposite of the key it reads, so a key
+        missing from the payload could only ever turn on (TODO 157)."""
+        for key in ("update_check", "update_vpn_only"):
+            code, body = self.post({key: True})
+            self.assertIs(body[key], True)
+            code, body = self.post({key: False})
+            self.assertIs(body[key], False)
+
     def test_measure_lengths_setting(self):
         """Episode lengths: on by default, in the payload, a boolean only;
         switching it on starts the worker."""
