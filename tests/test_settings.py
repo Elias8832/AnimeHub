@@ -384,6 +384,15 @@ class SettingsRouteTests(unittest.TestCase):
         self.assertTrue(body["hide_spoilers"])
         self.assertTrue(library.full_library()["hide_spoilers"])
 
+    def test_update_switches_turn_off_again(self):
+        """The page's switch sends the opposite of the key it reads, so a key
+        missing from the payload could only ever turn on (TODO 157)."""
+        for key in ("update_check", "update_vpn_only"):
+            code, body = self.post({key: True})
+            self.assertIs(body[key], True)
+            code, body = self.post({key: False})
+            self.assertIs(body[key], False)
+
     def test_measure_lengths_setting(self):
         """Episode lengths: on by default, in the payload, a boolean only;
         switching it on starts the worker."""

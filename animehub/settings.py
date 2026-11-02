@@ -254,6 +254,9 @@ def settings_payload():
         "keep_running": config.KEEP_RUNNING,
         "start_at_login": config.START_AT_LOGIN,
         "update": _update_payload(),
+        # Flat as well: a Settings switch reads its own key (`adv` in app.js).
+        "update_check": automation_enabled("update_check"),
+        "update_vpn_only": automation_enabled("update_vpn_only"),
         "tour_done": get_setting("tour_done") == "1",
         # additive: the first-play explainer has been seen
         "play_tip_done": get_setting("play_tip_done") == "1",
