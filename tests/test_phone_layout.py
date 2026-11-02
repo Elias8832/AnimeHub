@@ -131,7 +131,7 @@ class TabSlideAndSearch(unittest.TestCase):
 
     def test_touch_search(self):
         self.assertIn('sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";', APP)
-        for a in ("srq:", "srclr:", "srlist:", "srgo:"):
+        for a in ("srshow:", "srclr:", "srlist:", "srgo:"):
             self.assertIn(a, APP)
         self.assertIn('#pal .pclose:after{content:"Cancel"', CSS)
 
@@ -186,6 +186,21 @@ class InstallAsApp(unittest.TestCase):
         self.assertIn('if (e.request.mode !== "navigate") return;', sw)
         self.assertNotIn("caches.", sw)  # nothing cached: the PC stays the source
         self.assertIn('navigator.serviceWorker.register("/sw.js")', APP)
+
+
+class AppIcon(unittest.TestCase):
+    """One icon per accent colour; the default wears the default accent."""
+
+    def test_every_accent_has_its_icon(self):
+        table = re.search(r"const ACCENT_ICONS = \{(.*?)\};", APP).group(1)
+        pairs = re.findall(r'"(#[0-9a-f]{6})": "(\w+)"', table)
+        accents = re.search(r"const ACCENTS = \[(.*?)\];", APP).group(1)
+        self.assertEqual({a for a, _ in pairs}, set(re.findall(r"#[0-9a-f]{6}", accents)))
+        for accent, name in pairs:
+            self.assertIn(f'fill="{accent}"', (WEB / "icons" / f"{name}.svg").read_text(encoding="utf-8"))
+
+    def test_default_icon_is_the_orange_one(self):
+        self.assertEqual((WEB / "icon.svg").read_bytes(), (WEB / "icons" / "orange.svg").read_bytes())
 
 
 if __name__ == "__main__":

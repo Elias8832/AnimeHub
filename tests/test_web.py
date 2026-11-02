@@ -232,6 +232,18 @@ class LibraryCards(unittest.TestCase):
         # Chainsaw Man shows the series (9), so it can't sit before Frieren's 9.5.
         self.assertEqual(self.cards("fr"), {"cards": [3, 1], "all": 2})
 
+    def test_average_score_sorts_and_filters(self):
+        entries = [{"id": 1, "title": "A", "average": 70, "status": "CURRENT"},
+                   {"id": 2, "title": "B", "average": 88, "status": "CURRENT"},
+                   {"id": 3, "title": "No votes yet", "average": None, "status": "CURRENT"}]
+        ids = lambda lib: run_js(f"""
+            S.data = {{ shows: [], spine: {{ entries: {json.dumps(entries)}, untracked: [] }} }};
+            Object.assign(S.lib, {{ tab: "ALL", group: "all" }}, {json.dumps(lib)});
+            return libList(libModel()).map((e) => e.id);""")
+        self.assertEqual(ids({"sort": "average"}), [2, 1, 3])  # no average goes last
+        self.assertEqual(ids({"sort": "average", "average": [80, 100]}), [2])
+        self.assertEqual(ids({"sort": "average", "average": [0, 75]}), [1])  # no average isn't a low one
+
 
 class Library(unittest.TestCase):
     """TODO 60 step 4: list tabs + side places, glass filter chips, poster
@@ -439,7 +451,7 @@ class NextSource(unittest.TestCase):
 
 class NextAiringAt(unittest.TestCase):
     def test_cache_keeps_airing_at(self):
-        media = {"id": 7, "status": "RELEASING", "episodes": 12, "format": "TV", "genres": ["Drama"],
+        media = {"id": 7, "status": "RELEASING", "averageScore": 81, "episodes": 12, "format": "TV", "genres": ["Drama"],
                  "startDate": {"year": 2026}, "title": {"english": "X"},
                  "nextAiringEpisode": {"episode": 5, "timeUntilAiring": 3600, "airingAt": 1_800_000_000}}
         data = {"data": {"User": {"name": "u", "statistics": {"anime": {"episodesWatched": 0, "minutesWatched": 0,
@@ -454,6 +466,7 @@ class NextAiringAt(unittest.TestCase):
             out = anilist.anilist_user_data(force=True)
         self.assertEqual(out["entries"][0]["next_episode"], {"number": 5, "in_seconds": 3600, "at": 1_800_000_000})
         self.assertEqual(out["entries"][0]["genres"], ["Drama"])
+        self.assertEqual(out["entries"][0]["average"], 81)
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")

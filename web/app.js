@@ -11,9 +11,9 @@ const S = {
   data: null, view: "home", showId: null, seasonIdx: 0, showBack: "home", cat: null,
   q: "", menu: null, alres: null, alq: null, alBusy: false,
   ani: null, settings: null, setQ: "", alData: null, modal: null, entry: null,
-  lib: (({ year, score, genres, air, ...l }) => ({ tab: null, src: "all", fmt: "all", sort: "updated", group: "all", ...l,
+  lib: (({ year, score, average, genres, air, ...l }) => ({ tab: null, src: "all", fmt: "all", sort: "updated", group: "all", ...l,
          air: air === "FINISHED_AIRING" ? "FINISHED" : air || "all", genres: Array.isArray(genres) ? genres : [],
-         year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all" }))(lsGet("hubLib", {})),
+         year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all", average: Array.isArray(average) ? average : "all" }))(lsGet("hubLib", {})),
   histRange: lsGet("histRange", "7d"), histMax: 120,
   match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, opener: null,
   slink: {}, dl: [], loadingEp: null, frDown: {},
@@ -234,6 +234,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
    screen unless one colour is picked. */
 const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["classic", "tabs", "line", "capsule", "island"] };
 const ACCENTS = ["#f2a46f", "#b8d7c6", "#9ccbe8", "#e58ccf", "#e6c27c", "#c3a6f2"];
+/* The tab's icon wears the chosen accent (TODO 139, Decision 59); "follow" keeps the default. */
+const ACCENT_ICONS = { "#f2a46f": "orange", "#b8d7c6": "sage", "#9ccbe8": "blue", "#e58ccf": "pink", "#e6c27c": "gold", "#c3a6f2": "violet" };
+const accentIcon = (a) => ACCENT_ICONS[a] ? `/icons/${ACCENT_ICONS[a]}.svg` : "/icon.svg?v=2";
 const lookGet = (k) => { const v = lsGet(k, LOOKS[k][0]); return LOOKS[k].includes(v) ? v : LOOKS[k][0]; };
 const accentGet = () => { const v = lsGet("accent", "follow"); return ACCENTS.includes(v) ? v : "follow"; };
 const grainGet = () => lsGet("grain", true) !== false;
@@ -419,6 +422,7 @@ function yearBounds() {
 }
 const SORT = {
   updated: (a, b) => (b.updated || 0) - (a.updated || 0), score: (a, b) => (b.score || 0) - (a.score || 0),
+  average: (a, b) => (b.average || 0) - (a.average || 0),
   year: (a, b) => (b.year || 0) - (a.year || 0), title: (a, b) => (a.title || "").localeCompare(b.title || ""),
 };
 const inProg = (st) => ["CURRENT", "REPEATING", "PAUSED"].includes(st);
@@ -473,6 +477,7 @@ function libList(m) {
     && (f.air === "all" || e.airing === f.air)
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
+    && (!Array.isArray(f.average) || (e.average > 0 && inRange(f.average, e.average)))
     && hasGenres(e, f.genres))).sort(SORT[f.sort] || SORT.updated);
 }
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
@@ -496,11 +501,15 @@ function entryCard(e, i) {
   /* The poster stays clean (Elias): the score is a key badge by the title, like the top bar's; phones keep only progress below it. */
   const facts = e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
   const more = [FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
+  /* Sorting or filtering by the average shows the average, or the order would look random. */
+  const byAvg = S.lib.sort === "average" || Array.isArray(S.lib.average);
+  const badge = byAvg ? (e.average ? `<span class="kb" title="AniList average">${e.average}</span>` : "")
+    : e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : "";
   return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}">
     <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}
     ${res ? `<span class="resume-tag">${ico("play")}${esc(epCode(res.sea, res.ep))}${res.ep.position ? " · " + fmtTime(res.ep.position) : ""}</span>` : ""}
     ${inProg(e.status) && pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
-    <h3><span class="ttl">${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(e.title)}</span>${e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : ""}</h3>
+    <h3><span class="ttl">${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(e.title)}</span>${badge}</h3>
     <div class="m">${esc(facts)}${more ? `<span class="mx">${facts ? " · " : ""}${esc(more)}</span>` : ""}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
 }
 function showCard(s, i) {
@@ -594,7 +603,7 @@ function scanNote() {
 const metaText = (d) => `Fetching ${d.meta_phase || "metadata"} · ${d.meta_pending} left${d.meta_current ? ` · ${d.meta_current}` : ""}`;
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
-const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
+const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score", "average"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
 const fsel = (k, label, opts, locked) => {
   const set = !locked && k !== "sort" && S.lib[k] !== "all";
   return `<label class="fl">${label}<select data-a="filt" data-k="${k}" class="${set ? "set" : ""}" ${locked ? "disabled" : ""}>${(locked ? [opts[1]] : opts).map(([v, l]) => `<option value="${esc(v)}" ${v === S.lib[k] || locked ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
@@ -663,9 +672,10 @@ function Lib() {
       ${fsel("fmt", "format", [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]])}
       ${fsel("air", "airing", [["all", "any"], ...Object.entries(AIR)])}
       ${frng("year", "year", ...yearBounds(), 1, String)}
-      ${frng("score", "score", 0, 10, 0.5, (x) => String(x))}
+      ${frng("score", "my score", 0, 10, 0.5, (x) => String(x))}
+      ${frng("average", "average", 0, 100, 5, (x) => String(x))}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "score"], ["year", "year"], ["title", "title"]])}
+      <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
     const fltb = filters ? `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>` : "";
     main = `${fltb}${filters}${(m.cold || isUn) ? "" : genreTray(m)}<div id="wall"></div>`;
@@ -1993,6 +2003,12 @@ function srHTML() {
   srPv = [];
   let i = 0, h = "";
   const row = (attrs, inner, pv) => { srPv.push(pv); return `<div class="mi" style="--i:${i}" data-i="${i++}" ${attrs}>${inner}</div>`; };
+  if (!q) {
+    const recent = srShows();
+    if (recent.length) h += `<div class="psec">recent<button class="link-btn" data-a="srclr">clear</button></div>` + recent.map((x) => { const sub = srSub(x);
+      return row(`data-a="srshow" data-v="${esc(x.k)}"`, `${poster(x.t, x.p, { c: "t" })}<span class="tx"><b>${esc(x.t)}</b><small>${esc(sub)}</small></span><span class="r"><button class="srx" data-a="srforget" data-v="${esc(x.k)}" aria-label="Remove ${esc(x.t)} from recent">${ico("close")}</button></span>`,
+        { art: x.b || x.p, t: x.t, m: sub, k: [["Open", "↵"]] }); }).join("");
+  }
   if (q) {
     const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
       .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), local: true, s }));
@@ -2593,12 +2609,22 @@ function paintPortals() {
    Typing: library rows, AniList as a poster grid, matching settings. Same
    rows (.mi, data-i) as the PC list, so Enter and the arrows still work. */
 const touchSearch = () => isPhone() || mq("(pointer:coarse)");
-const SR_RECENT = "srRecent";
-function srRemember(qq) {
-  qq = String(qq || "").trim();
-  if (qq.length < 2) return;
-  lsSet(SR_RECENT, [qq, ...lsGet(SR_RECENT, []).filter((x) => x.toLowerCase() !== qq.toLowerCase())].slice(0, 6));
+/* Search history: the last shows opened through search (library or AniList),
+   per device (localStorage), PC and touch share it. A library show keeps only
+   its key: title and art come from the library, and a show that left is hidden. */
+/* @srhist:start */
+const SR_SHOWS = "srShows";
+function srAdd(x) { lsSet(SR_SHOWS, [x, ...lsGet(SR_SHOWS, []).filter((y) => y.k !== x.k)].slice(0, 6)); }
+function srForget(k) { lsSet(SR_SHOWS, lsGet(SR_SHOWS, []).filter((y) => y.k !== k)); }
+function srShows() {
+  return lsGet(SR_SHOWS, []).flatMap((x) => {
+    if (x.k[0] !== "s") return [x];
+    const s = showById(x.k.slice(2));
+    return s ? [{ k: x.k, t: s.title, p: s.poster, b: s.banner, s }] : [];
+  });
 }
+const srSub = (x) => { if (!x.s) return "on anilist"; const sp = spineOf(x.s); return sp ? statusLabel(sp.status) : `${epTotal(x.s)} episodes`; };
+/* @srhist:end */
 function srHTMLTouch() {
   const qq = S.q.trim(), ql = qq.toLowerCase();
   srPv = [];
@@ -2606,8 +2632,8 @@ function srHTMLTouch() {
   const mi = (attrs, cls, inner) => { srPv.push(null); return `<div class="mi ${cls}" tabindex="-1" data-i="${i++}" ${attrs}>${inner}</div>`; };
   const sec = (t, extra = "") => `<div class="srsec"><h2>${t}</h2><span class="fill"></span>${extra}</div>`;
   if (!qq) {
-    const recent = lsGet(SR_RECENT, []);
-    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srchips">${recent.map((r) => `<button class="chip" data-a="srq" data-v="${esc(r)}">${ico("clock")}${esc(r)}</button>`).join("")}</div>`;
+    const recent = srShows();
+    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srposters">${recent.map((x) => mi(`data-a="srshow" data-v="${esc(x.k)}"`, "sp", `${poster(x.t, x.p)}<b>${esc(x.t)}</b>`)).join("")}</div>`;
     const sp = S.data?.spine;
     if (aniMode() && sp?.entries?.length) {
       const n = (k) => new Set(sp.entries.filter((e) => e.status === k).map(libKey)).size;
@@ -2651,8 +2677,15 @@ function fitPal() {
 }
 vv?.addEventListener("resize", fitPal);
 vv?.addEventListener("scroll", fitPal);
-/* Opening a result remembers what was typed (Recent). */
-document.addEventListener("click", (e) => { if (S.menu === "sr" && S.q.trim() && e.target.closest?.("#sr .mi, #sr [data-a=cmd]")) srRemember(S.q); }, true);
+/* Opening a show from the results puts it in Recent; settings and commands don't count. */
+document.addEventListener("click", (e) => {
+  const m = e.target.closest?.("#sr .mi");
+  if (!m || S.menu !== "sr" || !S.q.trim()) return;
+  const v = m.dataset.v, x = m.dataset.a === "catpick" ? S.alres?.[+v] : null, s = m.dataset.a === "open" ? showById(v) : null;
+  if (s) srAdd({ k: "s:" + s.id });
+  else if (x) srAdd({ k: "a:" + x.id, t: candLabel(x), p: x.coverImage?.extraLarge, b: x.bannerImage });
+}, true);
+try { localStorage.removeItem("srRecent"); } catch {} // the old list of typed words
 
 /* Settings on a phone (S5): a grouped list; a section opens as its own page. */
 function setSummary(k, s) {
@@ -3672,7 +3705,7 @@ function commitMatch(id, aid) {
 /* ---------- actions ---------- */
 const A = {
   strip: (v, t) => { const st = t.closest("section")?.querySelector(".strip") || $("#app .strip"); st && st.scrollBy({ left: +t.dataset.d * st.clientWidth * 0.8, behavior: reduceMotion() ? "auto" : "smooth" }); },
-  fclear: () => { for (const k of ["fmt", "air", "year", "score"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); S.fadeNext = true; render(); },
+  fclear: () => { for (const k of ["fmt", "air", "year", "score", "average"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); S.fadeNext = true; render(); },
   airgo: (v) => {
     const c = S.airCal;
     if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
@@ -3944,8 +3977,15 @@ const A = {
   setgo: (v, t) => { const tab = t.dataset.t; setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
   srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
-  srq: (v) => { q.value = v; q.dispatchEvent(new Event("input")); q.focus(); },
-  srclr: () => { lsSet(SR_RECENT, []); paintNav(); },
+  srshow: (v) => {
+    const x = lsGet(SR_SHOWS, []).find((y) => y.k === v);
+    if (!x) return;
+    srAdd(x);
+    clearSearch();
+    if (v[0] === "s") openShow(v.slice(2)); else openFranchise(+v.slice(2));
+  },
+  srclr: () => { lsSet(SR_SHOWS, []); paintNav(); if (!touchSearch()) q.focus(); },
+  srforget: (v) => { srForget(v); paintNav(); if (!touchSearch()) q.focus(); },
   srlist: (v) => { clearSearch(); q.blur(); S.lib.tab = v; saveLib(); nav("library"); },
   srgo: (v) => { clearSearch(); q.blur(); nav(v); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
@@ -4265,6 +4305,7 @@ function applyLook() {
   const d = document.documentElement, a = accentGet();
   d.dataset.motion = lookGet("motion"); d.dataset.art = lookGet("art"); d.dataset.bar = lookGet("bar"); d.dataset.grain = grainGet() ? "on" : "off";
   a === "follow" ? d.style.removeProperty("--fixed") : d.style.setProperty("--fixed", a);
+  $('link[rel="icon"]')?.setAttribute("href", accentIcon(a));
 }
 function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; }
 function zoomSet(z) { lsSet("hubZoom", z); applyZoom(); const el = $("#zoomval"); if (el) el.textContent = z + "%"; }
