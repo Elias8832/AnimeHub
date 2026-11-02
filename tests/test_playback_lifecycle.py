@@ -18,7 +18,7 @@ import signal
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, Mock, patch
 
 from tests import support
@@ -258,6 +258,26 @@ class NaturalEndTests(LifecycleBase):
         sent = json.loads(ipc.call_args[0][1][2])
         self.assertEqual((sent["title"], sent["current"], sent["episodes"]), ("Show", "ep1", episodes))
         self.assertEqual(player._active["ep1"]["menu"], {"ep1": episodes[0]})
+
+    def test_screenshot_folder_reaches_mpv_with_forward_slashes(self):
+        """mpv makes a missing parent only between "/": with backslashes,
+        no folder and no picture (seen on real Windows, run 41492559848)."""
+        calls = []
+
+        def ipc(sock, command):
+            calls.append(command)
+            return {"data": ""} if command[0] == "get_property" else {"error": "success"}
+
+        with patch.object(player.system, "pictures_dir", return_value=PureWindowsPath(r"C:\Users\Me\My Pictures")), \
+                patch.object(player, "mpv_ipc", side_effect=ipc):
+            player.screenshots_folder("sock")
+        self.assertEqual(calls[-1], ["set_property", "screenshot-directory", "C:/Users/Me/My Pictures/AnimeHub"])
+
+    def test_screenshot_folder_survives_a_busy_pipe(self):
+        replies = [OSError("no answer"), {"data": ""}, {"error": "success"}]
+        with patch.object(player, "mpv_ipc", side_effect=replies) as ipc, patch.object(player.time, "sleep"):
+            player.screenshots_folder("sock")
+        self.assertEqual(ipc.call_args[0][1][0], "set_property")
 
     def test_mpv_list_hides_titles_of_unstarted_episodes(self):
         """Decision 57: the switch reaches mpv's Episodes panel too."""

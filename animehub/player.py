@@ -58,16 +58,22 @@ def screenshots_folder(sock_path):
     folder set in the user's mpv.conf stays. Over the socket, not a flag:
     this way it can read mpv.conf's value, and ani-cli's flags can't hold
     a path with a space. The older option name: new mpv still takes it,
-    old mpv takes no other."""
-    try:
-        for _ in range(3):  # an event can arrive ahead of the reply (TODO 149)
+    old mpv takes no other. Forward slashes, on Windows too: mpv makes a
+    missing parent folder only between those."""
+    error = None
+    for _ in range(3):  # a reply can lag behind an event (TODO 149), or a pipe be busy
+        try:
             reply = mpv_ipc(sock_path, ["get_property", "screenshot-directory"])
             if reply and "data" in reply:
                 if not reply["data"]:
-                    mpv_ipc(sock_path, ["set_property", "screenshot-directory", str(system.pictures_dir() / "AnimeHub")])
+                    folder = (system.pictures_dir() / "AnimeHub").as_posix()
+                    mpv_ipc(sock_path, ["set_property", "screenshot-directory", folder])
                 return
-    except OSError as exc:
-        util.log("screenshot folder not set: %s" % exc)
+        except OSError as exc:
+            error = exc
+            time.sleep(0.25)
+    if error:
+        util.log("screenshot folder not set: %s" % error)
 
 
 def season_rank(sea):

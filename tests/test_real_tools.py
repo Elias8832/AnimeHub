@@ -311,7 +311,7 @@ class RealMpv(unittest.TestCase):
             player.start_play(self.episodes()[0]["id"])
             sock = self.playing()["sock"]
         folder = pictures / "AnimeHub"
-        self.assertEqual(player.mpv_ipc(sock, ["get_property", "screenshot-directory"])["data"], str(folder))
+        self.assertEqual(player.mpv_ipc(sock, ["get_property", "screenshot-directory"])["data"], folder.as_posix())
         self.assertFalse(folder.exists())  # no empty folder for people who never take one
         player.mpv_ipc(sock, ["screenshot", "video"])
         self.assertTrue(wait_for(lambda: any(folder.glob("mpv-shot*")), 8), "no screenshot in the folder")
