@@ -270,8 +270,40 @@ class SearchPalette(unittest.TestCase):
         self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
         self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
         self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone);', APP)
-        self.assertIn('<nav class="snav">${tabs.map(', APP)
+        self.assertIn('<nav class="snav">${isPhone() ? "" : setSearch()}${setHeads(tabs).map(', APP)
         self.assertIn("r.classList.add(\"flash\")", APP)
+
+
+class SettingsLayout(unittest.TestCase):
+    """Decision 61: sections sorted by what you're after, a find box on top."""
+    def test_every_setting_points_at_a_section_that_exists(self):
+        tabs = set(re.findall(r'\["(\w+)", "[^"]+", "(?:Watching|Your hub|This PC)"\]', APP))
+        self.assertEqual(tabs, {"player", "skipping", "subs", "online", "appearance", "library", "anilist", "phone", "data"})
+        index = APP[APP.index("const SETTINGS_INDEX = ["):APP.index("const SET_TABS")]
+        used = set(re.findall(r'\["[^"]+", "(\w+)", "', index))
+        self.assertTrue(used)
+        self.assertEqual(used - tabs, set())
+
+    def test_no_notice_names_an_old_section(self):
+        for old in ("Settings → Playback", "/ Playback", "Settings → mpv", "Data &amp; setup", "Data & setup"):
+            self.assertNotIn(old, APP)
+
+    def test_changing_a_setting_keeps_the_page(self):
+        # A plain render() rebuilt the page and replayed its entrance on every switch.
+        self.assertEqual(re.findall(r'S\.settings = r;[^\n]*render\(\)', APP), [])
+        self.assertIn('  if (S.view === "settings") render(true);\n  if (S.modal?.t === "tour") paintModal();', APP)
+
+    def test_a_switch_flips_from_what_it_shows(self):
+        # mpv_marks lives in s.mpv.marks, so !S.settings[key] could only ever turn it on.
+        self.assertIn('setToggle(v, t.getAttribute("aria-checked") !== "true")', APP)
+
+    def test_find_box(self):
+        self.assertIn('id="setq"', APP)
+        self.assertIn('if (e.key === "/" && !inInput && $("#setq"))', APP)
+        # every word must match, in any order
+        code = re.search(r"const setHit = .*", APP).group(0)
+        out = subprocess.run(["node", "-e", code + 'console.log(JSON.stringify([setHit(["vpn","warn"],"Warn without VPN"),setHit(["vpn","zzz"],"Warn without VPN")]))'], capture_output=True, text=True, timeout=20)
+        self.assertEqual(json.loads(out.stdout), [True, False])
 
 
 class UsageNotices(unittest.TestCase):

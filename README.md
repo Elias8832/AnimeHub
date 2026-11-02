@@ -72,7 +72,7 @@ Won't start? Logs are in `%LOCALAPPDATA%\anime-hub-wrapper\`.
 <details>
 <summary>Updating</summary>
 
-Settings → Data & setup shows the new version. **AppImage:** one click on Update, then reopen the app. **From git:** `git pull`, then `cargo build --release && ./install.sh`. **Windows:** download the new zip and replace the whole folder. Your data is kept.
+Settings → System shows the new version. **AppImage:** one click on Update, then reopen the app. **From git:** `git pull`, then `cargo build --release && ./install.sh`. **Windows:** download the new zip and replace the whole folder. Your data is kept.
 
 </details>
 
