@@ -41,7 +41,7 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # Unwatched episodes show no title or picture (Decision 57).
                        "hide_spoilers": False,
                        # Asks GitHub for new versions: never unasked (Decision 58).
-                       "update_check": False,
+                       "update_check": False, "update_vpn_only": False,
                        # Get the next online episode ready before the click (prepare.py).
                        "prepare_online": True,
                        # Read each episode's length from its file (lengths.py).

@@ -110,6 +110,21 @@ class Asking(unittest.TestCase):
             self.assertEqual(update.check(), {"error": "Could not reach GitHub."})
         self.assertEqual(update.stored()["version"], "99.0")
 
+    def test_only_with_a_vpn(self):
+        settings.set_automation("update_check", True)
+        settings.set_automation("update_vpn_only", True)
+        self.addCleanup(settings.set_automation, "update_vpn_only", False)
+        for state in ({"active": False, "known": True}, {"active": False, "known": False}):
+            with mock.patch.object(settings, "vpn_status", return_value=state), \
+                    mock.patch.object(update, "urlopen", side_effect=AssertionError("asked GitHub")):
+                self.assertFalse(update.due())
+                self.assertEqual(update.check(), {"error": update.NO_VPN})
+                settings.set_setting("update_found", json.dumps({"version": "99.0", "download": "x"}))
+                with mock.patch.object(update, "kind", return_value="appimage"):
+                    self.assertEqual(update.install(), {"error": update.NO_VPN})
+        with mock.patch.object(settings, "vpn_status", return_value={"active": True, "known": True}):
+            self.assertTrue(update.due())
+
     def test_phones_cant_use_it(self):
         self.assertIn("/api/update-check", remote.BLOCKED)
         self.assertIn("/api/update-install", remote.BLOCKED)

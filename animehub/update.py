@@ -23,6 +23,7 @@ DOWNLOADS = "https://github.com/Elias8832/AnimeHub/releases/download/"
 EVERY = 24 * 3600
 MAX_LIST = 2_000_000
 MAX_APP = 200_000_000
+NO_VPN = "No VPN is on. Turn one on, or switch off Only with a VPN."
 UA = {"User-Agent": "anime-hub/%s" % VERSION}
 TAG = re.compile(r"v?(\d+)\.(\d+)(?:\.(\d+))?$")
 
@@ -83,8 +84,16 @@ def stored():
     return found if found and number(found.get("version")) and number(found["version"]) > number(VERSION) else None
 
 
+def vpn_missing():
+    """With "only with a VPN" on and none up, nothing goes to GitHub: not the
+    daily check, not a click. An unknown VPN state counts as none."""
+    return settings.automation_enabled("update_vpn_only") and not settings.vpn_status().get("active")
+
+
 def check():
     """POST /api/update-check, and the daily loop."""
+    if vpn_missing():
+        return {"error": NO_VPN}
     try:
         with urlopen(Request(RELEASES, headers={**UA, "Accept": "application/vnd.github+json"}), timeout=15) as r:
             releases = json.loads(r.read(MAX_LIST + 1))
@@ -99,7 +108,7 @@ def check():
 
 
 def due(now=None):
-    if not settings.automation_enabled("update_check"):
+    if not settings.automation_enabled("update_check") or vpn_missing():
         return False
     try:
         last = int(settings.get_setting("update_checked") or 0)
@@ -124,6 +133,7 @@ def payload():
     with _lock:
         job = dict(_job)
     return {"version": VERSION, "kind": how, "check": settings.automation_enabled("update_check"),
+            "vpn_only": settings.automation_enabled("update_vpn_only"),
             "asked": settings.get_setting("update_asked") == "1", "found": stored(), "job": job}
 
 
@@ -133,6 +143,8 @@ def install():
     target = Path(os.environ.get("APPIMAGE") or "")
     if kind() != "appimage" or not found or not found.get("download"):
         return {"error": "This copy can't update itself."}
+    if vpn_missing():
+        return {"error": NO_VPN}
     with _lock:
         if _job["state"] == "working":
             return {"ok": True}

@@ -1625,6 +1625,7 @@ function updateRows(s) {
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
   return srow("Version", `AnimeHub v${esc(u.version || "")}`, `<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`)
     + srow("Tell me about new versions", "Once a day, ask GitHub for new releases. GitHub sees your IP address, nothing about your library.", tgl("update_check", "Tell me about new versions", u.check))
+    + srow("Only with a VPN", "Nothing goes to GitHub unless a VPN is on: no check, no update.", tgl("update_vpn_only", "Only with a VPN", u.vpn_only))
     + (f ? srow(`v${esc(f.version)} is out`, how, more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>Update</button>` : "")) : "");
 }
 const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), `${path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : ""}<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "found" : "not found"}</span>`);
@@ -1927,7 +1928,7 @@ const SETTINGS_INDEX = [
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"],
-  ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Keep running after closing", "phone", "keep running background server close phone", "keep_running"], ["Start at login", "phone", "start login boot autostart server phone", "start_at_login"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
+  ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Only with a VPN", "data", "update updates vpn github ip", "update_vpn_only"], ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Keep running after closing", "phone", "keep running background server close phone", "keep_running"], ["Start at login", "phone", "start login boot autostart server phone", "start_at_login"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
 ];
 const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}v${esc(f.version)} is out</button>` : ""; };
 const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["mpv", "mpv"], ["online", "Online episodes"], ["anilist", "AniList"], ["phone", "Phone remote"], ["keys", "Keys"], ["data", "Data & setup"]];
@@ -2072,7 +2073,7 @@ function TipDlg() {
 function UpDlg() {
   return `<h2 id="dt">Tell you about new versions?</h2>
   <p class="sub">Once a day, AnimeHub can ask GitHub for new releases. GitHub sees your IP address, nothing about your library.</p>
-  <div class="actions"><span class="note2 mono">change this in Settings → Data &amp; setup</span><button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn pri" data-a="upask" data-v="1">Yes</button></div>`;
+  <div class="actions three"><span class="note2 mono">change this in Settings → Data &amp; setup</span><button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button></div>`;
 }
 function SkpDlg() {
   return `<h2 id="dt">No VPN detected</h2>
@@ -3985,9 +3986,9 @@ const A = {
   },
   dirconfirm: (v) => { if (v === "1") dirSet(S.dir.path); else { S.dir.confirm = false; paintDir(); } },
   upask: async (v) => {
-    const on = v === "1";
+    const on = v !== "0";
     closeModal();
-    const r = await api("/api/settings", { update_check: on, update_asked: true }).catch(() => null);
+    const r = await api("/api/settings", { update_check: on, update_vpn_only: v === "vpn", update_asked: true }).catch(() => null);
     if (r && !r.error) S.settings = r;
     if (on) upCheck(false);
   },
