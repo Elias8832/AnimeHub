@@ -33,6 +33,37 @@ test("zoom steps move by 10 and clamp to the 50–200 range", () => {
   assert.equal(c.zoomStep(110, -1), 100, "steps are symmetric");
 });
 
+test("a dropdown opens right under its chip at every zoom", () => {
+  /* Elias: the Library filters' lists sat off to the right and low when
+     zoomed. Rects are real pixels, the list's style is scaled by <html>'s
+     zoom, so every value must come out as chip / zoom. */
+  const c = context();
+  for (const z of [0.75, 1, 1.5, 2]) {
+    const chip = { left: 100 * z, top: 200 * z, bottom: 236 * z, width: 112 * z };
+    const p = c.ddPlace(chip, z, 1600, 1000);
+    assert.equal(p.left, 100);
+    assert.equal(p.top, 242, "6 page pixels under the chip");
+    assert.equal(p.bottom, null);
+    assert.equal(p.width, 170, "minimum width is in page pixels too");
+  }
+});
+
+test("a dropdown near the window's edges flips up and stays on screen", () => {
+  const c = context();
+  const low = c.ddPlace({ left: 100, top: 900, bottom: 936, width: 112 }, 1.5, 1600, 1000);
+  assert.equal(low.top, null);
+  assert.ok(Math.abs(low.bottom - (100 / 1.5 + 6)) < 1e-9);
+  const right = c.ddPlace({ left: 1500, top: 100, bottom: 136, width: 90 }, 1.5, 1600, 1000);
+  assert.ok(right.left * 1.5 + right.width * 1.5 <= 1600, "fits the window");
+});
+
+test("clicking a filter's label doesn't shut the list its press opened", () => {
+  /* Elias: going from one filter to another showed the second for a split
+     second, then both were gone. The close belongs to the press. */
+  assert.ok(!/if \(ddSel && !e\.target\.closest\?\.\("select"\)\) ddClose\(false\)/.test(source));
+  assert.match(source, /if \(ddSel && !e\.target\.closest\?\.\("#ddm"\)\) ddClose\(false\); return;/);
+});
+
 test("shell mode suppresses browser zoom but never drives the setting", () => {
   /* Elias: no zoom shortcuts — the Settings row is the only control. The
      shell handlers keep ctrl+wheel / ctrl± dead (no browser zoom) without
