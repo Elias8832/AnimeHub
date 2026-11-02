@@ -72,7 +72,7 @@ Won't start? Logs are in `%LOCALAPPDATA%\anime-hub-wrapper\`.
 <details>
 <summary>Updating</summary>
 
-`git pull`, then `cargo build --release && ./install.sh`. AppImage or Windows zip: download the new one (Windows: replace the whole folder). Your data is kept.
+Settings → Data & setup shows the new version. **AppImage:** one click on Update, then reopen the app. **From git:** `git pull`, then `cargo build --release && ./install.sh`. **Windows:** download the new zip and replace the whole folder. Your data is kept.
 
 </details>
 
@@ -111,7 +111,7 @@ No tracking, no accounts, no ads. Your data stays on your PC.
 <details>
 <summary>What it talks to, and security</summary>
 
-- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (only when you get or update ani-cli). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on. Before you click, it contacts the site only while a VPN is up (Warn without VPN off lifts that): to link a show, refresh its episode list, or get the next episode ready.
+- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (only when you get or update ani-cli, or when you check for new versions: on a click, or once a day if you say yes). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on. Before you click, it contacts the site only while a VPN is up (Warn without VPN off lifts that): to link a show, refresh its episode list, or get the next episode ready.
 - **Access:** the server only listens on your PC. The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or AniList account.
 - **Proxy:** through `remote_hosts` there's no password, so everyone on that network can use it.
 - **AniList login:** a token in `anilist_token.json`, readable only by your user.

@@ -1612,6 +1612,21 @@ function loadAlData() {
 /* ---------- settings ---------- */
 const srow = (t, desc, ctl) => `<div class="srow"><div><b>${t}</b><p>${desc}</p></div><div class="ctl">${ctl}</div></div>`;
 const tgl = (key, label, on, off) => `<button class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-a="adv" data-v="${key}" ${off ? "disabled" : ""}></button>`;
+/* New versions (Decision 58): how to get one depends on how this copy got here. */
+function updateRows(s) {
+  const u = s.update || {}, f = u.found, j = u.job || {}, one = !!f?.download, busy = j.state === "working", done = j.state === "done";
+  const more = f?.url ? `<button class="btn" data-a="upnotes">What's new</button>` : "";
+  const how = done ? `Updated. Close AnimeHub and open it again to start the new version${s.keep_running ? " (Quit in the tray icon, as it keeps running)" : ""}.`
+    : busy ? `Downloading… ${j.percent || 0}%`
+    : j.state === "failed" ? `<span class="chip warn">Failed</span> ${esc(j.error || "")}`
+    : one ? "Replaces this AppImage. Your data stays."
+    : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
+    : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
+    : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
+  return srow("Version", `AnimeHub v${esc(u.version || "")}`, `<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`)
+    + srow("Tell me about new versions", "Once a day, ask GitHub for new releases. GitHub sees your IP address, nothing about your library.", tgl("update_check", "Tell me about new versions", u.check))
+    + (f ? srow(`v${esc(f.version)} is out`, how, more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>Update</button>` : "")) : "");
+}
 const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), `${path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : ""}<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "found" : "not found"}</span>`);
 function Sett() {
   const s = S.settings, ani = S.ani || {};
@@ -1638,7 +1653,7 @@ function Sett() {
     ${srow("Add shows automatically", "A first watch of a matched show that isn't on your lists adds it to Watching. Off by default.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}
     ${srow(`Sync ratings<span class="soon">not built yet</span>`, "Keep scores in step between AniList and this device.", tgl("ratings", "Sync ratings", false, true))}</div></div>`,
     keys: `<div class="group"><h3>Keys</h3><p class="sub">Press <kbd class="kb">?</kbd> anywhere for this list.</p><div class="keys big">${KEYS.map(([n, k]) => `<span>${esc(n)}</span><kbd class="kb">${esc(k)}</kbd>`).join("")}</div></div>`,
-    data: `<div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div><div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div>`,
+    data: `<div class="group"><h3>Updates</h3>${updateRows(s)}</div><div class="group"><h3>Data</h3>${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}</div><div class="group"><h3>Setup</h3>${srow("First-run tour", "Walk through the library folder and AniList again.", '<button class="btn" data-a="tour">Replay tour</button>')}</div>`,
   };
   return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span><i class="sep"></i><span>${esc(s.config_path || "")}</span></div></div>
   <div class="setg"><nav class="snav">${tabs.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}<p class="hint">every setting is also in the search <kbd class="kb">/</kbd> — try “vpn” or “motion”</p></nav>
@@ -1887,6 +1902,7 @@ function extraGroup(s) {
 }
 async function loadSettings() {
   try { S.settings = await api("/api/settings"); } catch { S.settings = null; }
+  if (S.data) paintNav(); // the status line says when a new version is out
   return S.settings;
 }
 
@@ -1911,8 +1927,9 @@ const SETTINGS_INDEX = [
   ["Account", "anilist", "anilist account connect token login disconnect"], ["Track episodes", "anilist", "anilist progress sync track", "auto_progress_sync"],
   ["Watched marks from AniList", "anilist", "anilist watched marks", "anilist_watched"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"],
-  ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Keep running after closing", "phone", "keep running background server close phone", "keep_running"], ["Start at login", "phone", "start login boot autostart server phone", "start_at_login"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
+  ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Keys", "keys", "keys keyboard shortcuts hotkeys"], ["Keep running after closing", "phone", "keep running background server close phone", "keep_running"], ["Start at login", "phone", "start login boot autostart server phone", "start_at_login"], ["Config file", "data", "config file data folder server port"], ["First-run tour", "data", "tour setup welcome"],
 ];
+const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}v${esc(f.version)} is out</button>` : ""; };
 const SET_TABS = [["appearance", "Appearance"], ["library", "Library"], ["playback", "Playback"], ["mpv", "mpv"], ["online", "Online episodes"], ["anilist", "AniList"], ["phone", "Phone remote"], ["keys", "Keys"], ["data", "Data & setup"]];
 const COMMANDS = [
   ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
@@ -2052,6 +2069,11 @@ function TipDlg() {
   <div><kbd class="kb">↵</kbd><span><b>Anywhere else</b>Finishes the episode, marks it watched and plays the next one.</span></div></div>
   <div class="actions"><span class="note2 mono">change this in Settings → Playback</span><button class="btn pri" data-a="tipgo">Got it, play</button></div>`;
 }
+function UpDlg() {
+  return `<h2 id="dt">Tell you about new versions?</h2>
+  <p class="sub">Once a day, AnimeHub can ask GitHub for new releases. GitHub sees your IP address, nothing about your library.</p>
+  <div class="actions"><span class="note2 mono">change this in Settings → Data &amp; setup</span><button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn pri" data-a="upask" data-v="1">Yes</button></div>`;
+}
 function SkpDlg() {
   return `<h2 id="dt">No VPN detected</h2>
   <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
@@ -2120,7 +2142,7 @@ function paintNav() {
   /* The status line (Decision 38): playing · next source · downloads · VPN · AniList sync · keys. */
   const html = `${now ? `<button class="st np" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><i class="led"></i><span class="npt">playing <b>${esc(now.show)} · ${esc(now.label)}</b></span><span class="pc">${now.loading ? "loading" : "@P@%"}</span></button>${nextChip(now)}` : ""}
     <div class="rel"><button class="st dlb${dlActive.length ? " on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive.length ? `<b>${dlActive.length}</b>${dlPct != null ? ` · ${Math.floor(dlPct)}%` : ""}` : "downloads"}</button>${S.menu === "dl" ? dlPop() : ""}</div>
-    ${vpnChip()}
+    ${vpnChip()}${upChip()}
     ${S.outbox ? `<div class="rel"><button class="st sync warn" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : S.ani?.connected ? '<span class="st">anilist synced</span>' : ""}
     <div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button>${S.menu === "keys" ? keysPop() : ""}</div>`;
   if (html === nrLast) {
@@ -2594,7 +2616,7 @@ function setSummary(k, s) {
     anilist: ani.connected ? `connected as ${ani.user || "you"}` : "not connected",
     phone: "pair a phone with a QR code",
     keys: "for a keyboard",
-    data: "config file, data folder",
+    data: "updates, config file, data folder",
   }[k] || "";
 }
 const SET_ICONS = { appearance: "edit", library: "folder", playback: "play", mpv: "tv", online: "download", anilist: "star", phone: "tv", keys: "search", data: "clock" };
@@ -2915,7 +2937,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -2993,6 +3015,11 @@ function finishTour(skipped) {
   if (S.settings) S.settings.tour_done = true;
   closeModal();
   if (!skipped) nav("library");
+}
+/* Asked once, on a start after the tour (Decision 58): never in the first run. */
+function maybeAskUpdates() {
+  const u = S.settings?.update;
+  if (u && !u.asked && S.settings.tour_done && !S.modal && !isPhone()) openModal({ t: "up" });
 }
 function maybeTour() {
   if (!S.settings || S.settings.tour_done || location.hash.includes("#show=") || location.hash.includes("#f=") || S.modal) return;
@@ -3563,11 +3590,19 @@ async function download(mid, eps, asked) {
   toast(r.queued ? `Downloading ${r.queued} episode${r.queued === 1 ? "" : "s"}` : "Already downloaded or downloading");
   pollSoon(300);
 }
+async function upCheck(tell) {
+  S.upBusy = true; if (S.view === "settings") render(true);
+  const r = await api("/api/update-check", {}).catch(() => ({ error: "Could not reach the hub." }));
+  S.upBusy = false; await loadSettings();
+  if (S.view === "settings") render(true);
+  if (tell) toast(r.error || (r.found ? `v${r.found.version} is out` : "You have the latest version"), r.error ? "err" : undefined);
+}
 async function setToggle(key, on) {
   const r = await api("/api/settings", { [key]: on }).catch(() => null);
   if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); return; }
   S.settings = r;
   if (key === "hide_spoilers" && S.data) S.data.hide_spoilers = on;
+  if (key === "update_check" && on) upCheck(false);
   if (key === "anilist_watched") await refreshData();
   if (S.view === "settings") render();
   if (S.modal?.t === "tour") paintModal();
@@ -3949,6 +3984,27 @@ const A = {
     dirSet(p.path);
   },
   dirconfirm: (v) => { if (v === "1") dirSet(S.dir.path); else { S.dir.confirm = false; paintDir(); } },
+  upask: async (v) => {
+    const on = v === "1";
+    closeModal();
+    const r = await api("/api/settings", { update_check: on, update_asked: true }).catch(() => null);
+    if (r && !r.error) S.settings = r;
+    if (on) upCheck(false);
+  },
+  upcheck: () => upCheck(true),
+  upopen: () => { S.setTab = "data"; nav("settings"); },
+  upnotes: () => { const f = S.settings?.update?.found; if (f?.url) openExternal(f.url); },
+  upinstall: async () => {
+    const r = await api("/api/update-install", {}).catch(() => ({ error: "Could not reach the hub." }));
+    if (r.error) return toast(r.error, "err");
+    do {
+      await loadSettings();
+      if (S.view === "settings") render(true);
+      await sleep(600);
+    } while (S.settings?.update?.job?.state === "working");
+    await loadSettings();
+    if (S.view === "settings") render(true);
+  },
   aniget: async () => {
     S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);
     const r = await api("/api/anicli-get", {}).catch(() => ({ error: "Could not reach the hub." }));
@@ -4642,7 +4698,7 @@ reload().then(() => {
   if (hashRel) { openFranchise(+hashRel[1]); return; } // an old #show=aid:<id> link
   if (hashShow && showById(decodeURIComponent(hashShow[1]))) { S.showId = decodeURIComponent(hashShow[1]); S.view = "show"; const s = showById(S.showId), t = pickTarget(s); S.seasonIdx = t ? Math.max(0, s.seasons.indexOf(t.sea)) : 0; S.navIn = true; render(); }
   else if (hashView) { S.view = hashView[1]; S.navIn = true; render(); }
-}).then(pollNow).then(loadSettings).then(maybeTour);
+}).then(pollNow).then(loadSettings).then(maybeTour).then(maybeAskUpdates);
 
 addEventListener("error", (e) => { if (e.target === window) toast("UI error: " + e.message); });
 addEventListener("unhandledrejection", (e) => toast("UI error: " + (e.reason?.message || e.reason)));

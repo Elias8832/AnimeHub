@@ -1,0 +1,165 @@
+"""New versions (Decision 58): which release counts, never a check unasked,
+and an AppImage is only replaced by what it was promised."""
+
+import hashlib
+import io
+import json
+import os
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from tests import support  # noqa: F401  (isolated config/data first)
+from animehub import database, remote, settings, update
+from animehub.config import config
+
+ELF = b"\x7fELF\x02\x01\x01\x00AI\x02" + b"x" * 500
+APP = update.asset_name("appimage")
+
+
+def release(tag, *names, draft=False, digest="sha256:abc"):
+    return {"tag_name": tag, "draft": draft, "html_url": f"https://github.com/x/{tag}",
+            "assets": [{"name": n, "digest": digest, "browser_download_url": f"{update.DOWNLOADS}{tag}/{n}"} for n in names]}
+
+
+def setUpModule():
+    config.DATA.mkdir(parents=True, exist_ok=True)
+    database.init_db()
+
+
+class Reply(io.BytesIO):
+    headers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.close()
+
+
+class Versions(unittest.TestCase):
+    def test_this_projects_numbers_are_decimals(self):
+        order = ["v0.1.0", "v0.2", "v0.25", "v0.3", "v0.31", "v0.4", "v0.5", "v1.0", "v1.0.1"]
+        numbers = [update.number(t) for t in order]
+        self.assertEqual(numbers, sorted(numbers))
+        self.assertGreater(update.number("v0.4"), update.number("v0.25"))
+
+    def test_odd_tags_are_no_version(self):
+        for tag in ("nightly", "v0.5-rc1", "", None):
+            self.assertIsNone(update.number(tag))
+
+    def test_picks_the_newest_this_copy_can_use(self):
+        got = update.pick([release("v0.4", APP), release("v0.6", APP), release("v0.5", APP)], "0.4", "appimage")
+        self.assertEqual(got["version"], "0.6")
+        self.assertEqual(got["sha256"], "abc")
+        self.assertEqual(got["download"], f"{update.DOWNLOADS}v0.6/{APP}")
+
+    def test_nothing_newer_says_nothing(self):
+        self.assertIsNone(update.pick([release("v0.4", APP), release("v0.31", APP)], "0.4", "appimage"))
+
+    def test_a_point_release_without_a_zip_skips_windows(self):
+        rels = [release("v0.51", APP), release("v0.5", APP, "AnimeHub-windows-x64.zip")]
+        self.assertEqual(update.pick(rels, "0.4", "windows")["version"], "0.5")
+        self.assertEqual(update.pick(rels, "0.4", "appimage")["version"], "0.51")
+        self.assertEqual(update.pick(rels, "0.4", "git")["version"], "0.51")
+
+    def test_a_git_copy_needs_no_file(self):
+        self.assertEqual(update.pick([release("v0.5")], "0.4", "git")["version"], "0.5")
+
+    def test_drafts_are_skipped(self):
+        self.assertIsNone(update.pick([release("v0.9", APP, draft=True)], "0.4", "appimage"))
+
+    def test_no_checksum_or_foreign_link_means_no_one_click(self):
+        got = update.pick([release("v0.5", APP, digest=None)], "0.4", "appimage")
+        self.assertEqual((got["version"], got["download"]), ("0.5", None))
+        odd = release("v0.5", APP)
+        odd["assets"][0]["browser_download_url"] = "https://example.com/" + APP
+        self.assertIsNone(update.pick([odd], "0.4", "appimage")["download"])
+
+
+class Asking(unittest.TestCase):
+    def setUp(self):
+        for key in ("update_check", "update_checked", "update_found", "update_asked"):
+            settings.set_setting(key, "")
+
+    def test_off_means_no_check(self):
+        settings.set_automation("update_check", False)
+        self.assertFalse(update.due(time.time() + 10 * update.EVERY))
+
+    def test_on_means_once_a_day(self):
+        settings.set_automation("update_check", True)
+        self.assertTrue(update.due())
+        settings.set_setting("update_checked", str(int(time.time())))
+        self.assertFalse(update.due())
+        self.assertTrue(update.due(time.time() + update.EVERY + 1))
+
+    def test_off_by_default_and_a_found_version_goes_stale(self):
+        self.assertFalse(settings.AUTOMATION_DEFAULTS["update_check"])
+        settings.set_setting("update_found", json.dumps({"version": "0.1"}))
+        self.assertIsNone(update.stored())  # this copy is past it, e.g. after updating
+        settings.set_setting("update_found", json.dumps({"version": "99.0"}))
+        self.assertEqual(update.payload()["found"]["version"], "99.0")
+
+    def test_check_keeps_what_it_found_and_a_failure_keeps_the_old_answer(self):
+        body = json.dumps([release("v99.0")]).encode()
+        with mock.patch.object(update, "urlopen", return_value=Reply(body)), mock.patch.object(update, "kind", return_value="git"):
+            self.assertEqual(update.check()["found"]["version"], "99.0")
+        with mock.patch.object(update, "urlopen", side_effect=OSError):
+            self.assertEqual(update.check(), {"error": "Could not reach GitHub."})
+        self.assertEqual(update.stored()["version"], "99.0")
+
+    def test_phones_cant_use_it(self):
+        self.assertIn("/api/update-check", remote.BLOCKED)
+        self.assertIn("/api/update-install", remote.BLOCKED)
+
+
+class Replacing(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.app = Path(tmp.name) / "AnimeHub.AppImage"
+        self.app.write_bytes(b"old")
+        self.app.chmod(0o755)
+        update._job.update(state="idle", percent=0, error=None)
+
+    def run_with(self, body, sha=None):
+        found = {"download": update.DOWNLOADS + "x", "sha256": sha or hashlib.sha256(body).hexdigest()}
+        with mock.patch.object(update, "urlopen", return_value=Reply(body)):
+            update._replace(found, self.app)
+        return update._job
+
+    def left(self):
+        return sorted(p.name for p in self.app.parent.iterdir())
+
+    def test_a_good_download_replaces_it(self):
+        self.assertEqual(self.run_with(ELF)["state"], "done")
+        self.assertEqual(self.app.read_bytes(), ELF)
+        self.assertTrue(os.access(self.app, os.X_OK))
+        self.assertEqual(self.left(), [self.app.name])
+
+    def test_a_wrong_checksum_changes_nothing(self):
+        self.assertEqual(self.run_with(ELF, sha="0" * 64)["state"], "failed")
+        self.assertEqual(self.app.read_bytes(), b"old")
+        self.assertEqual(self.left(), [self.app.name])
+
+    def test_something_else_than_an_appimage_changes_nothing(self):
+        self.assertEqual(self.run_with(b"<html>not found</html>")["state"], "failed")
+        self.assertEqual(self.app.read_bytes(), b"old")
+
+    def test_a_cut_off_download_changes_nothing(self):
+        with mock.patch.object(update, "urlopen", side_effect=OSError):
+            update._replace({"download": "x", "sha256": "0"}, self.app)
+        self.assertEqual(update._job["state"], "failed")
+        self.assertEqual(self.app.read_bytes(), b"old")
+
+    def test_only_an_appimage_can(self):
+        settings.set_setting("update_found", json.dumps({"version": "99.0", "download": "x"}))
+        with mock.patch.dict(os.environ):
+            os.environ.pop("APPIMAGE", None)
+            self.assertEqual(update.install(), {"error": "This copy can't update itself."})
+
+
+if __name__ == "__main__":
+    unittest.main()
