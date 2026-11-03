@@ -549,24 +549,6 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
     return {"entries": out, "untracked": untracked, "mode": "anilist"}
 
 
-def apply_anilist_watched(shows, entries):
-    """Settings → Advanced AniList → "Watched marks from AniList": episodes
-    up to their entry's progress read as watched, later ones as unwatched.
-    Display only — hub.db keeps the local marks, so switching back restores
-    them. Per entry (release_units), with the same fit rule as progress
-    sync, so each season of a folder follows its own entry."""
-    prog = {e["id"]: (e.get("progress") or 0, e.get("episodes")) for e in entries}
-    for s in shows:
-        for u in mapping.release_units(s):
-            if u["media_id"] not in prog:
-                continue
-            done, total = prog[u["media_id"]]
-            if not mapping.unit_fits(u, total):
-                continue
-            for ep, n in u["eps"]:
-                ep["watched"] = n <= done
-
-
 def spine_favourites(cached):
     """AniList favourite ids for the spine: the cached list's favourites,
     overridden by in-app edits made after that cache was fetched, so a heart
@@ -712,8 +694,6 @@ def full_library():
         spine = None
     if spine:
         franchise.tag_franchises(spine["entries"])
-    if cached and settings.automation_enabled("anilist_watched"):
-        apply_anilist_watched(scan + streams, cached["entries"])
     continue_row = []
     history = []
     for s in scan + streams:

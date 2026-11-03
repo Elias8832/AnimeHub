@@ -156,12 +156,6 @@ class Sync(unittest.TestCase):
         progress.completion_for_episode(self.s3[12]["id"])  # S3E13: Part 2's first
         self.assertEqual([e["media_id"] for e in progress._completion_pending], [99147])
 
-    def test_watched_marks_from_anilist(self):
-        shows = [streaming.trackable(self.scan[0])]
-        library.apply_anilist_watched(shows, [{"id": 104578, "progress": 4, "episodes": 10}])
-        part2 = [ep["watched"] for ep in support.season(shows[0], "Season 3")["episodes"][12:]]
-        self.assertEqual(part2, [True] * 4 + [False] * 6)
-
 
 class Art(unittest.TestCase):
     def listing(self, mid, *earlier):

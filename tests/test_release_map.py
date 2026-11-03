@@ -231,14 +231,6 @@ class PerReleaseFeatureTests(unittest.TestCase):
         self.assertEqual(by, {154587: (28, "installed", "frieren"), 182255: (10, "installed", "frieren")})
         self.assertEqual(spine["untracked"], [])
 
-    def test_anilist_watched_marks_follow_each_season(self):
-        f = self.frieren()
-        library.apply_anilist_watched([f], [{"id": 154587, "progress": 28, "episodes": 28},
-                                        {"id": 182255, "progress": 2, "episodes": 10}])
-        s1, s2 = f["seasons"]
-        self.assertTrue(all(e["watched"] for e in s1["episodes"]))
-        self.assertEqual([e["watched"] for e in s2["episodes"]][:3], [True, True, False])
-
 
 if __name__ == "__main__":
     unittest.main()

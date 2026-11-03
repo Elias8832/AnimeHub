@@ -483,5 +483,54 @@ class NodeChecks(unittest.TestCase):
                 self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
 
 
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class DeviceMarks(unittest.TestCase):
+    """TODO 166: episode ticks are this device's own; AniList being further
+    along is a small offer on the show page, not a setting."""
+    def ahead(self, f, slots, pending=False, fmt="TV"):
+        a = APP.index("function aheadLine(")
+        code = APP[a:APP.index("\n}\n", a) + 3]
+        js = ('const esc = (x) => String(x);' + code + 'console.log(JSON.stringify(aheadLine('
+              + json.dumps(f) + "," + json.dumps(pending) + "," + json.dumps({"format": fmt, "slots": slots}) + ")))")
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def slots(self, watched, n=6):
+        return [{"number": i, "watched": i <= watched, "local": {"id": f"f{i}"} if i != 5 else None,
+                 "online": None} for i in range(1, n + 1)]
+
+    def test_offers_the_episodes_anilist_is_ahead_by(self):
+        out = self.ahead({"progress": 4}, self.slots(1))
+        self.assertIn("AniList is at EP 4", out)
+        self.assertIn('data-v="[2,3,4]"', out)
+
+    def test_an_episode_with_no_source_is_left_out(self):
+        self.assertIn('data-v="[4,6]"', self.ahead({"progress": 6}, self.slots(3)))
+
+    def test_quiet_when_in_step_or_not_from_anilist(self):
+        self.assertEqual(self.ahead({"progress": 3}, self.slots(3)), "")
+        self.assertEqual(self.ahead({"progress": 0}, self.slots(0)), "")
+        self.assertEqual(self.ahead({"progress": 4, "local": True}, self.slots(0)), "")
+        self.assertEqual(self.ahead({"progress": 4}, self.slots(0), pending=True), "")
+
+    def test_movie(self):
+        out = self.ahead({"progress": 1}, self.slots(0, 1), fmt="MOVIE")
+        self.assertIn("Watched on AniList", out)
+
+    def test_watched_marks_setting_is_gone(self):
+        self.assertNotIn("Watched marks from AniList", APP)
+        self.assertNotIn("apply_anilist_watched", (support.ROOT / "animehub" / "library.py").read_text(encoding="utf-8"))
+
+    def test_one_word_for_where_data_lives(self):
+        # TODO 166: "on this PC" / "from AniList", not device/local variants.
+        for old in ("this device", "kept local", "keep local", "keep it local", "Local wins", "local watch state", "<span>Local</span>"):
+            self.assertNotIn(old, APP)
+
+    def test_history_is_always_this_device(self):
+        self.assertIn('<b>History</b><span>on this PC</span>', APP)
+        self.assertIn("const hev = jDevEvents()", APP)
+
+
 if __name__ == "__main__":
     unittest.main()
