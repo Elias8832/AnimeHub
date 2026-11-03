@@ -33,6 +33,7 @@ function homepage(data) {
     aniMode: () => false, // spine mode; the airing panel is covered elsewhere
     isPhone: () => false, isTabletP: () => false, // the PC layout (phones: test_phone_layout.py)
     fmtIn: () => "soon", airsIn: () => 0,
+    plHomeHTML: () => "", // pinned playlists: tests/playlists.cjs
   });
   vm.runInContext(
     block("/* @pure:start */", "/* @pure:end */") +
