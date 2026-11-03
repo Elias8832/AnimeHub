@@ -104,7 +104,12 @@ class Frontend(unittest.TestCase):
 
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
-        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["classic", "tabs", "line", "capsule", "island"]})
+        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["classic", "tabs", "line", "capsule", "island"],
+                                                    "fan": ["fan", "wide", "cascade", "peek"]})  # Playlist stacks (Decision 64)
+        self.assertEqual(run_js("return lookGet('fan');"), "fan")
+        self.assertEqual(run_js("return lookGet('fan');", {"fan": "peek"}), "peek")
+        for fan in ("fan", "wide", "cascade", "peek"):
+            self.assertIn('[data-plfan="%s"] .plbox:hover' % fan, CSS)
         self.assertEqual(run_js("return lookGet('bar');", {"bar": "island"}), "island")  # Settings → Appearance → Top bar
         self.assertIn('d.dataset.bar=g("bar")||"classic";', HTML)
         for bar in ("tabs", "line", "capsule", "island"):
@@ -198,6 +203,15 @@ class WeekSection(unittest.TestCase):
     def test_week_page_is_reachable_from_home(self):
         self.assertIn('data-a="go" data-v="week">Calendar', APP)
 
+    def test_calendar_is_a_tab_everywhere(self):
+        """Easy to miss behind a Home link, so it sits in both tab bars."""
+        self.assertIn('["week", "Calendar"]];', APP)
+        self.assertIn('["week", "Calendar", "cal"]];', APP)
+        self.assertIn('["Home · Library · Journal · Calendar", "1 2 3 4"]', APP)
+        self.assertIn('const order = ["home", "library", "history", "week"]', APP)
+        self.assertIn('<b>See when your shows air</b>', APP)  # logged out: one clear way in
+        self.assertNotIn('Connect AniList to see what airs next.', APP)
+
 
 class Toast(unittest.TestCase):
     def test_loading_popup_stays_until_mpv_answers(self):
@@ -262,7 +276,7 @@ class Journal(unittest.TestCase):
     """TODO 60 step 5: History + Stats are one page (Journal, key 3); the old
     #history / #stats links still open it."""
     def test_journal(self):
-        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];', APP)
+        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"], ["week", "Calendar"]];', APP)
         self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
         self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
         self.assertIn('<div class="jside">${most}${genres}${heat}${st.side}</div>', APP)  # all time in the same two columns
@@ -307,7 +321,7 @@ class SettingsLayout(unittest.TestCase):
 
     def test_a_switch_flips_from_what_it_shows(self):
         # mpv_marks lives in s.mpv.marks, so !S.settings[key] could only ever turn it on.
-        self.assertIn('setToggle(v, t.getAttribute("aria-checked") !== "true")', APP)
+        self.assertIn('const on = t.getAttribute("aria-checked") !== "true";', APP)
 
     def test_find_box(self):
         self.assertIn('id="setq"', APP)
@@ -410,6 +424,29 @@ class Polish(unittest.TestCase):
         self.assertIn("pages.filter((_, i) => i !== 6)", APP)
         self.assertIn("${tourMpv(s)}", APP)
         self.assertIn('{ mpv_design: "on", mpv_look: v }', APP)
+
+    def test_a_tour_setting_does_not_reload_the_dialog(self):
+        """A switch or card updates in place; only a new page animates."""
+        self.assertIn('if (m.t === "tour" && !focus) morphHTML(dlg, body);', APP)
+        self.assertIn("tourback: () => { S.tour.step--; paintModal(true); }", APP)
+        self.assertIn("if (T.step < (S.settings?.background_ok ? 8 : 7)) { T.step++; return paintModal(true); }", APP)
+
+    def test_a_tour_pick_shows_before_it_saves(self):
+        """The outline moves on click; a failed save puts the old pick back."""
+        fn = APP[APP.index("function tourSave("):APP.index("function finishTour(")]
+        self.assertLess(fn.index("apply(S.settings.mpv); paintModal();"), fn.index('api("/api/settings", body)'))
+        self.assertIn("S.settings = was; paintModal();", fn)
+        self.assertIn('t.setAttribute("aria-checked", String(on)); setToggle(v, on);', APP)
+
+    def test_a_new_tour_page_eases_to_its_size(self):
+        self.assertIn('dlg.animate([{ width: w0 + "px", height: h0 + "px" }, { width: w1 + "px", height: h1 + "px" }]', APP)
+
+    def test_tour_explains_search(self):
+        """Its own page, before the last one, and the phone page keeps its slot."""
+        self.assertIn("    tourSearch(),\n    `<h2 id=\"dt\">You're set</h2>", APP)
+        pages = APP[APP.index("const b = tourPages(["):APP.index("tourSearch(),\n")]
+        self.assertEqual(pages.count('<h2 id="dt">'), 7)
+        self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`,"))
 
     def test_tour_lists_what_it_found(self):
         self.assertIn('<div class="sum2">${tourFound(s, a, n, ok)}</div>', APP)

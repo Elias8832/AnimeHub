@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import anicli, anilist, database, franchise, lengths, mapping, metadata, player, settings, streaming, util
+from . import anicli, anilist, database, franchise, lengths, mapping, metadata, player, playlists, settings, streaming, util
 from .config import config
 
 
@@ -743,6 +743,7 @@ def full_library():
             # the library, fixable via the detail page's manual match.
             "unmatched": [s["title"] for s in scan if not s.get("meta")],
             "spine": spine,
+            "playlists": playlists.all_playlists(),  # additive (Decision 64)
             "unwatched": unwatched, "stats": stats, "now": now,
             # Metadata-fetch visibility (Elias): additive — the UI shows
             # what the background pass is working on, or that it's idle.
