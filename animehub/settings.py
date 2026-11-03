@@ -31,8 +31,10 @@ def set_setting(key, value):
 # watch, Decision 5) needs an explicit opt-in (off).
 AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # Not writes, just switches kept beside them:
-                       # watched marks read from AniList progress, and the
-                       # VPN status icon / no-VPN warning for online episodes.
+                       # the VPN status icon / no-VPN warning for online
+                       # episodes. anilist_watched is retired (TODO 166:
+                       # ticks are this device's own); kept so the
+                       # settings payload only grows.
                        "anilist_watched": False, "vpn_icon": True, "vpn_warn": True,
                        # Opening/ending times from AniSkip (Decision 39): it
                        # would learn what you watch and when, so opt-in; and
