@@ -1179,7 +1179,7 @@ function frCm(id, x0, y0) {
   return true;
 }
 
-function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" || S.showBack === "stats" ? "Journal" : "Home"; }
+function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" || S.showBack === "stats" ? "Journal" : S.showBack === "week" ? "Calendar" : "Home"; }
 
 /* A folder with no AniList match yet: its files, and the way to match it.
    Matched folders and online episodes open their franchise page (Fran),
@@ -1992,7 +1992,7 @@ const SETTINGS_INDEX = [
 const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}v${esc(f.version)} is out</button>` : ""; };
 const SET_TABS = [["player", "Player", "Watching"], ["skipping", "Skipping", "Watching"], ["subs", "Audio & subtitles", "Watching"], ["online", "Online episodes", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["anilist", "AniList", "Your hub"], ["phone", "Phone remote", "This PC"], ["data", "System", "This PC"]];
 const COMMANDS = [
-  ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
+  ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"], ["Go to Calendar", "calendar airing schedule week", () => nav("week"), "4"],
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
   ["Show downloads", "downloads queue", () => { S.menu = "dl"; paintNav(); }, ""], ["Show keys", "keys keyboard shortcuts", () => { S.menu = "keys"; paintNav(); }, "?"],
 ];
@@ -2181,8 +2181,8 @@ function NextDlg() {
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
-const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];
-const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal", "1 2 3"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
+const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"], ["week", "Calendar"]];
+const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal · Calendar", "1 2 3 4"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
 const keysPop = () => `<div class="pop keyp"><div class="cap">Keys</div><div class="keys">${KEYS.map(([n, k]) => `<span>${n}</span><kbd class="kb">${k}</kbd>`).join("")}</div></div>`;
 function paintNav() {
   paintTabbar(); paintSide(); paintTop();
@@ -2241,12 +2241,12 @@ addEventListener("resize", () => { const k = layoutKey(); if (k !== layoutNow) {
 /* Phones and tablets: a service worker, so "Install app" makes a real app
    (sw.js caches nothing). Needs https — the Tailscale address. */
 if ("serviceWorker" in navigator && isSecureContext && mq("(pointer:coarse)")) navigator.serviceWorker.register("/sw.js").catch(() => {});
-const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["history", "Journal", "cal"]];
+const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["history", "Journal", "clock"], ["week", "Calendar", "cal"]];
 function paintTabbar() {
   const el = $("#tabbar");
   if (!el) return;
   if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
-  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view === "week" ? "home" : S.view;
+  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}</div>
     <button class="sq" data-a="sropen" aria-label="Search">${ico("search")}</button>`;
   /* The highlight glides to the open tab (One UI 9); none on Settings. */
@@ -2549,8 +2549,9 @@ function CalDesk() {
 function Week() {
   if (!isPhone() && mq("(min-width:1001px)") && aniMode()) return CalDesk();
   const now = Date.now(), list = airingList();
-  const head = `<div class="hello"><h1 class="hd">Airing</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
-  if (!aniMode()) return `<div class="wk2">${head}<p class="empty">Connect AniList to see what airs next.</p></div>`;
+  const head = `<div class="hello"><h1 class="hd">Calendar</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
+  /* Logged out: one clear way in, not two lines that contradict each other. */
+  if (!aniMode()) return `<div class="wk2"><div class="hello"><h1 class="hd">Calendar</h1></div><div class="emptyx"><div class="eico">${ico("cal")}</div><b>See when your shows air</b><span>Connect AniList, and new episodes of what you're watching show up here, day by day.</span><button class="btn pri" data-a="ani">Connect AniList</button></div></div>`;
   const tl = list.map((e, k) => { const t = airAt(e, now), sec = (t - now) / 1000;
     return `<div class="tli${k === 0 ? " first" : ""}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
       <button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")}</small></span></button></div>`; }).join("");
@@ -3322,7 +3323,7 @@ function accentFrom(url, color) {
   img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
 }
 const ambient = paintCanvas;
-const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Airing" };
+const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Calendar" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
    it: the new HTML is matched against the live nodes (by data-a/data-v or
@@ -3407,7 +3408,7 @@ function render(inPlace = false) {
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
   const t = S.view === "show" ? showById(S.showId)?.title : S.view === "fr" ? S.fr?.page?.title || frEntry()?.title : VIEW_TITLE[S.view];
   document.title = t ? `${t} · Anime Hub` : "Anime Hub";
-  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : S.view === "week" ? "Airing" : t);
+  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : t);
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
   if (S.view === "fr" && frEntry()) loadEntry(frEntry().id);
   if (S.sel && S.sel.show !== selKey()) S.sel = null;
@@ -3435,10 +3436,10 @@ function dip(f) {
   a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter");
 }
 function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
-/* Switching Home · Library · Journal on a touch screen slides the page in
+/* Switching Home · Library · Journal · Calendar on a touch screen slides the page in
    from the side of the tab you went to (one transform on #app, no fill,
    so nothing stays transformed afterwards). */
-const TAB_AT = { home: 0, week: 0, library: 1, history: 2, stats: 2 };
+const TAB_AT = { home: 0, library: 1, history: 2, stats: 2, week: 3 };
 function tabSlide(from, to) {
   if (reduceMotion() || !mq("(pointer:coarse), (max-width:700px)")) return;
   const a = TAB_AT[from], b = TAB_AT[to], app = $("#app"), page = (v) => v === "show" || v === "fr";
@@ -4615,7 +4616,7 @@ let swFrame = 0, swWrite = null;
 function swSet(fn) { swWrite = fn; if (!swFrame) swFrame = requestAnimationFrame(() => { swFrame = 0; const f = swWrite; swWrite = null; f && f(); }); }
 function swBegin(el) { document.body.classList.add("swiping"); el.style.willChange = "transform"; }
 function swEnd(el) { document.body.classList.remove("swiping"); if (el) el.style.willChange = ""; }
-const TAB_NAME = { home: "Home", library: "Library", history: "Journal" };
+const TAB_NAME = { home: "Home", library: "Library", history: "Journal", week: "Calendar" };
 document.addEventListener("touchstart", (e) => {
   pull = null;
   if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
@@ -4632,15 +4633,15 @@ document.addEventListener("touchstart", (e) => {
   } else if (t.closest?.(".rbar") && !t.closest("button")) pull = { kind: "rbar", y };
   else if (isPhone() && inApp && x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture
     const ptrOK = scrollY <= 0 && ["home", "library", "history", "stats", "week"].includes(S.view) && !ptrBusy;
-    if (["home", "library", "history", "stats"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
-    else if (["show", "fr", "week", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
+    if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
+    else if (["show", "fr", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
   }
 }, { passive: true });
-/* Sideways: Home ⇄ Library ⇄ Journal, or back from a page. The page
+/* Sideways: Home ⇄ Library ⇄ Journal ⇄ Calendar, or back from a page. The page
    follows the finger; past ~30 % of the width (or a flick) it goes. */
 function sideTarget(p, dx) {
   if (p.kind === "back") return dx > 0 ? { label: "Back", side: "left" } : null;
-  const order = ["home", "library", "history"], at = order.indexOf(S.view === "stats" ? "history" : S.view), to = order[at + (dx < 0 ? 1 : -1)];
+  const order = ["home", "library", "history", "week"], at = order.indexOf(S.view === "stats" ? "history" : S.view), to = order[at + (dx < 0 ? 1 : -1)];
   return to ? { to, label: TAB_NAME[to], side: dx < 0 ? "right" : "left" } : null;
 }
 document.addEventListener("touchmove", (e) => {

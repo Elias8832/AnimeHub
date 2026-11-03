@@ -1628,7 +1628,7 @@ body.has-side #app{padding-left:340px}
   #tabbar .tb{position:relative;display:flex;gap:2px;padding:5px;border-radius:999px}
   #tabbar .tb .ind{position:absolute;left:0;top:5px;height:52px;border-radius:999px;background:rgba(255,255,255,.16);transition:transform .42s cubic-bezier(.3,1.3,.5,1),width .42s cubic-bezier(.3,1.3,.5,1),opacity .2s;pointer-events:none}
   #tabbar .tb button{position:relative}
-  #tabbar .tb button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:78px;height:52px;border:0;border-radius:999px;background:none;color:var(--ink-2);font:600 11px var(--ui);transition:background .25s,color .25s}
+  #tabbar .tb button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:min(78px,calc((100vw - 104px)/4));height:52px;border:0;border-radius:999px;background:none;color:var(--ink-2);font:600 11px var(--ui);transition:background .25s,color .25s}
   #tabbar .tb button .ico{width:21px;height:21px}
   #tabbar .tb button.on{color:var(--ink)}
   #tabbar .tb button .ico{transition:transform .3s var(--spring),color .25s}

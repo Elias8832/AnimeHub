@@ -198,6 +198,15 @@ class WeekSection(unittest.TestCase):
     def test_week_page_is_reachable_from_home(self):
         self.assertIn('data-a="go" data-v="week">Calendar', APP)
 
+    def test_calendar_is_a_tab_everywhere(self):
+        """Easy to miss behind a Home link, so it sits in both tab bars."""
+        self.assertIn('["week", "Calendar"]];', APP)
+        self.assertIn('["week", "Calendar", "cal"]];', APP)
+        self.assertIn('["Home · Library · Journal · Calendar", "1 2 3 4"]', APP)
+        self.assertIn('const order = ["home", "library", "history", "week"]', APP)
+        self.assertIn('<b>See when your shows air</b>', APP)  # logged out: one clear way in
+        self.assertNotIn('Connect AniList to see what airs next.', APP)
+
 
 class Toast(unittest.TestCase):
     def test_loading_popup_stays_until_mpv_answers(self):
@@ -262,7 +271,7 @@ class Journal(unittest.TestCase):
     """TODO 60 step 5: History + Stats are one page (Journal, key 3); the old
     #history / #stats links still open it."""
     def test_journal(self):
-        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];', APP)
+        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"], ["week", "Calendar"]];', APP)
         self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
         self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
         self.assertIn('<div class="jside">${most}${genres}${heat}${st.side}</div>', APP)  # all time in the same two columns
