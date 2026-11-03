@@ -109,8 +109,10 @@ button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
 #nav{position:fixed;inset:0 0 auto;height:68px;display:flex;align-items:center;gap:6px;padding:0 44px;z-index:9;transition:background .3s,box-shadow .3s,backdrop-filter .3s}
 body.sc #nav{background:rgba(13,14,17,.72);backdrop-filter:blur(22px) saturate(1.3);box-shadow:0 1px 0 rgba(255,255,255,.06),0 18px 40px -26px #000}
 .brand{display:flex;align-items:center;gap:9px;font:500 13px var(--mono);letter-spacing:0;margin-right:18px;white-space:nowrap;border-radius:999px;padding:6px 8px 6px 4px}
-.brand .bm{width:9px;height:9px;border-radius:3px;background:var(--accent);transition:background .45s,transform .45s var(--spring);box-shadow:0 0 12px color-mix(in srgb,var(--accent) 60%,transparent)}
-.brand:hover .bm{transform:rotate(45deg) scale(1.15)}
+/* The icon as a single-colour mark: it wears the live accent, also when following the show. */
+.brand .bm{width:20px;height:20px;flex:none;display:block;overflow:visible;fill:var(--accent);transition:fill .45s,transform .45s var(--spring);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--accent) 55%,transparent))}
+.brand .bm path{transition:fill .45s,transform .45s var(--spring)}.brand .bm .l1{opacity:.4}.brand .bm .l2{opacity:.65}
+.brand:hover .bm{transform:scale(1.08)}.brand:hover .bm .l2{transform:translateY(-10px)}.brand:hover .bm .l1{transform:translateY(-22px)}
 #links{display:flex;gap:2px;position:relative}
 .link{position:relative;z-index:1;height:36px;padding:0 14px;border-radius:999px;display:inline-flex;align-items:center;gap:8px;color:rgba(243,243,241,.7);font-weight:600;font-size:14.5px}
 .link:hover{color:var(--ink)}.link.on{color:var(--ink)}
@@ -1792,7 +1794,7 @@ body.has-side #app{padding-left:340px}
   #tabbar .tb{position:relative;display:flex;gap:2px;padding:5px;border-radius:999px}
   #tabbar .tb .ind{position:absolute;left:0;top:5px;height:52px;border-radius:999px;background:rgba(255,255,255,.16);transition:transform .42s cubic-bezier(.3,1.3,.5,1),width .42s cubic-bezier(.3,1.3,.5,1),opacity .2s;pointer-events:none}
   #tabbar .tb button{position:relative}
-  #tabbar .tb button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:78px;height:52px;border:0;border-radius:999px;background:none;color:var(--ink-2);font:600 11px var(--ui);transition:background .25s,color .25s}
+  #tabbar .tb button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:min(78px,calc((100vw - 104px)/4));height:52px;border:0;border-radius:999px;background:none;color:var(--ink-2);font:600 11px var(--ui);transition:background .25s,color .25s}
   #tabbar .tb button .ico{width:21px;height:21px}
   #tabbar .tb button.on{color:var(--ink)}
   #tabbar .tb button .ico{transition:transform .3s var(--spring),color .25s}

@@ -1526,7 +1526,7 @@ function frCm(id, x0, y0) {
   return true;
 }
 
-function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" || S.showBack === "stats" ? "Journal" : "Home"; }
+function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" || S.showBack === "stats" ? "Journal" : S.showBack === "week" ? "Calendar" : "Home"; }
 
 /* A folder with no AniList match yet: its files, and the way to match it.
    Matched folders and online episodes open their franchise page (Fran),
@@ -2354,7 +2354,7 @@ const SETTINGS_INDEX = [
 const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}v${esc(f.version)} is out</button>` : ""; };
 const SET_TABS = [["player", "Player", "Watching"], ["skipping", "Skipping", "Watching"], ["subs", "Audio & subtitles", "Watching"], ["online", "Online episodes", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["anilist", "AniList", "Your hub"], ["phone", "Phone remote", "This PC"], ["data", "System", "This PC"]];
 const COMMANDS = [
-  ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"],
+  ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"], ["Go to Calendar", "calendar airing schedule week", () => nav("week"), "4"],
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
   ["Show downloads", "downloads queue", () => { S.menu = "dl"; paintNav(); }, ""], ["Show keys", "keys keyboard shortcuts", () => { S.menu = "keys"; paintNav(); }, "?"],
 ];
@@ -2543,8 +2543,8 @@ function NextDlg() {
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
-const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"]];
-const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal", "1 2 3"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
+const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"], ["week", "Calendar"]];
+const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal · Calendar", "1 2 3 4"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
 const keysPop = () => `<div class="pop keyp"><div class="cap">Keys</div><div class="keys">${KEYS.map(([n, k]) => `<span>${n}</span><kbd class="kb">${k}</kbd>`).join("")}</div></div>`;
 function paintNav() {
   paintTabbar(); paintSide(); paintTop();
@@ -2603,12 +2603,12 @@ addEventListener("resize", () => { const k = layoutKey(); if (k !== layoutNow) {
 /* Phones and tablets: a service worker, so "Install app" makes a real app
    (sw.js caches nothing). Needs https — the Tailscale address. */
 if ("serviceWorker" in navigator && isSecureContext && mq("(pointer:coarse)")) navigator.serviceWorker.register("/sw.js").catch(() => {});
-const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["history", "Journal", "cal"]];
+const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["history", "Journal", "clock"], ["week", "Calendar", "cal"]];
 function paintTabbar() {
   const el = $("#tabbar");
   if (!el) return;
   if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
-  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view === "week" ? "home" : S.view;
+  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}</div>
     <button class="sq" data-a="sropen" aria-label="Search">${ico("search")}</button>`;
   /* The highlight glides to the open tab (One UI 9); none on Settings. */
@@ -2912,8 +2912,9 @@ function CalDesk() {
 function Week() {
   if (!isPhone() && mq("(min-width:1001px)") && aniMode()) return CalDesk();
   const now = Date.now(), list = airingList();
-  const head = `<div class="hello"><h1 class="hd">Airing</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
-  if (!aniMode()) return `<div class="wk2">${head}<p class="empty">Connect AniList to see what airs next.</p></div>`;
+  const head = `<div class="hello"><h1 class="hd">Calendar</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
+  /* Logged out: one clear way in, not two lines that contradict each other. */
+  if (!aniMode()) return `<div class="wk2"><div class="hello"><h1 class="hd">Calendar</h1></div><div class="emptyx"><div class="eico">${ico("cal")}</div><b>See when your shows air</b><span>Connect AniList, and new episodes of what you're watching show up here, day by day.</span><button class="btn pri" data-a="ani">Connect AniList</button></div></div>`;
   const tl = list.map((e, k) => { const t = airAt(e, now), sec = (t - now) / 1000;
     return `<div class="tli${k === 0 ? " first" : ""}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
       <button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")}</small></span></button></div>`; }).join("");
@@ -3314,23 +3315,30 @@ function tourLooks(s) {
   return `<div class="choices lkpick">${card("soft", PLAYER_LOOKS.soft, "Controls float over the picture, with lively hover effects.")}${card("deck", PLAYER_LOOKS.deck, "One slim bar along the bottom, with the most room for the seek bar.")}
     <button class="choice lkown ${own ? "on" : ""}" aria-pressed="${own}" data-a="tourlook" data-v="own"><b>Keep my own mpv look</b><span>For a skin you already use. Anime Hub adds no controls.</span></button></div>`;
 }
+/* The search page: only what search does today, in the words of its own sections. */
+function tourSearch() {
+  const row = (icon, title, line) => `<div>${ico(icon)}<span><b>${title}</b>${line}</span></div>`;
+  return `<h2 id="dt">What search can find</h2><p class="sub">${isPhone() ? "Tap the search button to open it." : 'Press <kbd class="kb">/</kbd> on any page to open it.'}</p>
+    <div class="ptip">${row("folder", "Shows in your library", "Type part of a name to open a show.")}${row("search", "Shows you don't have", "Finds anything on AniList. Needs an AniList account or ani-cli.")}${row("sliders", "Settings", "Type a setting's name. Switches can be flipped right in the results.")}${row("arrowr", "Commands", "Go to a page, rescan your library or show your downloads.")}</div>`;
+}
 function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
   const b = tourPages([
-    `<h2 id="dt">Welcome to AnimeHub</h2><p class="sub">Your anime in one place, played in mpv.</p>
+    `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">It plays the anime on this computer in mpv.</p>
      <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
      <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
-     <div>${ico("play")}<span><b>It keeps up</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
+     <div>${ico("play")}<span><b>Playback</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
     `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}
      <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>`,
     `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
-    `<h2 id="dt">A few tools</h2><p class="sub">AnimeHub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
+    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
     `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
     `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
     `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
+    tourSearch(),
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
@@ -3375,7 +3383,8 @@ function Done() {
   <div class="actions"><span class="note2 mono">the score saves when you close</span><button class="btn" data-a="dnskip">Skip</button><button class="btn pri" data-a="dnsave">Done<kbd class="kb">↵</kbd></button></div>`;
 }
 /* The overlay is built once per dialog; later paints (tour steps, option picks) swap only the dialog body
-   so the backdrop and entrance don't replay. Closing fades out before the node is removed. */
+   so the backdrop and entrance don't replay. A tour paint with no new page (a switch, a card) updates in
+   place: nothing replays and focus stays. Closing fades out before the node is removed. */
 function paintModal(focus) {
   const m = S.modal, el = $("#modal");
   if (!m) {
@@ -3387,9 +3396,23 @@ function paintModal(focus) {
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
-    dlg.innerHTML = body;
-    dlg.classList.remove("swap"); void dlg.offsetWidth;
-    if (!reduceMotion()) dlg.classList.add("swap");
+    dlg.classList.remove("swap");
+    if (m.t === "tour" && !focus) morphHTML(dlg, body);
+    else {
+      const w0 = dlg.offsetWidth, h0 = dlg.offsetHeight; // mid-ease on a quick click: start from what shows
+      dlg._size?.cancel(); dlg._size = null; dlg.style.removeProperty("overflow");
+      dlg.innerHTML = body;
+      const w1 = dlg.offsetWidth, h1 = dlg.offsetHeight;
+      if (!reduceMotion()) {
+        dlg.classList.add("swap");
+        /* A new page eases to its size instead of jumping to it. */
+        if (Math.abs(w1 - w0) > 1 || Math.abs(h1 - h0) > 1) {
+          dlg.style.overflow = "hidden";
+          const an = dlg._size = dlg.animate([{ width: w0 + "px", height: h0 + "px" }, { width: w1 + "px", height: h1 + "px" }], { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)" });
+          an.finished.catch(() => {}).finally(() => { if (dlg._size === an) { dlg._size = null; dlg.style.removeProperty("overflow"); } });
+        }
+      }
+    }
   } else {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" || m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
@@ -3455,6 +3478,19 @@ function maybeCompletion(c) {
     if (e.score != null && e.score > 0) { sc.value = max === 10 ? Math.round(e.score) : e.score; dnPills(max === 10 ? Math.round(e.score) : 0); }
     if (st.is_favourite) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
   }).catch(() => {});
+}
+/* A tour pick shows at once (Elias: the outline lagged a second behind the
+   click); the saved settings replace the guess, a failed save puts it back.
+   Only the newest pick's answer is painted, so quick clicks never flicker. */
+let tourSeq = 0;
+function tourSave(body, apply) {
+  const was = S.settings, n = ++tourSeq;
+  S.settings = { ...was, mpv: { ...(was?.mpv || {}) } }; apply(S.settings.mpv); paintModal();
+  const fail = (msg) => { if (n !== tourSeq) return; S.settings = was; paintModal(); toast(msg || "Could not save — is the hub running?"); };
+  api("/api/settings", body).then((r) => {
+    if (!r || r.error) return fail(r?.error);
+    if (n === tourSeq && S.modal?.t === "tour") { S.settings = r; paintModal(); }
+  }).catch(() => fail());
 }
 function finishTour(skipped) {
   api("/api/settings", { tour_done: true }).catch(() => {});
@@ -3650,7 +3686,7 @@ function accentFrom(url, color) {
   img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
 }
 const ambient = paintCanvas;
-const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Airing" };
+const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Calendar" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
    it: the new HTML is matched against the live nodes (by data-a/data-v or
@@ -3736,7 +3772,7 @@ function render(inPlace = false) {
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
   const t = S.view === "show" ? showById(S.showId)?.title : S.view === "fr" ? S.fr?.page?.title || frEntry()?.title : VIEW_TITLE[S.view];
   document.title = t ? `${t} · Anime Hub` : "Anime Hub";
-  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : S.view === "week" ? "Airing" : t);
+  paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : t);
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
   if (S.view === "fr" && frEntry()) loadEntry(frEntry().id);
   if (S.sel && S.sel.show !== selKey()) S.sel = null;
@@ -3764,10 +3800,10 @@ function dip(f) {
   a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter");
 }
 function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
-/* Switching Home · Library · Journal on a touch screen slides the page in
+/* Switching Home · Library · Journal · Calendar on a touch screen slides the page in
    from the side of the tab you went to (one transform on #app, no fill,
    so nothing stays transformed afterwards). */
-const TAB_AT = { home: 0, week: 0, library: 1, history: 2, stats: 2 };
+const TAB_AT = { home: 0, library: 1, history: 2, stats: 2, week: 3 };
 function tabSlide(from, to) {
   if (reduceMotion() || !mq("(pointer:coarse), (max-width:700px)")) return;
   const a = TAB_AT[from], b = TAB_AT[to], app = $("#app"), page = (v) => v === "show" || v === "fr";
@@ -4046,7 +4082,8 @@ async function upCheck(tell) {
 }
 async function setToggle(key, on) {
   const r = await api("/api/settings", { [key]: on }).catch(() => null);
-  if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); return; }
+  /* The switch moved on click; a failed save repaints it back. */
+  if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); if (S.view === "settings") render(true); if (S.modal?.t === "tour") paintModal(); if (S.menu === "sr") paintNav(); return; }
   S.settings = r;
   if (key === "hide_spoilers" && S.data) S.data.hide_spoilers = on;
   if (key === "update_check" && on) upCheck(false);
@@ -4336,8 +4373,8 @@ const A = {
     }).catch(() => { t.disabled = false; toast("Could not save — is the hub running?"); });
   },
   /* settings + account */
-  adv: (v, t) => { if (S.settings) setToggle(v, t.getAttribute("aria-checked") !== "true"); }, // the switch knows its state: some live under s.mpv
-  srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
+  adv: (v, t) => { if (!S.settings) return; const on = t.getAttribute("aria-checked") !== "true"; t.setAttribute("aria-checked", String(on)); setToggle(v, on); }, // the switch knows its state: some live under s.mpv
+  srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; t.setAttribute("aria-checked", String(!S.settings[v])); await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
   setgo: (v, t) => { const tab = t.dataset.t; setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
   srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
@@ -4468,23 +4505,13 @@ const A = {
     if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
   },
   tourpick: (v) => { S.tour.choice = v; paintModal(); },
-  tourmpv: (v) => {
-    api("/api/settings", v === "own" ? TOUR_OWN : TOUR_HUB).then((r) => {
-      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
-      S.settings = r; paintModal();
-    }).catch(() => toast("Could not save — is the hub running?"));
-  },
-  tourlook: (v) => {
-    const own = v === "own";
-    api("/api/settings", own ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }).then((r) => {
-      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
-      S.settings = r; paintModal();
-    }).catch(() => toast("Could not save — is the hub running?"));
-  }, tourback: () => { S.tour.step--; paintModal(true); },
+  tourmpv: (v) => { const x = v === "own" ? "own" : "on"; tourSave(v === "own" ? TOUR_OWN : TOUR_HUB, (m) => { m.fullscreen = x; m.smooth = x; }); },
+  tourlook: (v) => tourSave(v === "own" ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }, (m) => { m.design = v === "own" ? "own" : "on"; if (v !== "own") m.look = v; }),
+  tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < (S.settings?.background_ok ? 7 : 6)) { T.step++; return paintModal(true); }
+    if (T.step < (S.settings?.background_ok ? 8 : 7)) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList
@@ -5042,7 +5069,7 @@ let swFrame = 0, swWrite = null;
 function swSet(fn) { swWrite = fn; if (!swFrame) swFrame = requestAnimationFrame(() => { swFrame = 0; const f = swWrite; swWrite = null; f && f(); }); }
 function swBegin(el) { document.body.classList.add("swiping"); el.style.willChange = "transform"; }
 function swEnd(el) { document.body.classList.remove("swiping"); if (el) el.style.willChange = ""; }
-const TAB_NAME = { home: "Home", library: "Library", history: "Journal" };
+const TAB_NAME = { home: "Home", library: "Library", history: "Journal", week: "Calendar" };
 document.addEventListener("touchstart", (e) => {
   pull = null;
   if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
@@ -5059,15 +5086,15 @@ document.addEventListener("touchstart", (e) => {
   } else if (t.closest?.(".rbar") && !t.closest("button")) pull = { kind: "rbar", y };
   else if (isPhone() && inApp && x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture
     const ptrOK = scrollY <= 0 && ["home", "library", "history", "stats", "week"].includes(S.view) && !ptrBusy;
-    if (["home", "library", "history", "stats"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
-    else if (["show", "fr", "week", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
+    if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
+    else if (["show", "fr", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
   }
 }, { passive: true });
-/* Sideways: Home ⇄ Library ⇄ Journal, or back from a page. The page
+/* Sideways: Home ⇄ Library ⇄ Journal ⇄ Calendar, or back from a page. The page
    follows the finger; past ~30 % of the width (or a flick) it goes. */
 function sideTarget(p, dx) {
   if (p.kind === "back") return dx > 0 ? { label: "Back", side: "left" } : null;
-  const order = ["home", "library", "history"], at = order.indexOf(S.view === "stats" ? "history" : S.view), to = order[at + (dx < 0 ? 1 : -1)];
+  const order = ["home", "library", "history", "week"], at = order.indexOf(S.view === "stats" ? "history" : S.view), to = order[at + (dx < 0 ? 1 : -1)];
   return to ? { to, label: TAB_NAME[to], side: dx < 0 ? "right" : "left" } : null;
 }
 document.addEventListener("touchmove", (e) => {
