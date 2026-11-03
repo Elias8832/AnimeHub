@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import LOADED_AT, anicli, anilist, background, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update
+from . import LOADED_AT, anicli, anilist, background, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -694,6 +694,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(update.check())
         elif route == "/api/update-install":
             self.send_json(update.install())
+        elif route == "/api/playlists":
+            # Additive (Decision 64): one route, {op: create/rename/delete/add/remove/move}.
+            try:
+                self.send_json(playlists.apply(body))
+            except playlists.PlaylistError as e:
+                self.send_json({"error": str(e)}, 400)
         elif route == "/api/keep-local":
             # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
             if self._fields(body, strings=("show_id",)):

@@ -38,6 +38,9 @@ const ICONS = {
   ext: ['<path d="M7 17 17 7m0 0H9m8 0v8"/>'],
   download: ['<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/>'],
   close: ['<path d="M6 6l12 12M18 6 6 18"/>'],
+  list: ['<path d="M4 6h16M4 12h16M4 18h9"/>'],
+  pin: ['<path d="M9.5 3.5h5l-.9 5.2 3.4 3.3v1.8H7v-1.8l3.4-3.3zM12 13.8V20.5"/>'],
+  trash: ['<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>'],
   plus: ['<path d="M12 5v14M5 12h14"/>'],
   minus: ['<path d="M5 12h14"/>'],
   clock: ['<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'],
@@ -61,6 +64,55 @@ const ICONS = {
   cal: ['<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4m7-4v4"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
+/* Lucide icons (ISC licence, web/icons/LICENSE-lucide.txt), the set T3 Code's
+   project icons use plus some for anime moods: a playlist's icon (Decision 64). */
+const LUCIDE = {
+  "folder-code": '<path d="M10 10.5 8 13l2 2.5"/><path d="m14 10.5 2 2.5-2 2.5"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>',
+  "code": '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+  "terminal": '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  "earth": '<path d="M21.54 15H17a2 2 0 0 0-2 2v4.54"/><path d="M7 3.34V5a3 3 0 0 0 3 3a2 2 0 0 1 2 2c0 1.1.9 2 2 2a2 2 0 0 0 2-2c0-1.1.9-2 2-2h3.17"/><path d="M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05"/><circle cx="12" cy="12" r="10"/>',
+  "server": '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+  "database": '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+  "bot": '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  "sparkles": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+  "smartphone": '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
+  "monitor": '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+  "cloud-cog": '<circle cx="12" cy="17" r="3"/><path d="M4.2 15.1A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.2"/><path d="m15.7 18.4-.9-.3"/><path d="m9.2 15.9-.9-.3"/><path d="m10.6 20.7.3-.9"/><path d="m13.1 14.2.3-.9"/><path d="m13.6 20.7-.4-1"/><path d="m10.8 14.3-.4-1"/><path d="m8.3 18.6 1-.4"/><path d="m14.7 15.8 1-.4"/>',
+  "box": '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  "book-open": '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  "flask-conical": '<path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>',
+  "shield": '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  "rocket": '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  "gamepad-2": '<line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/>',
+  "music": '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  "image": '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  "shopping-bag": '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  "git-branch": '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  "workflow": '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  "wrench": '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  "layers": '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+  "heart": '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  "star": '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>',
+  "flame": '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  "zap": '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  "moon": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  "cloud-rain": '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/>',
+  "snowflake": '<line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>',
+  "leaf": '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>',
+  "coffee": '<path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/>',
+  "tv": '<rect width="20" height="15" x="2" y="7" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/>',
+  "film": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
+  "clapperboard": '<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+  "popcorn": '<path d="M18 8a2 2 0 0 0 0-4 2 2 0 0 0-4 0 2 2 0 0 0-4 0 2 2 0 0 0-4 0 2 2 0 0 0 0 4"/><path d="M10 22 9 8"/><path d="m14 22 1-14"/><path d="M20 8c.5 0 .9.4.8 1l-2.6 12c-.1.5-.7 1-1.2 1H7c-.6 0-1.1-.4-1.2-1L3.2 9c-.1-.6.3-1 .8-1Z"/>',
+  "swords": '<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" x2="9" y1="14" y2="18"/><line x1="7" x2="4" y1="17" y2="20"/><line x1="3" x2="5" y1="19" y2="21"/>',
+  "ghost": '<path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
+  "skull": '<path d="m12.5 17-.5-1-.5 1h1z"/><path d="M15 22a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20v1a1 1 0 0 0 1 1z"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="12" r="1"/>',
+  "laugh": '<circle cx="12" cy="12" r="10"/><path d="M18 13a6 6 0 0 1-6 5 6 6 0 0 1-6-5h12Z"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/>',
+  "crown": '<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/>',
+  "trophy": '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
+};
+const lu = (n, c = "") => (LUCIDE[n] ? `<svg class="ico lu${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${LUCIDE[n]}</svg>` : "");
 const FMT = { TV: "TV", TV_SHORT: "TV short", MOVIE: "Movie", OVA: "OVA", ONA: "ONA", SPECIAL: "Special", MUSIC: "Music" };
 const fmtName = (f) => FMT[f] || f;
 /* Escape text and wrap the first case-insensitive match of q in <mark>. */
@@ -232,7 +284,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* Appearance (Decision 38): device preferences in localStorage, put on
    <html> by index.html before first paint. The accent follows the show on
    screen unless one colour is picked. */
-const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["classic", "tabs", "line", "capsule", "island"] };
+const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["classic", "tabs", "line", "capsule", "island"], fan: ["fan", "wide", "cascade", "peek"] };
 const ACCENTS = ["#f2a46f", "#b8d7c6", "#9ccbe8", "#e58ccf", "#e6c27c", "#c3a6f2"];
 /* The tab's icon wears the chosen accent (TODO 139, Decision 59); "follow" keeps the default. */
 const ACCENT_ICONS = { "#f2a46f": "orange", "#b8d7c6": "sage", "#9ccbe8": "blue", "#e58ccf": "pink", "#e6c27c": "gold", "#c3a6f2": "violet" };
@@ -256,7 +308,7 @@ async function api(path, body) {
 /* The bottom popup. kind "busy" stays with a spinner until toastDone or the next popup. */
 function toast(m, kind) {
   const t = $("#toast"), k = kind || (/could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m) ? "err" : "ok");
-  t.dataset.k = k;
+  t.dataset.k = k; t.classList.remove("act");
   t.innerHTML = `<span class="ti">${k === "busy" ? '<i class="tsp"></i>' : ico(k === "err" ? "close" : "check")}</span><span class="tm"></span>`;
   t.querySelector(".tm").textContent = m;
   t.classList.add("on");
@@ -372,6 +424,7 @@ function Home() {
     body += weekHTML(airing);
   }
   const recs = recsFor();
+  body += plHomeHTML(); // pinned playlists (Decision 64)
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="mut">from AniList, based on what you rated highly</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="mut">on disk, not started</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
     `<button class="rc" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
@@ -460,6 +513,7 @@ function libModel() {
   if (sp.entries.length) tabs.unshift({ k: "ALL", l: "All", n: new Set(sp.entries.map(libKey)).size });
   const untracked = sp.untracked.map(showById).filter((s) => s && (s.meta?.anilist_id || s.kept_local));
   const unmatched = unmatchedShows(), unclear = unclearShows(), look = new Set([...unmatched, ...unclear]).size;
+  if (sp.entries.length || S.data.playlists?.length) tabs.push({ k: "PLAYLISTS", l: "Playlists", n: S.data.playlists?.length || 0, side: true });
   if (untracked.length) tabs.push({ k: "UNTRACKED", l: "On disk only", n: untracked.length, side: true });
   if (look) tabs.push({ k: "MATCH", l: "Needs a look", n: look, attn: true, side: true });
   return { tabs, entries: sp.entries, untracked, unmatched, unclear };
@@ -490,6 +544,296 @@ function genreCounts(m) {
   return [...c].map(([g, set]) => [g, set.size]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 /* @lib:end */
+/* Playlists (Decision 64): your own named lists of shows, in your order. A
+   show is "aid:<AniList id>", else "sid:<folder id>". */
+/* @pl:start */
+const plEntryRef = (e) => (aniMode() ? `aid:${e.id}` : e.media_id ? `aid:${e.media_id}` : `sid:${e.local_show_id || e.id}`);
+const plShowRef = (s) => (s.meta?.anilist_id ? `aid:${s.meta.anilist_id}` : s.id.startsWith("aid:") ? s.id : `sid:${s.id}`);
+function plFind(ref) {
+  const entries = S.data.spine?.entries || [];
+  if (ref.startsWith("sid:")) {
+    const show = showById(ref.slice(4));
+    return { show, entry: entries.find((e) => show && e.local_show_id === show.id) || null };
+  }
+  const id = +ref.slice(4), entry = entries.find((e) => (e.media_id ?? e.id) === id) || null;
+  const sid = entry?.local_show_id || entry?.stream_show_id;
+  const show = (sid && showById(sid)) || allShows().find((x) => x.meta?.anilist_id === id) || showById("aid:" + id);
+  return { show, entry };
+}
+const plCurrent = () => (S.lib.tab === "PLAYLISTS" && (S.data.playlists || []).find((p) => p.id === S.lib.pl)) || null;
+const plCount = (n) => `${n} show${n === 1 ? "" : "s"}`;
+/* The Playlists tab (Elias, from his drawing: "whichever the mouse hovers over
+   gets a bit bigger and the others shrink", like Netflix): one wide row per
+   playlist, its shows as panels side by side that fill the row. */
+const plColor = (p) => p.color || "rgba(255,255,255,.32)";
+const plIcon = (p, c = "") => (p.icon && LUCIDE[p.icon] ? `<span class="plico${c ? " " + c : ""}">${lu(p.icon)}</span>` : "");
+const plTitle = (p) => `${plIcon(p)}<span class="pln">${esc(p.name)}</span>`;
+/* One playlist = one box of fixed size (Elias's drawing, 2026-11-03): its first
+   three shows side by side inside it, the first wide; hovered, a show takes the
+   width and the others narrow. The box never changes size. */
+/* A playlist is a stack of cards (Elias, 2026-11-03, from the empty box he
+   liked): the front card is one show's big banner, the next shows peek out
+   behind it and fan open on hover, and scrolling up over the stack flips to
+   the next one (plFlip). */
+const PL_STACK_MAX = 30;
+function plArt(it) {
+  const { show, entry } = plFind(it.ref), banner = entry?.banner || show?.banner;
+  return { url: banner || entry?.poster || show?.poster || it.poster, wide: !!banner };
+}
+const plPos = (i, k, n) => { const r = (i - k + n) % n; return r < 3 ? String(r) : "hide"; };
+function plStack(p) {
+  const shows = p.items.slice(0, PL_STACK_MAX), n = shows.length;
+  if (!n) return `<div class="plstack empty n0"><div class="plcard" data-pos="0"><span class="plnone2">${plIcon(p) || `<span class="plico">${ico("list")}</span>`}<small>No shows yet</small></span></div></div>`;
+  const k = Math.min((S.plFlip ||= {})[p.id] || 0, n - 1);
+  const card = (it, i) => {
+    const art = plArt(it);
+    return `<div class="plcard${art.wide ? " wide" : ""}" data-pos="${plPos(i, k, n)}">${poster(it.title, art.url)}<span class="fname" data-a="plopen" data-v="${esc(it.ref)}" role="link" tabindex="0" title="Open ${esc(it.title)}">${esc(it.title)}${ico("chevr")}</span></div>`;
+  };
+  return `<div class="plstack n${Math.min(n, 3)}" data-pl="${p.id}" data-n="${n}">${shows.map(card).join("")}${n > 1 ? `<button class="plctr" data-a="plflip" data-v="${p.id}" title="Next show (or scroll over the picture)"><b>${k + 1}</b> / ${n}</button>` : ""}</div>`;
+}
+function plBox(p, i, act = "plgo") {
+  const facts = [plCount(p.items.length), p.note].filter(Boolean).map(esc).join(" · ");
+  return `<div class="plbox" style="--plc:${esc(plColor(p))};--i:${Math.min(i, 24)}" data-pl="${p.id}" data-a="${act}" data-v="${p.id}" role="button" tabindex="0" aria-label="Open the playlist ${esc(p.name)}">
+    ${plStack(p)}
+    <div class="plcap"><h3>${plIcon(p) || (p.color ? '<i class="pldot"></i>' : "")}<span class="pln">${esc(p.name)}</span>${p.pinned && act === "plgo" ? `<span class="plpin" title="Pinned to Home">${ico("pin")}</span>` : ""}<span class="plgo">${ico("chevr")}</span></h3><div class="m">${facts}</div></div></div>`;
+}
+const plNewBox = () => `<button class="plbox plnewbox" data-a="plnew"><span class="plstack"><span class="plnew">${ico("plus")}<span>New playlist</span></span></span><span class="plcap"><h3><span class="pln">&nbsp;</span></h3></span></button>`;
+/* "Add a show" inside a playlist: your library's shows by name, minus the ones already on it. */
+function plAddCands(q, p) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const sp = S.data.spine, seen = new Set(p.items.map((x) => x.ref)), out = [];
+  const push = (ref, title, posterUrl, sub) => { if (!seen.has(ref) && title && words.every((w) => title.toLowerCase().includes(w))) { seen.add(ref); out.push({ ref, title, poster: posterUrl || null, sub }); } };
+  for (const e of sp?.entries || []) push(plEntryRef(e), e.title, e.poster, [FMT[e.format] || e.format, e.year].filter(Boolean).join(" · "));
+  for (const s of [...(sp ? (sp.untracked || []).map(showById) : S.data.shows || []), ...(S.data.streams || [])]) if (s) push(plShowRef(s), s.title, s.poster, "");
+  return out.slice(0, 8);
+}
+/* The Library's own cards (Elias: "like in the library"); a show on no
+   list and no disk keeps the title and poster saved with it. */
+function plItemCard(it, i, all) {
+  const { show, entry } = plFind(it.ref);
+  const card = entry ? entryCard(entry, i) : show ? showCard(show, i)
+    : `<button class="card" style="--i:${Math.min(i, 24)}" data-a="plopen" data-v="${esc(it.ref)}" data-poster="${esc(it.poster || "")}"><div class="pw">${poster(it.title, it.poster)}</div><h3><span class="ttl">${esc(it.title)}</span></h3></button>`;
+  return `<div class="plit" data-ref="${esc(it.ref)}" style="--i:${Math.min(i, 24)}">${card}<span class="plno">${i + 1}</span><button class="plx" data-a="plremove" data-v="${esc(it.ref)}" aria-label="Remove ${esc(it.title)} from the playlist" title="Remove from the playlist">${ico("close")}</button>
+    <div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico("chevl")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico("chevr")}</button></div></div>`;
+}
+/* An open playlist's header: one slim bar (Elias took the big cover header out). */
+function plHead(p) {
+  const facts = [plCount(p.items.length), p.note].filter(Boolean).map(esc).join(" · ");
+  return `<div class="plhead" style="--plc:${esc(plColor(p))}"><button class="btn sm" data-a="plback">${ico("chevl")}Playlists</button>
+    <div class="pltitle"><h2>${plIcon(p)}<span>${esc(p.name)}</span></h2><span class="plsum">${facts}${p.items.length > 1 ? '<span class="pltip"> · drag a poster to move it</span>' : ""}</span></div>
+    <span class="fill"></span>
+    <div class="pladd"><span class="pai">${ico("plus")}</span><input id="plq" type="search" autocomplete="off" placeholder="Add a show" aria-label="Add a show to this playlist" value="${esc(S.plq || "")}"><div class="plres" id="plres"></div></div>
+    <button class="btn sm${p.pinned ? " on" : ""}" data-a="plpin" aria-pressed="${p.pinned}" title="${p.pinned ? "Shown on Home" : "Show this playlist on Home"}">${ico("pin")}${p.pinned ? "On Home" : "Pin to Home"}</button>
+    <button class="btn sm ic" data-a="pledit" aria-label="Edit the playlist" title="Name, icon, description, colour">${ico("edit")}</button><button class="btn sm ic" data-a="pldelete" aria-label="Delete the playlist" title="Delete">${ico("trash")}</button></div>`;
+}
+const plTip = (coarse) => (coarse ? "open it and use Add to playlist in its ⋯ menu" : "right-click its poster, or use ⋯ on its page");
+const plHolds = (p, ref) => p.items.some((x) => x.ref === ref);
+const plById = (v) => (v ? (S.data.playlists || []).find((p) => p.id === +v) || null : null);
+const plReorder = (items, from, to) => { const a = [...items]; a.splice(to, 0, a.splice(from, 1)[0]); return a; };
+/* The grid cell nearest the mouse; cells stay put while cards move between them. */
+function plSlotAt(slots, x, y) {
+  let best = -1, dist = Infinity;
+  slots.forEach((r, i) => { const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)); if (d < dist) { dist = d; best = i; } });
+  return best;
+}
+/* A playlist pinned to Home: its own row there, the same fan as the Playlists tab. */
+const plHomeHTML = () => {
+  const pins = (S.data.playlists || []).filter((p) => p.pinned);
+  return pins.length ? `<section class="hsec plhome"><div class="sh"><h2>Playlists</h2><span class="mut">pinned</span><span class="fill"></span><button class="link-btn" data-a="plgoto" data-v="">All playlists${ico("arrowr")}</button></div><div class="plhomegrid">${pins.map((p, i) => plBox(p, i, "plgoto")).join("")}</div></section>` : "";
+};
+/* @pl:end */
+function plWall() {
+  const cur = plCurrent();
+  if (cur) return cur.items.map(plItemCard);
+  return [...(S.data.playlists || []).map((p, i) => plBox(p, i)), plNewBox()]; // not .map(plBox): map's third argument would become the action
+}
+function plResPaint() {
+  const box = $("#plres"), p = plCurrent();
+  if (!box || !p) return;
+  const c = plAddCands(S.plq || "", p);
+  S.plCands = c;
+  box.classList.toggle("on", !!(S.plq || "").trim());
+  box.innerHTML = !(S.plq || "").trim() ? "" : c.length ? c.map((x, i) => `<button class="mi${i ? "" : " sel"}" data-a="pladdq" data-v="${i}">${poster(x.title, x.poster, { c: "t" })}<span><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ""}</span></button>`).join("")
+    : `<p class="plnone">Nothing in your library by that name${p.items.length ? " that isn't on here already" : ""}.</p>`;
+}
+/* Flip a stack by one card. Forward: the front card drops away and the next
+   rises; back: the previous card comes up from below. Only data-pos changes,
+   so CSS moves the cards; the place is kept per playlist in S.plFlip. */
+function plFlip(stack, d) {
+  const n = +stack.dataset.n;
+  if (n < 2) return;
+  const cards = [...stack.querySelectorAll(".plcard")], k0 = (S.plFlip ||= {})[stack.dataset.pl] || 0, k = (Math.min(k0, n - 1) + d + n) % n;
+  S.plFlip[stack.dataset.pl] = k;
+  const calm = reduceMotion();
+  cards.forEach((c, i) => {
+    const pos = plPos(i, k, n);
+    if (!calm && d > 0 && i === (k - 1 + n) % n) { // the old front drops away, then goes to the back
+      c.dataset.pos = "out";
+      // then, unseen, to the very back, and from there it fades into its place (with three shows that place is visible: no pop)
+      setTimeout(() => { c.classList.add("snap"); c.dataset.pos = "hide"; void c.offsetWidth; c.classList.remove("snap"); c.dataset.pos = plPos(i, S.plFlip[stack.dataset.pl], n); }, 200);
+    } else if (!calm && d < 0 && i === k) { // the previous one comes up from below
+      c.classList.add("snap"); c.dataset.pos = "out"; void c.offsetWidth; c.classList.remove("snap"); c.dataset.pos = "0";
+    } else c.dataset.pos = pos;
+  });
+  const ctr = stack.querySelector(".plctr b");
+  if (ctr) ctr.textContent = k + 1;
+}
+/* Scrolling over a stack flips it instead of the page: one card per flick of
+   the wheel, and a touchpad's long glide doesn't race through the list. */
+document.addEventListener("wheel", (e) => {
+  const st = e.target.closest?.(".plstack[data-n]");
+  if (!st || +st.dataset.n < 2 || e.ctrlKey || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+  e.preventDefault();
+  const now = Date.now(), w = (st._w ||= { acc: 0, last: 0, flip: 0 });
+  if (now - w.last > 200) w.acc = 0; // a new flick
+  w.last = now; w.acc += e.deltaY;
+  if (Math.abs(w.acc) < 24 || now - w.flip < 450) return; // at most one card per 450 ms
+  plFlip(st, w.acc < 0 ? 1 : -1); // up = the next show (Elias: up counts up)
+  w.acc = 0; w.flip = now;
+}, { passive: false });
+/* A popup with an Undo button (Elias picked it: removing a show or deleting a playlist). */
+function toastUndo(m, undo) {
+  toast(m);
+  const t = $("#toast");
+  t.classList.add("act");
+  t.insertAdjacentHTML("beforeend", '<button class="tact" data-a="undo">Undo</button>');
+  S.undo = undo;
+  clearTimeout(toast.h);
+  toast.h = setTimeout(() => { t.classList.remove("on"); S.undo = null; }, 6000);
+}
+async function plRemove(p, ref) {
+  const at = p.items.findIndex((x) => x.ref === ref), item = p.items[at];
+  if (!item || !(await plPost({ op: "remove", id: p.id, ref }))) return;
+  if (S.view === "library") render(true);
+  toastUndo(`Removed ${item.title} from ${p.name}`, async () => { if (await plPost({ op: "add", id: p.id, item, at })) render(true); });
+}
+const plPost = (body) => api("/api/playlists", body).then((r) => {
+  if (r.error) { toast(r.error, "err"); return null; }
+  S.data.playlists = r.playlists;
+  return r;
+}, () => { toast("Could not reach the hub.", "err"); return null; });
+/* Drag to reorder (Elias: "pick them up with my mouse"): the card follows the
+   mouse, the others slide out of the way, the drop is saved as one move.
+   Mouse only; touch keeps the arrows, since a finger drag is a scroll there. */
+let plDrag = null, plDropped = 0;
+document.addEventListener("pointerdown", (e) => {
+  if (e.pointerType !== "mouse" || e.button !== 0 || plDrag) return;
+  const it = e.target.closest?.("#wall .plit, #wall .plbox[data-pl]");
+  if (!it || e.target.closest(".plctl, .plx") || !!plCurrent() !== it.classList.contains("plit")) return;
+  plDrag = { it, x: e.clientX, y: e.clientY, on: false, id: e.pointerId };
+});
+document.addEventListener("dragstart", (e) => { if (e.target.closest?.("#wall .plit, #wall .plbox")) e.preventDefault(); }); // the poster image's own drag
+document.addEventListener("pointermove", (e) => {
+  const d = plDrag;
+  if (!d || e.pointerId !== d.id) return;
+  if (!d.on) {
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+    plDragStart(d);
+  }
+  d.px = e.clientX; d.py = e.clientY;
+  plDragMove(d);
+});
+document.addEventListener("pointerup", (e) => { if (plDrag && e.pointerId === plDrag.id) plDragEnd(true); });
+document.addEventListener("pointercancel", (e) => { if (plDrag && e.pointerId === plDrag.id) plDragEnd(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && plDrag?.on) { e.preventDefault(); e.stopImmediatePropagation(); plDragEnd(false); } }, true);
+/* The click that ends a drag must not open the show. */
+document.addEventListener("click", (e) => { if (plDropped > Date.now() - 400) { e.preventDefault(); e.stopPropagation(); } }, true);
+function plDragStart(d) {
+  const wall = d.it.parentNode, w = wall.getBoundingClientRect(), r = d.it.getBoundingClientRect();
+  d.on = true; d.wall = wall; d.z = zoomGet() / 100;
+  d.from = [...wall.children].indexOf(d.it);
+  d.dx = d.x - r.left; d.dy = d.y - r.top;
+  d.list = d.it.classList.contains("plbox");
+  d.n = wall.querySelectorAll(d.list ? ".plbox[data-pl]" : ".plit").length; // the New playlist box stays last
+  d.slots = [...wall.children].slice(0, d.n).map((x) => { const b = x.getBoundingClientRect(); return { left: b.left - w.left, top: b.top - w.top, width: b.width, height: b.height }; });
+  d.it.classList.add("lift");
+  document.documentElement.classList.add("pldragging");
+  getSelection()?.removeAllRanges();
+  try { wall.setPointerCapture(d.id); } catch {}
+  const edge = () => { // scroll while held near the top or bottom
+    if (!plDrag?.on) return;
+    const m = 70, v = d.py < m ? -(m - d.py) / 4 : d.py > innerHeight - m ? (d.py - innerHeight + m) / 4 : 0;
+    if (v) { scrollBy(0, v); plDragMove(d); }
+    d.raf = requestAnimationFrame(edge);
+  };
+  d.raf = requestAnimationFrame(edge);
+}
+function plDragMove(d) {
+  const kids = [...d.wall.children], w = d.wall.getBoundingClientRect();
+  const to = plSlotAt(d.slots, d.px - w.left, d.py - w.top), at = kids.indexOf(d.it);
+  if (to >= 0 && to !== at) {
+    const others = kids.filter((x) => x !== d.it), before = new Map(others.map((x) => [x, x.getBoundingClientRect()]));
+    d.wall.insertBefore(d.it, others[to] || null);
+    if (!reduceMotion()) for (const x of others) {
+      const a = before.get(x), b = x.getBoundingClientRect();
+      if (a.left !== b.left || a.top !== b.top) x.animate([{ transform: `translate(${(a.left - b.left) / d.z}px,${(a.top - b.top) / d.z}px)` }, { transform: "none" }], { duration: 200, easing: "cubic-bezier(.2,.7,.2,1)" });
+    }
+  }
+  d.it.style.transform = "none";
+  const r = d.it.getBoundingClientRect();
+  d.it.style.transform = `translate(${(d.px - d.dx - r.left) / d.z}px,${(d.py - d.dy - r.top) / d.z}px)`;
+}
+async function plDragEnd(keep) {
+  const d = plDrag;
+  if (!d.on) { plDrag = null; return; }
+  cancelAnimationFrame(d.raf);
+  const wall = d.wall, kids = [...wall.children];
+  if (!keep) wall.insertBefore(d.it, kids.filter((x) => x !== d.it)[d.from] || null);
+  const to = [...wall.children].indexOf(d.it), moved = d.it.style.transform;
+  d.it.classList.remove("lift"); d.it.style.transform = "";
+  if (!reduceMotion() && moved) d.it.animate([{ transform: moved }, { transform: "none" }], { duration: 180, easing: "cubic-bezier(.2,.7,.2,1)" });
+  document.documentElement.classList.remove("pldragging");
+  plDrag = null; plDropped = Date.now();
+  const p = plCurrent();
+  if (keep && to !== d.from && d.list) {
+    const id = S.data.playlists[d.from].id;
+    S.data.playlists = plReorder(S.data.playlists, d.from, to);
+    paintWall();
+    if (!(await plPost({ op: "move_list", id, by: to - d.from }))) refreshData().then(() => render(true));
+  } else if (keep && p && to !== d.from) {
+    const ref = p.items[d.from].ref;
+    p.items = plReorder(p.items, d.from, to);
+    paintWall();
+    if (!(await plPost({ op: "move", id: p.id, ref, by: to - d.from }))) refreshData().then(() => render(true));
+  } else if (d.pending) render(true);
+  if (d.pending && keep && to !== d.from) render(true);
+}
+/* The add menu, in the episode-menu box: a tick on the playlists it's on. */
+function plMenu(item, x, y) {
+  S.plItem = item;
+  const m = $("#cm"), all = S.data.playlists || [];
+  m.innerHTML = `<div class="cap">Add to playlist · ${esc(item.title)}</div>${all.map((p) => {
+    const on = plHolds(p, item.ref);
+    return `<button class="mi plmi${on ? " on" : ""}" style="--plc:${esc(plColor(p))}" data-a="pltoggle" data-v="${p.id}" aria-pressed="${on}"><span class="plmt">${p.icon && LUCIDE[p.icon] ? lu(p.icon) : ico("list")}</span><span class="ml"><b>${esc(p.name)}</b><small>${plCount(p.items.length)}</small></span><span class="plmc">${ico("check")}</span></button>`;
+  }).join("")}${all.length ? '<div class="sep"></div>' : ""}${cmRow("plnew", "item", "plus", "New playlist")}`;
+  cmShow(m, x, y);
+}
+/* Right-click on a playlist box: open, edit, pin, delete. */
+function plBoxMenu(id, x, y, home) {
+  const p = plById(id);
+  if (!p) return;
+  const m = $("#cm");
+  m.innerHTML = `<div class="cap plcapm" style="--plc:${esc(plColor(p))}">${plIcon(p)}${esc(p.name)}</div>${cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open")}${cmRow("pledit", p.id, "edit", "Edit")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home")}<div class="sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "", "", 'data-danger="1"')}`;
+  cmShow(m, x, y);
+}
+const PL_COLORS = [...ACCENTS, "#e5737a", "#7fd1c7"];
+/* New playlist / Edit: name, then the looks Elias picked (icon, description, colour). */
+function PlNameDlg() {
+  const m = S.modal;
+  return `<h2 id="dt">${m.id ? "Edit playlist" : "New playlist"}</h2>${m.item ? `<p class="sub">${esc(m.item.title)} goes on it first.</p>` : ""}
+  <div class="plform"><label class="plf"><span>Name</span><input id="plname" maxlength="60" placeholder="Name" value="${esc(m.name || "")}"></label>
+  <label class="plf"><span>Description <small>optional</small></span><input id="plnote" maxlength="140" placeholder="What's on it, or when to watch it" value="${esc(m.note || "")}"></label>
+  <div class="plf"><span>Icon <small>optional</small></span><div class="plicons" role="group" aria-label="Icon"><button class="pic none${m.icon ? "" : " on"}" data-a="plicon" data-v="" aria-label="No icon" aria-pressed="${!m.icon}" title="No icon">${ico("close")}</button>${Object.keys(LUCIDE).map((n) => `<button class="pic${m.icon === n ? " on" : ""}" data-a="plicon" data-v="${n}" aria-label="${n}" aria-pressed="${m.icon === n}" title="${n.replace(/-/g, " ")}">${lu(n)}</button>`).join("")}</div></div>
+  <div class="plf"><span>Colour</span><div class="plcols"><button class="sw none${m.color ? "" : " on"}" data-a="plcol" data-v="" aria-label="No colour" aria-pressed="${!m.color}">${ico("close")}</button>${PL_COLORS.map((c) => `<button class="sw${m.color === c ? " on" : ""}" style="--c:${c}" data-a="plcol" data-v="${c}" aria-label="Colour ${c}" aria-pressed="${m.color === c}"></button>`).join("")}</div></div></div>
+  <div class="msg">${esc(m.err || "")}</div>
+  <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="plsave" ${m.busy ? "disabled" : ""}>${m.id ? "Save" : "Create"}</button></div>`;
+}
+/* Typed fields survive the dialog repainting (a swatch or icon click). */
+function plDlgRead() {
+  const m = S.modal;
+  for (const [k, id] of [["name", "#plname"], ["note", "#plnote"]]) { const el = $(id); if (el) m[k] = el.value; }
+}
 /* A poster card (Decision 38): source + score tags on the art, progress at
    its foot, the title and a mono fact line below. */
 const CAPW = { installed: "disk", partial: "partial", online: "online", none: "" };
@@ -655,6 +999,7 @@ function Lib() {
   if (note) notes.push(`<div class="note-bar">${esc(note)}${d.scan?.root === "changed" ? ' <button class="btn" data-a="adopt">Connect folder</button>' : ""}</div>`);
   else if (d.meta_running && d.meta_pending > 0) notes.push(`<div class="note-bar metanote"><i class="spin"></i><span>${esc(metaText(d))}</span></div>`);
   if (m.cold && S.ani?.connected) notes.push('<div class="note-bar">Your AniList lists are still loading — showing what is on disk.</div>');
+  const isPl = S.lib.tab === "PLAYLISTS" && !m.cold, plCur = isPl ? plCurrent() : null;
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
   const files = d.shows.reduce((a, x) => a + epTotal(x), 0);
   const sum = [`<span><b>${m.entries.length ? new Set(m.entries.map(libKey)).size : d.shows.length}</b> shows</span>`, files ? `<span><b>${files.toLocaleString()}</b> files on disk</span>` : "",
@@ -662,7 +1007,8 @@ function Lib() {
   const tab = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}${t.attn ? " attn" : ""}" data-a="tab" data-v="${t.k}">${t.l}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
   const tabs = m.tabs.length ? `<div class="tabs" data-glide="libtabs">${m.tabs.filter((t) => !t.side).map(tab).join("")}${m.tabs.some((t) => t.side) ? '<i class="vs"></i>' : ""}${m.tabs.filter((t) => t.side).map(tab).join("")}</div>` : "";
   let main;
-  if (isMatch) {
+  if (isPl) main = `${plCur ? plHead(plCur) : `<p class="intro plintro">Your own lists of shows, in your order.<span>To add a show, ${plTip(mq("(pointer:coarse)"))}.${mq("(pointer:coarse)") ? "" : " Drag a box to move it."}</span></p>`}<div id="wall"></div>`;
+  else if (isMatch) {
     autoSuggest(m.unmatched);
     main = `${m.unmatched.length ? `<p class="intro">On disk, but not matched to AniList yet. Pick the right show and it joins your library — or keep it local.</p><div class="mgrid">${m.unmatched.map(matchUI).join("")}</div>` : ""}
       ${m.unclear.length ? `<p class="intro">Episode numbers to check: these file names don't say which episode they are, so they're numbered in file order. Fix any that are wrong, then save. Your files aren't renamed.</p><div class="mgrid">${m.unclear.map(numUI).join("")}</div>` : ""}`;
@@ -700,13 +1046,13 @@ function gtrayFit() {
 }
 function paintWall(fade) {
   const w = $("#wall");
-  if (!w) return;
+  if (!w || plDrag?.on) return;
   const m = libModel();
-  const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
+  const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
   let html = cards.join("");
-  const empty = `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
+  const empty = S.lib.tab === "PLAYLISTS" ? `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("list")}</div><b>Nothing on this playlist yet.</b><span>Type a name in the box above. ${mq("(pointer:coarse)") ? "Or open a show and use Add to playlist in its ⋯ menu." : "Or right-click a show's poster in the Library."}</span><button class="btn pri" data-a="plfocus">${ico("plus")}Add a show</button></div>` : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
   const fx = fade && !reduceMotion();
-  w.className = "wall" + (fx ? " fade" : "");
+  w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !plCurrent() && !m.cold ? " plgrid" : "") + (fx ? " fade" : "");
   clearTimeout(paintWall.more);
   /* A fresh wall shows its first screenful at once and the rest in batches
      over the next frames — building all ~300 cards in one go froze the page
@@ -1095,6 +1441,7 @@ function frMore(x0, y0) {
   const m = $("#cm");
   clearTimeout(cmHide.t); m.classList.remove("closing");
   m.innerHTML = `<div class="cap">${esc(e.title || p.title)}</div>
+    <button class="mi" data-a="pladd" data-r="aid:${e.id}" data-t="${esc(e.title || p.title)}" data-p="${esc(e.poster || p.poster || "")}">${ico("list")}Add to playlist</button>
     ${e.slots.some((x) => playableSlot(e, x)) ? `<button class="mi" data-a="selmode">${ico("checkc")}${picking ? "Stop selecting" : "Select episodes"}</button>` : ""}
     ${folders.length ? `<button class="mi" data-a="folder" data-v="${esc(folders[0].show_id)}">${ico("folder")}Open the folder</button>` : ""}
     ${folders.map((l) => `<button class="mi" data-a="pinopen" data-s="${esc(l.show_id)}" data-k="${esc(l.season)}" data-l="${esc(l.folder + " · " + l.season_label)}">${ico("tv")}Wrong season? <small>${esc(l.season_label)}</small></button>`).join("")}
@@ -1205,6 +1552,7 @@ function Det() {
       ${sea && sea.episodes.length ? `<button class="btn big" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}${seaAll ? "Unwatch season" : "Mark season watched"}</button>` : ""}
       ${s.seasons.length > 1 && flat.length ? `<button class="btn big" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}${showAll ? "Unwatch all" : "Mark all watched"}</button>` : ""}
       ${flat.length ? `<button class="btn big${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}${S.sel?.show === s.id ? "Done" : "Select"}</button>` : ""}
+      <button class="btn big ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>
       ${s.path && flat.length ? `<button class="btn big ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</div>
   </div>${s.poster ? `<div class="hp">${poster(s.title, s.poster)}</div>` : ""}</div>
   ${matched ? "" : `<div class="matchbox"><h2>Match this show</h2>${(autoSuggest([s]), matchUI(s))}</div>`}
@@ -1652,7 +2000,7 @@ function setSections(s) {
   const stateTxt = { ok: "Watching this folder.", unconfigured: "No library folder is configured yet.", missing: "The folder is not accessible right now.", partial: "Some folders could not be read — part of the library may be missing." };
   const changed = s.scan?.root === "changed", conn = !!ani.connected, off = !conn;
   return {
-    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show, or keep one colour.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture. Also in mpv's list.", tgl("hide_spoilers", "Hide spoilers", s.hide_spoilers))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "On this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
+    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show, or keep one colour.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${plFanRow()}${srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture. Also in mpv's list.", tgl("hide_spoilers", "Hide spoilers", s.hide_spoilers))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "On this device.", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}`,
     player: playerGroup(s),
@@ -1746,6 +2094,20 @@ function upscaleRow(s) {
   const look = [["natural", "Natural"], ["digital", "Digital art"]].map(([v, l]) => `<button class="${u.style === v ? "on" : ""}" aria-pressed="${u.style === v}" data-a="spref" data-k="upscale_style" data-v="${v}" ${u.on ? "" : "disabled"}>${l}</button>`).join("");
   return srow("Sharper banners", txt, (missing ? UPSCAYL_BTN : "") + tgl("upscale_banners", "Sharper banners", u.on, missing && !u.on))
     + srow("Banner look", "Digital art is crisper and takes about 3× longer.", `<span class="seg" role="group" aria-label="Banner look">${look}</span>`);
+}
+/* Playlist stacks on hover (Decision 64): four ways to open, each card shows
+   its own open stack, drawn with banners from your library. */
+const PL_FANS = [["fan", "Fan", "The cards behind tilt out a little."], ["wide", "Wide fan", "The cards behind swing far out left and right."],
+  ["cascade", "Cascade", "The cards slide into a staircase, each with its name."], ["peek", "Peek under", "The front card slides down; the others rise with their names."]];
+function plFanPreview(mode) {
+  const pool = (S.data?.spine?.entries || []).filter((e) => e.banner).slice(0, 3);
+  const arts = [0, 1, 2].map((i) => pool[i] ? { t: pool[i].title, u: pool[i].banner } : { t: ["Show one", "Show two", "Show three"][i], u: null });
+  return `<div class="plpv" data-fan="${mode}" aria-hidden="true"><div class="plstack n3">${arts.map((a, i) => `<div class="plcard wide" data-pos="${i}">${poster(a.t, a.u)}<span class="fname">${esc(a.t)}</span></div>`).join("")}</div></div>`;
+}
+function plFanRow() {
+  const cur = lookGet("fan");
+  return `<div class="srow lkrow plfanrow"><div><b>Playlist stacks</b><p>What a playlist does when the mouse is on it.</p></div><div class="ctl lkpick" role="radiogroup" aria-label="Playlist stacks">${PL_FANS.map(([v, l, line]) =>
+    `<button class="choice lkcard${cur === v ? " on" : ""}" role="radio" aria-checked="${cur === v}" data-a="look" data-k="fan" data-v="${v}">${plFanPreview(v)}<b>${l}</b><span>${line}</span></button>`).join("")}</div></div>`;
 }
 /* A segmented control for one Appearance preference. */
 function lookSeg(k, opts) {
@@ -1977,7 +2339,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
    every setting (switches flip right here) and commands — grouped, with a
    preview of the picked row and its keys. */
 const SETTINGS_INDEX = [
-  ["Accent colour", "appearance", "colour color accent theme follow"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
+  ["Accent colour", "appearance", "colour color accent theme follow"], ["Playlist stacks", "appearance", "playlist stack hover fan wide cascade peek open cards"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Hide spoilers", "appearance", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse rescan scan"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "data", "mpv ani-cli upscayl tools player"],
   ["Skip openings", "skipping", "skip opening op chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "skipping", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dub dual remember", "remember_tracks"],
@@ -2296,6 +2658,7 @@ function HomePhone() {
   if (L.length) body += `<section class="psec"><div class="sh"><h2>Also watching</h2><span class="mut">${L.length}</span></div>${L.map(watchRow).join("")}</section>`;
   if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
   const recs = recsFor();
+  body += plHomeHTML(); // pinned playlists (Decision 64)
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="fill"></span><button class="btn sm disc" data-a="deck" data-v="recs">${ico("up")}Discover</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
     `<button class="rc" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
@@ -3029,7 +3392,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -3056,7 +3419,7 @@ function paintModal(focus) {
   if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
   /* Touch: open at the top with nothing focused (focusing a field would
      scroll the sheet and pop the keyboard up). */
-  if (focus) mq("(pointer:coarse)") ? el.querySelector(".dialog")?.focus({ preventScroll: true }) : (el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
+  if (focus) mq("(pointer:coarse)") ? el.querySelector(".dialog")?.focus({ preventScroll: true }) : (el.querySelector("#plname") || el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
 }
 function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
 /* Back gesture / swipe down on a dialog: the same as tapping beside it. */
@@ -3383,6 +3746,7 @@ function morphHTML(el, html) {
 }
 const viewKey = () => S.view + "|" + (S.view === "fr" ? S.fr?.eid : S.view === "show" ? S.showId : "");
 function render(inPlace = false) {
+  if (plDrag?.on) { plDrag.pending = true; return; } // a poll mid-drag waits for the drop
   if (S.view === "show" && !showById(S.showId)) S.view = "home";
   if (S.view === "show") {
     const mid = !S.frDown[S.showId] && frEntryOfShow(showById(S.showId));
@@ -4211,6 +4575,67 @@ const A = {
     scrollTo({ top: 0, behavior: "smooth" });
   },
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
+  plgo: (v) => { S.lib.pl = +v; S.plq = ""; saveLib(); S.fadeNext = true; render(); scrollTo(0, 0); },
+  plback: () => { S.lib.pl = null; S.plq = ""; saveLib(); S.fadeNext = true; render(); },
+  plopen: (v) => {
+    const { show } = plFind(v), id = v.startsWith("aid:") ? +v.slice(4) : null;
+    if (id && (aniMode() || !show)) return openFranchise(id);
+    if (show) openShow(show.id); else toast("Can't find this folder in your library any more.", "err");
+  },
+  plmove: async (v, t) => { if (await plPost({ op: "move", id: S.lib.pl, ref: v, by: +t.dataset.d })) render(); },
+  plremove: (v) => { const p = plCurrent(); if (p) plRemove(p, v); },
+  pladd: (v, t) => { const r = t.getBoundingClientRect(); plMenu({ ref: t.dataset.r, title: t.dataset.t, poster: t.dataset.p || null }, r.left, r.bottom + 6); },
+  pltoggle: async (v) => {
+    const it = S.plItem, p = (S.data.playlists || []).find((x) => x.id === +v);
+    if (!it || !p) return;
+    if (plHolds(p, it.ref)) return plRemove(p, it.ref);
+    if (await plPost({ op: "add", id: p.id, item: it })) { toast(`Added to ${p.name}`); if (S.view === "library") render(true); }
+  },
+  pladdq: async (v) => {
+    const p = plCurrent(), it = S.plCands?.[+v];
+    if (!p || !it) return;
+    if (await plPost({ op: "add", id: p.id, item: { ref: it.ref, title: it.title, poster: it.poster } })) {
+      render(true); plResPaint();
+      const q = $("#plq"); q?.focus(); toast(`Added ${it.title}`);
+    }
+  },
+  plflip: (v, t) => { const st = t.closest(".plstack"); if (st) plFlip(st, 1); },
+  plpin: async (v) => {
+    const p = plById(v) || plCurrent();
+    if (p && await plPost({ op: "edit", id: p.id, pinned: !p.pinned })) { render(true); toast(p.pinned ? "Taken off Home" : "Pinned to Home"); }
+  },
+  plgoto: (v) => { S.lib.tab = "PLAYLISTS"; S.lib.pl = v ? +v : null; S.plq = ""; saveLib(); S.fadeNext = true; nav("library"); },
+  plnew: (v) => openModal({ t: "pln", item: v === "item" ? S.plItem : null, name: "", note: "", icon: "", color: null }),
+  pledit: (v) => { const p = plById(v) || plCurrent(); if (p) openModal({ t: "pln", id: p.id, name: p.name, note: p.note, icon: p.icon, color: p.color }); },
+  plicon: (v) => { plDlgRead(); S.modal.icon = v; paintModal(); },
+  plfocus: () => { const q = $("#plq"); if (q) { q.scrollIntoView({ block: "center", behavior: "smooth" }); q.focus({ preventScroll: true }); } },
+  plcol: (v) => { plDlgRead(); S.modal.color = v || null; paintModal(); },
+  plsave: async () => {
+    const m = S.modal;
+    if (m?.t !== "pln" || m.busy) return;
+    plDlgRead(); m.busy = true; m.err = ""; paintModal();
+    const looks = { note: m.note, icon: m.icon, color: m.color };
+    const r = await api("/api/playlists", m.id ? { op: "edit", id: m.id, name: m.name, ...looks } : { op: "create", name: m.name, looks, ...(m.item ? { item: m.item } : {}) }).catch(() => ({ error: "Could not reach the hub." }));
+    m.busy = false;
+    if (r.error) { m.err = r.error; paintModal(); return; }
+    S.data.playlists = r.playlists;
+    closeModal();
+    if (m.item) toast(`Added to ${m.name.trim()}`);
+    else if (r.created) { S.lib.tab = "PLAYLISTS"; S.lib.pl = r.created; saveLib(); }
+    if (S.view === "library" || S.view === "home") render(true);
+  },
+  /* No "are you sure?": the popup's Undo brings it back whole, in its place. */
+  pldelete: async (v) => {
+    const p = plById(v) || plCurrent(), at = (S.data.playlists || []).indexOf(p), wasOpen = S.lib.pl === p?.id;
+    if (!p || !(await plPost({ op: "delete", id: p.id }))) return;
+    if (wasOpen) { S.lib.pl = null; saveLib(); S.fadeNext = true; render(); } else render(true);
+    toastUndo(`Deleted ${p.name}`, async () => {
+      const r = await plPost({ op: "create", name: p.name, looks: { color: p.color, note: p.note, icon: p.icon, pinned: p.pinned }, items: p.items, at });
+      if (!r) return;
+      if (wasOpen && S.view === "library") { S.lib.pl = r.created; saveLib(); render(); } else render(true);
+    });
+  },
+  undo: () => { const u = S.undo; S.undo = null; $("#toast").classList.remove("on"); u?.(); },
   pinopen: (v, t) => openModal({ t: "pin", show: t.dataset.s, season: t.dataset.k, label: t.dataset.l, pick: null }),
   pinpick: (v) => { S.modal.pick = v; paintModal(); },
   pinsave: async () => {
@@ -4237,6 +4662,24 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-a]");
   if (t && !t.disabled && !isField(t) && A[t.dataset.a]) A[t.dataset.a](t.dataset.v, t, e);
 });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && ["plname", "plnote"].includes(e.target.id)) { e.preventDefault(); A.plsave(); }
+  else if (e.key === "Enter" && e.target.dataset?.a === "plopen" && e.target.closest?.(".plstack")) { e.preventDefault(); e.stopPropagation(); A.plopen(e.target.dataset.v); }
+  else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.target.classList?.contains("plbox") && e.target.querySelector(".plstack[data-n]")) { e.preventDefault(); plFlip(e.target.querySelector(".plstack[data-n]"), e.key === "ArrowUp" ? 1 : -1); }
+  else if (e.key === "Enter" && e.target.classList?.contains("plbox") && e.target.dataset.pl) { e.preventDefault(); A[e.target.dataset.a](e.target.dataset.v); }
+  else if (e.target.id === "plq") {
+    const rows = $$("#plres .mi"), cur = rows.findIndex((r) => r.classList.contains("sel"));
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const n = (cur + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % (rows.length || 1);
+      rows.forEach((r, k) => r.classList.toggle("sel", k === n));
+    } else if (e.key === "Enter" && rows.length) { e.preventDefault(); A.pladdq(rows[Math.max(0, cur)].dataset.v); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); S.plq = ""; e.target.value = ""; plResPaint(); e.target.blur(); }
+  }
+}, true);
+document.addEventListener("input", (e) => { if (e.target.id === "plq") { S.plq = e.target.value; plResPaint(); } });
+document.addEventListener("focusout", (e) => { if (e.target.id === "plq") setTimeout(() => { if (!document.activeElement?.closest?.(".pladd")) $("#plres")?.classList.remove("on"); }, 150); });
+document.addEventListener("focusin", (e) => { if (e.target.id === "plq" && (S.plq || "").trim()) plResPaint(); });
 document.addEventListener("change", (e) => {
   const t = e.target.closest("[data-a]");
   if (t && isField(t) && A[t.dataset.a]) A[t.dataset.a](t.value, t, e);
@@ -4315,7 +4758,17 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("pointerover", (e) => { const r = e.target.closest?.("#cm .mi"); if (r) $$("#cm .mi").forEach((x) => x.classList.toggle("sel", x === r)); }, { passive: true });
 document.addEventListener("contextmenu", (e) => {
   const ep = e.target.closest(".ep[data-a=playep]");
-  if (ep) { e.preventDefault(); openCm(ep.dataset.v, e.clientX, e.clientY); }
+  if (ep) { e.preventDefault(); openCm(ep.dataset.v, e.clientX, e.clientY); return; }
+  /* A playlist box (Library or Home): its own menu (Decision 64). */
+  const box = e.target.closest(".plbox[data-pl]");
+  if (box) { e.preventDefault(); plBoxMenu(box.dataset.pl, e.clientX, e.clientY, box.dataset.a === "plgoto"); return; }
+  /* A poster in the Library: add it to a playlist (Decision 64). */
+  const c = e.target.closest("#wall .card[data-a=entry], #wall .card[data-a=open]");
+  if (!c) return;
+  const en = c.dataset.a === "entry" ? S.data.spine?.entries.find((x) => String(x.id) === c.dataset.v) : null, sh = en ? null : showById(c.dataset.v);
+  if (!en && !sh) return;
+  e.preventDefault();
+  plMenu(en ? { ref: plEntryRef(en), title: en.title, poster: en.poster || null } : { ref: plShowRef(sh), title: sh.title, poster: sh.poster || null }, e.clientX, e.clientY);
 });
 /* Desktop-shell mode (the anime-hub wrapper opens the UI with ?shell=1):
    suppress the browser's own chrome so the window reads as an app, not a
@@ -4330,7 +4783,7 @@ const SHELL = new URLSearchParams(location.search).has("shell");
 const zoomGet = () => { const v = lsGet("hubZoom", 100); return typeof v === "number" && v >= ZOOM_MIN && v <= ZOOM_MAX ? Math.round(v) : 100; };
 function applyLook() {
   const d = document.documentElement, a = accentGet();
-  d.dataset.motion = lookGet("motion"); d.dataset.art = lookGet("art"); d.dataset.bar = lookGet("bar"); d.dataset.grain = grainGet() ? "on" : "off";
+  d.dataset.motion = lookGet("motion"); d.dataset.art = lookGet("art"); d.dataset.bar = lookGet("bar"); d.dataset.plfan = lookGet("fan"); d.dataset.grain = grainGet() ? "on" : "off";
   a === "follow" ? d.style.removeProperty("--fixed") : d.style.setProperty("--fixed", a);
   $('link[rel="icon"]')?.setAttribute("href", accentIcon(a));
 }

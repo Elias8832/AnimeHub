@@ -292,10 +292,41 @@ def migration_22(c):
         created TEXT, last_seen TEXT)""")
 
 
+def migration_23(c):
+    """Playlists (playlists.py, Decision 64): named lists of shows, in the
+    user's order. A show is on a list once."""
+    c.execute("""CREATE TABLE IF NOT EXISTS playlists(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS playlist_items(
+        playlist_id INTEGER NOT NULL, ref TEXT NOT NULL, pos INTEGER NOT NULL,
+        title TEXT, poster TEXT, PRIMARY KEY(playlist_id, ref))""")
+
+
+def migration_24(c):
+    """Playlist looks and order (Decision 64): a colour, a short note, an
+    icon, pinned to Home, and the user's own order of the lists."""
+    have = {r[1] for r in c.execute("PRAGMA table_info(playlists)")}
+    for col in ("color TEXT", "note TEXT", "icon TEXT", "pinned INTEGER NOT NULL DEFAULT 0", "pos INTEGER"):
+        if col.split()[0] not in have:
+            c.execute("ALTER TABLE playlists ADD COLUMN " + col)
+    c.execute("UPDATE playlists SET pos = id WHERE pos IS NULL")
+
+
+def migration_25(c):
+    """A playlist's emoji became an icon name (Decision 64): databases that
+    ran migration 24 while it still made an emoji column get it renamed."""
+    have = {r[1] for r in c.execute("PRAGMA table_info(playlists)")}
+    if "emoji" in have and "icon" not in have:
+        c.execute("ALTER TABLE playlists RENAME COLUMN emoji TO icon")
+        c.execute("UPDATE playlists SET icon = NULL")  # an emoji is no icon name
+    elif "icon" not in have:
+        c.execute("ALTER TABLE playlists ADD COLUMN icon TEXT")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
-              migration_18, migration_19, migration_20, migration_21, migration_22]
+              migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25]
 
 
 def snapshot_before(target_version):
