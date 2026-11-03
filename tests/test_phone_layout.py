@@ -199,6 +199,11 @@ class AppIcon(unittest.TestCase):
         for accent, name in pairs:
             self.assertIn(f'fill="{accent}"', (WEB / "icons" / f"{name}.svg").read_text(encoding="utf-8"))
 
+    def test_nav_bar_wears_the_app_icon(self):
+        """Inline and drawn in the live accent, so it follows the show too."""
+        self.assertIn('<svg class="bm"', HTML)
+        self.assertIn("fill:var(--accent)", CSS)
+
     def test_default_icon_is_the_orange_one(self):
         self.assertEqual((WEB / "icon.svg").read_bytes(), (WEB / "icons" / "orange.svg").read_bytes())
 
