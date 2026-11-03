@@ -307,7 +307,7 @@ class SettingsLayout(unittest.TestCase):
 
     def test_a_switch_flips_from_what_it_shows(self):
         # mpv_marks lives in s.mpv.marks, so !S.settings[key] could only ever turn it on.
-        self.assertIn('setToggle(v, t.getAttribute("aria-checked") !== "true")', APP)
+        self.assertIn('const on = t.getAttribute("aria-checked") !== "true";', APP)
 
     def test_find_box(self):
         self.assertIn('id="setq"', APP)
@@ -410,6 +410,29 @@ class Polish(unittest.TestCase):
         self.assertIn("pages.filter((_, i) => i !== 6)", APP)
         self.assertIn("${tourMpv(s)}", APP)
         self.assertIn('{ mpv_design: "on", mpv_look: v }', APP)
+
+    def test_a_tour_setting_does_not_reload_the_dialog(self):
+        """A switch or card updates in place; only a new page animates."""
+        self.assertIn('if (m.t === "tour" && !focus) morphHTML(dlg, body);', APP)
+        self.assertIn("tourback: () => { S.tour.step--; paintModal(true); }", APP)
+        self.assertIn("if (T.step < (S.settings?.background_ok ? 8 : 7)) { T.step++; return paintModal(true); }", APP)
+
+    def test_a_tour_pick_shows_before_it_saves(self):
+        """The outline moves on click; a failed save puts the old pick back."""
+        fn = APP[APP.index("function tourSave("):APP.index("function finishTour(")]
+        self.assertLess(fn.index("apply(S.settings.mpv); paintModal();"), fn.index('api("/api/settings", body)'))
+        self.assertIn("S.settings = was; paintModal();", fn)
+        self.assertIn('t.setAttribute("aria-checked", String(on)); setToggle(v, on);', APP)
+
+    def test_a_new_tour_page_eases_to_its_size(self):
+        self.assertIn('dlg.animate([{ width: w0 + "px", height: h0 + "px" }, { width: w1 + "px", height: h1 + "px" }]', APP)
+
+    def test_tour_explains_search(self):
+        """Its own page, before the last one, and the phone page keeps its slot."""
+        self.assertIn("    tourSearch(),\n    `<h2 id=\"dt\">You're set</h2>", APP)
+        pages = APP[APP.index("const b = tourPages(["):APP.index("tourSearch(),\n")]
+        self.assertEqual(pages.count('<h2 id="dt">'), 7)
+        self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`,"))
 
     def test_tour_lists_what_it_found(self):
         self.assertIn('<div class="sum2">${tourFound(s, a, n, ok)}</div>', APP)

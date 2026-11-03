@@ -2951,23 +2951,30 @@ function tourLooks(s) {
   return `<div class="choices lkpick">${card("soft", PLAYER_LOOKS.soft, "Controls float over the picture, with lively hover effects.")}${card("deck", PLAYER_LOOKS.deck, "One slim bar along the bottom, with the most room for the seek bar.")}
     <button class="choice lkown ${own ? "on" : ""}" aria-pressed="${own}" data-a="tourlook" data-v="own"><b>Keep my own mpv look</b><span>For a skin you already use. Anime Hub adds no controls.</span></button></div>`;
 }
+/* The search page: only what search does today, in the words of its own sections. */
+function tourSearch() {
+  const row = (icon, title, line) => `<div>${ico(icon)}<span><b>${title}</b>${line}</span></div>`;
+  return `<h2 id="dt">What search can find</h2><p class="sub">${isPhone() ? "Tap the search button to open it." : 'Press <kbd class="kb">/</kbd> on any page to open it.'}</p>
+    <div class="ptip">${row("folder", "Shows in your library", "Type part of a name to open a show.")}${row("search", "Shows you don't have", "Finds anything on AniList. Needs an AniList account or ani-cli.")}${row("sliders", "Settings", "Type a setting's name. Switches can be flipped right in the results.")}${row("arrowr", "Commands", "Go to a page, rescan your library or show your downloads.")}</div>`;
+}
 function Tour() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
   const b = tourPages([
-    `<h2 id="dt">Welcome to AnimeHub</h2><p class="sub">Your anime in one place, played in mpv.</p>
+    `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">It plays the anime on this computer in mpv.</p>
      <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
      <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
-     <div>${ico("play")}<span><b>It keeps up</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
+     <div>${ico("play")}<span><b>Playback</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
     `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}
      <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>`,
     `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what is on this device.</span></button></div>`,
-    `<h2 id="dt">A few tools</h2><p class="sub">AnimeHub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
+    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
     `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
     `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
     `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
+    tourSearch(),
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
@@ -3012,7 +3019,8 @@ function Done() {
   <div class="actions"><span class="note2 mono">the score saves when you close</span><button class="btn" data-a="dnskip">Skip</button><button class="btn pri" data-a="dnsave">Done<kbd class="kb">↵</kbd></button></div>`;
 }
 /* The overlay is built once per dialog; later paints (tour steps, option picks) swap only the dialog body
-   so the backdrop and entrance don't replay. Closing fades out before the node is removed. */
+   so the backdrop and entrance don't replay. A tour paint with no new page (a switch, a card) updates in
+   place: nothing replays and focus stays. Closing fades out before the node is removed. */
 function paintModal(focus) {
   const m = S.modal, el = $("#modal");
   if (!m) {
@@ -3024,9 +3032,23 @@ function paintModal(focus) {
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
-    dlg.innerHTML = body;
-    dlg.classList.remove("swap"); void dlg.offsetWidth;
-    if (!reduceMotion()) dlg.classList.add("swap");
+    dlg.classList.remove("swap");
+    if (m.t === "tour" && !focus) morphHTML(dlg, body);
+    else {
+      const w0 = dlg.offsetWidth, h0 = dlg.offsetHeight; // mid-ease on a quick click: start from what shows
+      dlg._size?.cancel(); dlg._size = null; dlg.style.removeProperty("overflow");
+      dlg.innerHTML = body;
+      const w1 = dlg.offsetWidth, h1 = dlg.offsetHeight;
+      if (!reduceMotion()) {
+        dlg.classList.add("swap");
+        /* A new page eases to its size instead of jumping to it. */
+        if (Math.abs(w1 - w0) > 1 || Math.abs(h1 - h0) > 1) {
+          dlg.style.overflow = "hidden";
+          const an = dlg._size = dlg.animate([{ width: w0 + "px", height: h0 + "px" }, { width: w1 + "px", height: h1 + "px" }], { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)" });
+          an.finished.catch(() => {}).finally(() => { if (dlg._size === an) { dlg._size = null; dlg.style.removeProperty("overflow"); } });
+        }
+      }
+    }
   } else {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" || m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
@@ -3092,6 +3114,19 @@ function maybeCompletion(c) {
     if (e.score != null && e.score > 0) { sc.value = max === 10 ? Math.round(e.score) : e.score; dnPills(max === 10 ? Math.round(e.score) : 0); }
     if (st.is_favourite) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
   }).catch(() => {});
+}
+/* A tour pick shows at once (Elias: the outline lagged a second behind the
+   click); the saved settings replace the guess, a failed save puts it back.
+   Only the newest pick's answer is painted, so quick clicks never flicker. */
+let tourSeq = 0;
+function tourSave(body, apply) {
+  const was = S.settings, n = ++tourSeq;
+  S.settings = { ...was, mpv: { ...(was?.mpv || {}) } }; apply(S.settings.mpv); paintModal();
+  const fail = (msg) => { if (n !== tourSeq) return; S.settings = was; paintModal(); toast(msg || "Could not save — is the hub running?"); };
+  api("/api/settings", body).then((r) => {
+    if (!r || r.error) return fail(r?.error);
+    if (n === tourSeq && S.modal?.t === "tour") { S.settings = r; paintModal(); }
+  }).catch(() => fail());
 }
 function finishTour(skipped) {
   api("/api/settings", { tour_done: true }).catch(() => {});
@@ -3682,7 +3717,8 @@ async function upCheck(tell) {
 }
 async function setToggle(key, on) {
   const r = await api("/api/settings", { [key]: on }).catch(() => null);
-  if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); return; }
+  /* The switch moved on click; a failed save repaints it back. */
+  if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); if (S.view === "settings") render(true); if (S.modal?.t === "tour") paintModal(); if (S.menu === "sr") paintNav(); return; }
   S.settings = r;
   if (key === "hide_spoilers" && S.data) S.data.hide_spoilers = on;
   if (key === "update_check" && on) upCheck(false);
@@ -3972,8 +4008,8 @@ const A = {
     }).catch(() => { t.disabled = false; toast("Could not save — is the hub running?"); });
   },
   /* settings + account */
-  adv: (v, t) => { if (S.settings) setToggle(v, t.getAttribute("aria-checked") !== "true"); }, // the switch knows its state: some live under s.mpv
-  srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
+  adv: (v, t) => { if (!S.settings) return; const on = t.getAttribute("aria-checked") !== "true"; t.setAttribute("aria-checked", String(on)); setToggle(v, on); }, // the switch knows its state: some live under s.mpv
+  srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; t.setAttribute("aria-checked", String(!S.settings[v])); await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
   setgo: (v, t) => { const tab = t.dataset.t; setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
   srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
@@ -4104,23 +4140,13 @@ const A = {
     if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
   },
   tourpick: (v) => { S.tour.choice = v; paintModal(); },
-  tourmpv: (v) => {
-    api("/api/settings", v === "own" ? TOUR_OWN : TOUR_HUB).then((r) => {
-      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
-      S.settings = r; paintModal();
-    }).catch(() => toast("Could not save — is the hub running?"));
-  },
-  tourlook: (v) => {
-    const own = v === "own";
-    api("/api/settings", own ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }).then((r) => {
-      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
-      S.settings = r; paintModal();
-    }).catch(() => toast("Could not save — is the hub running?"));
-  }, tourback: () => { S.tour.step--; paintModal(true); },
+  tourmpv: (v) => { const x = v === "own" ? "own" : "on"; tourSave(v === "own" ? TOUR_OWN : TOUR_HUB, (m) => { m.fullscreen = x; m.smooth = x; }); },
+  tourlook: (v) => tourSave(v === "own" ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }, (m) => { m.design = v === "own" ? "own" : "on"; if (v !== "own") m.look = v; }),
+  tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < (S.settings?.background_ok ? 7 : 6)) { T.step++; return paintModal(true); }
+    if (T.step < (S.settings?.background_ok ? 8 : 7)) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList
