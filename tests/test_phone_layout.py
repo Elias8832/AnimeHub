@@ -124,7 +124,7 @@ class TouchSmoothness(unittest.TestCase):
 
 class TabSlideAndSearch(unittest.TestCase):
     def test_tab_slide(self):
-        self.assertIn("const TAB_AT = { home: 0, week: 0, library: 1, history: 2, stats: 2 };", APP)
+        self.assertIn("const TAB_AT = { home: 0, library: 1, history: 2, stats: 2, week: 3 };", APP)
         self.assertIn("  tabSlide(from, view);\n}", APP)
         self.assertIn("#app.tab-l{animation:tabL .34s", CSS)
         self.assertNotIn("#app.tab-l{animation:tabL .34s cubic-bezier(.2,.8,.2,1) both", CSS)  # no fill: no transform left on #app
@@ -157,7 +157,7 @@ class BackAndSwipes(unittest.TestCase):
             self.assertIn(sel, APP)
         self.assertIn("if (y - p.y < -28) { pull = null; buzz(); A.rmtopen(); }", APP)
         self.assertIn("x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture", APP)
-        self.assertIn('else if (["show", "fr", "week", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back"', APP)
+        self.assertIn('else if (["show", "fr", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back"', APP)
         self.assertIn("#swhint.armed i{background:var(--accent)", CSS)
 
 
