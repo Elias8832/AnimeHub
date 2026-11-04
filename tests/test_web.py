@@ -709,3 +709,22 @@ class ShowPageRedo(unittest.TestCase):
         self.assertIn('const al = $("#aboutlive");', APP)
         self.assertIn(".frpage .fold{min-height:calc(100vh - 160px)}", CSS)
         self.assertNotIn(".st2", CSS)  # the old stats row is gone
+
+
+class TabEntrances(unittest.TestCase):
+    """Home, Library and Settings build in like the Journal (Elias, 2026-11-04)."""
+
+    def test_entrances_leave_nothing_behind(self):
+        block = CSS[CSS.index("/* Home · Library · Settings build in"):CSS.index("/* ───", CSS.index("/* Home · Library · Settings build in"))]
+        # hover zooms and fixed children need no transform left after the entrance
+        self.assertNotIn(" both}", block.replace(".settings.scol{animation:soft .25s var(--ease) both}", ""))
+        for part in (".upn .upa{animation:artIn", ":is(.hc,.ag,.rec,.rc)", ".snav>*", ".scol.setin>.group>"):
+            self.assertIn(part, block)
+
+    def test_settings_section_builds_in_once(self):
+        # in-place updates keep the class until the build-in ends; a search never builds in
+        self.assertIn('"setin"]', APP.split("const LIVE_CLASSES", 1)[1].split("\n", 1)[0])
+        enter = APP[APP.index("function setEnter()"):APP.index("const viewKey")]
+        self.assertIn('c.dataset.sec !== "find"', enter)
+        self.assertIn('!mq("(pointer:coarse)")', enter)  # Decision 44: no per-row entrances on touch
+        self.assertIn("setEnter();", APP[APP.index("function render("):APP.index("paintPortals();\n}")])

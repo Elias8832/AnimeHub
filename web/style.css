@@ -237,8 +237,8 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 .card .m{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--mute);flex-wrap:wrap}
 .m .sc{display:inline-flex;gap:4px;align-items:center;color:var(--warn)}.m .sc .ico{width:12px;height:12px;fill:currentColor}
 .wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:34px 22px;margin:28px 0 80px;align-items:start}
-.wall.fade .card{animation:rise .32s var(--ease) both;animation-delay:calc(var(--i)*14ms)}
-.wall.fade .prog i{animation:growx .6s .15s var(--ease) both}
+.wall.fade .card{animation:rise .42s var(--ease) both;animation-delay:calc(var(--i)*18ms)}
+.wall.fade .prog i{animation:growx .7s var(--ease) both;animation-delay:calc(var(--i)*18ms + .25s)} /* each bar fills once its card is in, like the Journal's */
 @keyframes growx{from{transform:scaleX(0)}}
 
 /* ───────── home ───────── */
@@ -452,6 +452,29 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 #app.nav-in .tile{animation:rise .35s var(--ease) both}#app.nav-in .tile:nth-child(2){animation-delay:.03s}#app.nav-in .tile:nth-child(3){animation-delay:.06s}#app.nav-in .tile:nth-child(4){animation-delay:.09s}
 #app.nav-in .panel{animation:rise .35s .08s var(--ease) both}
 #app.nav-in .tabs button{animation:rise .3s var(--ease) both}#app.nav-in .tabs button:nth-child(2){animation-delay:.02s}#app.nav-in .tabs button:nth-child(3){animation-delay:.04s}#app.nav-in .tabs button:nth-child(n+4){animation-delay:.06s}
+/* Home · Library · Settings build in like the Journal (Elias, 2026-11-04):
+   the page fades in at once, then its parts settle in reading order, small
+   and quick. Touch screens drop #app.nav-in animations (Decision 44). Fill
+   "backwards" only, so nothing keeps a transform afterwards (hover zooms
+   and fixed children keep working). */
+@keyframes artIn{from{opacity:0;transform:scale(1.05)}}
+@keyframes soft{from{opacity:0}}
+#app.nav-in .hello .sum{animation:up .45s .06s var(--ease) backwards}
+#app.nav-in .upn{animation:soft .4s var(--ease) backwards}
+#app.nav-in .upn .upa{animation:artIn 1.3s var(--ease) backwards}
+#app.nav-in .upn .upc>*{animation:up .5s .08s var(--ease) backwards}
+#app.nav-in .upn .upc>:nth-child(2){animation-delay:.12s}#app.nav-in .upn .upc>:nth-child(3){animation-delay:.16s}#app.nav-in .upn .upc>:nth-child(4){animation-delay:.2s}#app.nav-in .upn .upc>:nth-child(5){animation-delay:.24s}#app.nav-in .upn .upc>:nth-child(n+6){animation-delay:.28s}
+.home2>.hsec{--s:0}.home2>.hsec:nth-of-type(2){--s:1}.home2>.hsec:nth-of-type(n+3){--s:2}
+#app.nav-in .home2>.hsec .sh{animation:up .45s var(--ease) backwards;animation-delay:calc(var(--s)*80ms + .22s)}
+#app.nav-in .home2 :is(.hc,.ag,.rec,.rc){animation:rise .45s var(--ease) backwards;animation-delay:calc(var(--s)*80ms + var(--i,0)*45ms + .28s)}
+#app.nav-in .home2 .hc .eprog i{animation:growx .7s var(--ease) backwards;animation-delay:calc(var(--s)*80ms + var(--i,0)*45ms + .55s)}
+#app.nav-in .snav>*{animation:rise .38s var(--ease) backwards;animation-delay:calc(var(--i,0)*18ms + .04s)}
+/* a Settings section, on opening Settings or a click in its side list (setEnter) */
+@media not (pointer:coarse){.set2 .settings.scol{animation:soft .25s var(--ease) both}} /* the rows rise, not the whole column (not tied to .setin: dropping it would replay the column's own animation) */
+.scol>.group{--g:0}.scol>.group:nth-child(2){--g:1}.scol>.group:nth-child(3){--g:2}.scol>.group:nth-child(n+4){--g:3}
+.scol>.group>*{--r:0}.scol>.group>:nth-child(2){--r:1}.scol>.group>:nth-child(3){--r:2}.scol>.group>:nth-child(4){--r:3}.scol>.group>:nth-child(5){--r:4}.scol>.group>:nth-child(6){--r:5}.scol>.group>:nth-child(n+7){--r:6}
+.scol.setin>.group{animation:soft .4s var(--ease) backwards;animation-delay:calc(var(--g)*90ms)}
+.scol.setin>.group>:is(h3,.sub,.srow){animation:fin .42s var(--ease) backwards;animation-delay:calc(var(--g)*90ms + var(--r)*30ms + .05s)}
 
 /* ───────── responsive (the app is often zoomed to 150–175%, so ~1100–1300px matters) ───────── */
 @media (max-width:1250px){
