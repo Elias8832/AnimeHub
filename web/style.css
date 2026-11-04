@@ -956,6 +956,8 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 /* hundreds of posters: no blur-behind on their tags and no looping shimmer (TODO 60 lag) */
 .lib2 .poster.hasimg:not(.ready){animation:none;background-position:50% 0}
 .lib2 .card:hover .pw{transform:translateY(-6px)}
+/* no hover caption on library posters, so no dark fade for one */
+.lib2 .pw:after{display:none}
 .lib2 .card.focused .pw{outline:2px solid var(--ink);outline-offset:4px}
 .lib2 .tg{position:absolute;top:8px;z-index:4;font:500 10px var(--mono);padding:3px 8px;border-radius:999px;background:rgba(14,15,18,.78);box-shadow:var(--edge);color:var(--ink)}
 .lib2 .tg.src{left:8px}.lib2 .tg.sc{right:8px}
@@ -964,7 +966,9 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .lib2 .card .prog{left:10px;right:10px;bottom:10px;height:4px;border-radius:4px;background:rgba(0,0,0,.45);overflow:hidden}
 .lib2 .card .prog i{background:var(--accent)}
 .lib2 .card h3{display:flex;align-items:center;gap:8px}.lib2 .card .ttl{min-width:0;overflow:hidden;text-overflow:ellipsis}.lib2 .card h3 .kb{flex:none;margin-left:auto;min-width:20px;height:20px}
-.lib2 .resume-tag{top:auto;bottom:22px;left:8px;background:var(--ink);color:#111;font:600 11px var(--ui)}
+.lib2 .resume-tag{top:auto;bottom:8px;left:8px;background:var(--ink);color:#111;font:600 11px var(--ui)}
+/* it only lifts to clear the progress bar when there is one */
+.lib2 .resume-tag:has(+.prog){bottom:20px}
 .lib2 .card h3{font:600 14px var(--ui);margin:12px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lib2 .card .m{font:400 11px var(--mono);color:var(--mute);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lib2 .card .m .more{font:inherit;color:var(--ink-2)}

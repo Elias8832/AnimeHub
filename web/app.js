@@ -4107,10 +4107,15 @@ function markLoading(id) {
   S.loadingEp = id;
   pagePatch();
 }
-/* The accent on screen as #rrggbb, for mpv's controls (Decision 52). */
-function accentHex() {
+/* The accent for mpv's controls as #rrggbb (Decision 52): the colour of the
+   show being played, not the one on screen — Home's backdrop follows the
+   up-next show, so a Continue tile of another show would get the wrong one.
+   A picked colour wins; a show with no colour of its own gets the default. */
+function accentHex(show) {
+  let want = accentGet() !== "follow" ? accentGet() : null;
+  if (!want && show) want = hexAccent(showColor(show)) || ambMemo[show.banner || show.poster] || "#f2a46f";
   const c = document.createElement("canvas").getContext("2d");
-  c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#000";
+  c.fillStyle = want || getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#000";
   return /^#[0-9a-f]{6}$/i.test(c.fillStyle) ? c.fillStyle : null;
 }
 /* skipOk: undefined = not asked yet, true/false = the AniSkip answer
@@ -4128,7 +4133,7 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk) {
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
   if (skipOk !== undefined) body.aniskip = skipOk;
-  const accent = accentHex();
+  const accent = accentHex(ctx?.s);
   if (accent) body.accent = accent;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;

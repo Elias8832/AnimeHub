@@ -136,6 +136,12 @@ class Frontend(unittest.TestCase):
         self.assertIn("if (color) return set(hexAccent(color));", APP)
         self.assertIn("coverImage{extraLarge color}", (support.ROOT / "animehub" / "anilist.py").read_text(encoding="utf-8"))
 
+    def test_mpv_accent_is_the_played_show(self):
+        # Home's backdrop follows the up-next show; a Continue tile of another
+        # show handed mpv the backdrop's colour instead of its own.
+        self.assertIn("const accent = accentHex(ctx?.s);", APP)
+        self.assertIn("hexAccent(showColor(show))", APP)
+
     def test_fonts_ship_with_the_app(self):
         # No network at runtime: every @font-face points at /fonts/, and the files are there.
         urls = re.findall(r"url\((/fonts/[^)]+)\)", CSS)
