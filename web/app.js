@@ -403,8 +403,8 @@ function weekHTML(list, now = Date.now()) {
   const when = (t) => { const d = new Date(t), same = d.toDateString() === today.toDateString(), tm = d.toTimeString().slice(0, 5);
     return [same ? "Today" : DAYS[(d.getDay() + 6) % 7] + (t - now > 6 * 864e5 ? " " + d.getDate() : ""), tm]; };
   return `<section class="hsec"><div class="sh"><h2>${at(soon[0]) < now + 7 * 864e5 ? "This week" : "Coming up"}</h2><span class="mut">airing on your lists</span><button class="link-btn" data-a="go" data-v="week">Calendar${ico("arrowr")}</button><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
-    <div class="agenda">${soon.map((e) => { const t = at(e), [d, tm] = when(t), sec = (t - now) / 1000;
-      return `<button class="ag${d === "Today" ? " today" : ""}" data-a="entry" data-v="${esc(e.id)}">${e.poster ? `<i class="agb" style="background-image:${esc(cssUrl(e.poster))}"></i><i class="agp" style="background-image:${esc(cssUrl(e.poster))}"></i>` : ""}
+    <div class="agenda">${soon.map((e, k) => { const t = at(e), [d, tm] = when(t), sec = (t - now) / 1000;
+      return `<button class="ag${d === "Today" ? " today" : ""}" style="--i:${k}" data-a="entry" data-v="${esc(e.id)}">${e.poster ? `<i class="agb" style="background-image:${esc(cssUrl(e.poster))}"></i><i class="agp" style="background-image:${esc(cssUrl(e.poster))}"></i>` : ""}
         <span class="agt"><span class="when">${d} <small>${tm}</small></span><b>${esc(e.title)}</b><span class="m">episode ${esc(e.next_episode?.number ?? "")}</span></span><span class="cdn">${sec > 0 ? "in " + fmtIn(sec) : "out now"}</span></button>`; }).join("")}</div></section>`;
 }
 function Home() {
@@ -426,8 +426,8 @@ function Home() {
   const recs = recsFor();
   body += plHomeHTML(); // pinned playlists (Decision 64)
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="mut">from AniList, based on what you rated highly</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
-  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="mut">on disk, not started</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
-    `<button class="rc" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
+  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="mut">on disk, not started</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
+    `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
   if (!up && !L.length) {
     body = `<div class="emptyx"><div class="eico">${ico("tv")}</div>${d.shows.length
       ? `<b>Nothing watched yet</b><span>Your library is waiting.</span><button class="btn pri" data-a="go" data-v="library">Browse library</button>`
@@ -444,10 +444,10 @@ function recsFor() {
   const listed = new Set(S.data.spine.entries.filter((e) => e.status).map((e) => e.id));
   return (S.recs?.items || []).filter((r) => !listed.has(r.id) && !S.recsAdded?.has(r.id)).slice(0, 30);
 }
-function recCard(r) {
+function recCard(r, k = 0) {
   const disk = (S.data.shows || []).some((s) => s.meta?.anilist_id === r.id);
   const facts = [FMT[r.format] || r.format, r.year].filter(Boolean).join(" · ");
-  return `<div class="rec"><button class="rcv" data-a="recopen" data-v="${r.id}" aria-label="${esc(r.title)}"><span class="pw">${poster(r.title, r.poster)}</span>${disk ? '<span class="tg src">on disk</span>' : ""}</button>
+  return `<div class="rec" style="--i:${k}"><button class="rcv" data-a="recopen" data-v="${r.id}" aria-label="${esc(r.title)}"><span class="pw">${poster(r.title, r.poster)}</span>${disk ? '<span class="tg src">on disk</span>' : ""}</button>
     <button class="radd" data-a="recadd" data-v="${r.id}" title="Add to Planning">${ico("plus")}Planning</button>
     <b>${esc(r.title)}</b><small>${r.because ? `because you liked <em>${esc(r.because.title)}</em>` : esc(facts)}</small></div>`;
 }
@@ -1061,7 +1061,7 @@ function paintWall(fade) {
     const coarse = mq("(pointer:coarse)"), head = coarse ? 24 : 36;
     w.innerHTML = cards.slice(0, head).join("");
     let i = head;
-    const more = () => { if (!w.isConnected) return; w.classList.remove("fade"); w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
+    const more = () => { if (!w.isConnected) return; w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
     paintWall.more = setTimeout(more, coarse ? 380 : 650); // after the page has settled
   } else if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
   gtrayFit();
@@ -2111,8 +2111,9 @@ function Sett() {
   const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone); // a paired phone can't change the remote (Decision 43)
   if (isPhone() && !S.setOpen) return settingsList(tabs, s);
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
+  let n = 1; // the side list's entrance order
   return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span></div></div>
-  <div class="setg"><nav class="snav">${isPhone() ? "" : setSearch()}${setHeads(tabs).map(([g, ts]) => `<h4>${g}</h4>${ts.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" data-a="settab" data-v="${k}">${l}</button>`).join("")}`).join("")}</nav>
+  <div class="setg"><nav class="snav">${isPhone() ? "" : setSearch()}${setHeads(tabs).map(([g, ts]) => `<h4 style="--i:${n++}">${g}</h4>${ts.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" style="--i:${n++}" data-a="settab" data-v="${k}">${l}</button>`).join("")}`).join("")}</nav>
   <div class="settings scol" data-sec="${find ? "find" : tab}">${find ? setResults(s, tabs) : setSections(s)[tab]}</div></div></div>`;
 }
 /* Episode lengths read from the files (ffprobe, else mpv), once per file.
@@ -2715,8 +2716,8 @@ function HomePhone() {
   const recs = recsFor();
   body += plHomeHTML(); // pinned playlists (Decision 64)
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="fill"></span><button class="btn sm disc" data-a="deck" data-v="recs">${ico("up")}Discover</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
-  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s) =>
-    `<button class="rc" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
+  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
+    `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
   if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
   return `<div class="home2 phone"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${body}</div>`;
 }
@@ -2942,7 +2943,7 @@ function airMonth(c, days, today) {
   const cells = Array.from({ length: rows * 7 }, (_, i) => {
     const d = new Date(c.y, c.m, i - lead + 1), k = airKey(d), l = days.get(k) || [], shown = l.length > 3 ? l.slice(0, 2) : l;
     const cls = [d.getMonth() !== c.m ? "is-out" : "", l.length ? "has" : "", k < airKey(today) ? "is-past" : "", k === airKey(today) ? "is-today" : "", k === c.sel ? "is-sel" : ""].filter(Boolean).join(" ");
-    return `<button class="aird ${cls}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts${l.length === 1 ? " is-one" : ""}">${shown.map(airTile).join("")}${l.length === 1 ? air1(l[0]) : ""}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
+    return `<button class="aird ${cls}" style="--i:${Math.floor(i / 7) + i % 7}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts${l.length === 1 ? " is-one" : ""}">${shown.map(airTile).join("")}${l.length === 1 ? air1(l[0]) : ""}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
   return `<div class="airgrid" style="--rows:${rows}">${DAYS.map((d) => `<b class="airw">${d}</b>`).join("")}${cells}</div>`;
 }
 /* The week (Decision 46): a rail per day so empty days still read as days,
@@ -2955,7 +2956,7 @@ function airWeek(c, days, today) {
     let body = l.map(big);
     if (k === tk && l.length) { const at = l.findIndex((x) => x.t > now); body.splice(at < 0 ? l.length : at, 0, `<div class="airnow"><span>now ${esc(airTime({ t: now }))}</span></div>`); }
     const n = l.filter((x) => !x.start).length, note = n ? `${n} episode${n === 1 ? "" : "s"}` : l.length ? "starts" : "no episodes";
-    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone">${ico("cal")}</div>`}</div>`; }).join("")}</div>`;
+    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}" style="--i:${i}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone">${ico("cal")}</div>`}</div>`; }).join("")}</div>`;
 }
 function CalDesk() {
   const now = Date.now(), today = new Date(now), c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: airKey(today), scope: "all", mode: lsGet("airMode", "month") });
@@ -2988,7 +2989,7 @@ function Week() {
   /* Logged out: one clear way in, not two lines that contradict each other. */
   if (!aniMode()) return `<div class="wk2"><div class="hello"><h1 class="hd">Calendar</h1></div><div class="emptyx"><div class="eico">${ico("cal")}</div><b>See when your shows air</b><span>Connect AniList, and new episodes of what you're watching show up here, day by day.</span><button class="btn pri" data-a="ani">Connect AniList</button></div></div>`;
   const tl = list.map((e, k) => { const t = airAt(e, now), sec = (t - now) / 1000;
-    return `<div class="tli${k === 0 ? " first" : ""}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
+    return `<div class="tli${k === 0 ? " first" : ""}" style="--i:${k}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
       <button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")}</small></span></button></div>`; }).join("");
   const today = new Date(now), airs = list.map((e) => new Date(airAt(e, now)));
   const month = (first, note) => { const y = first.getFullYear(), mo = first.getMonth(), lead = (first.getDay() + 6) % 7, days = new Date(y, mo + 1, 0).getDate();
@@ -3782,7 +3783,7 @@ const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "J
    their scroll. Runtime state the HTML doesn't carry survives: the image
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
-const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr"];
+const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "setin"];
 const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
@@ -3831,6 +3832,18 @@ function morphHTML(el, html) {
   t.innerHTML = html;
   morphChildren(el, t.content);
 }
+/* A Settings section that just appeared (opening Settings, or a click in
+   its side list) builds in row by row, like the Journal's bars; later
+   in-place updates of the same section don't replay it. */
+let setCol = null;
+function setEnter() {
+  const c = $("#app .scol");
+  if (c && c !== setCol && c.dataset.sec !== "find" && !reduceMotion() && !mq("(pointer:coarse)")) { // touch: no per-row entrances (Decision 44)
+    c.classList.add("setin"); // a live class: in-place updates keep it until the build-in is over
+    setTimeout(() => c.classList.remove("setin"), 1500);
+  }
+  setCol = c;
+}
 const viewKey = () => S.view + "|" + (S.view === "fr" ? S.fr?.eid : S.view === "show" ? S.showId : "");
 function render(inPlace = false) {
   if (plDrag?.on) { plDrag.pending = true; return; } // a poll mid-drag waits for the drop
@@ -3854,6 +3867,7 @@ function render(inPlace = false) {
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
   strips(); ambient(); artDim();
+  setEnter();
   if (S.view === "settings" && S.setFlash) { const t = S.setFlash; S.setFlash = null; const r = $$("#app .srow").find((x) => x.querySelector("b")?.textContent.startsWith(t)); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }
   /* The strip opens on the next episode, with the one before it in view — whole tiles, never a cut one. */
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }

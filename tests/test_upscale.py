@@ -217,9 +217,15 @@ class Worker(unittest.TestCase):
         banner = self.posters / "a.banner.jpg"
         banner.write_bytes(real(1900, 400))
         upscale.upscale_banner(banner, self.tool)
+        after = int(time.time())
         art = upscale.art_payload()
         self.assertEqual(art["stamp"], 1)
-        self.assertEqual(art["changed"], {"a.banner.jpg": int(banner.stat().st_mtime)})
+        # The stamp is max(mtime, now), so a second boundary between the
+        # write and the swap may push it one past the file's mtime.
+        self.assertEqual(list(art["changed"]), ["a.banner.jpg"])
+        v = art["changed"]["a.banner.jpg"]
+        self.assertGreaterEqual(v, int(banner.stat().st_mtime))
+        self.assertLessEqual(v, after)
 
     def test_off_queues_nothing(self):
         config.UPSCALE_BANNERS = False
