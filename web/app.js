@@ -2911,6 +2911,8 @@ const airTag = (x) => (x.start || x.ep === 1 ? "Premiere" : x.ep && x.ep === x.e
 const airSeen = (x) => !x.start && (x.e.progress || 0) >= x.ep;
 const airTime = (x) => new Date(x.t).toTimeString().slice(0, 5);
 const airStyle = (x) => (x.e.poster ? ` style="background-image:${esc(cssUrl(x.e.poster))}"` : "");
+/* A month day's tiles share the day's width, posters cropped (banners were
+   tried: scenery, hard to tell which show). */
 const airTile = (x) => { const t = airTag(x); return `<i class="airt${airSeen(x) ? " is-seen" : ""}"${airStyle(x)}>${t ? `<em class="${t === "Finale" ? "is-end" : ""}">${t}</em>` : ""}</i>`; };
 /* What the schedule says about each show: aired so far, its last date. */
 function airFacts(days, now) {
@@ -2931,38 +2933,53 @@ function airCard(x, facts, now) {
     <small>${x.start ? "Starts" : `Episode ${esc(x.ep)}${e.episodes ? " of " + e.episodes : ""} · ${airTime(x)}`}${sec > 0 ? ` · <span class="ac">in ${esc(fmtIn(sec))}</span>` : ""}</small>
     <span class="airtags">${airTag(x) ? `<u class="is-hot">${airTag(x)}</u>` : ""}${behind ? `<u class="is-hot">${behind} behind</u>` : ""}${tags.map((t) => `<u>${esc(t)}</u>`).join("")}${ends ? `<u>${esc(ends)}</u>` : ""}</span></span></button>`;
 }
+/* A day with one show has room for its name and time beside the poster
+   (Elias picked this over a wide crop, 2026-11-04); name on top, time and
+   pills at the bottom like everywhere else. Narrow days drop it. */
+const air1 = (x) => { const t = airTag(x);
+  return `<span class="air1t"><span class="air1n">${esc(x.e.title)}</span><span class="air1w">${x.start ? "Starts" : `<b>${airTime(x)}</b>E${esc(x.ep)}`}${t ? `<u class="${t === "Finale" ? "is-end" : ""}">${t}</u>` : ""}</span></span>`; };
 function airMonth(c, days, today) {
   const first = new Date(c.y, c.m, 1), lead = (first.getDay() + 6) % 7, count = new Date(c.y, c.m + 1, 0).getDate(), rows = Math.ceil((lead + count) / 7);
   const cells = Array.from({ length: rows * 7 }, (_, i) => {
     const d = new Date(c.y, c.m, i - lead + 1), k = airKey(d), l = days.get(k) || [], shown = l.length > 3 ? l.slice(0, 2) : l;
-    const cls = [d.getMonth() !== c.m ? "is-out" : "", k === airKey(today) ? "is-today" : "", k === c.sel ? "is-sel" : ""].filter(Boolean).join(" ");
-    return `<button class="aird ${cls}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts">${shown.map(airTile).join("")}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
+    const cls = [d.getMonth() !== c.m ? "is-out" : "", l.length ? "has" : "", k < airKey(today) ? "is-past" : "", k === airKey(today) ? "is-today" : "", k === c.sel ? "is-sel" : ""].filter(Boolean).join(" ");
+    return `<button class="aird ${cls}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts${l.length === 1 ? " is-one" : ""}">${shown.map(airTile).join("")}${l.length === 1 ? air1(l[0]) : ""}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
   return `<div class="airgrid" style="--rows:${rows}">${DAYS.map((d) => `<b class="airw">${d}</b>`).join("")}${cells}</div>`;
 }
+/* The week (Decision 46): a rail per day so empty days still read as days,
+   today's rail marks "now" between what aired and what's still to come. */
 function airWeek(c, days, today) {
-  const sel = new Date(`${c.sel}T00:00:00`), mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7);
+  const sel = new Date(`${c.sel}T00:00:00`), mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7), now = today.getTime(), tk = airKey(today);
+  const big = (x) => { const sec = (x.t - now) / 1000;
+    return `<button class="airbig${airSeen(x) ? " is-seen" : ""}" data-a="entry" data-v="${esc(x.e.id)}" title="${esc(x.e.title)}">${airTile(x)}<b>${esc(x.e.title)}</b><small>${x.start ? "Starts" : `E${esc(x.ep)} · ${airTime(x)}`}${sec > 0 && sec < 7 * 86400 ? ` · <span class="ac">in ${esc(fmtIn(sec))}</span>` : ""}</small></button>`; };
   return `<div class="airwk">${Array.from({ length: 7 }, (_, i) => { const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i), k = airKey(d), l = days.get(k) || [];
-    return `<div class="aircol${k === airKey(today) ? " is-today" : ""}"><div class="aircolh"><span>${DAYS[i]}</span><b>${d.getDate()}</b></div>${l.map((x) => `<button class="airbig${airSeen(x) ? " is-seen" : ""}" data-a="entry" data-v="${esc(x.e.id)}" title="${esc(x.e.title)}">${airTile(x)}<b>${esc(x.e.title)}</b><small>${x.start ? "Starts" : `E${esc(x.ep)} · ${airTime(x)}`}</small></button>`).join("")}</div>`; }).join("")}</div>`;
+    let body = l.map(big);
+    if (k === tk && l.length) { const at = l.findIndex((x) => x.t > now); body.splice(at < 0 ? l.length : at, 0, `<div class="airnow"><span>now ${esc(airTime({ t: now }))}</span></div>`); }
+    const n = l.filter((x) => !x.start).length, note = n ? `${n} episode${n === 1 ? "" : "s"}` : l.length ? "starts" : "no episodes";
+    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone">${ico("cal")}</div>`}</div>`; }).join("")}</div>`;
 }
 function CalDesk() {
   const now = Date.now(), today = new Date(now), c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: airKey(today), scope: "all", mode: lsGet("airMode", "month") });
   if (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3)) loadSched();
   const days = calEvents(), facts = airFacts(days, now), week = c.mode === "week", first = new Date(c.y, c.m, 1);
-  const inMonth = [...days.entries()].filter(([k]) => k.startsWith(airKey(first).slice(0, 7))).flatMap(([, l]) => l);
-  const prem = inMonth.filter((x) => airTag(x) === "Premiere").length, fin = inMonth.filter((x) => airTag(x) === "Finale").length;
-  const shows = new Map(S.data.spine.entries.map((e) => [e.id, e])), behind = [...facts].reduce((n, [id, f]) => n + airBehind(shows.get(id), f), 0);
-  const sum = [`<span><b>${inMonth.filter((x) => !x.start).length}</b> episodes this month</span>`, prem ? `<span><b>${prem}</b> premiere${prem === 1 ? "" : "s"}</span>` : "", fin ? `<span><b>${fin}</b> finale${fin === 1 ? "" : "s"}</span>` : "", behind ? `<span><b>${behind}</b> to catch up</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
   const sel = new Date(`${c.sel}T00:00:00`), picked = days.get(c.sel) || [], seen = new Set();
+  const mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7), sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6), md = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  /* The summary counts what's on screen: this month, or this week. */
+  const lo = week ? airKey(mon) : airKey(first).slice(0, 7), hi = week ? airKey(sun) : lo + "~", tk = airKey(today);
+  const shown = [...days.entries()].filter(([k]) => k >= lo && k <= hi).flatMap(([, l]) => l), cur = tk >= lo && tk <= hi;
+  const prem = shown.filter((x) => airTag(x) === "Premiere").length, fin = shown.filter((x) => airTag(x) === "Finale").length, eps = shown.filter((x) => !x.start).length;
+  const shows = new Map(S.data.spine.entries.map((e) => [e.id, e])), behind = [...facts].reduce((n, [id, f]) => n + airBehind(shows.get(id), f), 0);
+  const sum = [`<span><b>${eps}</b> episode${eps === 1 ? "" : "s"}${cur ? ` this ${week ? "week" : "month"}` : ""}</span>`, prem ? `<span><b>${prem}</b> premiere${prem === 1 ? "" : "s"}</span>` : "", fin ? `<span><b>${fin}</b> finale${fin === 1 ? "" : "s"}</span>` : "", behind ? `<span><b>${behind}</b> to catch up</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
   const next = [...days.values()].flat().filter((x) => x.t > now).sort((a, b) => a.t - b.t).filter((x) => !seen.has(x.e.id) && seen.add(x.e.id)).slice(0, 4);
   const seg = (a, cur, opts) => opts.map(([v, l]) => `<button class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" data-a="${a}" data-v="${v}">${l}</button>`).join("");
-  const mon = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() - (sel.getDay() + 6) % 7), sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6), md = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  const title = week ? `${esc(md(mon))} <span>– ${esc(md(sun))}</span>` : `${esc(monthName(first))} <span>${c.y}</span>`;
-  const panel = `<aside class="airside"><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
+  const title = week ? `${esc(md(mon))} <span>– ${esc(sun.getMonth() === mon.getMonth() ? String(sun.getDate()) : md(sun))}</span>` : `${esc(monthName(first))} <span>${c.y}</span>`;
+  const rel = c.sel === tk ? "Today" : c.sel === airKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)) ? "Tomorrow" : "";
+  const panel = `<aside class="airside"><p class="airsel">${esc(monthName(sel))}${rel ? ` · <b>${rel}</b>` : ""}</p><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
   return `<div class="airp2"><div class="airhead"><h1 class="hd">${title}</h1>
     <button class="arr" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button class="arr" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button><button class="btn sm" data-a="airtoday">Today</button>
     ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
     <span class="seg" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><span class="seg" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
-    ${week ? "" : `<div class="sum airsum">${sum}</div>`}
+    <div class="sum airsum">${sum}</div>
     ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
 }
 function Week() {
