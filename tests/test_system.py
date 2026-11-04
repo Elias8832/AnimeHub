@@ -79,6 +79,7 @@ class WindowsProcessTests(unittest.TestCase):
     def test_spawn_runs_the_script_in_git_bash_without_pty(self):
         with patch.object(anicli, "anicli_path", return_value=r"C:\scoop\apps\ani-cli\current\ani-cli"), \
                 patch.object(anicli, "anicli_check", return_value=None), \
+                patch.object(anicli, "anicli_outdated", return_value=False), \
                 patch.object(system, "git_bash", return_value=r"C:\Git\bin\bash.exe"), \
                 patch.object(system, "detached", return_value={"creationflags": 512}), \
                 patch.object(anicli.subprocess, "Popen") as popen:

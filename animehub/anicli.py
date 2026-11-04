@@ -92,10 +92,28 @@ def anicli_outdated():
     return bool(m) and (int(m[1]), int(m[2])) < MIN_VERSION
 
 
+def anicli_too_old_message():
+    how = "update it with Scoop: scoop update ani-cli" if system.WINDOWS else "update ani-cli in Settings → Online episodes"
+    return (f"ani-cli {anicli_version()} is too old — Anime Hub needs {'.'.join(map(str, MIN_VERSION))} or newer; "
+            f"{how}.")
+
+
+def anicli_curl_needs():
+    """["curl-impersonate"] when this ani-cli asks for it and none is installed.
+    Since 5.1 the provider sits behind Cloudflare, which turns plain curl away
+    ("Blocked by cloudflare. Try installing curl-impersonate"); the script
+    names the builds it tries, so the list comes from its own text."""
+    check = anicli_check() or {}
+    curls = check.get("curls") or []
+    if system.WINDOWS or not curls or any(system.find_program(c) for c in curls):
+        return []
+    return ["curl-impersonate"]
+
+
 def anicli_status():
     """Additive in /api/settings: stream.own / outdated / can_get / needs."""
     return {"own": anicli_path() == str(own_anicli()), "outdated": anicli_outdated(), "can_get": not system.WINDOWS,
-            "needs": system.script_needs(ANICLI_TOOLS)}
+            "needs": system.script_needs(ANICLI_TOOLS) + anicli_curl_needs()}
 
 
 def fetch_anicli():
@@ -201,6 +219,8 @@ ANICLI_NEEDS = (
     (r"Select episode", "the “Select episode” menu"),
 )
 _anicli_checks = {}
+# The curl builds the script tries in turn: dep_ch_failover "curl_chrome136,…,curl".
+ANICLI_CURLS_RE = re.compile(r'curl_exe=\$\(dep_ch_failover "([^"]+)"')
 
 
 def anicli_check():
@@ -224,7 +244,9 @@ def anicli_check():
         else:
             text = raw.decode(errors="replace")
             missing = [label for pat, label in ANICLI_NEEDS if not re.search(pat, text)]
-            result = {"ok": not missing, "missing": missing}
+            m = ANICLI_CURLS_RE.search(text)
+            curls = [c.strip() for c in m[1].split(",") if c.strip().startswith("curl_")] if m else []
+            result = {"ok": not missing, "missing": missing, "curls": curls}
         _anicli_checks[key] = result
     return _anicli_checks[key]
 
@@ -245,6 +267,9 @@ def anicli_spawn(args, env, stdout, stderr):
     check = anicli_check()
     if check and check["ok"] is False:
         raise AniCliError(anicli_unsupported_message(check))
+    if anicli_outdated():
+        # Settings and the tour say so too, but a play click is where it's felt.
+        raise AniCliError(anicli_too_old_message())
     try:
         argv = [*system.script_argv(exe), *args]
     except FileNotFoundError as e:

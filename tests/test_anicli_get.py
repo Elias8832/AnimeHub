@@ -67,3 +67,44 @@ class GetAniCli(unittest.TestCase):
     def test_a_phone_cannot_fetch(self):
         from animehub import remote
         self.assertIn("/api/anicli-get", remote.BLOCKED)
+
+
+class TooOldOrBlocked(unittest.TestCase):
+    """Fedora: a packaged ani-cli below 5.1 failed with no word why, and a
+    fetched 5.1 still failed: its site turns plain curl away."""
+
+    def setUp(self):
+        anicli._anicli_checks.clear()
+        self.addCleanup(anicli._anicli_checks.clear)
+
+    def test_a_play_click_says_ani_cli_is_too_old(self):
+        with mock.patch.object(anicli, "anicli_path", return_value="/x/ani-cli"), \
+             mock.patch.object(anicli, "anicli_check", return_value={"ok": True, "missing": []}), \
+             mock.patch.object(anicli, "anicli_version", return_value="4.8.0"), \
+             mock.patch.object(anicli.subprocess, "Popen") as popen:
+            with self.assertRaises(anicli.AniCliError) as e:
+                anicli.anicli_spawn(["x"], {}, None, None)
+        popen.assert_not_called()
+        self.assertIn("4.8.0 is too old", str(e.exception))
+        from animehub import streaming
+        self.assertEqual(streaming.friendly_stream_error(str(e.exception)), str(e.exception))
+
+    @unittest.skipIf(system.WINDOWS, "ani-cli runs in Git Bash there")
+    def test_missing_curl_impersonate_is_named(self):
+        script = support.TMP / "ani-cli-curls"
+        script.write_bytes(GOOD + b'curl_exe=$(dep_ch_failover "curl_chrome136,curl_ff117,curl") || die\n')
+        with mock.patch.object(anicli, "anicli_path", return_value=str(script)):
+            self.assertEqual(anicli.anicli_check()["curls"], ["curl_chrome136", "curl_ff117"])
+            with mock.patch.object(system, "find_program", side_effect=lambda n: None if n.startswith("curl_") else n):
+                self.assertEqual(anicli.anicli_curl_needs(), ["curl-impersonate"])
+            with mock.patch.object(system, "find_program", side_effect=lambda n: n):
+                self.assertEqual(anicli.anicli_curl_needs(), [])
+
+    def test_older_scripts_need_no_curl_impersonate(self):
+        with mock.patch.object(anicli, "anicli_check", return_value={"ok": True, "missing": []}):
+            self.assertEqual(anicli.anicli_curl_needs(), [])
+
+    def test_the_cloudflare_block_names_the_fix(self):
+        from animehub import streaming
+        msg = streaming.friendly_stream_error("ani-cli: Blocked by cloudflare. Try installing curl-impersonate")
+        self.assertIn("install curl-impersonate", msg)

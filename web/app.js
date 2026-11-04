@@ -2263,6 +2263,7 @@ function streamGroup(s) {
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
   const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), aniBtn(s)) : st.own ? srow("ani-cli", esc(aniLine(s)), aniBtn(s)) : "";
   return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show.</p>${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
+    ${!off && !st.outdated && st.needs?.includes("curl-impersonate") ? srow('curl-impersonate <span style="margin-left:6px;color:var(--warn);font-weight:500">Missing</span>', "Without it, the streaming site blocks ani-cli. Install it, then restart Anime Hub.", IMP_BTN) : ""}
     ${srow("Quality", "For watching and downloading.", `<select aria-label="Stream quality" data-a="spref" data-k="stream_quality" ${off ? "disabled" : ""}>${(st.qualities || []).map((q) => `<option value="${q}" ${q === st.quality ? "selected" : ""}>${QLABEL[q] || q + "p"}</option>`).join("")}</select>`)}
     ${srow("Audio", "Any episode's menu plays the other one.", `<span class="seg" role="group" aria-label="Default audio">${SLMODES.map(([m, l]) => `<button class="${st.mode === m ? "on" : ""}" aria-pressed="${st.mode === m}" data-a="spref" data-k="stream_mode" data-v="${m}" ${off ? "disabled" : ""}>${l}</button>`).join("")}</span>`)}
     ${srow("VPN in the status line", "Shows in the bottom line whether a VPN is up.", tgl("vpn_icon", "VPN in the status line", s.vpn_icon !== false, off))}
@@ -3336,11 +3337,13 @@ function aniLine(s) {
   if (s.stream?.outdated) return `Version ${v} is too old: online episodes won't work.` + (scoop ? " Update it with Scoop: scoop update ani-cli." : "");
   return `ani-cli${v ? " " + v : ""} found`;
 }
+/* Since ani-cli 5.1 the streaming site turns plain curl away (stream.needs names curl-impersonate); ani-cli's README says how to get it. */
+const IMP_BTN = '<button class="btn sm" data-a="ext" data-v="https://github.com/pystardust/ani-cli#fixing-errors">How to install</button>';
 function tourTools(s) {
   const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? `${ani && !st.outdated ? "." : ""} It also needs ${st.needs.join(", ")}.` : "";
   return [
     tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN),
-    tourRow(ani && !st.outdated ? "ok" : st.outdated ? "bad" : "opt", "Online episodes", aniLine(s) + need, ani && !st.outdated ? "" : aniBtn(s)),
+    tourRow(ani && !st.outdated && !st.needs?.length ? "ok" : st.outdated || (ani && st.needs?.length) ? "bad" : "opt", "Online episodes", aniLine(s) + need, ani && !st.outdated ? (st.needs?.includes("curl-impersonate") ? IMP_BTN : "") : aniBtn(s)),
     tourRow(up ? "ok" : "opt", "Sharper banners", up ? "Upscayl found" : "Optional: install Upscayl for sharper show banners.", up ? tgl("upscale_banners", "Sharper banners", s.upscale_banners) : UPSCAYL_BTN),
   ].join("");
 }
