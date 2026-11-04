@@ -59,7 +59,7 @@ class ServerMixin:
 
 LIST_ENTRY = {"id": 7, "title": "X", "status": "CURRENT", "progress": 3, "score": 8, "score100": 80,
               "episodes": 12, "format": "TV", "repeat": 1, "started_at": "2026-01-02", "completed_at": None,
-              "next_episode": {"number": 4, "in_seconds": 10, "at": time.time() + 3600}}
+              "next_episode": {"number": 4, "in_seconds": 10, "at": None}}  # "at" is set per test
 LIVE = {"media_id": 7, "format": "TV", "episodes": 12, "popularity": 5, "favourites": 1, "is_favourite": True,
         "studios": ["S"], "next_episode": None, "score_format": "POINT_10", "score_max": 10,
         "entry": {"status": "CURRENT", "score": 8, "progress": 3, "repeat": 1,
@@ -69,7 +69,8 @@ LIVE = {"media_id": 7, "format": "TV", "episodes": 12, "popularity": 5, "favouri
 class EntryPanelNeverWaits(Isolated):
     def lists(self, **entry):
         config.ANILIST_CACHE.write_text(json.dumps({"user": {"name": "u"}, "score_format": "POINT_10",
-                                                    "entries": [dict(LIST_ENTRY, **entry)], "favourites": [7],
+                                                    "entries": [dict(LIST_ENTRY, next_episode=dict(
+                                                        LIST_ENTRY["next_episode"], at=time.time() + 3600), **entry)], "favourites": [7],
                                                     "_ts": time.time()}))
 
     def test_fresh_read_is_served_as_is(self):
