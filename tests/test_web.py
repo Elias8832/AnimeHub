@@ -218,6 +218,17 @@ class WeekSection(unittest.TestCase):
         self.assertIn("const airSeen = (x) => !x.start && (x.e.progress || 0) >= x.ep;", APP)
         self.assertIn('"Month"], ["week", "Week"]', APP)
 
+    def test_calendar_week_and_month_polish(self):
+        """Empty days still read as days, today's rail marks now, one summary for both views."""
+        self.assertIn('`<div class="airnone">${ico("cal")}</div>`', APP)  # a quiet empty slot, no plain text
+        self.assertIn('<div class="airnow"><span>now ', APP)
+        self.assertIn('<div class="sum airsum">${sum}</div>', APP)  # month and week alike
+        self.assertIn('l.length ? "has" : ""', APP)  # empty month days sit back
+        self.assertIn('${l.length === 1 ? air1(l[0]) : ""}', APP)  # one show: name and time beside the poster
+        self.assertIn("@container airts (max-width:150px){", (support.ROOT / "web" / "style.css").read_text(encoding="utf-8"))  # narrow days drop the text
+        css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
+        self.assertIn("@container (max-width:58px){.airt em{", css)  # no cut "Premiere" on small posters
+
     def test_week_page_is_reachable_from_home(self):
         self.assertIn('data-a="go" data-v="week">Calendar', APP)
 
