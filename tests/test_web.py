@@ -166,8 +166,13 @@ class ShowPage(unittest.TestCase):
     their keys, rare ones behind ⋯, the episode strip."""
     def test_layout_and_keys(self):
         fran = APP[APP.index("function Fran() {"):APP.index("function frMore(")]
-        for bit in ('id="entrystats"', 'data-a="edit"', 'data-a="frmore"', 'kb("↵")', 'kb("E")', 'kb("D")', 'kb("⇧W")', 'class="eps strip"', 'id="airline"'):
+        for bit in ('id="entrystats"', 'id="entryacts"', 'data-a="frmore"', 'class="eps strip"', 'id="airline"', 'class="grp"'):
             self.assertIn(bit, fran)
+        self.assertIn('data-a="edit"', APP[APP.index("function entryActs("):APP.index("function aheadLine(")])
+        # Decision 66: no key hints on the buttons, the keys themselves stay.
+        for key in ("if (e.key === \"d\" && hit('.cta [data-a=\"dlmany\"]')) return;", "if (e.key === \"W\" && hit('[data-a=\"frbulk\"]')) return;",
+                    "hit('.cta [data-a=\"play\"]')) return;"):
+            self.assertIn(key, APP)
         self.assertNotIn('class="banner"', fran)  # the canvas shows the art now
         self.assertIn("nxt: NextDlg, entry: EntryDlg }[m.t]();", APP)
         self.assertIn("if (e.key === \"e\" && hit('[data-a=\"edit\"]')) return;", APP)
@@ -370,11 +375,11 @@ class Polish(unittest.TestCase):
         for spot in ("minsOf(ep.duration || ep.length)", "minsOf(x.duration || x.length, e.duration)", "const len = ep.duration || ep.length"):
             self.assertIn(spot, APP)
 
-    def test_show_page_lists_studio_and_popularity(self):
-        """Decision 10: AniList's read-only extras, a quiet line under the summary."""
-        self.assertIn('<p class="mfacts" id="mediafacts"></p>', APP)
-        for bit in ('["Studio", m.studios.join(", ")]', '["On lists", m.popularity.toLocaleString()]', '["Favourites", m.favourites.toLocaleString()]'):
-            self.assertIn(bit, APP)
+    def test_show_page_has_no_studio_line(self):
+        """Decision 66 (Elias, 2026-11-04: the page looked overloaded): the
+        Studio · On lists · Favourites line of Decision 10 is gone."""
+        self.assertNotIn("mediafacts", APP)
+        self.assertNotIn(".mfacts", CSS)
 
     def test_show_page_says_all_on_disk(self):
         self.assertIn('allDisk ? (local.length === 1 ? "on disk" : `all ${local.length} on disk`)', APP)
@@ -534,7 +539,7 @@ class DeviceMarks(unittest.TestCase):
     def ahead(self, f, slots, pending=False, fmt="TV"):
         a = APP.index("function aheadLine(")
         code = APP[a:APP.index("\n}\n", a) + 3]
-        js = ('const esc = (x) => String(x);' + code + 'console.log(JSON.stringify(aheadLine('
+        js = ('const esc = (x) => String(x); const ico = (n) => `<i data-ico="${n}"></i>`;' + code + 'console.log(JSON.stringify(aheadLine('
               + json.dumps(f) + "," + json.dumps(pending) + "," + json.dumps({"format": fmt, "slots": slots}) + ")))")
         out = subprocess.run(["node", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=20)
         self.assertEqual(out.returncode, 0, out.stderr)
@@ -546,8 +551,10 @@ class DeviceMarks(unittest.TestCase):
 
     def test_offers_the_episodes_anilist_is_ahead_by(self):
         out = self.ahead({"progress": 4}, self.slots(1))
-        self.assertIn("AniList is at EP 4", out)
+        self.assertIn("AniList is at ep 4", out)
         self.assertIn('data-v="[2,3,4]"', out)
+        self.assertIn('class="lnk" data-a="frahead"', out)  # Decision 67: the line's own link, in the accent
+        self.assertIn("catch up to ep 4", out)
 
     def test_an_episode_with_no_source_is_left_out(self):
         self.assertIn('data-v="[4,6]"', self.ahead({"progress": 6}, self.slots(3)))
@@ -560,7 +567,10 @@ class DeviceMarks(unittest.TestCase):
 
     def test_movie(self):
         out = self.ahead({"progress": 1}, self.slots(0, 1), fmt="MOVIE")
-        self.assertIn("Watched on AniList", out)
+        self.assertIn("watched on AniList", out)
+
+    def test_movie_button(self):
+        self.assertIn("mark watched here", self.ahead({"progress": 1}, self.slots(0, 1), fmt="MOVIE"))
 
     def test_watched_marks_setting_is_gone(self):
         self.assertNotIn("Watched marks from AniList", APP)
@@ -578,3 +588,116 @@ class DeviceMarks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class ShowPagePolish(unittest.TestCase):
+    """The show page rating pass (2026-11-04): movie facts, one entry with
+    no tab, season tabs on one row, specials named and matched."""
+    def fn(self, name):
+        a = APP.index(f"function {name}(")
+        return APP[a:APP.index("\n}\n", a) + 3]
+
+    def guess(self, page, other):
+        a = APP.index("const subDir = ")
+        js = (APP[a:APP.index("\n", a) + 1] + self.fn("otherGuess")
+              + f"const g = otherGuess({json.dumps(page)}, {json.dumps(other)}); console.log(JSON.stringify(g && g.id));")
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def other(self, sub, n=3):
+        return {"episodes": [{"rel": f"Attack on Titan/Specials/{sub}E0{i}.mp4"} for i in range(1, n + 1)]}
+
+    def test_specials_subfolder_names_one_entry(self):
+        page = {"entries": [
+            {"id": 1, "label": "Season 1", "format_label": "TV", "episodes": 25, "slots": []},
+            {"id": 2, "label": "OVA", "format_label": "OVA", "episodes": 3, "slots": []},
+            {"id": 3, "label": "Lost Girls", "format_label": "OVA", "episodes": 3, "slots": []}]}
+        self.assertEqual(self.guess(page, self.other("OVA/")), 2)  # the label wins over two OVA formats
+        self.assertIsNone(self.guess(page, self.other("")))  # no subfolder: no guess
+        self.assertIsNone(self.guess(page, self.other("OVA/", 2)))  # the count must fit
+        del page["entries"][1]
+        self.assertIsNone(self.guess(page, {"episodes": [{"rel": "A/Specials/Extras/E01.mp4"}]}))
+
+    def fran(self):
+        a = APP.index("function Fran()")
+        return APP[a:APP.index("\n}\n", a)]
+
+    def test_movie_states_its_length(self):
+        body = self.fran()
+        self.assertIn('movie ? (e.duration ? `${e.duration} min` : "")', body)
+        self.assertIn('episode${e.episodes === 1 ? "" : "s"}', body)
+        self.assertIn('p.entries.length < 2 || byOrder ? ""', body)  # one entry: a heading, no lone tab
+
+    def test_watch_order_picks_the_season(self):
+        """Decision 66: the seasons showed twice (tabs and the watch order);
+        the watch order picks, tabs only when it can't reach every entry."""
+        body = self.fran()
+        self.assertIn("p.entries.every((x) => ordIds.has(x.id))", body)
+        self.assertIn('data-a="frorder"', body)
+        self.assertIn('$("#app .frpage > .eps-head")?.scrollIntoView(', APP)
+        self.assertNotIn("${kb(", body[body.index('<div class="cta">'):])  # no key hints on the buttons
+
+    def test_season_tabs_stay_one_row(self):
+        self.assertIn(".sp2 .rels{flex-wrap:nowrap;max-width:100%;overflow-x:auto", CSS)
+        self.assertIn('$$("#app .sp2 .rels")', APP)
+
+    def test_art_dims_when_scrolled(self):
+        self.assertIn("body.sc2:has(.frpage) .cv-wash:after{opacity:1}", CSS)
+
+
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class ShowPageRedo(unittest.TestCase):
+    """Decision 67: the show page redo — top line, your list as a line + bar,
+    Play and one action pill, About at the end."""
+    def run_fn(self, name, call, pre=""):
+        a = APP.index(f"function {name}(")
+        js = ('const esc = (x) => String(x); const ico = (n) => `<i data-ico="${n}"></i>`; const S = { view: "fr" };'
+              'const statusLabel = (s) => ({ CURRENT: "Watching", COMPLETED: "Completed", PLANNING: "Planning" })[s] || s;'
+              + pre + APP[a:APP.index("\n}\n", a) + 3] + f"console.log(JSON.stringify({call}));")
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_actions_follow_the_entry(self):
+        off = self.run_fn("entryActs", 'entryActs({ status: null }, false)')
+        self.assertIn('data-a="eadd"', off)
+        self.assertNotIn('data-a="edit"', off)
+        on = self.run_fn("entryActs", 'entryActs({ status: "CURRENT", favourite: true }, false)')
+        self.assertIn('data-a="edit"', on)
+        self.assertIn('class="gb ic fav on"', on)
+        self.assertIn('<span class="lbl">', on)  # the phone sheet's copy names the heart
+        self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)"))  # before the read: Edit + ♥
+
+    def stats(self, f, fe):
+        pre = ("const frEntry = () => (" + json.dumps(fe) + "); const showById = () => null; const epTotal = () => 0; const epWatched = () => 0;"
+               "function aheadLine() { return ''; }")
+        return self.run_fn("entryStats", "entryStats(" + json.dumps(f) + ", false)", pre)
+
+    def test_your_list_line_and_bar(self):
+        fe = {"episodes": 12, "slots": [{"watched": False}] * 12}
+        out = self.stats({"status": "CURRENT", "score": 8, "progress": 5, "started_at": "2026-10-11", "media": {"episodes": 12}}, fe)
+        self.assertIn('<button class="mline" data-a="edit"', out)
+        self.assertIn("<b>watching</b>", out)
+        self.assertIn("since 2026-10-11", out)
+        self.assertEqual(out.count('class="s"'), 5)  # Home's ticks up to 40 episodes
+        self.assertIn("5/12", out)
+        long = self.stats({"status": "CURRENT", "progress": 20, "media": {"episodes": 148}}, {"episodes": 148, "slots": []})
+        self.assertIn('class="tline"', long)
+        movie = self.stats({"status": "PLANNING", "progress": 0, "media": {"episodes": 1}}, {"episodes": 1, "slots": []})
+        self.assertNotIn("tbar", movie)  # no "0/1" bar for a movie
+        off = self.stats({"status": None}, {"episodes": 1, "slots": []})
+        self.assertIn("not on your list yet", off)
+        self.assertIn('data-a="eadd"', off)  # phones: the action pill is hidden, the add stays
+
+    def test_about_and_top_line(self):
+        a = APP.index("function Fran()")
+        fran = APP[a:APP.index("\nfunction frOrder(", a)]
+        self.assertIn('<span class="fmt">', fran)
+        self.assertIn('class="alk"', fran)
+        self.assertIn("${frAbout(e)}", fran)
+        self.assertIn('<div class="fold">', fran)
+        self.assertIn('const al = $("#aboutlive");', APP)
+        self.assertIn(".frpage .fold{min-height:calc(100vh - 160px)}", CSS)
+        self.assertNotIn(".st2", CSS)  # the old stats row is gone

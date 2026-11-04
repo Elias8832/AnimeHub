@@ -100,6 +100,11 @@ button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
 #canvas .out{opacity:0}
 .cv-wash{inset:0;background:linear-gradient(90deg,rgba(13,14,17,.66),rgba(13,14,17,.26) 46%,rgba(13,14,17,.1) 75%),linear-gradient(0deg,rgba(13,14,17,.94),rgba(13,14,17,.4) 40%,rgba(13,14,17,.15) 60%),linear-gradient(180deg,rgba(13,14,17,.5),transparent 18%)}
 .cv-grain{inset:0;opacity:.07;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+/* Scrolled down a show page, the art dims: the episode names and the watch
+   order sit where the art is brightest, and bright art (Frieren) washed their
+   small text out. Only opacity changes, cheap on phones. */
+.cv-wash:after{content:"";position:absolute;inset:0;background:rgba(13,14,17,.5);opacity:0;transition:opacity .5s ease}
+body.sc2:has(.frpage) .cv-wash:after{opacity:1}
 :root[data-art=soft] .cv-art,:root[data-art=off] .cv-art,:root[data-art=off] .cv-blur{display:none!important}
 :root[data-art=soft] .cv-blur{inset:-200px;filter:blur(140px) saturate(1.3) brightness(.5)}
 :root[data-grain=off] .cv-grain{display:none}
@@ -549,44 +554,65 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2{padding:4px 44px 110px;position:relative}
 .sp2 .backbtn{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px 0 10px;border-radius:999px;font:500 12px var(--mono);color:var(--ink-2);background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px);margin:0!important;position:relative!important}
 .sp2 .backbtn:hover{color:var(--ink);background:var(--glass-h)}.sp2 .backbtn .ico{width:14px;height:14px}
-.sp2 .hero{display:grid;grid-template-columns:minmax(0,1fr);gap:48px;align-items:end;min-height:min(56vh,500px);margin:0!important;padding:28px 0 0}
+/* Decision 67 (Elias, 2026-11-04: "a complete redo"): the first screen is the
+   show — top line, title, summary, your list, Play + one action pill — and its
+   episodes, sized so the strip sits whole at the bottom; the watch order and
+   About follow below. Pills where they mean something: Play, the action
+   pill, Sub/Dub. */
+.sp2 .fold{display:flex;flex-direction:column;justify-content:flex-end}
+.frpage .fold{min-height:calc(100vh - 160px)}
+.sp2 .hero{display:grid;grid-template-columns:minmax(0,1fr);gap:48px;align-items:end;margin:0!important;padding:20px 0 0}
 .sp2 .hero.framed{grid-template-columns:minmax(0,1fr) 280px}
+.sp2 .hl2{min-width:0}
+.sp2 .mline,.sp2 .ahead{max-width:640px}.sp2 .tbar{max-width:440px}
 .sp2 .hp .poster{width:280px;border-radius:22px;box-shadow:0 30px 70px rgba(0,0,0,.5),var(--edge);font-size:18px}
-.sp2 .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font:400 12px var(--mono);color:var(--ink-2);margin:0}
-.sp2 .meta .mdot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;transition:background .45s}
-.sp2 .meta .mchip.al{font:400 12px var(--mono);background:none;border:0;box-shadow:none;padding:0;color:var(--accent);backdrop-filter:none}
-.sp2 .meta .mchip.al .ico{color:var(--accent)}
-.sp2 .meta .live-t:empty{display:none}.sp2 .meta .live-t{color:var(--ink)}
-.sp2 .meta .playing{display:inline-flex;align-items:center;gap:7px;background:none;border:0;padding:0;backdrop-filter:none;font:inherit;color:var(--ink)}
+.sp2 .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font:500 13.5px var(--ui);color:var(--ink-2);margin:0}
+.sp2 .meta .fmt{height:20px;padding:0 6px;border-radius:5px;border:1px solid rgba(255,255,255,.34);font:650 10.5px var(--ui);letter-spacing:.05em;text-transform:uppercase;display:inline-flex;align-items:center;color:var(--ink)}
+.sp2 .meta .sep{opacity:.5}
+.sp2 .meta .alk{color:var(--accent);font-weight:650;text-decoration:none;transition:color .45s}.sp2 .meta .alk:hover{text-decoration:underline;text-underline-offset:3px}
+.sp2 .meta .live-t:empty{display:none}.sp2 .meta .live-t{color:var(--ink);font:500 12px var(--mono)}
+.sp2 .meta .playing{display:inline-flex;align-items:center;gap:7px;background:none;border:0;padding:0;backdrop-filter:none;font:500 12px var(--mono);color:var(--ink)}
 .sp2 .led{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:led 2.2s ease-in-out infinite;display:inline-block}
-.sp2 h1{font:700 clamp(52px,7vw,96px)/.92 var(--display);text-transform:uppercase;letter-spacing:.004em;margin:14px 0 16px;max-width:1000px;text-wrap:balance;text-shadow:0 4px 40px rgba(0,0,0,.35)}
-.sp2 .desc{max-width:600px;color:var(--ink-2);font-size:15px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:0}
-.st2{display:flex;align-items:stretch;margin-top:22px;min-height:58px}
-.st2>button{display:flex;flex-direction:column;align-items:flex-start;padding:2px 24px;border-left:1px solid rgba(255,255,255,.14);border-radius:0;text-align:left}
-.st2>button:first-child{padding-left:0;border-left:0}
-.st2>button:hover .k{color:var(--ink-2)}
-.st2 .v{font:700 34px/1 var(--display);display:flex;align-items:baseline;gap:1px}
-.st2 .v small{font-size:18px;color:var(--mute)}
-.st2 .k{margin-top:7px;font:400 11px var(--mono);color:var(--mute);transition:color .2s}
-.st2 .fvb .v .ico{width:26px;height:26px;color:var(--mute);transition:color .2s,transform .3s var(--spring)}
-.st2 .fvb.on .v .ico{color:#ff8fa3;fill:currentColor}
-.st2 .fvb:hover .v .ico{transform:scale(1.12)}
-.ahead{margin-top:10px;font:400 12px var(--mono);color:var(--mute)}
-.ahead .link-btn{font:inherit;padding:2px 6px;margin-left:-2px;color:var(--ink-2);text-decoration:underline;text-underline-offset:3px}
-.st2 .fvb.pop1 .ico{animation:heartPop .55s var(--spring)}
-.st2.unl{align-items:center;gap:16px;min-height:58px}.st2.unl .k{margin:0;font-size:13px;color:var(--ink-2)}
-.st2.unl>.btn{display:inline-flex;flex-direction:row;align-items:center;gap:8px;height:40px;padding:0 18px;border:0;border-radius:999px;font:600 14px var(--ui)}
+.sp2 h1{font:700 clamp(54px,6.6vw,108px)/.92 var(--display);text-transform:uppercase;letter-spacing:.004em;margin:14px 0 16px;max-width:1000px;text-wrap:balance;text-shadow:0 4px 40px rgba(0,0,0,.35)}
+.sp2 h1.mid{font-size:clamp(48px,5.2vw,90px)}
+.sp2 h1.long{font-size:clamp(44px,4.5vw,76px)}
+.sp2 .desc{max-width:640px;color:var(--ink-2);font-size:15.5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:0}
+/* your list: one mono line (opens the editor) + Home's tick bar */
+.sp2 .stats2:empty{display:none}
+.sp2 .mline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:18px;padding:0;font:400 12px var(--mono);color:var(--ink-2);text-align:left}
+.sp2 .mline b{font-weight:600;color:var(--ink)}
+.sp2 button.mline:hover span{color:var(--ink)}
+.sp2 .mline .sep,.sp2 .ahead .sep{width:3px;height:3px;border-radius:50%;background:var(--mute)}
+.sp2 .mline .warn{color:var(--warn)}
+.sp2 .mline .add{display:none;align-items:center;gap:4px;padding:0;font:500 12px var(--mono);color:var(--accent)}.sp2 .mline .add .ico{width:13px;height:13px}
+.sp2 .tbar{margin-top:12px}
+.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden}.tline i{display:block;height:100%;border-radius:3px;background:var(--accent);animation:growx .6s .15s var(--ease) both;transform-origin:left}
+.ahead{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin-top:12px;font:400 12px var(--mono);color:var(--mute)}
+.ahead .lnk{display:inline-flex;align-items:center;gap:2px;padding:0;font:500 12px var(--mono);color:var(--accent)}
+.ahead .lnk .ico{width:13px;height:13px;transition:transform .2s var(--ease)}.ahead .lnk:hover .ico{transform:translateX(2px)}
+/* Play + the action pill */
 .sp2 .cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px;align-items:center}
-.sp2 .cta .btn.big{height:48px;font-size:15px;padding:0 20px}
-.sp2 .cta .btn.ic{width:48px;padding:0}
-.sp2 .cta .btn .kb{margin-left:2px}
-.sp2 .cta .btn.pri .kb{background:rgba(0,0,0,.08);color:rgba(0,0,0,.55)}
-.sp2 .cta .btn .v{font:500 11px var(--mono)}.sp2 .cta .btn .v.ok{color:var(--ink-2)}.sp2 .cta .btn .v.warn{color:var(--accent)}
+.sp2 .cta .btn.big{height:48px;font-size:15px;padding:0 26px 0 22px}
 .sp2 .cta .btn.loading{opacity:.85}
+.sp2 .grp{height:48px;display:inline-flex;align-items:center;gap:2px;padding:0 5px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+.sp2 .grp:empty{display:none}
+.sp2 .grp #entryacts{display:contents}
+.sp2 .gb{position:relative;height:38px;min-width:38px;padding:0 13px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:600 14.5px var(--ui);color:var(--ink);white-space:nowrap;transition:background .15s}
+.sp2 .gb:hover,.sp2 .gb.on{background:rgba(255,255,255,.1)}
+.sp2 .gb .ico{width:17px;height:17px}
+.sp2 .gb.ic{padding:0;width:38px}
+.sp2 .gb .lbl{display:none}
+.sp2 .gb.fav .ico{transition:color .2s,transform .3s var(--spring)}
+.sp2 .gb.fav:hover .ico{transform:scale(1.12)}
+.sp2 .gb.fav.on .ico{color:#ff8fa3;fill:currentColor}
+.sp2 .gb.fav.pop1 .ico{animation:heartPop .55s var(--spring)}
+.sp2 .gb .v{font:500 11px var(--mono)}.sp2 .gb .v.ok{color:var(--ink-2)}.sp2 .gb .v.warn{color:var(--accent)}
+.sp2 .grp .gsep{width:1px;height:20px;margin:0 3px;background:rgba(255,255,255,.14)}
+.sp2 .grp .gsep:first-child{display:none}
 .sp2 .frbuild{margin-top:22px}
 /* season tabs + strip */
-.sp2 .eps-head{display:flex;align-items:center;gap:16px;margin:42px 0 14px;flex-wrap:wrap}
-.sp2 .eps-head h2{font:600 17px var(--ui);margin:0}
+.sp2 .eps-head{display:flex;align-items:center;gap:6px 14px;margin:36px 0 4px;flex-wrap:wrap}
+.sp2 .eps-head h2{font:600 18px var(--ui);letter-spacing:-.01em;margin:0}
 .sp2 .tabs2{display:flex;flex-direction:column;gap:6px;min-width:0}
 .sp2 .rels{margin:0;padding:0;background:none;border:0;box-shadow:none;gap:2px;flex-wrap:wrap}
 .sp2 .rels button{height:32px;padding:0 13px;font:500 12px var(--mono);color:var(--mute)}
@@ -597,18 +623,18 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .rels button small{font:500 9px var(--mono);letter-spacing:.04em;margin-right:6px}
 .sp2 .rels.extra{border:0;margin:0}.sp2 .rels.extra button{height:28px;font-size:11px}
 .sp2 .ctl{margin-left:auto;display:flex;align-items:center;gap:10px}
-.sp2 .srcl{font:400 12px var(--mono);color:var(--ink-2);padding:6px 12px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+.sp2 .srcl{font:400 12px var(--mono);color:var(--mute)}
 .sp2 .srcl:empty{display:none}
 .sp2 .ctl .arr{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:var(--glass);box-shadow:var(--edge);color:var(--ink-2)}
 .sp2 .ctl .arr:hover:not(:disabled){background:var(--glass-h);color:var(--ink)}.sp2 .ctl .arr:disabled{opacity:.3}
-.sp2 .eps.strip{display:flex;gap:14px;overflow-x:auto;overflow-y:visible;padding:8px 6px 14px;margin:0 -6px;scroll-behavior:smooth;scroll-snap-type:x proximity;scrollbar-width:none}
+.sp2 .eps.strip{display:flex;gap:16px;overflow-x:auto;overflow-y:visible;padding:8px 6px 14px;margin:0 -6px;scroll-behavior:smooth;scroll-snap-type:x proximity;scrollbar-width:none}
 .sp2 .eps.strip::-webkit-scrollbar{display:none}
 .sp2 .eps.strip.mr{-webkit-mask:linear-gradient(90deg,#000 88%,transparent);mask:linear-gradient(90deg,#000 88%,transparent)}
 .sp2 .eps.strip.ml.mr{-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 88%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 88%,transparent)}
 .sp2 .eps.strip.ml:not(.mr){-webkit-mask:linear-gradient(90deg,transparent,#000 6%);mask:linear-gradient(90deg,transparent,#000 6%)}
 .sp2 .eps-note{margin:6px 0 0}
 /* episode tile: art card + title below */
-.sp2 .ep{flex:none;width:224px;aspect-ratio:auto;background:none;border-radius:0;box-shadow:none;overflow:visible;outline:0;scroll-snap-align:start;transition:transform .3s var(--ease)}
+.sp2 .ep{flex:none;width:clamp(232px,calc((100vw - 88px - 4 * 16px) / 4.6),360px);aspect-ratio:auto;background:none;border-radius:0;box-shadow:none;overflow:visible;outline:0;scroll-snap-align:start;transition:transform .3s var(--ease)}
 .sp2 .ep:before,.sp2 .ep:after{display:none}
 .sp2 .ep:hover{transform:translateY(-6px);box-shadow:none}
 .sp2 .ep>*{position:relative;z-index:auto}
@@ -630,17 +656,17 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .eprog i{background:var(--accent)}
 .sp2 .eplay{left:50%;top:50%;margin:-22px 0 0 -22px;width:44px;height:44px;background:var(--ink);color:#111}
 .sp2 .dots{right:8px;top:8px}
-.sp2 .et{margin-top:10px;padding:0 2px}
-.sp2 .et b{display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:none}
-.sp2 .et small{display:block;font:400 11px var(--mono);color:var(--mute);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp2 .et{margin-top:10px;padding:0 2px;left:auto;right:auto;bottom:auto} /* the old overlay tile's offsets moved the text up into the art */
+.sp2 .et b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-weight:600;font-size:14.5px;line-height:1.3;overflow:hidden}
+.sp2 .et small{display:block;font:400 11.5px var(--mono);color:var(--mute);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sp2 .ep.resume .et small{color:var(--accent);font-weight:400}
 .sp2 .ep .selbox{right:9px;top:9px}
 .sp2 .ep.sel .epa{outline:2px solid var(--accent);outline-offset:3px;overflow:visible}
 .sp2 .frother-h{font:600 17px var(--ui);margin:40px 0 0}
 .sp2 .hsec{position:relative} /* on phones the heading was painted over without it */
 .sp2 .frorder{gap:12px;align-items:flex-start;scroll-snap-type:none}
-.sp2 .ot{--w:104px;flex:none;width:var(--w);display:block;padding:0;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.sp2 .ot.big{--w:156px}
+.sp2 .ot{--w:120px;flex:none;width:var(--w);display:block;padding:0;background:none;border:0;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.sp2 .ot.big{--w:168px}
 .sp2 .ot.big:not(:first-child),.sp2 .ot.apart{margin-left:18px} /* a season and its extras read as one group */
 .sp2 .ot .pw{display:block;border-radius:14px;box-shadow:0 12px 28px rgba(0,0,0,.35),var(--edge);transition:transform .3s var(--ease)}
 .sp2 .ot.big .pw{border-radius:18px}
@@ -660,6 +686,35 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .ot .nt{color:var(--ink-2)}
 .sp2 .ot.on small{color:var(--accent)}
 .sp2 .frother .link-btn{font:500 12px var(--mono)}
+.sp2 .eps-head .tord{padding:0;gap:2px;font:400 12px var(--mono);color:var(--mute)}.sp2 .eps-head .tord:hover{color:var(--ink)}.sp2 .eps-head .tord .ico{width:13px;height:13px}
+.frpage>.eps-head,.frpage .hsec.ford{scroll-margin-top:84px}
+.sp2 .eps-head.frother{justify-content:flex-start;gap:14px}
+.sp2 .eps:not(.strip){display:flex;flex-wrap:wrap;gap:14px} /* other files: tiles side by side like the strip, not spread over wide grid cells */.sp2 .frother .link-btn{margin:0}
+.sp2 .frother .link-btn[data-g]{color:var(--accent)}
+/* Text over the art: bright art (Frieren's grey sketch) washed the small grey
+   text out. A soft dark halo keeps it readable on any art, and the art itself
+   stays as bright as it was. */
+.sp2 .meta,.sp2 .desc,.sp2 .mline,.sp2 .tbar span,.sp2 .ahead,.sp2 .et,.sp2 .rels button:not(.on),.sp2 .eps-head h2,.sp2 .srcl,.sp2 .tord,
+.sp2 .frother h3,.sp2 .frother .link-btn,.sp2 .frother-h,.sp2 .hsec .sh,.sp2 .ot b,.sp2 .ot small,.sp2 .eps-note{text-shadow:0 1px 2px rgba(0,0,0,.7),0 0 14px rgba(0,0,0,.6)}
+.sp2 .et small,.sp2 .ot small,.sp2 .ahead,.sp2 .srcl,.sp2 .tord{color:#a4a4aa}
+.sp2 .eps-head .ctl{margin-left:auto}
+/* About: the whole summary and the plain facts (Decision 67) */
+.sp2 .about{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr);gap:clamp(32px,5vw,80px);max-width:1320px;margin-top:64px}
+.sp2 .about .sh{display:flex;margin-bottom:14px}.sp2 .about h2{font:600 18px var(--ui);letter-spacing:-.01em}
+.sp2 .about p{color:var(--ink-2);font-size:15px;line-height:1.7;white-space:pre-line;max-width:78ch}
+.sp2 .about dl{display:grid;grid-template-columns:auto 1fr;gap:12px 24px;align-content:start;padding-top:40px;font-size:14px}
+.sp2 .about dt{font:400 12px var(--mono);color:var(--mute);padding-top:2px}
+.sp2 .about #aboutlive{display:contents}
+.sp2 .hsec.ford{margin-top:52px}
+/* Season tabs stay one row: many long names (Attack on Titan) scroll
+   sideways with a fade at the cut edge instead of wrapping to a second row. */
+.sp2 .rels{flex-wrap:nowrap;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.sp2 .rels::-webkit-scrollbar{display:none}
+.sp2 .rels button{flex:none;white-space:nowrap}
+.sp2 .rels.mr{-webkit-mask:linear-gradient(90deg,#000 90%,transparent);mask:linear-gradient(90deg,#000 90%,transparent)}
+.sp2 .rels.ml.mr{-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 90%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 90%,transparent)}
+.sp2 .rels.ml:not(.mr){-webkit-mask:linear-gradient(90deg,transparent,#000 6%);mask:linear-gradient(90deg,transparent,#000 6%)}
+.sp2 .tabs2{flex:0 1 auto}
 .sp2 .matchbox{margin-top:36px;padding:22px 24px;border-radius:var(--r-xl);background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(22px)}
 .sp2 .matchbox h2{font:700 26px var(--display);text-transform:uppercase;margin:0 0 10px}
 #cm .mi small{margin-left:6px;font:400 11px var(--mono);color:var(--mute)}
@@ -713,17 +768,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 #cm .cap{font:500 11px var(--mono);color:var(--mute);padding:8px 10px 6px}
 .sp2 .hero.bare{min-height:0;padding-top:40px}
 /* polish pass (step 2) */
-.sp2 .meta .sep{color:var(--mute)}
-.sp2 .mfacts{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:13.5px;color:var(--ink-2);margin:6px 0 2px}.sp2 .mfacts:empty{display:none}
-.sp2 .mfacts span{font-variant-numeric:tabular-nums}.sp2 .mfacts small{color:var(--mute);font-size:12px;margin-right:7px}
-.sp2 .meta .mchip.al{gap:4px;margin:0}
-.st2>button{justify-content:flex-start}
-.st2 .v{height:34px;align-items:flex-end}
-.st2 .fvb .v .ico{width:28px;height:28px;margin-bottom:2px}
-.sp2 .eps-head{align-items:flex-start}
-.sp2 .ctl{min-height:32px}
-.sp2 .srcl{height:32px;display:inline-flex;align-items:center;padding:0 12px}
-.sp2 .ctl .arr{width:32px;height:32px}
 .sp2 .rels button .n{font:400 11px var(--mono);color:var(--mute);margin-left:6px}
 .sp2 .rels button.on .n{color:var(--ink-2)}
 .sp2 .rels.extra button .n{font-size:10px}
@@ -746,13 +790,9 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .edh .cap,#entrybox .cap{padding:0}
 #entrybox .datef .dpk{width:40px;height:40px;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:var(--edge);border:0;flex:none;display:grid;place-items:center}
 #entrybox .datef .dpk:hover{background:rgba(255,255,255,.1)}
-.sp2 .hero{min-height:min(44vh,420px);padding-top:16px}.sp2 .eps-head{margin-top:34px}
 /* polish pass 2 (Elias 2026-10-24) */
 .sp2 .eps.strip{padding-top:18px;padding-bottom:18px}
 .sp2 .ep.resume .epa,.sp2 .ep.sel .epa{outline-offset:2px}
-.sp2 .et{margin-top:18px}
-.sp2 .eps-head{align-items:flex-end}
-.sp2 .ctl{align-self:flex-end}
 .seg button.on{background:var(--accent);color:#111}
 /* the entry dialog clips only its art header, so the date picker can open over the edge */
 .dialog.entry{overflow:visible}
@@ -1391,10 +1431,10 @@ body.srch #pal{display:grid}
   .hc{width:230px}
   .rc{width:104px}.rc .pw .poster{width:104px}
   .sp2 h1{font-size:44px}.sp2 .hero.framed{grid-template-columns:minmax(0,1fr)}.sp2 .hp{display:none}
-  .st2{flex-wrap:wrap;gap:12px 0}.st2>button{padding:2px 16px}.st2 .v{font-size:28px}
   .sp2 .cta .btn.big{height:44px;font-size:14px;padding:0 16px}
-  .sp2 .eps-head{flex-direction:column;align-items:stretch}.sp2 .ctl{margin-left:0;flex-wrap:wrap}
-  .sp2 .ep{width:200px}
+  .sp2 .ctl{flex-wrap:wrap}
+  .sp2 .ep{width:220px}
+  .sp2 .about{grid-template-columns:minmax(0,1fr)}.sp2 .about dl{padding-top:0}
   .lib2 .filters{gap:6px}.lib2 .filters .fill{display:none}
   .lib2 .rng .rt{width:90px}
   .lib2 .wall{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:24px 14px}
@@ -1495,7 +1535,7 @@ body.srch #pal{display:grid}
 .tl .tlg .ev b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl .tlg .ev .badge{white-space:nowrap}
 .tl .tlg .ev .t{font-size:11px;align-self:flex-start;margin-top:4px;white-space:nowrap}
-.sp2 .cta .btn .v.warn,#cm .mi .v.warn{border:0;padding-left:0;max-width:none}
+.sp2 .gb .v.warn,.sp2 .mline .warn,#cm .mi .v.warn{border:0;padding-left:0;max-width:none;font-size:inherit}
 .sp2 .cta .btn .v{font-size:11px}#cm .mi .v{font-size:10px} /* the old .warn note style leaked a yellow bar in */
 
 /* Journal on AniList (Elias, 2026-10-24): the range chart with its hours */
@@ -1984,39 +2024,38 @@ body.has-side #app{padding-left:340px}
   .fsheet .rng .rt{flex:1;width:auto}
   .fsheet .filters .grabber{margin:-8px auto 4px;flex:none}
 }
-/* The show page on a phone (S2, Elias 2026-10-27: "extremely cluttered"):
-   a short header — meta, title, two lines of the summary, one small line of
-   your score / watched / status — then one sideways row of seasons and
-   Sub/Dub, then the episodes. Play and ⋯ sit at the bottom; ⋯ opens as a
-   sheet with the page's other buttons first. */
+/* The show page on a phone (S2, Elias 2026-10-27: "extremely cluttered";
+   Decision 67): a short header — the top line, title, two lines of the
+   summary, your list's line and bar — then one sideways row of the episode
+   head and Sub/Dub, then the episodes. Play and ⋯ sit at the bottom; ⋯ opens
+   as a sheet with the page's other buttons first. */
 @media (max-width:700px){
-  .frpage .cta,.frpage .mfacts,.frpage .st2 .fvb,.frpage .srcl{display:none!important}
+  .frpage .cta,.frpage .srcl{display:none!important}
+  .frpage .fold{min-height:0}
   .frpage .hero{padding-top:0!important;min-height:30vh!important}
-  .frpage h1{font-size:40px!important;margin:10px 0 8px!important}
+  .frpage h1,.frpage h1.mid,.frpage h1.long{font-size:40px!important;margin:10px 0 8px!important}
   .frpage .desc{-webkit-line-clamp:2;font-size:14px;margin:0}
   .frpage .stats2{margin:0}
-  .frpage .st2{margin-top:12px;min-height:0;gap:0;flex-wrap:nowrap}
-  .frpage .st2>button{flex-direction:row;align-items:baseline;gap:5px;padding:0 14px 0 0;border:0}
-  .frpage .st2 .v{font:600 15px var(--mono);height:auto}
-  .frpage .st2 .v small{font-size:11px}
-  .frpage .st2 .k{margin:0;font-size:11px;white-space:nowrap}
-  .frpage .st2>button:nth-child(3) .k{display:none} /* the status needs no label */
+  .frpage .mline{margin-top:12px}
+  .frpage .mline .add{display:inline-flex} /* the action pill is hidden here: the one add stays in reach */
+  .frpage .tbar{margin-top:10px;max-width:none}
   .frpage .eps-head{flex-direction:row;flex-wrap:nowrap;align-items:center;gap:8px;margin:22px -16px 8px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
   .frpage .eps-head::-webkit-scrollbar{display:none}
+  .frpage .eps-head h2{white-space:nowrap}
+  .frpage .eps-head .tord{flex:none;white-space:nowrap}
   .frpage .tabs2{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:2px;flex:none}
   /* Round 2 (TODO 140): no logo over the art, back lines up with settings,
-     one action per job (AniList sits in ⋯, Add to Planning stays quiet beside Play). */
+     one action per job (AniList sits in ⋯). */
   body:has(.frpage) #nav{pointer-events:none}
   body:has(.frpage) #nav>*{pointer-events:auto}
   body:has(.frpage) #nav .brand{visibility:hidden}
   .sp2.frpage .backbtn{display:flex;width:fit-content;margin:-62px 0 0!important;background:rgba(10,11,13,.55)}
-  .frpage .meta .sep,.frpage .meta .mchip.al,.frpage .meta .mdot{display:none}
-  .frpage .meta,.frpage .desc{text-shadow:0 1px 8px rgba(0,0,0,.75)}
+  .frpage .meta .sep,.frpage .meta .alk{display:none}
+  .frpage .meta,.frpage .desc,.frpage .mline,.frpage .ahead{text-shadow:0 1px 2px rgba(0,0,0,.8),0 0 14px rgba(0,0,0,.7)}
+  .frpage .meta{color:var(--ink)} /* bright art (Frieren) washed the grey line out */
   .frpage .desc{color:var(--ink)}
-  .frpage .st2.unl{margin-top:14px}
-  .frpage .st2.unl .k{display:none}
-  .frpage .st2.unl>.btn{height:36px;margin:0;padding:0 14px 0 10px!important;font:500 13px var(--ui);color:var(--ink);background:rgba(255,255,255,.12);box-shadow:none}
-  .frpage .st2.unl>.btn .ico{width:15px;height:15px}
+  .frpage .about{margin-top:40px}
+  .sp2 .grp{max-width:100%;overflow-x:auto;scrollbar-width:none}.sp2 .grp::-webkit-scrollbar{display:none} /* folders (Det) keep their pill on phones: it scrolls instead of running off the edge */
   .sp2 .eps.strip{gap:10px}
   /* The list brings its own dark ground, so scrolling it over bright art keeps the text readable. */
   .frpage .eps.strip{position:relative;isolation:isolate}
@@ -2065,7 +2104,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   html{-webkit-tap-highlight-color:transparent}
   img,.poster,.epimg,.upa2,.dart{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
   #tabbar,#nav,.rbar,.pbar,.chip,.btn,.seg,.prow,.sli{-webkit-user-select:none;user-select:none}
-  .btn,.chip,.seg button,.prow,.sli,.srrow,.srcard,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.upa2,.hc,.st2>button{transition:transform .16s var(--ease),opacity .16s,background .2s}
+  .btn,.chip,.seg button,.prow,.sli,.srrow,.srcard,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.upa2,.hc,.gb{transition:transform .16s var(--ease),opacity .16s,background .2s}
   .btn:active:not(:disabled),.chip:active,.seg button:active,#tabbar .sq:active{transform:scale(.95)}
   .prow:active,.sli:active,.srrow:active,.mi:active{background:var(--pick)}
   .lib2 .card:active,.rc:active,.rec .rcv:active,.srcard:active,.ep:active,.hc:active,.upa2:active{transform:scale(.97);opacity:.85}
@@ -2150,8 +2189,8 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .sp2 .rels button,.lib2 .tabs button,.gchip,.chip{min-height:38px}
   .lib2 .gtray{max-height:50px}
   .lib2 .gchip{height:38px}.gmore{height:38px}
-  .sp2 .meta .mchip.al{padding:12px 6px;margin:-12px -6px}
-  .frpage .st2>button{padding-top:10px!important;padding-bottom:10px!important;margin:-10px 0}
+  .sp2 .meta .alk{padding:12px 6px;margin:-12px -6px}
+  .sp2 .mline{padding:8px 0;margin-bottom:-8px}
   .sp2 .eps.strip .ep .dots{width:40px;height:40px;margin-top:-20px}
 }
 @media (pointer:coarse){

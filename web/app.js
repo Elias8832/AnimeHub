@@ -1350,11 +1350,28 @@ function slotTile(p, e, x, tgId, i = 0) {
     title: (!spoils(x) && x.title) || (movie ? e.label : "Episode " + x.number), meta, menu: `Episode ${x.number} menu` });
 }
 /* Files of the franchise's folders that are no entry ("Specials"): plain
-   tiles, and the way to say which entry they are. */
+   tiles, and the way to say which entry they are. Tiles are named by their
+   own subfolder ("OVA 1"). When that subfolder names one entry whose
+   episode count fits (its label first, else its format), the button says
+   so and opens with it picked; saving stays the user's click. */
+const subDir = (o, ep) => { const parts = (ep.rel || "").split("/"); return parts.length > 3 ? parts[parts.length - 2] : ""; };
+function otherGuess(p, o) {
+  const dirs = new Set(o.episodes.map((ep) => subDir(o, ep).toLowerCase()));
+  const d = dirs.size === 1 ? [...dirs][0] : "";
+  if (!d) return null;
+  const fits = p.entries.filter((x) => (x.episodes || x.slots.length) === o.episodes.length);
+  for (const k of ["label", "format_label"]) {
+    const hits = fits.filter((x) => (x[k] || "").toLowerCase() === d);
+    if (hits.length) return hits.length === 1 ? hits[0] : null;
+  }
+  return null;
+}
 function otherLocal(p, e) {
-  return p.other_local.map((o) => `<div class="eps-head frother"><h3>${esc(o.folder)} · ${esc(o.label)}</h3><button class="link-btn fix" data-a="pinopen" data-s="${esc(o.show_id)}" data-k="${esc(o.season)}" data-l="${esc(o.folder + " · " + o.label)}">Which season is this?</button></div>
-    <div class="eps">${o.episodes.map((ep, i) => slotTile(p, { ...e, slots: [], format: null, poster: p.poster }, { id: ep.id, number: ep.number, title: null, thumb: null,
-      local: { id: ep.id, files: ep.files }, online: null, watched: ep.watched, position: ep.position, duration: ep.duration, last_played: ep.last_played }, null, i)).join("")}</div>`).join("");
+  return p.other_local.map((o) => { const g = otherGuess(p, o), lbl = o.folder + " · " + o.label;
+    return `<div class="eps-head frother"><h3>${esc(lbl)}</h3><button class="link-btn fix" data-a="pinopen" data-s="${esc(o.show_id)}" data-k="${esc(o.season)}" data-l="${esc(lbl)}"${g ? ` data-g="${g.id}"` : ""}>${g ? `Looks like ${esc(g.label)} — match it?` : "Which season is this?"}</button></div>
+    <div class="eps">${o.episodes.map((ep, i) => { const d = subDir(o, ep);
+      return slotTile(p, { ...e, slots: [], format: null, poster: p.poster }, { id: ep.id, number: ep.number, title: d ? `${d} ${ep.number}` : null, thumb: null,
+      local: { id: ep.id, files: ep.files }, online: null, watched: ep.watched, position: ep.position, duration: ep.duration, length: ep.length, last_played: ep.last_played }, null, i); }).join("")}</div>`; }).join("");
 }
 function frWhen(at) { const s = at - Date.now() / 1000; return s > 0 ? `in ${fmtIn(s)}` : "now"; }
 /* The show page (Decision 38): the show's art is the canvas behind it;
@@ -1371,15 +1388,22 @@ function Fran() {
   const tg = frTarget(e), movie = e.format === "MOVIE" && e.slots.length <= 1;
   const goBusy = tg && slotIds(tg.x).some(epLoading);
   const goLabel = tg ? `${KIND_WORD[tg.kind]}${movie || tg.kind === "rewatch" ? "" : " E" + String(tg.x.number).padStart(2, "0")}` : "";
-  const facts = [p.title && p.title !== e.title ? p.title : "", e.format_label, e.year, e.episodes ? `${e.episodes} episodes` : e.aired ? `${e.aired} so far` : "",
-    MEDIA_STATUS[e.status] && e.status !== "FINISHED" ? MEDIA_STATUS[e.status].toLowerCase() : "", e.score ? `★ ${e.score}` : ""].filter(Boolean);
+  /* The top line (Decision 67): format as a small badge, then plain facts.
+     A movie states its length, not "1 episodes" (one count reads "1 episode"). */
+  const count = movie ? (e.duration ? `${e.duration} min` : "") : e.episodes ? `${e.episodes} episode${e.episodes === 1 ? "" : "s"}` : e.aired ? `${e.aired} so far` : "";
+  const facts = [p.title && p.title !== e.title ? p.title : "", e.year, count, !movie && e.duration ? `${e.duration} min` : "",
+    MEDIA_STATUS[e.status] && e.status !== "FINISHED" ? MEDIA_STATUS[e.status].toLowerCase() : ""].filter(Boolean);
   const airing = e.next_airing?.at ? `E${e.next_airing.episode} airs ${frWhen(e.next_airing.at)}` : "";
   const nowId = S.data.now?.episode_id;
   const playing = nowId && e.slots.some((x) => slotIds(x).includes(nowId)) ? `<span class="playing"><i class="led"></i>${S.data.now.loading ? "loading" : "playing"} · ${esc(S.data.now.label)}</span>` : "";
   const main = p.entries.filter((x) => x.group === "main"), extra = p.entries.filter((x) => x.group === "extra");
   const chip = (x, fmt) => { const n = entryCount(x);
     return `<button class="${x.id === e.id ? "on" : ""}" data-a="frsel" data-v="${x.id}" title="${esc(x.title || x.label)}">${fmt ? `<small>${esc(x.format_label)}</small>` : ""}${esc(x.label)}${n ? `<span class="n">· ${n}</span>` : ""}</button>`; };
-  const tabs = `${main.length ? `<div class="rels" data-glide="frmain">${main.map((x) => chip(x)).join("")}</div>` : ""}${extra.length ? `<div class="rels extra" data-glide="frextra">${extra.map((x) => chip(x, true)).join("")}</div>` : ""}`;
+  /* The watch order below the episodes picks the season (Decision 66): no
+     tabs on top. Only when it can't reach every entry do the tabs come back. */
+  const ordIds = new Set((p.order || []).length >= 2 ? p.order.filter((x) => x.on_page).map((x) => x.id) : []);
+  const byOrder = p.entries.length > 1 && p.entries.every((x) => ordIds.has(x.id));
+  const tabs = p.entries.length < 2 || byOrder ? "" : `${main.length ? `<div class="rels" data-glide="frmain">${main.map((x) => chip(x)).join("")}</div>` : ""}${extra.length ? `<div class="rels extra" data-glide="frextra">${extra.map((x) => chip(x, true)).join("")}</div>` : ""}`;
   const ready = !!S.data.stream_ready, linked = e.online.linked;
   const seen = e.slots.filter((x) => playableSlot(e, x)), allW = seen.length > 0 && seen.every((x) => x.watched);
   const missing = ready && e.online.available ? e.slots.filter((x) => x.online && !x.local && !dlJob(x.online.id)) : [];
@@ -1396,25 +1420,36 @@ function Fran() {
       : ready && !e.online.available && e.slots.some((x) => !x.local) ? `<p class="sub eps-note">Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button></p>` : "")
     : `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : e.status === "NOT_YET_RELEASED" ? `Not out yet${airing ? " — " + esc(airing) : ""}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
   const framed = !(e.banner || p.banner) || lookGet("art") !== "full";
+  const title = e.title || p.title;
+  const dlBtn = missing.length ? `<button class="gb" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}<span>${esc(dlLabel)}</span>${vpnTag}</button>` : "";
+  const bulkBtn = seen.length ? `<button class="gb" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}<span>${allW ? (movie ? "Unwatch" : "Unwatch all") : movie ? "Mark watched" : "Mark all watched"}</span></button>` : "";
   return `<div class="sp2 frpage">${backBtn()}
+  <div class="fold">
   <div class="hero${framed ? " framed" : ""}"><div class="hl2">
-    <div class="meta"><i class="mdot"></i><span>${esc(facts.join(" · "))}</span><span class="sep">·</span>${alChip(e.id)}<span class="live-t" id="airline">${esc(airing)}</span>${playing}</div>
-    <h1>${esc(e.title || p.title)}</h1>
+    <div class="meta">${e.format_label ? `<span class="fmt">${esc(e.format_label)}</span>` : ""}<span>${esc(facts.join(" · "))}</span>${e.id ? `<span class="sep">·</span><a class="alk" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}" title="Open on AniList">AniList${e.score ? " " + e.score : ""}</a>` : ""}<span class="live-t" id="airline">${esc(airing)}</span>${playing}</div>
+    <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
     ${e.overview ? `<p class="desc">${esc(e.overview)}</p>` : ""}
-    <p class="mfacts" id="mediafacts"></p>
     <div class="stats2" id="entrystats"></div>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span>${kb("↵")}</button>` : ""}
-      ${missing.length ? `<button class="btn big" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}${esc(dlLabel)}${vpnTag}${kb("D")}</button>` : ""}
-      ${seen.length ? `<button class="btn big" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}${allW ? "Unwatch all" : movie ? "Mark watched" : "Mark all watched"}${kb("⇧W")}</button>` : ""}
-      <button class="btn big" data-a="edit">${ico("edit")}Edit entry${kb("E")}</button>
-      <button class="btn big ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></div>
-  </div>${framed ? `<div class="hp">${poster(e.title || p.title, e.poster || p.poster)}</div>` : ""}</div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
+  </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
-  <div class="eps-head"><div class="tabs2">${tabs || `<h2>${movie ? "Movie" : "Episodes"}</h2>`}</div><div class="ctl"><span class="srcl">${esc(srcLine)}</span>${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
+  <div class="eps-head"><div class="tabs2">${tabs || `<h2>${esc(byOrder && e.label !== title ? e.label : movie ? "Movie" : "Episodes")}</h2>`}</div><span class="srcl">${esc(srcLine)}</span>${byOrder ? `<button class="link-btn tord" data-a="frorder">watch order ${ico("chevd")}</button>` : ""}<div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
   ${e.slots.length ? `<div class="eps strip">${e.slots.map((x, i) => slotTile(p, e, x, tg && tg.x.id, i)).join("")}</div>` : ""}${note}
+  </div>
   ${frOrder(p, e)}
   ${p.other_local.length ? `<h2 class="frother-h">Other files</h2>${otherLocal(p, e)}` : ""}
+  ${frAbout(e)}
   </div>`;
+}
+/* About (Decision 67): the whole summary and the plain facts, at the end of
+   the page. Studio and AniList's counts come with the live entry read
+   (entryDraw fills #aboutlive). */
+function frAbout(e) {
+  const rows = [["format", [e.format_label, e.episodes ? `${e.episodes} episode${e.episodes === 1 ? "" : "s"}` : "", e.duration ? `${e.duration} min${e.episodes > 1 ? " each" : ""}` : ""].filter(Boolean).join(" · ")],
+    ["year", e.year ? String(e.year) : ""], ["status", MEDIA_STATUS[e.status] || ""], ["score", e.score ? `${e.score}% on AniList` : ""]].filter(([, v]) => v);
+  if (!e.overview && !rows.length) return "";
+  return `<section class="about"><div><div class="sh"><h2>About</h2></div>${e.overview ? `<p>${esc(e.overview)}</p>` : ""}</div>
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}<span id="aboutlive"></span></dl></section>`;
 }
 /* Watch order (TODO 132): the main story big and numbered, everything else
    small, right after the part AniList links it to. It never guesses.
@@ -1430,7 +1465,7 @@ function frOrder(p, e) {
     const first = !x.on_page && !apart; apart ||= first; // spin-offs start their own stretch
     const name = o?.label && (/^Season \d+$/.test(o.label) || x.title?.includes(o.label)) ? o.label : x.title || ""; // a label cut from the romaji title reads as a different name
     return `<button class="ot${x.main ? " big" : ""}${x.id === e.id ? " on" : ""}${first ? " apart" : ""}" data-a="frgo" data-v="${x.id}" title="${esc(x.title || "")}"><span class="pw">${poster(x.title || "", x.poster, { c: "op" })}${seen ? `<span class="tick" title="Watched">${ico("check")}</span>` : ""}</span><b>${n ? `<i>${n}</i>` : ""}${esc(name)}</b>${x.note && !n ? `<small class="nt">${esc(x.note)}</small>` : ""}<small>${esc([x.year, x.format_label, x.status === "NOT_YET_RELEASED" ? "upcoming" : ""].filter(Boolean).join(" · "))}</small></button>`; };
-  return `<section class="hsec"><div class="sh"><h2>Watch order</h2><span class="mut">follows AniList's links</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder">${rows.map(tile).join("")}</div></section>`;
+  return `<section class="hsec ford"><div class="sh"><h2>Watch order</h2><span class="mut">pick a part to see its episodes · follows AniList's links</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder">${rows.map(tile).join("")}</div></section>`;
 }
 /* ⋯ on the show page: the rare actions, in the episode-menu box. */
 function frMore(x0, y0) {
@@ -1451,7 +1486,7 @@ function frMore(x0, y0) {
      mark all watched, edit entry) open from here, first. */
   if (isPhone()) {
     const cap = m.querySelector(".cap");
-    for (const b of [...$$("#app .frpage .cta .btn:not(.pri):not(.ic)")].reverse()) {
+    for (const b of [...$$("#app .frpage .cta .grp .gb:not([data-a=frmore])")].reverse()) {
       const c = b.cloneNode(true);
       c.className = "mi"; c.querySelectorAll(".kb").forEach((k) => k.remove());
       cap.after(c);
@@ -1546,14 +1581,9 @@ function Det() {
   const facts = [s.path_label || s.path || s.title, `${epTotal(s)} episodes`, matched ? "AniList unreachable — showing the folder" : s.kept_local ? "on this PC only" : "not matched yet"];
   return `<div class="sp2">${backBtn()}
   <div class="hero${s.poster ? " framed" : " bare"}"><div class="hl2">
-    <div class="meta"><i class="mdot"></i><span>${esc(facts.join(" · "))}</span>${playing}</div>
-    <h1>${esc(s.title)}</h1>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span>${kb("↵")}</button>` : ""}
-      ${sea && sea.episodes.length ? `<button class="btn big" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}${seaAll ? "Unwatch season" : "Mark season watched"}</button>` : ""}
-      ${s.seasons.length > 1 && flat.length ? `<button class="btn big" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}${showAll ? "Unwatch all" : "Mark all watched"}</button>` : ""}
-      ${flat.length ? `<button class="btn big${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}${S.sel?.show === s.id ? "Done" : "Select"}</button>` : ""}
-      <button class="btn big ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>
-      ${s.path && flat.length ? `<button class="btn big ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</div>
+    <div class="meta"><span>${esc(facts.join(" · "))}</span>${playing}</div>
+    <h1 class="${s.title.length > 26 ? "long" : s.title.length > 14 ? "mid" : ""}">${esc(s.title)}</h1>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${sea && sea.episodes.length ? `<button class="gb" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}<span>${seaAll ? "Unwatch season" : "Mark season watched"}</span></button>` : ""}${s.seasons.length > 1 && flat.length ? `<button class="gb" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}<span>${showAll ? "Unwatch all" : "Mark all watched"}</span></button>` : ""}${flat.length ? `<button class="gb${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}<span>${S.sel?.show === s.id ? "Done" : "Select"}</span></button>` : ""}<i class="gsep"></i><button class="gb ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>${s.path && flat.length ? `<button class="gb ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</span></div>
   </div>${s.poster ? `<div class="hp">${poster(s.title, s.poster)}</div>` : ""}</div>
   ${matched ? "" : `<div class="matchbox"><h2>Match this show</h2>${(autoSuggest([s]), matchUI(s))}</div>`}
   <div class="eps-head"><div class="tabs2">${s.seasons.length > 1 ? `<div class="rels" data-glide="seasons">${s.seasons.map((x, i) => `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${x.episodes.length ? `<span class="n">· ${x.episodes.length}</span>` : ""}</button>`).join("")}</div>` : `<h2>${movie ? "Movie" : "Episodes"}</h2>`}</div>
@@ -1608,33 +1638,44 @@ function entryHTML(f, pending) {
   <div class="ef two"><div><span class="cap">progress</span>${prog}</div><div><span class="cap">rewatches</span>${stp("repeat", f.repeat ?? 0, "rewatches")}</div></div>
   <div class="ef two"><div><span class="cap">started</span>${dateField("started_at", "Start date", f.started_at)}</div><div><span class="cap">finished</span>${dateField("completed_at", "Finish date", f.completed_at)}</div></div>`;
 }
-/* The row on the page: score · watched · status · ♥ (Decision 38). */
+/* Your list on the page (Decision 67): one quiet line — status · score ·
+   since — that opens the editor, and Home's tick bar for the progress
+   (a plain bar past 40 episodes). Favourite and Edit sit in the actions. */
 function entryStats(f, pending) {
-  if (!f.status && !pending) return `<div class="st2 unl"><span class="k">not on your list yet</span><button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></div>`;
+  if (!f.status && !pending) return `<p class="mline"><span>not on your list yet</span><button class="add" data-a="eadd">${ico("plus")}add to planning</button></p>`;
   const max = f.score_max || 10, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
   const total = f.media?.episodes || fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
-  const got = f.local || f.progress == null ? (fe ? fe.slots.filter((x) => x.watched).length : show ? epWatched(show) : 0) : f.progress;
+  const got = Math.min(total || Infinity, f.local || f.progress == null ? (fe ? fe.slots.filter((x) => x.watched).length : show ? epWatched(show) : 0) : f.progress);
   const since = f.completed_at ? "until " + f.completed_at : f.started_at ? "since " + f.started_at : "";
-  const n = (v, sm) => `<b class="v">${v}${sm ? `<small>${sm}</small>` : ""}</b>`;
-  return `<div class="st2"><button data-a="edit">${n(f.score ? esc(f.score) : "–", "/" + max)}<span class="k">your score</span></button>
-    <button data-a="edit">${n(got, total ? "/" + total : "")}<span class="k">watched</span></button>
-    <button data-a="edit">${n(esc(statusLabel(f.status)))}<span class="k">${esc(since || (pending ? "waiting to sync" : f.local ? "on this PC" : "from AniList"))}</span></button>
-    <button class="fvb${f.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${f.favourite}">${n(ico("heart"))}<span class="k">${f.favourite ? "favourite" : "not a favourite"}</span></button></div>${aheadLine(f, pending, fe)}`;
+  const where = pending ? '<span class="warn">waiting to sync</span>' : f.local ? "<span>on this PC</span>" : "";
+  const bar = !total ? "" : total <= 40 ? `<span class="ticks">${Array.from({ length: total }, (_, i) => `<i class="${i < got ? "s" : ""}" style="--i:${i}"></i>`).join("")}</span>`
+    : `<span class="tline"><i style="width:${(100 * got / total).toFixed(1)}%"></i></span>`;
+  return `<button class="mline" data-a="edit" title="Edit entry"><b>${esc(statusLabel(f.status).toLowerCase())}</b><i class="sep"></i><span>your score ${f.score ? esc(f.score) : "–"}${max !== 10 ? " / " + max : ""}</span>${since ? `<i class="sep"></i><span>${esc(since)}</span>` : ""}${where ? `<i class="sep"></i>${where}` : ""}</button>
+    ${total > 1 ? `<div class="tbar">${bar}<span>${got}/${total}</span></div>` : ""}${aheadLine(f, pending, fe)}`;
+}
+/* The actions that depend on your entry, inside the page's action pill:
+   off the list → Add to Planning; on it → Edit and ♥. */
+function entryActs(f, pending) {
+  if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>Add to Planning</span></button>`;
+  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite ? "Remove from favourites" : "Favourite"}</span></button>`;
 }
 /* Episode ticks are this PC's own (TODO 166): when AniList is further
-   along (watched elsewhere), a small line offers to mark those episodes
-   here too. Only episodes that have a file or an online source. */
+   along (watched elsewhere), the line under the bar offers to mark those
+   episodes here too. Only episodes that have a file or an online source.
+   One click and Play moves on (Elias, 2026-11-04). */
 function aheadLine(f, pending, fe) {
   if (!fe || f.local || pending || !(f.progress > 0)) return "";
   const nums = fe.slots.filter((x) => typeof x.number === "number" && x.number <= f.progress && !x.watched && (x.local || x.online)).map((x) => x.number);
   if (!nums.length) return "";
   const movie = fe.format === "MOVIE" && fe.slots.length <= 1;
-  return `<p class="ahead">${movie ? "Watched on AniList" : `AniList is at EP ${f.progress}`} · <button class="link-btn" data-a="frahead" data-v="${esc(JSON.stringify(nums))}">mark watched here</button></p>`;
+  return `<p class="ahead"><span>${movie ? "watched on AniList" : `AniList is at ep ${f.progress}`}</span><i class="sep"></i><button class="lnk" data-a="frahead" data-v="${esc(JSON.stringify(nums))}">${movie ? "mark watched here" : `catch up to ep ${f.progress}`}${ico("chevr")}</button></p>`;
 }
 /* Paint the editor and/or the row from fields; steppers that changed get their bump. */
 function entryPaint(f, pending, prev) {
   const st = $("#entrystats");
   if (st) { st.innerHTML = entryStats(f, pending); st._own = true; }
+  const acts = $("#entryacts");
+  if (acts) { acts.innerHTML = entryActs(f, pending); acts._own = true; }
   const box = $("#entrybox");
   if (!box) return;
   box.innerHTML = entryHTML(f, pending);
@@ -1650,13 +1691,12 @@ function entryDraw(res) {
   const air = $("#airline");
   if (air) air._own = true;
   if (air && (next || S.view !== "fr")) air.textContent = next ? (next.in_seconds > 0 ? `E${next.number} airs in ${fmtIn(next.in_seconds)}` : `E${next.number} has aired`) : "";
-  /* AniList's read-only extras (Decision 10): studio, popularity, favourites — the live read has them, the cached lists don't. */
-  const mf = $("#mediafacts");
-  if (mf) {
-    mf._own = true;
-    const bits = [m.studios?.length ? ["Studio", m.studios.join(", ")] : null, m.popularity != null ? ["On lists", m.popularity.toLocaleString()] : null,
-      m.favourites != null ? ["Favourites", m.favourites.toLocaleString()] : null].filter(Boolean);
-    mf.innerHTML = bits.map(([k, v]) => `<span><small>${k}</small>${esc(v)}</span>`).join("");
+  /* About's live rows: AniList's read-only extras (Decision 10), only with the live read. */
+  const al = $("#aboutlive");
+  if (al) {
+    al._own = true;
+    al.innerHTML = [m.studios?.length ? ["studio", m.studios.join(", ")] : null, m.popularity != null ? ["on lists", m.popularity.toLocaleString()] : null,
+      m.favourites != null ? ["favourites", m.favourites.toLocaleString()] : null].filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
   }
 }
 /* Edit entry (E): the editor as a dialog over the page, its art on top. */
@@ -1714,7 +1754,7 @@ function entryPatch(patch, fav, delay = 0) {
   const prev = ent.f;
   ent.f = { ...prev, ...(patch || {}), ...(fav !== undefined ? { favourite: fav } : {}) };
   entryPaint(ent.f, false, prev);
-  if (fav !== undefined) for (const h of $$("#entrybox .heart, #entrystats .fvb")) { h.classList.add("pop1"); if (fav) burstAt(h); }
+  if (fav !== undefined) for (const h of $$("#entrybox .heart, #entryacts .fav")) { h.classList.add("pop1"); if (fav) burstAt(h); }
   const p = entryPend && entryPend.mid === ent.mid ? entryPend : { mid: ent.mid, patch: {}, fav: undefined };
   Object.assign(p.patch, patch || {});
   if (fav !== undefined) p.fav = fav;
@@ -3593,6 +3633,21 @@ function strips() {
     }
     upd();
   });
+  /* The show page's season tabs: one row that scrolls sideways (fades at
+     the cut edge, the wheel scrolls it, the picked tab starts in view). */
+  $$("#app .sp2 .rels").forEach((r) => {
+    const upd = () => { const max = r.scrollWidth - r.clientWidth; r.classList.toggle("ml", r.scrollLeft > 4); r.classList.toggle("mr", r.scrollLeft < max - 4); };
+    if (!r._rels) {
+      r._rels = true; r.addEventListener("scroll", upd, { passive: true });
+      r.addEventListener("wheel", (e) => {
+        if (e.ctrlKey || r.scrollWidth <= r.clientWidth + 4 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        e.preventDefault(); r.scrollLeft += e.deltaY;
+      }, { passive: false });
+      const on = r.querySelector("button.on");
+      if (on && on.offsetLeft + on.offsetWidth > r.clientWidth) r.scrollLeft = on.offsetLeft - 40;
+    }
+    upd();
+  });
 }
 /* The accent follows the show on screen (Decision 38): a hue sampled from its
    art, at a fixed light, soft saturation so every show reads well on dark.
@@ -4586,8 +4641,9 @@ const A = {
   frgo: (v) => {
     if (!S.fr?.page?.order?.find((x) => x.id === +v)?.on_page) return openFranchise(+v);
     A.frsel(v);
-    scrollTo({ top: 0, behavior: "smooth" });
+    $("#app .frpage > .eps-head")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }); // the picked entry's episodes, the order right under them
   },
+  frorder: () => $("#app .frpage .hsec.ford")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }),
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
   plgo: (v) => { S.lib.pl = +v; S.plq = ""; saveLib(); S.fadeNext = true; render(); scrollTo(0, 0); },
@@ -4651,7 +4707,7 @@ const A = {
     });
   },
   undo: () => { const u = S.undo; S.undo = null; $("#toast").classList.remove("on"); u?.(); },
-  pinopen: (v, t) => openModal({ t: "pin", show: t.dataset.s, season: t.dataset.k, label: t.dataset.l, pick: null }),
+  pinopen: (v, t) => openModal({ t: "pin", show: t.dataset.s, season: t.dataset.k, label: t.dataset.l, pick: t.dataset.g || null }),
   pinpick: (v) => { S.modal.pick = v; paintModal(); },
   pinsave: async () => {
     const m = S.modal, body = { show_id: m.show, season: m.season };
@@ -4964,7 +5020,7 @@ document.addEventListener("keydown", (e) => {
     if (tab && e.key !== "0") { e.preventDefault(); nav(tab[0]); return; }
     if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }
     if (e.key === "?") { e.preventDefault(); S.menu = S.menu === "keys" ? null : "keys"; paintNav(); return; }
-    /* The show page's keys (shown on its buttons): E edit, D download, ⇧W mark all, ↵ play. */
+    /* The show page's keys (no hints on its buttons since Decision 66; ? lists them): E edit, D download, ⇧W mark all, ↵ play. */
     if (S.view === "home") {
       const b = e.key === "o" ? $('#app .upn [data-a="open"]') : e.key === "Enter" && fIdx < 0 && !document.activeElement.closest?.("#app [data-a]") ? $('#app .upn [data-a="play"]') : null;
       if (b) { e.preventDefault(); b.click(); return; }

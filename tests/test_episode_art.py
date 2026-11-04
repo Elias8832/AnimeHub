@@ -26,6 +26,21 @@ class EpisodeArtTests(unittest.TestCase):
         self.assertEqual(parsed["thumbs"], {"2": "first.jpg"})
         self.assertEqual(parsed["titles"], {"2": "First"})
 
+    def test_backtick_apostrophes_become_apostrophes(self):
+        """DAN DA DAN's listing types "That`s"; a backtick that is no
+        apostrophe (not between letters) stays."""
+        parsed = metadata.parse_seps([{"title": "Episode 1 - That`s How Love Starts, Ya Know!", "thumbnail": None}])
+        self.assertEqual(parsed["titles"], {"1": "That\u2019s How Love Starts, Ya Know!"})
+        self.assertEqual(anilist.tidy_quotes("say `hi` Ain`t"), "say `hi` Ain\u2019t")
+
+    def test_stored_titles_are_tidied_on_read(self):
+        from animehub import mapping
+        import json, time
+        with database.db() as c:
+            c.execute("INSERT INTO entry_art(media_id, thumbs, titles, source, ts) VALUES (?, ?, ?, ?, ?)",
+                      (7, None, json.dumps({"1": "It`s a Granny vs. Granny Clash!", "2": None}), "anilist", time.time()))
+        self.assertEqual(mapping.entry_art_all([7])[7]["titles"], {"1": "It\u2019s a Granny vs. Granny Clash!", "2": None})
+
     def test_foreign_franchise_playlist_is_not_downloaded(self):
         media = {"id": 2, "episodes": 1, "streamingEpisodes": [
             {"title": "Episode 1", "thumbnail": "1.jpg"},
