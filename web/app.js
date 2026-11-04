@@ -1464,8 +1464,8 @@ function frOrder(p, e) {
     const seen = !!o?.slots.length && o.slots.length >= (o.episodes || 0) && o.slots.every((s) => s.watched);
     const first = !x.on_page && !apart; apart ||= first; // spin-offs start their own stretch
     const name = o?.label && (/^Season \d+$/.test(o.label) || x.title?.includes(o.label)) ? o.label : x.title || ""; // a label cut from the romaji title reads as a different name
-    return `<button class="ot${x.main ? " big" : ""}${x.id === e.id ? " on" : ""}${first ? " apart" : ""}" data-a="frgo" data-v="${x.id}" title="${esc(x.title || "")}"><span class="pw">${poster(x.title || "", x.poster, { c: "op" })}${seen ? `<span class="tick" title="Watched">${ico("check")}</span>` : ""}</span><b>${n ? `<i>${n}</i>` : ""}${esc(name)}</b>${x.note && !n ? `<small class="nt">${esc(x.note)}</small>` : ""}<small>${esc([x.year, x.format_label, x.status === "NOT_YET_RELEASED" ? "upcoming" : ""].filter(Boolean).join(" · "))}</small></button>`; };
-  return `<section class="hsec ford"><div class="sh"><h2>Watch order</h2><span class="mut">pick a part to see its episodes · follows AniList's links</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder">${rows.map(tile).join("")}</div></section>`;
+    return `<button class="ot${x.main ? " big" : ""}${x.id === e.id ? " on" : ""}${first ? " apart" : ""}" data-a="frgo" data-v="${x.id}" title="${esc(x.title || "")}"><span class="pw">${poster(x.title || "", x.poster, { c: "op" })}${seen ? `<span class="tick" title="Watched">${ico("check")}</span>` : ""}</span><b>${n ? `<i>${n}</i>` : ""}${esc(name)}</b><small>${esc([n ? "" : x.note, x.year, x.format_label, x.status === "NOT_YET_RELEASED" ? "upcoming" : ""].filter(Boolean).join(" · "))}</small></button>`; };
+  return `<section class="hsec ford"><div class="sh"><h2>Watch order</h2><span class="mut" title="Follows AniList's links">pick a part to see its episodes</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder">${rows.map(tile).join("")}</div></section>`;
 }
 /* ⋯ on the show page: the rare actions, in the episode-menu box. */
 function frMore(x0, y0) {
@@ -3836,7 +3836,7 @@ function render(inPlace = false) {
   if (S.view === "library") { paintWall(!morph && S.fadeNext); S.fadeNext = false; startMetaWatch(); }
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
-  strips(); ambient();
+  strips(); ambient(); artDim();
   if (S.view === "settings" && S.setFlash) { const t = S.setFlash; S.setFlash = null; const r = $$("#app .srow").find((x) => x.querySelector("b")?.textContent.startsWith(t)); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }
   /* The strip opens on the next episode, with the one before it in view — whole tiles, never a cut one. */
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
@@ -4969,7 +4969,17 @@ function paintTop() {
   if (!el) { el = document.createElement("button"); el.id = "totop"; el.dataset.a = "totop"; el.setAttribute("aria-label", "Back to top"); el.innerHTML = ico("up"); document.body.append(el); }
   el.classList.toggle("on", S.view === "library" && scrollY > 500);
 }
-addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); }, { passive: true });
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); }, { passive: true });
+/* The show page's art fades into the dark as you scroll (Decision 67): --sd
+   on the wash layer alone, once per frame. */
+function artDim() {
+  if (artDim.f) return;
+  artDim.f = requestAnimationFrame(() => {
+    artDim.f = 0;
+    const w = $("#canvas .cv-wash");
+    if (w) w.style.setProperty("--sd", S.view === "fr" ? Math.min(1, Math.max(0, (scrollY - 60) / (innerHeight * 0.9))).toFixed(3) : "0");
+  });
+}
 addEventListener("resize", gtrayFit, { passive: true });
 /* Phones: the page's big title shrinks into the top bar as it scrolls away. */
 function paintPtitle(t) {

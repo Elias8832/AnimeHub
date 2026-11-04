@@ -644,7 +644,9 @@ class ShowPagePolish(unittest.TestCase):
         self.assertIn('$$("#app .sp2 .rels")', APP)
 
     def test_art_dims_when_scrolled(self):
-        self.assertIn("body.sc2:has(.frpage) .cv-wash:after{opacity:1}", CSS)
+        self.assertIn("body:has(.frpage) .cv-wash:after{opacity:var(--sd,0)}", CSS)  # Decision 67: fades with the scroll
+        self.assertIn('w.style.setProperty("--sd", S.view === "fr"', APP)
+        self.assertIn("strips(); ambient(); artDim();", APP)
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")
