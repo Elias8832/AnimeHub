@@ -342,8 +342,10 @@ def entry_art_all(ids):
     with database.db() as c:
         rows = c.execute(f"SELECT media_id, thumbs, titles FROM entry_art WHERE media_id IN ({','.join('?' * len(ids))})",
                          ids).fetchall()
-    return {r[0]: {"thumbs": json.loads(r[1]) if r[1] else None, "titles": json.loads(r[2]) if r[2] else None}
-            for r in rows}
+    def titles(raw):  # stored before tidy_quotes existed: tidied on the way out
+        t = json.loads(raw) if raw else None
+        return {k: anilist.tidy_quotes(v) if isinstance(v, str) else v for k, v in t.items()} if t else t
+    return {r[0]: {"thumbs": json.loads(r[1]) if r[1] else None, "titles": titles(r[2])} for r in rows}
 
 
 def attach_releases(scan):

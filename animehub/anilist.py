@@ -473,7 +473,13 @@ def strip_html(text):
     t = re.sub(r"<[^>]+>", "", text or "")
     for a, b in (("&quot;", '"'), ("&#039;", "'"), ("&amp;", "&"), ("&mdash;", "—"), ("&ndash;", "–"), ("&hellip;", "…")):
         t = t.replace(a, b)
-    return t.strip()
+    return tidy_quotes(t).strip()
+
+
+def tidy_quotes(text):
+    """Episode listings type an apostrophe as a backtick ("That`s"): between
+    letters it becomes the apostrophe it stands for."""
+    return re.sub(r"(?<=\w)`(?=\w)", "\u2019", text or "")
 
 
 def load_anilist_username():

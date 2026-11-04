@@ -166,8 +166,8 @@ class ShowPagePhone(unittest.TestCase):
     ⋯ as a bottom sheet; no studio line, no big stats."""
 
     def test_s2(self):
-        self.assertIn(".frpage .cta,.frpage .mfacts,.frpage .st2 .fvb,.frpage .srcl{display:none!important}", CSS)
-        self.assertIn('for (const b of [...$$("#app .frpage .cta .btn:not(.pri):not(.ic)")].reverse()) {', APP)
+        self.assertIn(".frpage .cta,.frpage .srcl{display:none!important}", CSS)
+        self.assertIn('for (const b of [...$$("#app .frpage .cta .grp .gb:not([data-a=frmore])")].reverse()) {', APP)
         self.assertIn("#cm{z-index:48;left:0!important;right:0;top:auto!important;bottom:0;", CSS)
 
 
