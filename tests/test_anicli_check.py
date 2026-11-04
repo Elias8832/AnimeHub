@@ -38,7 +38,7 @@ class Check(unittest.TestCase):
 
     def test_supported(self):
         self.fake(GOOD)
-        self.assertEqual(anicli.anicli_check(), {"ok": True, "missing": []})
+        self.assertEqual(anicli.anicli_check(), {"ok": True, "missing": [], "curls": []})
 
     def test_missing_setting(self):
         # Only ANI_CLI_PLAYER_FLAGS left: a prefix must not count as ANI_CLI_PLAYER.

@@ -320,6 +320,8 @@ def friendly_stream_error(msg, code="this episode"):
         return msg  # anicli_check: the user has to act, keep the details
     if "not released" in m:
         return f"{code} isn't out yet."
+    if "curl-impersonate" in m:
+        return "The streaming site turns plain curl away — install curl-impersonate (Settings → Online episodes)."
     if "cloudflare" in m:
         return "The streaming site is blocking requests right now — try again later."
     if any(k in m for k in ("connection error", "request failed", "did not answer", "could not resolve")):
