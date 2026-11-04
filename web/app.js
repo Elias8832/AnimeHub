@@ -4053,7 +4053,7 @@ function markLoading(id) {
   pagePatch();
 }
 /* The accent on screen as #rrggbb, for mpv's controls (Decision 52). */
-function hexAccent() {
+function accentHex() {
   const c = document.createElement("canvas").getContext("2d");
   c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#000";
   return /^#[0-9a-f]{6}$/i.test(c.fillStyle) ? c.fillStyle : null;
@@ -4073,7 +4073,7 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk) {
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
   if (skipOk !== undefined) body.aniskip = skipOk;
-  const accent = hexAccent();
+  const accent = accentHex();
   if (accent) body.accent = accent;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
