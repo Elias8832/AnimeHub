@@ -186,6 +186,13 @@ class WholeScript(unittest.TestCase):
         out = subprocess.run(["node", "--check", str(support.ROOT / "web" / "app.js")], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(out.returncode, 0, out.stderr)
 
+    def test_no_function_declared_twice(self):
+        # A second top-level `function x` silently replaces the first everywhere:
+        # mpv's hexAccent() did that to the show colour (AniList's hex → accent).
+        names = re.findall(r"^(?:async )?function\*? ?(\w+)", APP, re.M)
+        twice = sorted({n for n in names if names.count(n) > 1})
+        self.assertEqual(twice, [])
+
 
 class JournalKeys(unittest.TestCase):
     def test_streak_day_key_exists(self):
