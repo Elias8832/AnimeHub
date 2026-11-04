@@ -1061,7 +1061,7 @@ function paintWall(fade) {
     const coarse = mq("(pointer:coarse)"), head = coarse ? 24 : 36;
     w.innerHTML = cards.slice(0, head).join("");
     let i = head;
-    const more = () => { if (!w.isConnected) return; w.classList.remove("fade"); w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
+    const more = () => { if (!w.isConnected) return; w.insertAdjacentHTML("beforeend", cards.slice(i, i + 30).join("")); i += 30; if (i < cards.length) paintWall.more = setTimeout(more, 24); };
     paintWall.more = setTimeout(more, coarse ? 380 : 650); // after the page has settled
   } else if (fx || !w.firstChild) w.innerHTML = html || empty; else morphHTML(w, html || empty);
   gtrayFit();
@@ -2943,7 +2943,7 @@ function airMonth(c, days, today) {
   const cells = Array.from({ length: rows * 7 }, (_, i) => {
     const d = new Date(c.y, c.m, i - lead + 1), k = airKey(d), l = days.get(k) || [], shown = l.length > 3 ? l.slice(0, 2) : l;
     const cls = [d.getMonth() !== c.m ? "is-out" : "", l.length ? "has" : "", k < airKey(today) ? "is-past" : "", k === airKey(today) ? "is-today" : "", k === c.sel ? "is-sel" : ""].filter(Boolean).join(" ");
-    return `<button class="aird ${cls}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts${l.length === 1 ? " is-one" : ""}">${shown.map(airTile).join("")}${l.length === 1 ? air1(l[0]) : ""}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
+    return `<button class="aird ${cls}" style="--i:${Math.floor(i / 7) + i % 7}" data-a="airday" data-v="${k}" aria-label="${esc(d.toDateString())}, ${l.length} episode${l.length === 1 ? "" : "s"}"><span class="airn">${d.getDate()}</span><span class="airts${l.length === 1 ? " is-one" : ""}">${shown.map(airTile).join("")}${l.length === 1 ? air1(l[0]) : ""}${l.length > 3 ? `<i class="airt airplus">+${l.length - 2}</i>` : ""}</span></button>`; }).join("");
   return `<div class="airgrid" style="--rows:${rows}">${DAYS.map((d) => `<b class="airw">${d}</b>`).join("")}${cells}</div>`;
 }
 /* The week (Decision 46): a rail per day so empty days still read as days,
@@ -2956,7 +2956,7 @@ function airWeek(c, days, today) {
     let body = l.map(big);
     if (k === tk && l.length) { const at = l.findIndex((x) => x.t > now); body.splice(at < 0 ? l.length : at, 0, `<div class="airnow"><span>now ${esc(airTime({ t: now }))}</span></div>`); }
     const n = l.filter((x) => !x.start).length, note = n ? `${n} episode${n === 1 ? "" : "s"}` : l.length ? "starts" : "no episodes";
-    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone">${ico("cal")}</div>`}</div>`; }).join("")}</div>`;
+    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}" style="--i:${i}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone">${ico("cal")}</div>`}</div>`; }).join("")}</div>`;
 }
 function CalDesk() {
   const now = Date.now(), today = new Date(now), c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: airKey(today), scope: "all", mode: lsGet("airMode", "month") });
@@ -2989,7 +2989,7 @@ function Week() {
   /* Logged out: one clear way in, not two lines that contradict each other. */
   if (!aniMode()) return `<div class="wk2"><div class="hello"><h1 class="hd">Calendar</h1></div><div class="emptyx"><div class="eico">${ico("cal")}</div><b>See when your shows air</b><span>Connect AniList, and new episodes of what you're watching show up here, day by day.</span><button class="btn pri" data-a="ani">Connect AniList</button></div></div>`;
   const tl = list.map((e, k) => { const t = airAt(e, now), sec = (t - now) / 1000;
-    return `<div class="tli${k === 0 ? " first" : ""}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
+    return `<div class="tli${k === 0 ? " first" : ""}" style="--i:${k}"><i class="tdot"></i><div class="tw">${sec > 0 ? "in " + esc(fmtIn(sec)) : "out now"} · ${esc(whenTxt(t, now))}</div>
       <button class="prow" data-a="entry" data-v="${esc(e.id)}">${poster(e.title, e.poster, { c: "pp" })}<span class="pt"><b>${esc(e.title)}</b><small>episode ${esc(e.next_episode?.number ?? "")}</small></span></button></div>`; }).join("");
   const today = new Date(now), airs = list.map((e) => new Date(airAt(e, now)));
   const month = (first, note) => { const y = first.getFullYear(), mo = first.getMonth(), lead = (first.getDay() + 6) % 7, days = new Date(y, mo + 1, 0).getDate();

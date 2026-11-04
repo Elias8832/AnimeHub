@@ -739,3 +739,20 @@ class TabEntrances(unittest.TestCase):
         self.assertIn('c.dataset.sec !== "find"', enter)
         self.assertIn('!mq("(pointer:coarse)")', enter)  # Decision 44: no per-row entrances on touch
         self.assertIn("setEnter();", APP[APP.index("function render("):APP.index("paintPortals();\n}")])
+
+    def test_library_bars_finish_their_fill(self):
+        # the later batches of cards used to drop .fade at 650 ms and cut the bars mid-fill
+        wall = APP[APP.index("function paintWall("):APP.index("/* ---------- detail ---------- */")]
+        self.assertNotIn('classList.remove("fade")', wall)
+        self.assertIn(".wall.fade .card:nth-child(-n+36){", CSS)  # only the first screenful animates
+
+    def test_show_page_builds_in(self):
+        for part in ("#app.nav-in :is(.frpage,.sp2) .eps-head{", "#app.nav-in .frorder>.ot{", "#app.nav-in .sp2>.about{"):
+            self.assertIn(part, CSS)
+
+    def test_calendar_builds_in(self):
+        self.assertIn('style="--i:${Math.floor(i / 7) + i % 7}"', APP)  # month: a wave from the top left
+        self.assertIn('class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}" style="--i:${i}"', APP)
+        for part in ("#app.nav-in .aird{", "#app.nav-in .aircol{", "#app.nav-in .airside{", "#app.nav-in .tline .tli{"):
+            self.assertIn(part, CSS)
+        self.assertNotIn("#app.nav-in .airside>", CSS)  # a click on a day swaps its cards at once

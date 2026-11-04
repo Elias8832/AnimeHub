@@ -237,8 +237,9 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 .card .m{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--mute);flex-wrap:wrap}
 .m .sc{display:inline-flex;gap:4px;align-items:center;color:var(--warn)}.m .sc .ico{width:12px;height:12px;fill:currentColor}
 .wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:34px 22px;margin:28px 0 80px;align-items:start}
-.wall.fade .card{animation:rise .42s var(--ease) both;animation-delay:calc(var(--i)*18ms)}
-.wall.fade .prog i{animation:growx .7s var(--ease) both;animation-delay:calc(var(--i)*18ms + .25s)} /* each bar fills once its card is in, like the Journal's */
+/* Only the first screenful animates (paintWall adds the rest later, with the class still on); each bar fills once its card is in, like the Journal's */
+.wall.fade .card:nth-child(-n+36){animation:rise .34s var(--ease) both;animation-delay:calc(var(--i)*12ms)}
+.wall.fade .card:nth-child(-n+36) .prog i{animation:growx .5s var(--ease) both;animation-delay:calc(var(--i)*12ms + .15s)}
 @keyframes growx{from{transform:scaleX(0)}}
 
 /* ───────── home ───────── */
@@ -444,11 +445,17 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 /* ───────── page-load choreography (only on navigation: #app.nav-in) ───────── */
 #app.nav-in .cont{animation:rise .35s var(--ease) both;animation-delay:calc(var(--i)*30ms + .12s)}
 #app.nav-in .cont .bar i{animation:growx .6s calc(var(--i)*30ms + .3s) var(--ease) both}
-#app.nav-in .hero>*{animation:up .45s var(--ease) both}#app.nav-in .hero>:nth-child(2){animation-delay:.05s}
-#app.nav-in .hero>div>*{animation:up .4s var(--ease) both}#app.nav-in .hero>div>:nth-child(2){animation-delay:.03s}#app.nav-in .hero>div>:nth-child(3){animation-delay:.06s}#app.nav-in .hero>div>:nth-child(4){animation-delay:.09s}
+/* show page (Elias, 2026-11-04: "not really animated"): its lines rise one after another like Home's hero, then the episode heading, the tiles, the watch order and About follow */
+#app.nav-in .hero>div>*{animation:up .38s .04s var(--ease) backwards}#app.nav-in .hero>div>:nth-child(2){animation-delay:.07s}#app.nav-in .hero>div>:nth-child(3){animation-delay:.1s}#app.nav-in .hero>div>:nth-child(4){animation-delay:.13s}#app.nav-in .hero>div>:nth-child(n+5){animation-delay:.16s}
+#app.nav-in :is(.frpage,.sp2) .eps-head{animation:up .36s .16s var(--ease) backwards}
+#app.nav-in .frorder>.ot:nth-child(2){--i:1}#app.nav-in .frorder>.ot:nth-child(3){--i:2}#app.nav-in .frorder>.ot:nth-child(4){--i:3}#app.nav-in .frorder>.ot:nth-child(5){--i:4}#app.nav-in .frorder>.ot:nth-child(n+6){--i:5}
+#app.nav-in .ford .sh{animation:up .36s .26s var(--ease) backwards}
+#app.nav-in .frorder>.ot{animation:rise .34s var(--ease) backwards;animation-delay:calc(var(--i,0)*28ms + .3s)}
+#app.nav-in .sp2>.about{animation:soft .45s .36s var(--ease) backwards}
 /* the hero's primary pill gets the same entrance the old .play had — box-shadow inside the keyframes must match .pill.solid's static shadow exactly */
-#app.nav-in .ep{animation:rise .3s var(--ease) both;animation-delay:calc(var(--i)*12ms + .06s)}
-#app.nav-in .ep .tick{animation:popIn .35s var(--spring) both;animation-delay:calc(var(--i)*12ms + .2s)}
+#app.nav-in .ep{animation:rise .34s var(--ease) backwards;animation-delay:calc(min(var(--i),8)*28ms + .2s)}
+#app.nav-in .ep .tick{animation:popIn .35s var(--spring) backwards;animation-delay:calc(min(var(--i),8)*28ms + .36s)}
+#app.nav-in .ep .eprog i{animation:growx .5s var(--ease) backwards;animation-delay:calc(min(var(--i),8)*28ms + .34s)}
 #app.nav-in .tile{animation:rise .35s var(--ease) both}#app.nav-in .tile:nth-child(2){animation-delay:.03s}#app.nav-in .tile:nth-child(3){animation-delay:.06s}#app.nav-in .tile:nth-child(4){animation-delay:.09s}
 #app.nav-in .panel{animation:rise .35s .08s var(--ease) both}
 #app.nav-in .tabs button{animation:rise .3s var(--ease) both}#app.nav-in .tabs button:nth-child(2){animation-delay:.02s}#app.nav-in .tabs button:nth-child(3){animation-delay:.04s}#app.nav-in .tabs button:nth-child(n+4){animation-delay:.06s}
@@ -459,22 +466,32 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
    and fixed children keep working). */
 @keyframes artIn{from{opacity:0;transform:scale(1.05)}}
 @keyframes soft{from{opacity:0}}
-#app.nav-in .hello .sum{animation:up .45s .06s var(--ease) backwards}
-#app.nav-in .upn{animation:soft .4s var(--ease) backwards}
-#app.nav-in .upn .upa{animation:artIn 1.3s var(--ease) backwards}
-#app.nav-in .upn .upc>*{animation:up .5s .08s var(--ease) backwards}
-#app.nav-in .upn .upc>:nth-child(2){animation-delay:.12s}#app.nav-in .upn .upc>:nth-child(3){animation-delay:.16s}#app.nav-in .upn .upc>:nth-child(4){animation-delay:.2s}#app.nav-in .upn .upc>:nth-child(5){animation-delay:.24s}#app.nav-in .upn .upc>:nth-child(n+6){animation-delay:.28s}
+#app.nav-in .hello .sum{animation:up .36s .04s var(--ease) backwards}
+#app.nav-in .upn{animation:soft .3s var(--ease) backwards}
+#app.nav-in .upn .upa{animation:artIn .8s var(--ease) backwards}
+#app.nav-in .upn .upc>*{animation:up .38s .04s var(--ease) backwards}
+#app.nav-in .upn .upc>:nth-child(2){animation-delay:.07s}#app.nav-in .upn .upc>:nth-child(3){animation-delay:.1s}#app.nav-in .upn .upc>:nth-child(4){animation-delay:.13s}#app.nav-in .upn .upc>:nth-child(5){animation-delay:.16s}#app.nav-in .upn .upc>:nth-child(n+6){animation-delay:.19s}
 .home2>.hsec{--s:0}.home2>.hsec:nth-of-type(2){--s:1}.home2>.hsec:nth-of-type(n+3){--s:2}
-#app.nav-in .home2>.hsec .sh{animation:up .45s var(--ease) backwards;animation-delay:calc(var(--s)*80ms + .22s)}
-#app.nav-in .home2 :is(.hc,.ag,.rec,.rc){animation:rise .45s var(--ease) backwards;animation-delay:calc(var(--s)*80ms + var(--i,0)*45ms + .28s)}
-#app.nav-in .home2 .hc .eprog i{animation:growx .7s var(--ease) backwards;animation-delay:calc(var(--s)*80ms + var(--i,0)*45ms + .55s)}
-#app.nav-in .snav>*{animation:rise .38s var(--ease) backwards;animation-delay:calc(var(--i,0)*18ms + .04s)}
+#app.nav-in .home2>.hsec .sh{animation:up .36s var(--ease) backwards;animation-delay:calc(var(--s)*50ms + .12s)}
+#app.nav-in .home2 :is(.hc,.ag,.rec,.rc){animation:rise .34s var(--ease) backwards;animation-delay:calc(var(--s)*50ms + min(var(--i,0),8)*28ms + .16s)}
+#app.nav-in .home2 .hc .eprog i{animation:growx .5s var(--ease) backwards;animation-delay:calc(var(--s)*50ms + min(var(--i,0),8)*28ms + .3s)}
+#app.nav-in .snav>*{animation:rise .3s var(--ease) backwards;animation-delay:calc(var(--i,0)*12ms + .02s)}
 /* a Settings section, on opening Settings or a click in its side list (setEnter) */
 @media not (pointer:coarse){.set2 .settings.scol{animation:soft .25s var(--ease) both}} /* the rows rise, not the whole column (not tied to .setin: dropping it would replay the column's own animation) */
 .scol>.group{--g:0}.scol>.group:nth-child(2){--g:1}.scol>.group:nth-child(3){--g:2}.scol>.group:nth-child(n+4){--g:3}
 .scol>.group>*{--r:0}.scol>.group>:nth-child(2){--r:1}.scol>.group>:nth-child(3){--r:2}.scol>.group>:nth-child(4){--r:3}.scol>.group>:nth-child(5){--r:4}.scol>.group>:nth-child(6){--r:5}.scol>.group>:nth-child(n+7){--r:6}
-.scol.setin>.group{animation:soft .4s var(--ease) backwards;animation-delay:calc(var(--g)*90ms)}
-.scol.setin>.group>:is(h3,.sub,.srow){animation:fin .42s var(--ease) backwards;animation-delay:calc(var(--g)*90ms + var(--r)*30ms + .05s)}
+.scol.setin>.group{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--g)*50ms)}
+.scol.setin>.group>:is(h3,.sub,.srow){animation:fin .32s var(--ease) backwards;animation-delay:calc(var(--g)*50ms + var(--r)*18ms + .03s)}
+/* Calendar (Elias, 2026-11-04, after the calendar polish merged): the head, then the month's days in a wave from the top left
+   (--i = row + column), the week's days left to right, the picked day's shows */
+#app.nav-in .airhead>*{animation:up .36s .03s var(--ease) backwards}#app.nav-in .airhead>:is(.arr,.btn){animation-delay:.06s}#app.nav-in .airhead>.seg{animation-delay:.09s}
+#app.nav-in .airsum{animation:up .36s .08s var(--ease) backwards}
+#app.nav-in .airw{animation:soft .3s .08s var(--ease) backwards}
+#app.nav-in .aird{animation:rise .34s var(--ease) backwards;animation-delay:calc(var(--i,0)*24ms + .1s)}
+#app.nav-in .aircol{animation:rise .36s var(--ease) backwards;animation-delay:calc(var(--i,0)*35ms + .1s)}
+#app.nav-in .airside{animation:fin .34s .14s var(--ease) backwards} /* the panel, not its cards: a click on a day swaps the cards at once */
+#app.nav-in .tline .tli{animation:rise .34s var(--ease) backwards;animation-delay:calc(min(var(--i,0),8)*28ms + .12s)}
+#app.nav-in .wkcal .psec{animation:soft .4s .2s var(--ease) backwards}
 
 /* ───────── responsive (the app is often zoomed to 150–175%, so ~1100–1300px matters) ───────── */
 @media (max-width:1250px){
@@ -846,7 +863,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .tbar{display:flex;align-items:center;gap:12px;margin-top:16px;max-width:420px}
 .tbar span{font:500 12px var(--mono);color:var(--ink-2)}
 .ticks{flex:1;display:flex;gap:3px;height:6px}
-.ticks i{flex:1;border-radius:3px;background:rgba(255,255,255,.16);animation:tick .45s var(--ease) both;animation-delay:calc(var(--i) * 14ms + .2s)}
+.ticks i{flex:1;border-radius:3px;background:rgba(255,255,255,.16);animation:tick .36s var(--ease) both;animation-delay:calc(min(var(--i),20) * 10ms + .14s)}
 .ticks i.s{background:var(--accent)}
 .ticks i.p{background:linear-gradient(90deg,var(--accent) var(--pp),rgba(255,255,255,.3) var(--pp))}
 .ticks i.d{background:rgba(255,255,255,.3)}
