@@ -66,11 +66,11 @@ class WindowsProcessTests(unittest.TestCase):
 
     def test_stop_ends_the_runs_job_first(self):
         """taskkill misses what the run's job holds (TODO 158)."""
-        proc = MagicMock(pid=4242, hub_job="job")
+        proc = MagicMock(pid=4242, hub_job=88)
         with patch.object(system, "job_end") as job_end, \
                 patch.object(system.subprocess, "run", return_value=MagicMock(returncode=0)) as run:
             anicli.stop_process_group(proc)
-        job_end.assert_called_once_with("job")
+        job_end.assert_called_once_with(88)
         run.assert_called_once()
 
     def test_failed_taskkill_falls_back_to_the_process(self):
@@ -91,7 +91,7 @@ class WindowsProcessTests(unittest.TestCase):
                 patch.object(anicli, "anicli_outdated", return_value=False), \
                 patch.object(system, "git_bash", return_value=r"C:\Git\bin\bash.exe"), \
                 patch.object(system, "detached", return_value={"creationflags": 512}), \
-                patch.object(system, "job_start", return_value="job") as job_start, \
+                patch.object(system, "job_start", return_value=88) as job_start, \
                 patch.object(anicli.subprocess, "Popen") as popen:
             proc = anicli.anicli_spawn(["-V"], {}, None, None)
         self.assertEqual(popen.call_args.args[0],
@@ -105,7 +105,7 @@ class WindowsProcessTests(unittest.TestCase):
         self.assertIsNone(proc.hub_pty)
         with patch.object(system, "job_close") as job_close:
             anicli.anicli_release(proc)  # no fd to close
-        job_close.assert_called_once_with("job")
+        job_close.assert_called_once_with(88)
 
     def test_no_git_bash_is_a_readable_error(self):
         with patch.object(anicli, "anicli_path", return_value=r"C:\bin\ani-cli"), \

@@ -293,8 +293,15 @@ def anicli_spawn(args, env, stdout, stderr):
     return proc
 
 
-def anicli_release(proc):
+def _job(proc):
+    """The run's Windows job: a handle, so a stand-in process's attribute
+    is never handed to Windows."""
     job = getattr(proc, "hub_job", None)
+    return job if type(job) is int and job else None
+
+
+def anicli_release(proc):
+    job = _job(proc)
     if job:
         proc.hub_job = None
         system.job_close(job)
@@ -320,7 +327,7 @@ def stop_process_group(proc, sig=signal.SIGTERM):
         if type(pid) is not int or pid <= 1 or (not system.WINDOWS and pid == os.getpgrp()):
             raise OSError("not a child process group")
         if system.WINDOWS:
-            job = getattr(proc, "hub_job", None)
+            job = _job(proc)
             if job:
                 system.job_end(job)
             system.kill_tree(pid)
