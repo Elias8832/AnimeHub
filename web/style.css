@@ -739,12 +739,22 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .et small,.sp2 .ot small,.sp2 .ahead,.sp2 .srcl,.sp2 .tord{color:#a4a4aa}
 .sp2 .eps-head .ctl{margin-left:auto}
 /* About: the whole summary and the plain facts (Decision 67) */
-.sp2 .about{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr);gap:clamp(32px,5vw,80px);max-width:1320px;margin-top:64px}
+.sp2 .about{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr);gap:clamp(32px,5vw,80px);margin-top:64px}
 .sp2 .about .sh{display:flex;margin-bottom:14px}.sp2 .about h2{font:600 18px var(--ui);letter-spacing:-.01em}
 .sp2 .about p{color:var(--ink-2);font-size:15px;line-height:1.7;white-space:pre-line;max-width:78ch}
 .sp2 .about dl{display:grid;grid-template-columns:auto 1fr;gap:12px 24px;align-content:start;padding-top:40px;font-size:14px}
 .sp2 .about dt{font:400 12px var(--mono);color:var(--mute);padding-top:2px}
 .sp2 .about #aboutlive{display:contents}
+.sp2 .about #aboutx{display:contents}
+.sp2 .about dd.tags{line-height:1.7}.sp2 .about dd.tags .tg{white-space:nowrap}.sp2 .about dd.tags .tg:not(:last-child):after{content:"·";color:var(--mute);margin:0 3px 0 7px}
+.sp2 .about dd.tags .tspl{color:var(--ink-2)}
+.sp2 .about .tspb{font:inherit;color:var(--mute);text-decoration:underline dotted;text-underline-offset:3px;padding:0;background:none;border:0;cursor:pointer}.sp2 .about .tspb:hover{color:var(--ink)}
+/* Characters (TODO 172, round 5): the watch order's tiles (.ot in a
+   .frorder row); only what differs from it is here. */
+.sp2 .hsec.cast{margin-top:52px}.sp2 .hsec.cast:empty{display:none}
+.sp2 .cast .sh{align-items:center;gap:10px}.sp2 .cast .sh .seg{margin-right:6px}
+.sp2 .castrow .ot.big:not(:first-child):not(.apart){margin-left:0} /* main characters are one group, not one each */
+.sp2 .castrow .ot{text-decoration:none}
 .sp2 .hsec.ford{margin-top:52px}
 /* Season tabs stay one row: many long names (Attack on Titan) scroll
    sideways with a fade at the cut edge instead of wrapping to a second row. */
@@ -2338,6 +2348,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 }
 @media (max-width:640px){
   .sp2 .ot{--w:98px}.sp2 .frorder{--wb:128px}
+  .sp2 .hsec.cast{margin-top:44px}.sp2 .cast .sh .arr{display:none}
 }
 
 /* The tour's player looks: small drawings of mpv's controls. */

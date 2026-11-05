@@ -237,6 +237,72 @@ def anilist_entry_state(media_id):
     return out
 
 
+# --- About extras (TODO 172): genres, tags and characters for the show
+# page's About section. Public data, no login. Its own query, so the
+# franchise walk (FRANCHISE_FIELDS, up to 60 entries) stays small.
+
+ABOUT_QUERY = """query($id:Int){Media(id:$id,type:ANIME){ id genres
+ tags{ name rank isMediaSpoiler isGeneralSpoiler isAdult }
+ characters(sort:[ROLE,RELEVANCE,ID],perPage:18){ edges{ role
+  node{ id name{full} image{large} }
+  voiceActors(sort:[RELEVANCE,ID]){ id name{full} image{large medium} languageV2 } } } }}"""
+ABOUT_FRESH = 3 * 24 * 3600
+ABOUT_TAG_MIN_RANK = 50  # AniList's own rank: lower ones are weak votes
+ABOUT_TAGS_MAX = 12
+
+
+def _img(i):
+    return (i or {}).get("large") or (i or {}).get("medium")
+
+
+def _about_shape(m):
+    tags = [{"name": t["name"], "rank": t.get("rank") or 0,
+             "spoiler": bool(t.get("isMediaSpoiler") or t.get("isGeneralSpoiler"))}
+            for t in (m.get("tags") or [])
+            if t.get("name") and not t.get("isAdult") and (t.get("rank") or 0) >= ABOUT_TAG_MIN_RANK]
+    tags.sort(key=lambda t: -t["rank"])
+    chars = []
+    for e in ((m.get("characters") or {}).get("edges") or []):
+        n = e.get("node") or {}
+        if not (n.get("name") or {}).get("full"):
+            continue
+        va = {}
+        for v in e.get("voiceActors") or []:
+            lang = {"Japanese": "ja", "English": "en"}.get(v.get("languageV2"))
+            if lang and lang not in va and (v.get("name") or {}).get("full"):
+                va[lang] = v
+        chars.append({"id": n.get("id"), "name": n["name"]["full"],
+                      "image": _img(n.get("image")),
+                      "role": e.get("role"),
+                      "ja": va["ja"]["name"]["full"] if "ja" in va else None,
+                      "en": va["en"]["name"]["full"] if "en" in va else None,
+                      "ja_image": _img((va.get("ja") or {}).get("image")),
+                      "en_image": _img((va.get("en") or {}).get("image"))})
+    return {"id": m["id"], "genres": [g for g in (m.get("genres") or []) if g],
+            "tags": tags[:ABOUT_TAGS_MAX], "characters": chars}
+
+
+def media_about(media_id):
+    """The About extras for one entry, cached a few days. A failed read
+    falls back to the stored copy at any age; with none, it raises."""
+    key = "media-about:v3:%d" % media_id
+    row = database.cache_get_ts(key)
+    if row and time.time() - row[1] < ABOUT_FRESH:
+        return row[0]
+    try:
+        m = ((anilist_request({"query": ABOUT_QUERY, "variables": {"id": media_id}}) or {})
+             .get("data") or {}).get("Media")
+    except Exception:
+        if row:
+            return row[0]
+        raise
+    if not m:
+        return None
+    out = _about_shape(m)
+    database.cache_put(key, out)
+    return out
+
+
 def _fav_page(conn):
     """A favourites page → (ids, has_next)."""
     conn = conn or {}
