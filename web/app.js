@@ -1447,9 +1447,58 @@ function Fran() {
 function frAbout(e) {
   const rows = [["format", [e.format_label, e.episodes ? `${e.episodes} episode${e.episodes === 1 ? "" : "s"}` : "", e.duration ? `${e.duration} min${e.episodes > 1 ? " each" : ""}` : ""].filter(Boolean).join(" · ")],
     ["year", e.year ? String(e.year) : ""], ["status", MEDIA_STATUS[e.status] || ""], ["score", e.score ? `${e.score}% on AniList` : ""]].filter(([, v]) => v);
-  if (!e.overview && !rows.length) return "";
+  const nx = e.next_airing?.at && e.next_airing.at * 1000 > Date.now() ? e.next_airing : null;
+  if (nx) rows.splice(3, 0, ["next episode", `E${nx.episode} · ${new Date(nx.at * 1000).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`]);
+  const x = aboutMemo[e.id];
+  if (!e.overview && !rows.length && !x) return "";
   return `<section class="about"><div><div class="sh"><h2>About</h2></div>${e.overview ? `<p>${esc(e.overview)}</p>` : ""}</div>
-    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}<span id="aboutlive"></span></dl></section>`;
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}<span id="aboutx">${aboutRows(e.id)}</span><span id="aboutlive"></span></dl></section>
+  <section class="hsec cast" id="cast">${castHTML(e)}</section>`;
+}
+/* About extras (TODO 172): genres, tags and characters from AniList's
+   public data (GET /api/about), fetched once the page is up, kept per entry.
+   Spoiler tags hide behind a click while Hide spoilers is on (Decision 57). */
+const aboutMemo = {}, aboutAsked = {};
+function aboutRows(mid) {
+  const x = aboutMemo[mid];
+  if (!x) return "";
+  const hide = !!S.data?.hide_spoilers && !S.tagsOpen?.[mid];
+  const shown = x.tags.filter((t) => !hide || !t.spoiler), held = x.tags.length - shown.length;
+  const tags = shown.map((t) => `<span class="tg${t.spoiler ? " tspl" : ""}"${t.spoiler ? ' title="Spoiler tag"' : ""}>${esc(t.name)}</span>`).join(" ")
+    + (held ? ` <span class="tg"><button class="tspb" data-a="tagspoil" data-v="${mid}">${held} spoiler tag${held === 1 ? "" : "s"}</button></span>` : "");
+  return (x.genres.length ? `<dt>genres</dt><dd>${esc(x.genres.join(" · "))}</dd>` : "") + (x.tags.length ? `<dt>tags</dt><dd class="tags">${tags}</dd>` : "");
+}
+/* Characters (TODO 172, round 5): the watch order's own tiles (Elias) —
+   the same poster, name and small grey line, main characters big and
+   supporting small after a gap. The grey line is the voice; its language
+   follows Sub/Dub until picked here. A tile opens the character on AniList. */
+function castHTML(e) {
+  const x = aboutMemo[e.id];
+  if (!x?.characters.length) return "";
+  const hasEn = x.characters.some((c) => c.en), hasJa = x.characters.some((c) => c.ja);
+  let lang = S.castLang || ((e.online?.mode || S.settings?.stream?.mode) === "dub" ? "en" : "ja");
+  if (lang === "en" && !hasEn) lang = "ja"; else if (lang === "ja" && !hasJa && hasEn) lang = "en";
+  let apart = false;
+  const tile = (c) => { const main = c.role === "MAIN", first = !main && !apart, url = c.id ? `https://anilist.co/character/${c.id}` : ""; apart ||= first;
+    return `<a class="ot${main ? " big" : ""}${first ? " apart" : ""}"${url ? ` href="${url}" data-a="ext" data-v="${url}"` : ""} title="${esc(c.name)}"><span class="pw">${poster(c.name, c.image, { c: "op" })}</span><b>${esc(c.name)}</b><small>${esc(c[lang] || "no voice listed")}</small></a>`; };
+  const seg = hasEn && hasJa ? `<span class="seg" role="group" aria-label="Voice language">${[["ja", "Japanese"], ["en", "English"]].map(([k, l]) => `<button class="${lang === k ? "on" : ""}" aria-pressed="${lang === k}" data-a="castlang" data-v="${k}">${l}</button>`).join("")}</span>` : "";
+  return `<div class="sh"><h2>Characters</h2><span class="fill"></span>${seg}<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder castrow">${x.characters.map(tile).join("")}</div>`;
+}
+function aboutPaint(mid) {
+  const e = frEntry();
+  if (S.view !== "fr" || !e || e.id !== mid) return;
+  const rows = $("#aboutx"), cast = $("#cast");
+  if (rows) rows.innerHTML = aboutRows(mid);
+  if (cast) { cast.innerHTML = castHTML(e); strips(); }
+}
+function loadAbout(mid) {
+  if (aboutMemo[mid] || aboutAsked[mid] > Date.now() - 60e3) return; // a failed read tries again after a minute
+  aboutAsked[mid] = Date.now();
+  api("/api/about?id=" + mid).then((r) => {
+    if (!r || r.error) return; // the extras are a bonus: the page reads fine without them
+    aboutMemo[mid] = r;
+    aboutPaint(mid);
+  }).catch(() => {});
 }
 /* Watch order (TODO 132): the main story big and numbered, everything else
    small, right after the part AniList links it to. It never guesses.
@@ -3879,6 +3928,7 @@ function render(inPlace = false) {
   paintPtitle(S.view === "home" ? dayWord(new Date().getHours()) : t);
   if (S.view === "show") { const id = showById(S.showId).meta?.anilist_id; if (id) loadEntry(id); }
   if (S.view === "fr" && frEntry()) loadEntry(frEntry().id);
+  if (S.view === "fr" && frEntry()) loadAbout(frEntry().id);
   if (S.sel && S.sel.show !== selKey()) S.sel = null;
   paintSel();
   if (S.view === "stats" || S.view === "history") loadAlData();
@@ -4682,6 +4732,8 @@ const A = {
     A.frsel(v);
     $("#app .frpage > .eps-head")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }); // the picked entry's episodes, the order right under them
   },
+  castlang: (v) => { S.castLang = v; const e = frEntry(); if (e) aboutPaint(e.id); },
+  tagspoil: (v) => { (S.tagsOpen ||= {})[v] = true; aboutPaint(+v); },
   frorder: () => $("#app .frpage .hsec.ford")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }),
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },

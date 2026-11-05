@@ -386,6 +386,26 @@ class Handler(BaseHTTPRequestHandler):
                 # background work — a card's hover prefetch.
                 peek = parse_qs(urlparse(self.path).query).get("peek", ["0"])[0] == "1"
                 self.send_json(pages.franchise_view(mid, peek=peek))
+        elif route == "/api/about":
+            # The show page's About extras (TODO 172): genres, tags,
+            # characters. Public AniList data, no login needed.
+            try:
+                mid = int(parse_qs(urlparse(self.path).query).get("id", ["0"])[0])
+            except ValueError:
+                mid = 0
+            if mid <= 0:
+                self._bad("'id' must be a positive integer")
+                return
+            try:
+                with anilist.quick():
+                    about = anilist.media_about(mid)
+            except Exception as e:
+                self.send_json({"error": anilist.friendly_error(e)}, 502)
+                return
+            if about is None:
+                self.send_json({"error": "AniList has no such entry"}, 404)
+            else:
+                self.send_json(about)
         elif route.startswith("/img/"):
             name = os.path.basename(route)
             p = config.POSTERS / name
