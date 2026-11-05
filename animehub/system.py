@@ -119,6 +119,63 @@ def kill_tree(pid):
         raise OSError(f"taskkill exited {rc}")
 
 
+# Windows: a job holds a run and everything it starts, also what taskkill /T
+# can't see — a process whose parent already ended, or one Git Bash is still
+# making when taskkill comes (TODO 158). The run starts suspended, so nothing
+# it starts can run before it is in the job.
+SUSPENDED = 0x00000004
+
+
+def _kernel32():
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateJobObjectW.restype = wintypes.HANDLE
+    k.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    k.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    k.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    k.CloseHandle.argtypes = (wintypes.HANDLE,)
+    return k
+
+
+def job_start(proc):
+    """Windows only: put a process started with SUSPENDED in a job of its
+    own, then let it run. Returns the job, or None when Windows won't make
+    one (the run then goes as before, with taskkill alone)."""
+    import ctypes
+    from ctypes import wintypes
+    handle = int(proc._handle)
+    job = None
+    try:
+        k = _kernel32()
+        job = k.CreateJobObjectW(None, None)
+        if job and not k.AssignProcessToJobObject(job, handle):
+            k.CloseHandle(job)
+            job = None
+    except (OSError, AttributeError):
+        job = None
+    finally:
+        ntdll = ctypes.WinDLL("ntdll")
+        ntdll.NtResumeProcess.argtypes = (wintypes.HANDLE,)
+        ntdll.NtResumeProcess(handle)
+    return job
+
+
+def job_end(job):
+    """End every process in the job."""
+    try:
+        _kernel32().TerminateJobObject(job, 1)
+    except (OSError, AttributeError):
+        pass
+
+
+def job_close(job):
+    try:
+        _kernel32().CloseHandle(job)
+    except (OSError, AttributeError):
+        pass
+
+
 # ---------- mpv's IPC server (TODO 74 item 3) ----------
 # POSIX: a Unix socket file. Windows: a named pipe (\\.\pipe\<name>) — no
 # file on disk, and a new client connection per open().
