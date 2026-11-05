@@ -275,9 +275,12 @@ def anicli_spawn(args, env, stdout, stderr):
     except FileNotFoundError as e:
         raise AniCliError(str(e))
     master, slave = system.open_pty()
+    spawn = system.detached()
+    if system.WINDOWS:
+        spawn["creationflags"] |= system.SUSPENDED
     try:
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL if slave is None else slave,
-                                stdout=stdout, stderr=stderr, env=env, **system.detached())
+                                stdout=stdout, stderr=stderr, env=env, **spawn)
     except OSError as e:
         if master is not None:
             os.close(master)
@@ -286,10 +289,22 @@ def anicli_spawn(args, env, stdout, stderr):
         if slave is not None:
             os.close(slave)
     proc.hub_pty = master
+    proc.hub_job = system.job_start(proc) if system.WINDOWS else None
     return proc
 
 
+def _job(proc):
+    """The run's Windows job: a handle, so a stand-in process's attribute
+    is never handed to Windows."""
+    job = getattr(proc, "hub_job", None)
+    return job if type(job) is int and job else None
+
+
 def anicli_release(proc):
+    job = _job(proc)
+    if job:
+        proc.hub_job = None
+        system.job_close(job)
     fd = getattr(proc, "hub_pty", None)
     if fd is not None:
         proc.hub_pty = None
@@ -305,12 +320,16 @@ def stop_process_group(proc, sig=signal.SIGTERM):
     otherwise outlive it. Only a real child's group: os.killpg(1) is
     kill(-1), which signals every process the user owns (logs them out),
     and a test's MagicMock pid reads as 1. Windows has no process groups
-    to signal: taskkill ends the process tree instead."""
+    to signal: the run's job ends everything it started (TODO 158), and
+    taskkill the process tree, for a run without a job."""
     pid = proc.pid
     try:
         if type(pid) is not int or pid <= 1 or (not system.WINDOWS and pid == os.getpgrp()):
             raise OSError("not a child process group")
         if system.WINDOWS:
+            job = _job(proc)
+            if job:
+                system.job_end(job)
             system.kill_tree(pid)
         else:
             os.killpg(pid, sig)

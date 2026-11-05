@@ -75,6 +75,35 @@ class RealDisk(unittest.TestCase):
         log.close()
         self.assertTrue(wait_for(lambda: not d.exists(), 6))
 
+    def test_a_stopped_run_takes_its_whole_tree(self):
+        """A process whose parent already ended is outside taskkill's tree,
+        and one Git Bash is still making when taskkill comes slips past it:
+        either kept a prepared run's log open for good, so its folder stayed
+        (TODO 158). Stopping a run ends everything it started."""
+        d = Path(tempfile.mkdtemp(dir=support.TMP))
+        script = d / "ani-cli"
+        script.write_bytes(b"#!/bin/sh\n(sleep 60 &)\nsleep 60\n")
+        script.chmod(0o755)
+        log = d / "stderr.log"
+        with mock.patch.object(anicli, "anicli_path", return_value=str(script)), \
+                mock.patch.object(anicli, "anicli_check", return_value={"ok": True, "missing": []}), \
+                mock.patch.object(anicli, "anicli_outdated", return_value=False), \
+                open(log, "ab") as f:
+            proc = anicli.anicli_spawn([], dict(os.environ), subprocess.DEVNULL, f)
+        time.sleep(1.5)  # both sleeps are running
+        anicli.stop_process_group(proc, system.SIGKILL)
+        proc.wait(timeout=5)
+        anicli.anicli_release(proc)
+
+        def let_go():
+            try:
+                log.rename(d / "moved.log")
+                return True
+            except OSError:
+                return False
+
+        self.assertTrue(wait_for(let_go, 5), "something the run started still holds its log")
+
     def test_replace_outlasts_readers(self):
         """Windows refuses to replace an open file: a banner being served
         stayed upscaled with Sharper banners off (TODO 145). Readers come and
