@@ -45,6 +45,25 @@ def wait_for(check, seconds=8):
     return False
 
 
+def left_over(folder):
+    """What kept a run's folder from going, for the failure message."""
+    lines = [f"{folder} is still there:"]
+    for f in sorted(folder.rglob("*")) if folder.exists() else []:
+        try:
+            f.rename(f.with_name(f.name + ".probe"))
+            f.with_name(f.name + ".probe").rename(f)
+            state = "free"
+        except OSError as e:
+            state = f"held: {e}"
+        lines.append(f"  {f.name}: {state}")
+    if os.name == "nt":
+        import subprocess
+        out = subprocess.run(["tasklist", "/v", "/fo", "csv"], capture_output=True, text=True).stdout
+        lines += ["  " + l for l in out.splitlines()
+                  if any(n in l.lower() for n in ("sh.exe", "bash", "sleep", "ani-cli", "mpv"))]
+    return "\n".join(lines)
+
+
 class SiteRule(unittest.TestCase):
     def tearDown(self):
         settings.set_automation("vpn_warn", True)
@@ -150,7 +169,7 @@ class Prepared(unittest.TestCase):
         with mock.patch.object(settings, "vpn_status", return_value=NO_VPN):
             self.assertIsNone(prepare.take(self.key()))
         self.assertIsNotNone(slot["proc"].poll())
-        self.assertTrue(wait_for(lambda: not slot["dir"].exists()))
+        self.assertTrue(wait_for(lambda: not slot["dir"].exists()), left_over(slot["dir"]))
 
     def test_a_failed_removal_leaves_the_stop_file(self):
         # Windows: the log is held open, everything else in the folder goes.
