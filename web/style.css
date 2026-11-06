@@ -702,7 +702,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .et small{display:block;font:400 11.5px var(--mono);color:var(--mute);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sp2 .ep.resume .et small{color:var(--accent);font-weight:400}
 .sp2 .ep .selbox{right:9px;top:9px}
-.sp2 .ep.sel .epa{outline:2px solid var(--accent);outline-offset:3px;overflow:visible}
+.sp2 .ep.sel .epa{outline:2px solid var(--accent);outline-offset:3px}
 .sp2 .frother-h{font:600 17px var(--ui);margin:40px 0 0}
 .sp2 .hsec{position:relative} /* on phones the heading was painted over without it */
 .sp2 .frorder{--wb:172px;gap:16px;align-items:flex-start;scroll-snap-type:none}
