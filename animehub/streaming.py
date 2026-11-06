@@ -471,6 +471,57 @@ def stream_switch_mode(media_id, mode):
     return {"ok": True, "mode": mode, "episodes": r["episodes"]}
 
 
+def ready_language(ep_id, mode, wanted):
+    """The player's Sub/Dub switch (TODO 153): ani-cli finds this episode
+    in the other language while it keeps playing. {"slot": prepared run,
+    ready to go}; {"slot": None} when runs can't be prepared here (the
+    switch then starts the normal way); {"error": words} when ani-cli has
+    no such version; None when wanted() turned false (called off)."""
+    mid = stream_media_id(ep_id)
+    link = stream_link_get(mid) if mid else None
+    if not link:
+        return {"error": STREAM_UNAVAILABLE}
+    token = ep_id.split(":", 2)[2]
+    sock = player.ipc_socket_path()
+    slot = prepare.spawn(_prepare_key(link, ep_id, mode), link, token, mode, sock, player.mpv_env(sock))
+    if not slot:
+        return {"slot": None}
+    deadline = time.time() + anicli.STREAM_STARTUP_TIMEOUT
+    while not prepare.ready(slot):
+        if not wanted():
+            prepare.end(slot)
+            return None
+        if slot["proc"].poll() is not None or time.time() > deadline:
+            try:
+                text = slot["err"].read_text(errors="replace")
+            except OSError:
+                text = ""
+            prepare.end(slot)
+            msg = anicli.anicli_message(text)
+            util.log("sub/dub switch for %s: %s" % (ep_id, msg or "no link"))
+            if "no sources found" in msg.lower() or "episode not released" in msg.lower():
+                return {"error": f"E{token} has no {'English dub' if mode == 'dub' else 'subbed version'} yet."}
+            return {"error": friendly_stream_error(msg, f"E{token}") if msg else
+                    f"Couldn't load the {'dub' if mode == 'dub' else 'sub'} — still playing this one."}
+        time.sleep(0.25)
+    return {"slot": slot}
+
+
+def relist(media_id):
+    """After the player switched language: the episode list in the new
+    one, like the show page's toggle. Best effort; an empty answer keeps
+    the old list."""
+    try:
+        link = stream_link_get(media_id)
+        episodes = anicli.anicli_episodes(link) if link else []
+    except anicli.AniCliError:
+        return
+    if episodes:
+        with database.db() as c:
+            c.execute("UPDATE stream_links SET episodes=?, episodes_ts=? WHERE media_id=?",
+                      (json.dumps(episodes), time.time(), media_id))
+
+
 def _stream_num(token):
     f = float(token)
     return int(f) if f.is_integer() else f
@@ -657,7 +708,7 @@ def prepare_after(ep_id):
         util.log("preparing after %s failed: %s" % (ep_id, e))
 
 
-def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=False, cold=False):
+def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=False, cold=False, handoff=None):
     """Play an online episode: link the release if nobody has yet, then let
     ani-cli resolve the episode and run mpv in the foreground
     (--exit-after-play) with the hub's IPC socket, resume point and
@@ -665,7 +716,9 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     ani-cli process like a local mpv. A dub that isn't out yet falls back to
     the sub once; a result ani-cli stopped listing is re-matched once. A
     run prepared before the click (prepare.py) is used when it fits; cold
-    skips that, for the retry after one failed."""
+    skips that, for the retry after one failed. handoff: the player's
+    Sub/Dub switch (player.handoff_args) — its own prepared run, the spot
+    to start at, and the old player left running until this one plays."""
     mid = stream_media_id(ep_id)
     token = ep_id.split(":", 2)[2] if mid else ""
     if not mid or not anicli.STREAM_EP_RE.match(token):
@@ -694,9 +747,13 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     label = session_label(sea, ep)
     code = f"E{token}"
     play_mode = "sub" if sub_once else link["mode"]
-    prep = None if cold else prepare.take(_prepare_key(link, ep_id, play_mode))
+    if handoff and handoff.get("slot") and not cold:
+        prep = handoff.pop("slot")
+    else:
+        prep = None if cold else prepare.take(_prepare_key(link, ep_id, play_mode))
     sock = prep["sock"] if prep else player.ipc_socket_path()
-    flags = [f"--input-ipc-server={sock}", "--no-input-terminal", *player.resume_args(ep_id, from_start), *settings.mpv_flags()]
+    flags = [f"--input-ipc-server={sock}", "--no-input-terminal",
+             *player.start_args(ep_id, from_start, handoff), *settings.mpv_flags()]
     script = mpv_script_flag()
     if script:
         flags.append(script)
@@ -710,7 +767,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
         with player._active_lock:
             old = next(iter(player._active.values()), None)
         if old:
-            player.retire_session(old["proc"])
+            player.retire_session(old["proc"], handoff)
         if prep and not prepare.go(prep, flags):
             prepare.end(prep)
             prep = None
@@ -741,7 +798,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
         with player._active_lock:
             player._active.clear()
             player._active[ep_id] = {"proc": proc, "ep_id": ep_id, "show_title": s["title"],
-                              "label": label, "percent": 0, "version": 0, "loading": True}
+                              "label": label, "percent": 0, "version": 0, "loading": True, "mode": play_mode}
 
     def failure(rc):
         try:
@@ -754,17 +811,17 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
         util.log("stream %s failed: %s" % (ep_id, msg or "exit code %s" % rc))
         if play_mode == "dub" and "no sources found for dub" in msg.lower():
             _session_notice.update(msg=f"{code} isn't dubbed yet — playing it subbed.", ts=time.time())
-            r = start_stream(ep_id, sub_once=True, from_start=from_start)
+            r = start_stream(ep_id, sub_once=True, from_start=from_start, handoff=handoff)
             return r.get("error")
         if "invalid anime selection" in msg.lower() and not rematched:
             try:
                 stream_autolink(mid, rematch=True)
             except anicli.AniCliError as e:
                 return str(e)
-            r = start_stream(ep_id, mode, sub_once, rematched=True, from_start=from_start)
+            r = start_stream(ep_id, mode, sub_once, rematched=True, from_start=from_start, handoff=handoff)
             return r.get("error")
         if prep:  # its link may have gone stale: the normal way decides
-            r = start_stream(ep_id, mode, sub_once, rematched, from_start, cold=True)
+            r = start_stream(ep_id, mode, sub_once, rematched, from_start, cold=True, handoff=handoff)
             return r.get("error")
         return friendly_stream_error(msg, code)
 

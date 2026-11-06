@@ -279,6 +279,147 @@ mp.register_event("start-file", function()
     hide()
 end)
 
+-- The player's Sub/Dub switch (TODO 153): a note at the top while the other
+-- language loads (the episode is paused from the pick until the new player
+-- shows), or why it can't. Drawn like the app's toast (#toast): a dark
+-- rounded box with a soft shadow and a thin light edge, a round badge in the
+-- show's colour with a turning ring, then the words; it springs in from
+-- below. The hub sends anime-hub-switch {"state": "loading" | "failed" |
+-- "off", "text"}; the looks send "loading" themselves the moment it's picked.
+local note = mp.create_osd_overlay("ass-events")
+note.z = 20
+local noted, note_timer, note_hide = nil, nil, nil
+local note_accent = "6FA4F2" -- the app's amber (#f2a46f), until the hub names the show's colour
+local BAD = "8F8AEF"         -- the app's --bad (#ef8a8f)
+local NOTE_H, NOTE_R, DISC = 46, 18, 28
+local NOTE_FONT = "\\fnHanken Grotesk\\fs18\\b0\\bord0\\shad0"
+local NOTE_IN, NOTE_OUT = 0.4, 0.2
+
+local function spring(k)
+    -- Settles with a small overshoot, like the app's --spring.
+    local c1 = 1.6
+    return 1 + (c1 + 1) * (k - 1) ^ 3 + c1 * (k - 1) ^ 2
+end
+
+local function ring_path(cx, cy, r, width, from, to)
+    -- A band between two circles from one angle to another (degrees).
+    local pts, steps = {}, math.max(8, math.floor(math.abs(to - from) / 6))
+    for i = 0, steps do
+        local a = math.rad(from + (to - from) * i / steps)
+        pts[#pts + 1] = string.format("%.2f %.2f", cx + (r + width / 2) * math.cos(a), cy + (r + width / 2) * math.sin(a))
+    end
+    for i = steps, 0, -1 do
+        local a = math.rad(from + (to - from) * i / steps)
+        pts[#pts + 1] = string.format("%.2f %.2f", cx + (r - width / 2) * math.cos(a), cy + (r - width / 2) * math.sin(a))
+    end
+    return "m " .. pts[1] .. " l " .. table.concat(pts, " ", 2)
+end
+
+local function bar_path(x1, y1, x2, y2, width)
+    local dx, dy = x2 - x1, y2 - y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    local nx, ny = -dy / len * width / 2, dx / len * width / 2
+    return string.format("m %.2f %.2f l %.2f %.2f l %.2f %.2f l %.2f %.2f",
+        x1 + nx, y1 + ny, x2 + nx, y2 + ny, x2 - nx, y2 - ny, x1 - nx, y1 - ny)
+end
+
+local function shape(x, y, color, a, path, extra)
+    return string.format("{\\an7\\pos(%.2f,%.2f)\\bord0\\shad0%s\\1c&H%s&\\1a&H%02X&\\p1}%s{\\p0}",
+        x, y, extra or "", color, math.max(0, math.min(255, math.floor(a + 0.5))), path)
+end
+
+local function draw_note()
+    if not noted then
+        note:remove()
+        return
+    end
+    local now = mp.get_time()
+    local k_in = math.min(1, (now - noted.t0) / NOTE_IN)
+    local k_out = noted.leaving and math.min(1, (now - noted.leaving) / NOTE_OUT) or 0
+    if k_out >= 1 then
+        noted = nil
+        note:remove()
+        return
+    end
+    local show = math.min(1, k_in * 2.5) * (1 - k_out)  -- opacity
+    local lift = (1 - spring(k_in)) * 14 + k_out * 6
+    local function fade(a) return 255 - (255 - a) * show end
+    local dim = mp.get_property_native("osd-dimensions") or {}
+    local res_x = (dim.w and dim.h and dim.h > 0) and math.floor(RES_Y * dim.w / dim.h) or 1280
+    local busy = noted.state == "loading"
+    local tw = text_width(NOTE_FONT, noted.text, res_x)
+    local w = 9 + DISC + 11 + tw + 20
+    local x, y = (res_x - w) / 2, 30 + lift
+    local tint = busy and note_accent or BAD
+    local cx, cy = x + 9 + DISC / 2, y + NOTE_H / 2
+    local ev = {
+        -- the shadow: 0 18px 44px -12px rgba(0,0,0,.65)
+        shape(x + 10, y + 12, "000000", fade(0x70), rounded(w - 20, NOTE_H - 6, NOTE_R), "\\blur14"),
+        -- the box with its thin light edge (--edge)
+        string.format("{\\an7\\pos(%.2f,%.2f)\\bord1\\shad0\\1c&H221D1C&\\1a&H%02X&\\3c&HFFFFFF&\\3a&H%02X&\\p1}%s{\\p0}",
+            x, y, math.floor(fade(0x2A)), math.floor(fade(0xE6)), rounded(w, NOTE_H, NOTE_R)),
+        -- the badge: the colour at 16 %
+        shape(cx - DISC / 2, cy - DISC / 2, tint, fade(0xD6), rounded(DISC, DISC, DISC / 2)),
+    }
+    if busy then
+        local turn = (now * 450) % 360
+        ev[#ev + 1] = shape(0, 0, "FFFFFF", fade(0xD6), ring_path(cx, cy, 6.5, 2.2, 0, 360))
+        ev[#ev + 1] = shape(0, 0, tint, fade(0), ring_path(cx, cy, 6.5, 2.2, turn, turn + 100))
+    else
+        ev[#ev + 1] = shape(0, 0, tint, fade(0), bar_path(cx - 4, cy - 4, cx + 4, cy + 4, 2))
+        ev[#ev + 1] = shape(0, 0, tint, fade(0), bar_path(cx + 4, cy - 4, cx - 4, cy + 4, 2))
+    end
+    ev[#ev + 1] = string.format("{\\an4\\pos(%.2f,%.2f)%s\\1c&HF1F3F3&\\1a&H%02X&}%s",
+        x + 9 + DISC + 11, cy, NOTE_FONT, math.floor(fade(0)), noted.text)
+    note.res_x, note.res_y, note.data = res_x, RES_Y, table.concat(ev, "\n")
+    note:update()
+end
+
+local function note_tick()
+    draw_note()
+    local now = mp.get_time()
+    local moving = noted and (noted.state == "loading" or noted.leaving or now - noted.t0 < NOTE_IN)
+    if not moving and note_timer then
+        note_timer:kill()
+        note_timer = nil
+    end
+end
+
+local function note_run()
+    if not note_timer then note_timer = mp.add_periodic_timer(1 / 30, note_tick) end
+end
+
+local function set_note(state, text)
+    if note_hide then note_hide:kill() note_hide = nil end
+    if state == "loading" or state == "failed" then
+        local again = noted and not noted.leaving
+        noted = { state = state, text = text, t0 = again and noted.t0 or mp.get_time() }
+        if state == "failed" then
+            note_hide = mp.add_timeout(5, function()
+                note_hide = nil
+                if noted then noted.leaving = mp.get_time() note_run() end
+            end)
+        end
+    elseif noted and not noted.leaving then
+        noted.leaving = mp.get_time()
+    end
+    note_run()
+    draw_note()
+end
+
+mp.register_script_message("anime-hub-switch", function(raw)
+    local data = utils.parse_json(raw or "")
+    if type(data) ~= "table" then return end
+    local text = type(data.text) == "string" and data.text ~= "" and data.text or "Switching audio…"
+    set_note(data.state, text)
+end)
+mp.register_script_message("anime-hub-info", function(raw)
+    local data = utils.parse_json(raw or "")
+    local hex = type(data) == "table" and type(data.accent) == "string" and data.accent:match("^#(%x%x%x%x%x%x)$")
+    if hex then note_accent = hex:sub(5, 6) .. hex:sub(3, 4) .. hex:sub(1, 2) end
+end)
+mp.observe_property("osd-dimensions", "native", function() if noted then draw_note() end end)
+
 mp.add_key_binding("ENTER", "anime-hub-skip-credits", function()
     local seg = segment_at(mp.get_property_number("time-pos"))
     if seg then
