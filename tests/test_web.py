@@ -38,7 +38,8 @@ const S = {{ lib: {{ tab: "ALL", src: "all", fmt: "all", air: "all", year: "all"
 const srcLocked = () => false;
 console.log(JSON.stringify((() => {{ {body} }})()));
 """
-    out = subprocess.run(["node", "-e", src], capture_output=True, text=True, encoding="utf-8", timeout=20)
+    # Fed on stdin: as a `-e` argument the regions outgrow Windows' 32K command line.
+    out = subprocess.run(["node", "-"], input=src, capture_output=True, text=True, encoding="utf-8", timeout=20)
     if out.returncode:
         raise AssertionError(out.stderr)
     return json.loads(out.stdout)

@@ -24,7 +24,8 @@ SEEN_EVERY = 60
 # the AniList account, opening files there) or the remote's own pairing.
 BLOCKED = ("/api/browse", "/api/library-root", "/api/library-extra", "/api/adopt-root",
            "/api/open", "/api/open-folder", "/api/auth/start", "/api/auth/callback",
-           "/api/auth/token", "/api/auth/logout", "/auth/callback", "/api/remote", "/api/anicli-get", "/api/update-check", "/api/update-install")
+           "/api/auth/token", "/api/auth/logout", "/auth/callback", "/api/remote", "/api/anicli-get", "/api/update-check", "/api/update-install",
+           "/api/fonts/import", "/api/fonts/add", "/api/fonts/delete", "/api/fonts/system")
 # What the pairing page itself needs before a phone is paired.
 OPEN = ("/pair", "/api/remote/pair", "/style.css", "/manifest.webmanifest", "/icon.svg", "/icon-180.png", "/icon-192.png", "/icon-512.png")
 

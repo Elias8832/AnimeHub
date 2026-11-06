@@ -12,9 +12,9 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, anicli, anilist, background, database, downloader, franchise, journal, lengths, library, mapping, metadata, pages, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update
+from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mapping, metadata, pages, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -290,7 +290,8 @@ class Handler(BaseHTTPRequestHandler):
             # toggles + running config + detected tools, never the token.
             # additive (Decision 43): on a paired phone, Settings hides what
             # a phone can't change.
-            self.send_json({**settings.settings_payload(), "phone": self.remote_device is not None})
+            self.send_json({**settings.settings_payload(), "phone": self.remote_device is not None,
+                            "fonts": fonts.all_fonts()})  # additive (TODO 122)
         elif route == "/api/browse":
             # Decision 32: the library folder picker walks one level at a time.
             qs = parse_qs(urlparse(self.path).query)
@@ -437,6 +438,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file(WEB / "style.css", "text/css")
         elif route == "/app.js":
             self.send_file(WEB / "app.js", "text/javascript")
+        elif route == "/api/fonts":
+            # Additive (TODO 122, Decision 69): the fonts imported in Settings → Appearance.
+            self.send_json({"fonts": fonts.all_fonts()})
+        elif route == "/api/fonts/system":
+            # Additive (TODO 122): the fonts installed on this PC, to add one with a click.
+            self.send_json({"fonts": fonts.system_fonts()})
+        elif route.startswith("/user-fonts/"):
+            p = fonts.font_path(os.path.basename(unquote(route)))
+            if p:
+                self.send_file(p, fonts.TYPES[p.suffix.lstrip(".").lower()], cache=True)
+            else:
+                self.send_error(404)
         elif route.startswith("/fonts/") and route.endswith(".woff2"):
             # TODO 60 (Decision 38): the UI fonts ship with the app, so it
             # looks the same offline. Basename only — no path walking.
@@ -477,7 +490,8 @@ class Handler(BaseHTTPRequestHandler):
             # rfile.read(-1) would block the handler thread until EOF.
             self.send_json({"error": "invalid Content-Length"}, 400)
             return
-        if length > 1_000_000:
+        # An imported font travels as base64 (TODO 122): up to 16 MB of file.
+        if length > (22_000_000 if route == "/api/fonts/import" else 1_000_000):
             self.send_json({"error": "request body too large"}, 413)
             return
         try:
@@ -720,6 +734,18 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self.send_json(playlists.apply(body))
             except playlists.PlaylistError as e:
+                self.send_json({"error": str(e)}, 400)
+        elif route in ("/api/fonts/import", "/api/fonts/add", "/api/fonts/delete"):
+            # Additive (TODO 122, Decision 69): {name, data (base64)} / {family} / {id}.
+            try:
+                if route == "/api/fonts/import":
+                    self.send_json({"ok": True, "font": fonts.import_font(body.get("name"), body.get("data")), "fonts": fonts.all_fonts()})
+                elif route == "/api/fonts/add":
+                    self.send_json({"ok": True, "font": fonts.add_system_font(body.get("family")), "fonts": fonts.all_fonts()})
+                else:
+                    fonts.delete_font(body.get("id"))
+                    self.send_json({"ok": True, "fonts": fonts.all_fonts()})
+            except fonts.FontError as e:
                 self.send_json({"error": str(e)}, 400)
         elif route == "/api/keep-local":
             # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).
