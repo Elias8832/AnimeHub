@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 
-from . import anicli, database, library, mapping, pages, progress, settings, skips, streaming, system, tracks, util
+from . import anicli, database, library, mapping, pages, prepare, progress, settings, skips, streaming, system, tracks, util
 from .config import config, PLAYER_FONTS, PLAYER_LOOKS, PLAYER_MOUSE_LUA, SKIP_CREDITS_LUA
 
 
@@ -441,13 +441,17 @@ def _send_info(proc, ep_id, sock_path):
     try:
         episodes = episode_menu(ep_id)
         with _active_lock:
+            entry = dict(_active.get(ep_id) or {})
+        audio = audio_choice(ep_id, entry)
+        with _active_lock:
             entry = _active.get(ep_id)
             if entry is None or entry.get("proc") is not proc:
                 return
             entry["menu"] = {x["id"]: x for x in episodes}
+            entry["audio"] = audio
             info = {"title": entry.get("show_title"), "episode": entry.get("label"), "current": ep_id,
                     "accent": _accents.get(_accent_key(ep_id)), "episodes": episodes,
-                    "prefs": settings.player_prefs(), "sleep": sleep_info()}
+                    "prefs": settings.player_prefs(), "sleep": sleep_info(), "audio": audio}
         mpv_ipc(sock_path, ["script-message", "anime-hub-info", json.dumps(info)])
     except Exception as exc:
         util.log("player info not sent: %s" % exc)
@@ -602,7 +606,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     skips_sent = False
     picks = {} if tracks.enabled() else None
     speed_set = False
-    last_volume = sleep_seen = None
+    last_volume = sleep_seen = audio_seen = None
     prepared = False
     deadline = time.time() + startup
     connected = False
@@ -685,6 +689,10 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                 if isinstance(asked, (int, float)) and asked != sleep_seen:
                     sleep_seen = asked
                     set_sleep(int(asked))
+                audio = (mpv_ipc(sock_path, ["get_property", "user-data/anime-hub/audio"]) or {}).get("data")
+                if isinstance(audio, str) and audio != audio_seen:
+                    audio_seen = audio
+                    switch_audio(ep_id, proc, sock_path, audio.split(" ")[0])
                 if sleep_due():
                     with _active_lock:
                         entry = _active.get(ep_id)
@@ -728,7 +736,9 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
             except subprocess.TimeoutExpired:
                 pass
     try:
-        rc = proc.wait(timeout=10)
+        # A player handing over to the other language stays until the new
+        # one plays (switch_audio ends it), and no longer than that.
+        rc = proc.wait(timeout=SWITCH_TIMEOUT + 30 if getattr(proc, "hub_handoff", False) else 10)
     except subprocess.TimeoutExpired:
         anicli.stop_process_group(proc, system.SIGKILL)
         rc = proc.wait()
@@ -820,15 +830,26 @@ def resume_args(ep_id, from_start=False):
     return []
 
 
-def retire_session(proc):
+def start_args(ep_id, from_start=False, handoff=None):
+    """resume_args, or the spot the other language takes over at."""
+    if not handoff:
+        return resume_args(ep_id, from_start)
+    return [f"--start={max(0.0, handoff['start']):.2f}", *(["--fullscreen"] if handoff.get("fullscreen") else [])]
+
+
+def retire_session(proc, handoff=None):
     """Supersede a playback session (TODO 24): flag it for its watcher —
     an ani-cli session exits with its own code, not -SIGTERM — then stop
-    its whole process group."""
+    its whole process group. The player a Sub/Dub switch replaces stays on
+    screen, paused, until the new one plays (switch_audio)."""
     proc.hub_retired = True
+    if handoff and handoff.get("old") is proc:
+        proc.hub_handoff = True
+        return
     anicli.stop_process_group(proc)
 
 
-def start_play(ep_id, version=0, from_start=False):
+def start_play(ep_id, version=0, from_start=False, handoff=None):
     dismiss_next_prompt()  # playing anything answers the prompt
     if ep_id.startswith("stream:"):
         return streaming.start_stream(ep_id, from_start=from_start)
@@ -841,7 +862,7 @@ def start_play(ep_id, version=0, from_start=False):
     if path is None or not path.exists():
         return {"error": "file missing"}
     sock = ipc_socket_path()
-    args = ["mpv", str(path), f"--input-ipc-server={sock}", *resume_args(ep_id, from_start), *settings.mpv_flags()]
+    args = ["mpv", str(path), f"--input-ipc-server={sock}", *start_args(ep_id, from_start, handoff), *settings.mpv_flags()]
     # No --save-position-on-quit (TODO 24): the hub's IPC loop is the only
     # resume store. mpv's watch-later state would otherwise fight an
     # intentional restart/reset — a stale mpv-side position can override
@@ -856,7 +877,7 @@ def start_play(ep_id, version=0, from_start=False):
         with _active_lock:
             old = next(iter(_active.values()), None)
         if old:
-            retire_session(old["proc"])
+            retire_session(old["proc"], handoff)
 
         def spawn():
             """mpv's stderr lands in mpv-stderr.log (best effort — a log
@@ -894,3 +915,153 @@ def start_play(ep_id, version=0, from_start=False):
                               "loading": True}
     threading.Thread(target=watch_process, args=(proc, ep_id, sock), daemon=True).start()
     return {"ok": True}
+
+
+# Sub/Dub from inside the player (TODO 153). The Audio tab's pick reaches the
+# hub through mpv's user-data (like the sleep timer). The look pauses at the
+# pick (and plays on if the switch fails or is called off); the other
+# language gets ready meanwhile, then the new player starts at the same spot
+# and the old one stays on screen under a loading note until the new one plays. Online, ani-cli resolves the other language
+# in a prepared run (Decision 49); for files, it is the episode's other
+# version ("(Dub)", Decision 1's downloads). The pick sticks: online it is
+# the show's Sub/Dub, for files the version autoplay carries on.
+SWITCH_TIMEOUT = 90  # anicli.STREAM_STARTUP_TIMEOUT; anicli may still be loading here
+SWITCH_REWIND = 5  # the new language starts this many seconds back, to pick up the line (Elias)
+SWITCH_WORDS = {"sub": "Japanese audio", "dub": "English dub"}
+_DUB_LABEL = re.compile(r"\bdub", re.I)
+
+
+def file_mode(f):
+    """A file version's audio: a "(Dub)"-style label means dub (the app's
+    audio_kind reads it the same way)."""
+    return "dub" if _DUB_LABEL.search(f.get("label") or "") else "sub"
+
+
+def audio_choice(ep_id, entry):
+    """The Audio tab's Sub/Dub pick: {"current", "options"}, or None when
+    there is nothing to switch to. Online always offers both (whether a dub
+    exists shows when it's picked); files only with both versions there."""
+    if ep_id.startswith("stream:"):
+        return {"current": entry.get("mode") or "sub", "options": list(anicli.STREAM_MODES)}
+    s, ep = library.episode_by_id(ep_id)
+    kinds = [file_mode(f) for f in ((ep or {}).get("files") or [])]
+    if "sub" not in kinds or "dub" not in kinds:
+        return None
+    return {"current": kinds[max(0, min(entry.get("version", 0), len(kinds) - 1))], "options": ["sub", "dub"]}
+
+
+def _tell_switch(sock, state, text=""):
+    """The loading note in mpv (skip-credits.lua draws it; the looks mark
+    the pick). state: loading, failed or off."""
+    try:
+        mpv_ipc(sock, ["script-message", "anime-hub-switch", json.dumps({"state": state, "text": text})])
+    except OSError:
+        pass
+
+
+def _switch_wanted(ep_id, proc, want):
+    with _active_lock:
+        entry = _active.get(ep_id)
+        return entry is not None and entry.get("proc") is proc and entry.get("switch") == want
+
+
+def switch_audio(ep_id, proc, sock, want):
+    """The pick from mpv's Audio tab. One switch at a time; picking what
+    already plays while the other loads calls it off."""
+    with _active_lock:
+        entry = _active.get(ep_id)
+        if entry is None or entry.get("proc") is not proc:
+            return
+        choice = entry.get("audio")
+        if not choice or want not in choice["options"] or want == entry.get("switch"):
+            return
+        cancel = want == choice["current"]
+        if cancel and not entry.get("switch"):
+            return
+        entry["switch"] = None if cancel else want
+    if cancel:
+        _tell_switch(sock, "off")
+        return
+    threading.Thread(target=_switch, args=(ep_id, proc, sock, want), daemon=True).start()
+
+
+def _switch(ep_id, proc, sock, want):
+    words = SWITCH_WORDS[want]
+    _tell_switch(sock, "loading", f"Loading the {words}…")
+    online = ep_id.startswith("stream:")
+    slot = version = None
+    try:
+        if online:
+            got = streaming.ready_language(ep_id, want, lambda: _switch_wanted(ep_id, proc, want))
+            if got is None:
+                return  # called off
+            if got.get("error"):
+                _tell_switch(sock, "failed", got["error"])
+                return
+            slot = got.get("slot")
+        else:
+            s, ep = library.episode_by_id(ep_id)
+            files = (ep or {}).get("files") or []
+            version = next((i for i, f in enumerate(files) if file_mode(f) == want), None)
+            if version is None:
+                _tell_switch(sock, "failed", f"No {words} file for this episode.")
+                return
+        if not _switch_wanted(ep_id, proc, want):
+            return
+        live = {}
+        for prop in ("time-pos", "fullscreen"):
+            live[prop] = (mpv_ipc(sock, ["get_property", prop]) or {}).get("data")
+        if not isinstance(live["time-pos"], (int, float)):
+            _tell_switch(sock, "failed", "The player didn't say where it is — try again.")
+            return
+        start = max(0.0, live["time-pos"] - SWITCH_REWIND)
+        handoff = {"slot": slot, "start": start, "fullscreen": live["fullscreen"] is True, "old": proc}
+        mpv_ipc(sock, ["set_property", "pause", True])
+        slot = None  # start_stream owns it now
+        if online:
+            r = streaming.start_stream(ep_id, want, handoff=handoff)
+        else:
+            r = start_play(ep_id, version, handoff=handoff)
+        if handoff.get("slot"):
+            prepare.end(handoff["slot"])
+        if r.get("error"):
+            if _owns_session(ep_id, proc):  # still the one playing: it carries on
+                proc.hub_retired = proc.hub_handoff = False
+                mpv_ipc(sock, ["set_property", "pause", False])
+            _tell_switch(sock, "failed", r["error"])
+            return
+        _await_takeover(ep_id, proc)
+        if online:
+            streaming.relist(streaming.stream_media_id(ep_id))
+    except Exception as exc:
+        util.log("sub/dub switch failed: %s" % exc)
+        _tell_switch(sock, "failed", f"Couldn't switch to the {words}.")
+    finally:
+        if slot:
+            prepare.end(slot)
+        with _active_lock:
+            entry = _active.get(ep_id)
+            if entry is not None and entry.get("proc") is proc:
+                entry["switch"] = None
+
+
+def _await_takeover(ep_id, old):
+    """End the old player once the new one plays (or gave up)."""
+    deadline = time.time() + SWITCH_TIMEOUT
+    try:
+        while time.time() < deadline and old.poll() is None:
+            with _active_lock:
+                entry = dict(_active.get(ep_id) or {})
+            new = entry.get("proc")
+            if new is None or new is old or new.poll() is not None:
+                break
+            if entry.get("sock"):
+                try:
+                    t = (mpv_ipc(entry["sock"], ["get_property", "time-pos"]) or {}).get("data")
+                except OSError:
+                    t = None
+                if isinstance(t, (int, float)):
+                    break
+            time.sleep(0.25)
+    finally:
+        anicli.stop_process_group(old)
