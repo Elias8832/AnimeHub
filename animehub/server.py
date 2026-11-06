@@ -1,5 +1,6 @@
 """The HTTP server, its API routes and app startup."""
 
+import contextlib
 import gzip
 import hashlib
 import json
@@ -728,13 +729,30 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     res = metadata.set_kept_local(body["show_id"], body.get("keep", True))
                     self.send_json(res, 200 if res.get("ok") else 400)
+        elif route == "/api/title-search":
+            # The search box's instant half (Decision 68): the local title
+            # list only, no AniList. ready=false until the list is here.
+            if self._fields(body, strings=("query",)):
+                hits = metadata.instant_media_candidates(body["query"])
+                self.send_json({"ready": hits is not None, "hits": hits or []})
         elif route == "/api/match-candidates":
             if self._fields(body, strings=("query",)):
-                if "fresh" in body and not isinstance(body["fresh"], bool):
-                    self._bad("'fresh' must be a boolean")
-                    return
+                for flag in ("fresh", "fuzzy"):
+                    if flag in body and not isinstance(body[flag], bool):
+                        self._bad(f"'{flag}' must be a boolean")
+                        return
                 try:
-                    self.send_json(metadata.fetch_media_candidates(body["query"], body.get("fresh") is True)[:10])
+                    # fuzzy (additive, the search box): the local title list
+                    # first (Decision 68); AniList's own search until it's here.
+                    box = body.get("fuzzy") is True
+                    with anilist.quick() if box else contextlib.nullcontext():  # the box never hangs on a busy AniList
+                        local = metadata.local_media_candidates(body["query"]) if box else None
+                        found = local or metadata.fetch_media_candidates(body["query"], body.get("fresh") is True)
+                        if not found and local is None:
+                            # AniList matches exact words only; without the list a
+                            # typo gets a second try with guessed spellings.
+                            found = metadata.fuzzy_media_candidates(body["query"])
+                    self.send_json(found[:10])
                 except Exception as e:
                     self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/auth/start":

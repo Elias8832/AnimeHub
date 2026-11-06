@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from . import anilist, database, franchise, library, mapping, pages, settings, system, upscale, util
+from . import anilist, database, franchise, library, mapping, pages, settings, system, titles, upscale, util
 from .config import config
 
 
@@ -132,6 +132,156 @@ def fetch_media_candidates(title, fresh=False):
     candidates = ((data.get("data") or {}).get("Page") or {}).get("media") or []
     database.cache_put(key, candidates)
     return candidates
+
+
+def typo_edits(word, text):
+    """Fewest letter changes (a swap of two neighbours counts as one) that
+    make `word` appear somewhere in `text`."""
+    n = len(text)
+    prev2, prev = None, [0] * (n + 1)
+    for i in range(1, len(word) + 1):
+        cur = [i] + [0] * n
+        for j in range(1, n + 1):
+            same = word[i - 1] == text[j - 1]
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (0 if same else 1))
+            if prev2 and i > 1 and j > 1 and word[i - 1] == text[j - 2] and word[i - 2] == text[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+    return min(prev)
+
+
+def typo_score(query, text, shortest=4):
+    """How far `query` is from `text`, word by word: None when a word is too
+    far off (words under `shortest` letters must be exact, up to 7 letters
+    may have one slip, longer ones two). Lower is closer."""
+    text = _fold(text)
+    total = 0
+    for w in _fold(query).split():
+        if w in text:
+            continue
+        d = typo_edits(w, text) if len(w) >= shortest else 99
+        if d > (1 if len(w) < 8 else 2):
+            return None
+        total += d
+    return total
+
+
+_fold = titles.fold
+
+
+def _typo_variants(query, cap=40):
+    """Spellings AniList's exact word search might know when `query` has a
+    typo: a word left out, two letters swapped, a word cut short (AniList
+    finishes the last word only after another word), a letter too many, a
+    missing or wrong vowel. Most likely first."""
+    words = _fold(query).split()
+    out = []
+
+    def add(ws):
+        v = " ".join(w for w in ws if w)
+        if v and v != " ".join(words) and v not in out:
+            out.append(v)
+
+    def each(make):
+        for i, w in enumerate(words):
+            if len(w) >= 3:
+                for nw in make(i, w):
+                    add(words[:i] + [nw] + words[i + 1:])
+
+    if len(words) > 1:
+        for i in range(len(words)):
+            add(words[:i] + words[i + 1:])
+    each(lambda i, w: [w[:k] + w[k + 1] + w[k] + w[k + 2:] for k in range(len(w) - 1) if w[k] != w[k + 1]])
+    each(lambda i, w: [w[:k] for k in range(len(w) - 1, 1, -1)] if i > 0 else [])
+    each(lambda i, w: [w[:k] + w[k + 1:] for k in range(len(w))])
+    each(lambda i, w: [w[:k] + c + w[k:] for k in range(1, len(w) + 1) for c in "aeiou"])
+    each(lambda i, w: [w[:k] + c + w[k + 1:] for k in range(len(w)) if w[k] in "aeiouy" for c in "aeiou" if c != w[k]])
+    return out[:cap]
+
+
+def fuzzy_media_candidates(title):
+    """The search box's second try when AniList found nothing: AniList only
+    matches exact words, so one typo ("freiren", "one pice") empties the
+    list. Ask for a few likely spellings in one request, keep the shows whose
+    titles are within a letter or two of what was typed, closest first, and
+    fetch those in full. Cached like the plain search."""
+    query = re.sub(r"\s*\([^)]*\)", "", title).strip()
+    variants = _typo_variants(query)
+    if not variants:
+        return []
+    key = "media-candidates-typo:v2:" + _fold(query)
+    cached = database.cache_get(key, EPISODE_META_TTL)
+    if cached is not None:
+        return cached
+    light = "".join('v%d:Page(perPage:5){media(search:%s,type:ANIME){id title{romaji english} synonyms}}' % (i, json.dumps(v))
+                    for i, v in enumerate(variants))
+    data = anilist.anilist_request({"query": "query{" + light + "}"}).get("data") or {}
+    best = {}
+    for i in range(len(variants)):
+        for rank, m in enumerate((data.get("v%d" % i) or {}).get("media") or []):
+            # Three-letter words may slip here too: AniList already narrowed
+            # the shows down. A hit on a main title beats one on a synonym.
+            t = m.get("title") or {}
+            names = [(t.get("romaji"), 0), (t.get("english"), 0)] + [(n, 0.5) for n in m.get("synonyms") or []]
+            scores = [s + extra for s, extra in ((typo_score(query, n, 3), extra) for n, extra in names if n) if s is not None]
+            if scores and m.get("id"):
+                k = (min(scores), i, rank)
+                if m["id"] not in best or k < best[m["id"]]:
+                    best[m["id"]] = k
+    ids = sorted(best, key=best.get)[:10]
+    found = []
+    if ids:
+        full = anilist.anilist_request({"query": "query($ids:[Int]){Page(perPage:10){media(id_in:$ids,type:ANIME){" + anilist.MEDIA_FIELDS + "}}}",
+                                        "variables": {"ids": ids}})
+        got = {m["id"]: m for m in ((full.get("data") or {}).get("Page") or {}).get("media") or [] if m.get("id")}
+        found = [got[i] for i in ids if i in got]
+    database.cache_put(key, found)
+    return found
+
+
+def _title_hits(title):
+    query = re.sub(r"\s*\([^)]*\)", "", title).strip()
+    if len(titles.fold(query)) < 3:
+        return None  # one or two letters: AniList's own ranking does better
+    return titles.search(query, 30)
+
+
+def _card_key(mid):
+    return "media-card:v1:%d" % mid
+
+
+def instant_media_candidates(title):
+    """The search box's first answer (Decision 68), straight from the local
+    title list, no AniList: shows AniList filled in before come whole, the
+    rest as stand-ins ("stub") with the list's title, format and year. None
+    while the list isn't here yet."""
+    hits = _title_hits(title)
+    if hits is None:
+        return None
+    return [database.cache_get(_card_key(row[0]), EPISODE_META_TTL) or titles.card(row) for row, _ in hits[:10]]
+
+
+def local_media_candidates(title):
+    """The search box's second answer: the same hits with AniList's details
+    (one `id_in` request for the ones not filled in before), fewest slips
+    first, then the best-known show. None while the list isn't here yet;
+    [] when nothing is close."""
+    hits = _title_hits(title)
+    if not hits:
+        return hits
+    score = {row[0]: sc for row, sc in hits}
+    cards = {mid: database.cache_get(_card_key(mid), EPISODE_META_TTL) for mid in score}
+    missing = [mid for mid, c in cards.items() if c is None]
+    if missing:
+        data = anilist.anilist_request({"query": "query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){"
+                                                 + anilist.MEDIA_FIELDS + " popularity}}}", "variables": {"ids": missing}})
+        for m in ((data.get("data") or {}).get("Page") or {}).get("media") or []:
+            if m.get("id") in cards:
+                cards[m["id"]] = m
+                database.cache_put(_card_key(m["id"]), m)
+    found = [c for c in cards.values() if c]
+    found.sort(key=lambda m: (score[m["id"]], -(m.get("popularity") or 0)))
+    return found[:10]
 
 
 def polluted_playlist(ref_thumbs, cand_thumbs):

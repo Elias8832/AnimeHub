@@ -2470,7 +2470,40 @@ const COMMANDS = [
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
   ["Show downloads", "downloads queue", () => { S.menu = "dl"; paintNav(); }, ""], ["Show keys", "keys keyboard shortcuts", () => { S.menu = "keys"; paintNav(); }, "?"],
 ];
-const srMatch = (hay, ql) => ql.split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+/* One typo still finds it (TODO 175). typoEdits: fewest letter changes (a
+   swap of two neighbours counts as one) that put w somewhere in t. srFuzzy:
+   null when a word of ql is too far off (under 4 letters exact, 4-5 one
+   slip, 6-8 two, longer three), else how many slips. Like titles.slips. */
+function typoEdits(w, t) {
+  let p2 = null, p = new Array(t.length + 1).fill(0);
+  for (let i = 1; i <= w.length; i++) {
+    const c = [i];
+    for (let j = 1; j <= t.length; j++) {
+      c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (w[i - 1] === t[j - 1] ? 0 : 1));
+      if (p2 && j > 1 && w[i - 1] === t[j - 2] && w[i - 2] === t[j - 1]) c[j] = Math.min(c[j], p2[j - 2] + 1);
+    }
+    p2 = p; p = c;
+  }
+  return Math.min(...p);
+}
+const srFold = (t) => String(t || "").toLowerCase().replace(/['’`]/g, "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+const srFuzzy = (hay, ql) => {
+  hay = srFold(hay); let n = 0;
+  for (const w of srFold(ql).split(/\s+/).filter(Boolean)) {
+    if (hay.includes(w)) continue;
+    const d = w.length >= 4 ? typoEdits(w, hay) : 99;
+    if (d > (w.length < 6 ? 1 : w.length < 9 ? 2 : 3)) return null;
+    n += d;
+  }
+  return n;
+};
+const srMatch = (hay, ql) => srFuzzy(hay, ql) !== null;
+const srSets = (ql, n) => SETTINGS_INDEX.map((x) => [x, srFuzzy(`${x[0]} ${x[2]} ${x[1]}`, ql)]).filter(([, f]) => f !== null).sort((a, b) => a[1] - b[1]).slice(0, n).map(([x]) => x);
+/* Library hits: the whole phrase first (srRank), then words in any order, then typos. */
+const srLocal = (ql, n) => (S.data?.shows || []).map((s) => {
+  const hay = `${s.collection || ""} ${s.title}`, f = hay.toLowerCase().includes(ql) ? -1 : srFuzzy(hay, ql);
+  return f === null ? null : { r: f < 0 ? Math.min(srRank(s.title, ql), srRank(s.collection, ql)) : 4 + f, s };
+}).filter(Boolean).sort((a, b) => a.r - b.r).slice(0, n);
 let srPv = [];
 function srHTML() {
   const q = S.q.trim(), ql = q.toLowerCase();
@@ -2484,11 +2517,10 @@ function srHTML() {
         { art: x.b || x.p, t: x.t, m: sub, k: [["Open", "↵"]] }); }).join("");
   }
   if (q) {
-    const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
-      .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), local: true, s }));
+    const local = srLocal(ql, 5);
     const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
     const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, i: k })).filter((y) => !have.has(y.x.id));
-    const L = local.sort((a, b) => a.r - b.r).slice(0, 5), R = remote.sort((a, b) => a.r - b.r).slice(0, 5);
+    const L = local, R = remote.sort((a, b) => a.r - b.r).slice(0, 5);
     if (L.length) h += `<div class="psec">your library</div>` + L.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s);
       return row(`data-a="open" data-v="${esc(s.id)}"`, `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, q)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span><span class="r"><kbd class="kb">↵</kbd></span>`,
         { art: s.banner || s.poster, t: s.title, m: [sp ? statusLabel(sp.status) : "", `${epWatched(s)} / ${epTotal(s)} watched`, t ? `up next ${epCode(t.sea, t.ep)}` : ""].filter(Boolean).join(" · "), k: [["Open", "↵"]] }); }).join("");
@@ -2497,7 +2529,7 @@ function srHTML() {
       return row(`data-a="catpick" data-v="${k}"`, `${poster(candLabel(x), x.coverImage?.extraLarge, { c: "t" })}<span class="tx"><b>${hl(candLabel(x), q)}</b><small>${esc(sub)}</small></span>${e ? "" : '<span class="r"><span class="tag">+ planning</span></span>'}`,
         { art: x.bannerImage || x.coverImage?.extraLarge, t: candLabel(x), m: sub, k: [["Open", "↵"]] }); }).join("");
   }
-  const sets = q ? SETTINGS_INDEX.filter(([t, tab, w]) => srMatch(`${t} ${w} ${tab}`.toLowerCase(), ql)).slice(0, 5) : [];
+  const sets = q ? srSets(ql, 5) : [];
   if (sets.length) h += `<div class="psec">settings</div>` + sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
     return row(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, `<span class="ic">⚙</span><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<span class="r"><button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button></span>` : ""}`,
       { t, m: `Settings → ${tl}`, k: key ? [["Switch", "click"], ["Open in Settings", "↵"]] : [["Open in Settings", "↵"]] }); }).join("");
@@ -3137,15 +3169,14 @@ function srHTMLTouch() {
     if (shows.length) h += sec("Watching") + `<div class="srposters">${shows.map((s) => mi(`data-a="open" data-v="${esc(s.id)}"`, "sp", `${poster(s.title, s.poster)}<b>${esc(s.title)}</b>`)).join("")}</div>`;
     if (!h) h = '<p class="srnone">Type a show, a setting or a command.</p>';
   } else {
-    const local = (S.data?.shows || []).filter((s) => `${s.collection || ""} ${s.title}`.toLowerCase().includes(ql))
-      .map((s) => ({ r: Math.min(srRank(s.title, ql), srRank(s.collection, ql)), s })).sort((a, b) => a.r - b.r).slice(0, 6);
+    const local = srLocal(ql, 6);
     const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
     const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, k })).filter((y) => !have.has(y.x.id)).sort((a, b) => a.r - b.r).slice(0, 9);
     if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s);
       return mi(`data-a="open" data-v="${esc(s.id)}"`, "srrow", `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>${ico("chevr")}`); }).join("");
     if (remote.length) h += sec("On AniList") + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
       return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
-    const sets = SETTINGS_INDEX.filter(([t, tab, w]) => srMatch(`${t} ${w} ${tab}`.toLowerCase(), ql)).slice(0, 4);
+    const sets = srSets(ql, 4);
     if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
       return mi(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, "srrow set", `<i class="sic">${ico(SET_ICONS[tab] || "sliders")}</i><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : ico("chevr")}`); }).join("")}</div>`;
     const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, 3);
@@ -4412,13 +4443,30 @@ const A = {
   menu: (v) => { S.menu = S.menu === v ? null : v; paintNav(); },
   rescan: (v, t) => { if (t.disabled) return; t.disabled = true; t.classList.add("busy"); api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(() => { reload(); }, 2500); },
   adopt: (v, t) => { t.disabled = true; api("/api/adopt-root", {}).then((r) => { if (!r.ok) { toast(r.error || "Could not connect the folder."); t.disabled = false; return; } toast("Library folder connected."); loadSettings().then(reload); }).catch(() => { t.disabled = false; }); },
+  /* The local title list answers at once (Decision 68): rows with the
+     list's title, format and year ("stub"). AniList then adds posters and
+     details quietly, once typing has paused; before the list is here it is
+     AniList's own search, with the spinner. */
   alsearch: async () => {
     const mine = S.alq = S.q.trim(); S.alBusy = true; paintNav();
+    let local = false;
+    try {
+      const r = await api("/api/title-search", { query: mine });
+      if (S.alq !== mine) return; // a newer search took over
+      if (r?.ready && r.hits?.length) {
+        local = true; S.alres = r.hits; S.alBusy = false; paintNav();
+        if (!r.hits.some((x) => x.stub)) return;
+        await new Promise((ok) => setTimeout(ok, 300)); // still typing? spare AniList the request
+        if (S.alq !== mine || S.q.trim() !== mine) return;
+      }
+    } catch { /* the hub's older than this page: AniList's own search */ }
     let res;
-    try { const r = await api("/api/match-candidates", { query: mine }); res = r && r.error ? [] : r || []; }
+    try { const r = await api("/api/match-candidates", { query: mine, fuzzy: true }); res = r && r.error ? [] : r || []; }
     catch { res = []; }
-    if (S.alq !== mine) return; // a newer search took over
-    S.alres = res; S.alBusy = false;
+    if (S.alq !== mine) return;
+    S.alBusy = false;
+    if (local && !res.length) return; // AniList busy or offline: the list's rows stay
+    S.alres = res;
     if (S.q.trim() === mine) paintNav();
   },
   catpick: (v) => {
@@ -5039,7 +5087,7 @@ q.addEventListener("input", () => {
   if (!S.q.trim()) { S.alres = null; S.alq = null; }
   paintNav();
   clearTimeout(alTimer);
-  if (alSearchable() && S.q.trim().length >= 2) alTimer = setTimeout(() => { if (S.q.trim() !== S.alq) A.alsearch(); }, 350);
+  if (alSearchable() && S.q.trim().length >= 2) alTimer = setTimeout(() => { if (S.q.trim() !== S.alq) A.alsearch(); }, 150);
 });
 q.addEventListener("focus", () => { if (S.menu !== "sr") { S.menu = "sr"; paintNav(); } });
 /* The palette opens centred over the page with its own line; the top bar only holds the button. */
