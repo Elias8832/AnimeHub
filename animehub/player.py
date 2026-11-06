@@ -709,15 +709,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                     prepared = True
                     if settings.automation_enabled("prepare_online"):
                         threading.Thread(target=streaming.prepare_after, args=(ep_id,), daemon=True).start()
-                now = util.utc_stamp()
-                with database.db() as c:
-                    c.execute(
-                        """INSERT INTO episodes(id,position,duration,last_played) VALUES(?,?,?,?)
-                           ON CONFLICT(id) DO UPDATE SET position=excluded.position,
-                           duration=CASE WHEN excluded.duration>0 THEN excluded.duration ELSE episodes.duration END,
-                           last_played=excluded.last_played""",
-                        (ep_id, last_time, duration, now),
-                    )
+                save_position(ep_id, last_time, duration)
                 with _active_lock:
                     entry = _active.get(ep_id)
                     if entry is not None and entry.get("proc") is proc:
@@ -761,29 +753,8 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     picked = None if retired else _picked_episode(sock_path, menu)
     settings.remember_volume(last_volume)
     done = (duration and duration - last_time <= 3) or marker.exists()
-    if not retired and duration and (done or last_time / duration >= 0.9):
-        pos_save = duration if done and last_time / duration < 0.9 else last_time
-        with database.db() as c:
-            c.execute(
-                """INSERT INTO episodes(id,watched,last_played,position,duration) VALUES(?,?,datetime('now'),?,?)
-                   ON CONFLICT(id) DO UPDATE SET watched=1, position=excluded.position,
-                   duration=excluded.duration, last_played=excluded.last_played""",
-                (ep_id, 1, pos_save, duration),
-            )
-        # Show-completion event (TODO 9, Decision 25): playback finishing the
-        # matched release's last episode — natural EOF or the skip-credits
-        # gesture both land here; manual marks never do. Rewatch replays
-        # fire again by design (each is a new popup event).
-        try:
-            progress.completion_for_episode(ep_id)
-        except Exception as exc:
-            util.log("completion event failed: %s" % exc)
-        # AniList automations (TODO 15, Decision 5): progress sync + optional
-        # auto-add, playback-driven like the completion event, outbox-backed.
-        try:
-            progress.auto_track_after_play(ep_id)
-        except Exception as exc:
-            util.log("auto-track failed: %s" % exc)
+    if not retired:
+        finish_episode(ep_id, last_time, duration, done)
     autoplay = False
     version = 0
     with _active_lock:
@@ -810,6 +781,50 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
         pass
 
 
+
+def save_position(ep_id, position, duration):
+    """The resume point while an episode plays (mpv's poll, the phone player)."""
+    with database.db() as c:
+        c.execute(
+            """INSERT INTO episodes(id,position,duration,last_played) VALUES(?,?,?,?)
+               ON CONFLICT(id) DO UPDATE SET position=excluded.position,
+               duration=CASE WHEN excluded.duration>0 THEN excluded.duration ELSE episodes.duration END,
+               last_played=excluded.last_played""",
+            (ep_id, position, duration, util.utc_stamp()),
+        )
+
+
+def finish_episode(ep_id, last_time, duration, done):
+    """An episode stopped playing (mpv or the phone player): the watched
+    rule, the completion popup and AniList, one place for both players.
+    `done` = it reached its end (or the finish gesture). True if watched."""
+    if not (duration and (done or last_time / duration >= 0.9)):
+        return False
+    pos_save = duration if done and last_time / duration < 0.9 else last_time
+    with database.db() as c:
+        c.execute(
+            """INSERT INTO episodes(id,watched,last_played,position,duration) VALUES(?,?,datetime('now'),?,?)
+               ON CONFLICT(id) DO UPDATE SET watched=1, position=excluded.position,
+               duration=excluded.duration, last_played=excluded.last_played""",
+            (ep_id, 1, pos_save, duration),
+        )
+    # Show-completion event (TODO 9, Decision 25): playback finishing the
+    # matched release's last episode — natural EOF or the skip-credits
+    # gesture both land here; manual marks never do. Rewatch replays
+    # fire again by design (each is a new popup event).
+    try:
+        progress.completion_for_episode(ep_id)
+    except Exception as exc:
+        util.log("completion event failed: %s" % exc)
+    # AniList automations (TODO 15, Decision 5): progress sync + optional
+    # auto-add, playback-driven like the completion event, outbox-backed.
+    try:
+        progress.auto_track_after_play(ep_id)
+    except Exception as exc:
+        util.log("auto-track failed: %s" % exc)
+    return True
+
+
 def resume_args(ep_id, from_start=False):
     """mpv's --start for an episode, or nothing. Resume rule (TODO 24), the
     one authoritative rule the UI mirrors: a saved position is a resume
@@ -818,16 +833,22 @@ def resume_args(ep_id, from_start=False):
     92 % strip cutoff, and for watched rows still below the cutoff; a
     finished row restarts. The old 60 s floor disagreed with the UI's
     Resume label in the 1–60 s zone."""
+    pos = resume_seconds(ep_id, from_start)
+    return [f"--start={int(pos // 60)}:{int(pos % 60)}"] if pos else []
+
+
+def resume_seconds(ep_id, from_start=False):
+    """Where an episode resumes (resume_args' rule), 0 = from the start."""
     if from_start:  # the episode menu's "Play from the start"; the saved point stays until playback moves past it
-        return []
+        return 0
     with database.db() as c:
         row = c.execute("SELECT position, duration, watched FROM episodes WHERE id=?", (ep_id,)).fetchone()
     pos = row[0] if row else 0
     dur = row[1] if row else 0
     watched = bool(row[2]) if row else False
     if dur and pos / dur > 0.01 and (pos / dur < 0.92 or not watched):
-        return [f"--start={int(pos // 60)}:{int(pos % 60)}"]
-    return []
+        return pos
+    return 0
 
 
 def start_args(ep_id, from_start=False, handoff=None):

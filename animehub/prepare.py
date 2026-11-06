@@ -53,8 +53,15 @@ _swept = False  # folders a hub that quit left behind
 def wait_script():
     """ani-cli's player setting for a prepared run, or None when ani-cli
     can't be given one (it splits this on whitespace)."""
-    path = config.DATA / "anicli-mpv-wait.sh"
-    script = WAIT_SH.encode()
+    return player_script("anicli-mpv-wait.sh", WAIT_SH)
+
+
+def player_script(name, body):
+    """A hub script ani-cli runs as its player (written when it changed),
+    as ani-cli's player setting; None when ani-cli can't be given it. The
+    name must contain "mpv" (ani-cli's mpv branch passes the referrer)."""
+    path = config.DATA / name
+    script = body.encode()
     try:
         current = path.read_bytes()
     except OSError:

@@ -4,17 +4,20 @@ import contextlib
 import gzip
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import subprocess
 import sys
 import threading
 import time
+from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mapping, metadata, pages, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update
+from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mapping, metadata, pages, phoneplay, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -199,6 +202,82 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_video(self, path):
+        """A video file in pieces (HTTP Range), so the phone's player can
+        start at once and jump anywhere without loading the whole file."""
+        try:
+            f = open(path, "rb")
+        except OSError:
+            self.send_error(404)
+            return
+        with f:
+            size = os.fstat(f.fileno()).st_size
+            want = phoneplay.byte_range(self.headers.get("Range"), size)
+            if want == "bad":
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            start, end = want or (0, size - 1)
+            self.send_response(206 if want else 200)
+            self.send_header("Content-Type", mimetypes.guess_type(str(path))[0] or "video/mp4")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(end - start + 1))
+            if want:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            f.seek(start)
+            left = end - start + 1
+            try:
+                while left > 0:
+                    chunk = f.read(min(256 * 1024, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass  # the player jumped elsewhere and dropped this piece
+
+    def send_relay(self, tok, url):
+        """Pass one piece of an online episode on to the phone: a playlist
+        rewritten to point back here, anything else as it comes."""
+        try:
+            kind, got = phoneplay.relay_open(tok, url, self.headers.get("Range"))
+        except phoneplay.RelayRefused:
+            self.send_error(404)
+            return
+        except HTTPError as e:
+            e.close()
+            self.send_error(e.code if 400 <= e.code < 600 else 502)
+            return
+        except (OSError, HTTPException, ValueError) as e:
+            util.log("phone relay: %s" % e)
+            self.send_error(502)
+            return
+        if kind == "playlist":
+            self.send_file_body(got.encode(), "application/vnd.apple.mpegurl")
+            return
+        if kind == "bytes":
+            self.send_file_body(got, "application/octet-stream")
+            return
+        with got:
+            self.send_response(got.status)
+            for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+                if got.headers.get(h):
+                    self.send_header(h, got.headers[h])
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                while True:
+                    chunk = got.read(256 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            except (OSError, HTTPException):
+                pass  # the phone jumped elsewhere, or the site stopped
+
     def send_file_body(self, body, ctype, cache=False):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
@@ -315,9 +394,12 @@ class Handler(BaseHTTPRequestHandler):
             meta = ({"running": True, "pending": metadata._meta_status["pending"],
                      "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"]}
                     if metadata._meta_status["running"] else None)
+            phone_now = phoneplay.now()
             with player._active_lock:
                 if not player._active:
                     payload = {"playing": False}
+                    if phone_now:  # additive (Decision 71): an episode playing on the phone
+                        payload["phone"] = phone_now
                     # Additive (TODO 24): a play click that produced nothing
                     # explains itself for a short window after the failure.
                     if player._session_error["error"] and time.time() - player._session_error["ts"] < 60:
@@ -355,6 +437,8 @@ class Handler(BaseHTTPRequestHandler):
                            "loading": bool(a.get("loading")), "vpn": vpn}
                 if meta:
                     payload["meta"] = meta
+                if phone_now:
+                    payload["phone"] = phone_now
                 # Additive (TODO 10): where the next episode comes from.
                 if a.get("next"):
                     payload["next"] = a["next"]
@@ -415,6 +499,51 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_banner(p)
             else:
                 self.send_file(p, "image/jpeg", cache=True)
+        elif route == "/api/phone/video":
+            # The phone player's file (Decision 71): by episode id, never a path.
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                version = int((q.get("v") or ["0"])[0])
+            except ValueError:
+                version = 0
+            hit = phoneplay.file_of((q.get("id") or [""])[0], version)
+            if hit:
+                self.send_video(hit[0])
+            else:
+                self.send_error(404)
+        elif route.startswith("/api/phone/relay/"):
+            # An online episode for the phone, through the PC (Decision 71).
+            u = (parse_qs(urlparse(self.path).query).get("u") or [""])[0]
+            self.send_relay(route.rsplit("/", 1)[1], u)
+        elif route.startswith("/api/phone/sub/"):
+            parts = route.split("/")
+            try:
+                text = phoneplay.subtitle(parts[4], int(parts[5]))
+            except (IndexError, ValueError, phoneplay.RelayRefused):
+                self.send_error(404)
+                return
+            except (OSError, HTTPException) as e:
+                util.log("phone subtitles: %s" % e)
+                self.send_error(502)
+                return
+            self.send_file_body(text.encode(), "text/vtt; charset=utf-8")
+        elif route == "/hls.light.min.js":
+            # hls.js (Apache-2.0, web/vendor), for phones that can't play HLS themselves.
+            self.send_file(WEB / "vendor" / "hls.light.min.js", "text/javascript; charset=utf-8", cache=True)
+        elif route == "/api/phone/skips":
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                dur = float((q.get("d") or ["0"])[0])
+                version = int((q.get("v") or ["0"])[0])
+            except ValueError:
+                self._bad("'d' must be a number and 'v' an integer")
+                return
+            try:
+                segs = phoneplay.segments((q.get("id") or [""])[0], dur, version)
+            except Exception as e:
+                util.log("phone skips: %s" % e)
+                segs = []
+            self.send_json({"segments": segs})
         elif route.startswith("/epimg/"):
             self.send_file(config.EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
         elif route == "/api/remote":
@@ -538,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
-                    "upscale_banners", "hide_spoilers", "update_check", "update_vpn_only", "update_asked", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online",
+                    "upscale_banners", "hide_spoilers", "update_check", "update_vpn_only", "update_asked", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online", "phone_play_both",
                     "keep_running", "start_at_login")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
@@ -589,6 +718,35 @@ class Handler(BaseHTTPRequestHandler):
                     if key == "measure_lengths" and body[key]:
                         lengths.turned_on()
             self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None})
+        elif route == "/api/phone/play":
+            # The phone plays a file itself (Decision 71).
+            if self._fields(body, strings=("id",), opt_ints=("version",)):
+                start = body.get("from_start", False)
+                if not isinstance(start, bool):
+                    self._bad("'from_start' must be a boolean")
+                    return
+                mode, aniskip_ok = body.get("mode"), body.get("aniskip")
+                if mode is not None and mode not in anicli.STREAM_MODES:
+                    self._bad("'mode' must be one of: %s" % ", ".join(anicli.STREAM_MODES))
+                    return
+                if aniskip_ok is not None:
+                    if not isinstance(aniskip_ok, bool):
+                        self._bad("'aniskip' must be a boolean")
+                        return
+                    player.answer_aniskip(body["id"], aniskip_ok)
+                if body["id"].startswith("stream:"):
+                    r = phoneplay.start_online(body["id"], mode, from_start=start)
+                else:
+                    r = phoneplay.start(body["id"], body.get("version", 0), from_start=start)
+                self.send_json(r, 404 if r.get("error") else 200)
+        elif route == "/api/phone/progress":
+            ep, pos, dur = body.get("id"), body.get("position"), body.get("duration")
+            nums = all(isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 0 for x in (pos, dur))
+            flags = all(isinstance(body.get(k, False), bool) for k in ("ended", "stop"))
+            if not isinstance(ep, str) or not ep or not nums or not flags:
+                self._bad("needs 'id', 'position' and 'duration' (numbers ≥ 0); 'ended' and 'stop' are booleans")
+                return
+            self.send_json(phoneplay.report(ep, float(pos), float(dur), body.get("ended", False), body.get("stop", False)))
         elif route == "/api/control":
             # The phone remote's buttons (Decision 43).
             if not isinstance(body.get("action"), str):
