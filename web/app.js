@@ -241,7 +241,8 @@ function applyWatch(shows, ids, watched, reset) {
   for (const s of shows) for (const sea of s.seasons) for (const ep of sea.episodes) {
     if (!set.has(ep.id)) continue;
     ep.watched = watched;
-    if (reset) { ep.position = 0; ep.last_played = null; }
+    ep.position = 0; // any mark drops the stop point: watched means done, unwatched starts over
+    if (reset) ep.last_played = null;
     n++;
   }
   return n;
@@ -1322,8 +1323,8 @@ function frApplyWatch(e, numbers, watched, reset) {
   for (const x of e.slots) {
     if (pick && !pick.has(x.number)) continue;
     x.watched = watched;
-    if (watched) x.position = 0; // a mark means done: no stop point left
-    if (reset) { x.position = 0; x.last_played = null; }
+    x.position = 0; // any mark drops the stop point: watched means done, unwatched starts over
+    if (reset) x.last_played = null;
   }
   frRepaint();
   loadEntry(e.id);
