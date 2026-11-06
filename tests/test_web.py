@@ -491,7 +491,7 @@ class Discovery(unittest.TestCase):
     """TODO 11 (Decision 9): one search bar over library + AniList; a hit off
     the lists opens its page, which says so and offers the add."""
     def test_search_and_add(self):
-        self.assertIn('api("/api/match-candidates", { query: mine })', APP)  # AniList half of the search bar
+        self.assertIn('api("/api/match-candidates", { query: mine, fuzzy: true })', APP)  # AniList half of the search bar
         self.assertIn("catpick: (v) => {", APP)
         self.assertIn("openFranchise(x.id)", APP)
         self.assertIn("Not on your list yet.", APP)

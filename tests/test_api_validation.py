@@ -138,11 +138,18 @@ class ApiValidationTests(unittest.TestCase):
     def test_match_flags_must_be_real_booleans(self):
         """TODO 12: keep-local's `keep` and the suggestion refresh's `fresh`."""
         for route, body in (("/api/keep-local", b'{"show_id":"x","keep":"yes"}'),
-                            ("/api/match-candidates", b'{"query":"Frieren","fresh":1}')):
+                            ("/api/match-candidates", b'{"query":"Frieren","fresh":1}'),
+                            ("/api/match-candidates", b'{"query":"Frieren","fuzzy":"yes"}')):
             with self.subTest(route=route):
                 status, payload = self.post(route, body)
                 self.assertEqual(status, 400)
                 self.assertIn("boolean", payload["error"])
+
+    def test_title_search_needs_a_query(self):
+        """TODO 175: the search box's instant half."""
+        status, payload = self.post("/api/title-search", b'{"query":5}')
+        self.assertEqual(status, 400)
+        self.assertIn("query", payload["error"])
 
     def test_match_query_must_be_text(self):
         status, payload = self.post("/api/match", b'{"show_id":"x","query":"  "}')
