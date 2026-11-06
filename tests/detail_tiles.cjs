@@ -120,4 +120,10 @@ test("applyWatch moves only the marked episodes' watch facts", () => {
   assert.equal(eps[0].watched, false);
   assert.equal(eps[0].position, 0, "reset clears the resume position");
   assert.equal(eps[0].last_played, null);
+
+  // Unwatching a played-through episode starts it over (Elias, 2026-11-06).
+  eps[2].watched = true; eps[2].position = 1440; eps[2].last_played = "2026-10-17 00:00:00";
+  assert.equal(c.applyWatch(shows, ["ep3"], false, false), 1);
+  assert.equal(eps[2].position, 0, "unwatching drops the stop point");
+  assert.equal(eps[2].last_played, "2026-10-17 00:00:00", "a plain mark keeps history");
 });
