@@ -225,7 +225,12 @@ function nextUpInfo() {
   const anyUn = ctx.s.seasons.map((sea) => ({ sea, ep: sea.episodes.find((e) => !e.watched) })).filter((x) => x.ep)[0];
   if (after) return { s: ctx.s, sea: ctx.sea, ep: after, label: "Up next" };
   if (anyUn) return { s: ctx.s, sea: anyUn.sea, ep: anyUn.ep, label: "Up next" };
-  return { ...ctx, label: resumable(ctx.ep) ? "Continue watching" : "Rewatch", ep: ctx.ep };
+  if (resumable(ctx.ep)) return { ...ctx, label: "Continue watching", ep: ctx.ep };
+  /* A Rewatch banner only when nothing else is in progress: else the newest
+     show from Continue watching leads instead. */
+  const other = keepWatching()[0];
+  if (other) return { s: other.s, sea: other.t.sea, ep: other.t.ep, label: other.t.kind === "resume" ? "Continue watching" : "Up next" };
+  return { ...ctx, label: "Rewatch", ep: ctx.ep };
 }
 /* Watch facts on the model, in place (marked ids only, artwork untouched):
    the show page patches itself after a mark instead of rebuilding — see
