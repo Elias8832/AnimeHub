@@ -984,6 +984,26 @@ function frng(k, label, lo, hi, step, fmt) {
   return `<div class="fl rng${Array.isArray(S.lib[k]) ? " set" : ""}" data-k="${k}" style="--a:${pct(a)}%;--b:${pct(b)}%"><span>${label}</span>
     <div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div><b class="rv"><i>${a <= lo && b >= hi ? "any" : `${fmt(a)} – ${fmt(b)}`}</i></b></div>`;
 }
+/* The side-list layout (Library polish, 2026-11-06): a range sits behind a chip
+   like the selects; the chip says its value, the slider opens under it. */
+function fdrop(k, label, inner, val, set = Array.isArray(S.lib[k]), locked = false) {
+  const v = S.lib[k];
+  return `<div class="fdrop${set ? " set" : ""}${locked ? " locked" : ""}" data-k="${k}"><button class="fdb" data-a="fdrop" aria-expanded="false"${locked ? " disabled" : ""}><span>${label}</span><b>${val ?? (set ? `${v[0]} – ${v[1]}` : "any")}</b>${ico("chevd")}</button><div class="fpanel">${inner}</div></div>`;
+}
+/* Side list: a pick-one filter opens in place as a list of its options, one per row (no pills, Elias) (Elias: "make the
+   upper three expand downwards like the bottom three, I don't like the popup"). */
+function fchoice(k, label, opts, locked) {
+  const cur = locked ? opts[1] : opts.find(([v]) => v === S.lib[k]) || opts[0];
+  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => {
+    const on = v === cur[0];
+    return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="fpick" data-k="${k}" data-v="${esc(v)}"><span>${esc(l)}</span>${ico("check")}</button>`;
+  }).join("")}</div>`, cur[1], !locked && cur[0] !== "all", locked);
+}
+function fdropClose(except) {
+  for (const d of $$(".fdrop.open")) if (d !== except) { d.classList.toggle("open", false); d.querySelector(".fdb")?.setAttribute("aria-expanded", "false"); }
+}
+document.addEventListener("mousedown", (e) => { if (!e.target.closest?.(".fdrop.open")) fdropClose(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".fdrop.open")) { e.stopImmediatePropagation(); const d = $(".fdrop.open"); fdropClose(); d.querySelector(".fdb")?.focus(); } }, true);
 let rngFrame = 0;
 document.addEventListener("input", (e) => {
   const r = e.target.closest?.(".rng input");
@@ -997,6 +1017,8 @@ document.addEventListener("input", (e) => {
   box.style.setProperty("--b", ((b - lo) / (hi - lo || 1)) * 100 + "%");
   box.querySelector(".rv i").textContent = all ? "any" : `${a} – ${b}`;
   box.classList.toggle("set", !all);
+  const dd = box.closest(".fdrop");
+  if (dd) { dd.classList.toggle("set", !all); dd.querySelector(".fdb b").textContent = all ? "any" : `${a} – ${b}`; }
   clearTimeout(rngFrame);
   rngFrame = setTimeout(() => { paintWall(); syncFilters(); saveLib(); }, 30);
 });
@@ -1004,7 +1026,7 @@ document.addEventListener("input", (e) => {
 function syncFilters() {
   const f = $(".filters");
   if (!f) return;
-  $$(".filters select[data-k]").forEach((s) => s.classList.toggle("set", s.dataset.k !== "sort" && !s.disabled && S.lib[s.dataset.k] !== "all"));
+  $$(".filters select[data-k], .lflt select[data-k]").forEach((s) => s.classList.toggle("set", s.dataset.k !== "sort" && !s.disabled && S.lib[s.dataset.k] !== "all"));
   const any = filtersActive(), b = f.querySelector(".clr");
   if (any && !b) {
     const n = document.createElement("button");
@@ -1025,10 +1047,11 @@ function Lib() {
   const isPl = S.lib.tab === "PLAYLISTS" && !m.cold, plCur = isPl ? plCurrent() : null;
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
   const files = d.shows.reduce((a, x) => a + epTotal(x), 0);
-  const sum = [`<span><b>${m.entries.length ? new Set(m.entries.map(libKey)).size : d.shows.length}</b> shows</span>`, files ? `<span><b>${files.toLocaleString()}</b> files on disk</span>` : "",
+  const sum = [`<span><b>${m.entries.length ? new Set(m.entries.map(libKey)).size : d.shows.length}</b> shows</span>`, files ? `<span><b>${files.toLocaleString()}</b> episode${files === 1 ? "" : "s"} on this PC</span>` : "",
     (() => { const n = new Set([...m.unmatched, ...m.unclear]).size; return n ? `<span><b>${n}</b> folder${n === 1 ? "" : "s"} need a look</span>` : ""; })()].filter(Boolean).join('<i class="sep"></i>');
   const tab = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}${t.attn ? " attn" : ""}" data-a="tab" data-v="${t.k}">${t.l}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
   const tabs = m.tabs.length ? `<div class="tabs" data-glide="libtabs">${m.tabs.filter((t) => !t.side).map(tab).join("")}${m.tabs.some((t) => t.side) ? '<i class="vs"></i>' : ""}${m.tabs.filter((t) => t.side).map(tab).join("")}</div>` : "";
+  const cur = m.tabs.find((t) => t.k === S.lib.tab), lhead = cur && !isPhone() ? `<h2 class="lh">${esc(cur.k === "ALL" ? "All shows" : cur.l)}<span class="n">${cur.n}</span></h2>` : "";
   let main;
   if (isPl) main = `${plCur ? plHead(plCur) : `<p class="intro plintro">Your own lists of shows, in your order.<span>To add a show, ${plTip(mq("(pointer:coarse)"))}.${mq("(pointer:coarse)") ? "" : " Drag a box to move it."}</span></p>`}<div id="wall"></div>`;
   else if (isMatch) {
@@ -1036,20 +1059,56 @@ function Lib() {
     main = `${m.unmatched.length ? `<p class="intro">On disk, but not matched to AniList yet. Pick the right show and it joins your library — or keep it on this PC only.</p><div class="mgrid">${m.unmatched.map(matchUI).join("")}</div>` : ""}
       ${m.unclear.length ? `<p class="intro">Episode numbers to check: these file names don't say which episode they are, so they're numbered in file order. Fix any that are wrong, then save. Your files aren't renamed.</p><div class="mgrid">${m.unclear.map(numUI).join("")}</div>` : ""}`;
   } else {
-    const filters = (m.cold || isUn) ? "" : `<div class="filters">
-      ${fsel("src", "source", [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]], srcLocked())}
-      ${fsel("fmt", "format", [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]])}
-      ${fsel("air", "airing", [["all", "any"], ...Object.entries(AIR)])}
-      ${frng("year", "year", ...yearBounds(), 1, String)}
-      ${frng("score", "my score", 0, 10, 0.5, (x) => String(x))}
-      ${frng("average", "average", 0, 100, 5, (x) => String(x))}
+    const rail = (railNow = isRail());
+    const filters = (m.cold || isUn) ? "" : `<div class="filters">${lhead}
+      ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
     const fltb = filters ? `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>` : "";
-    main = `${fltb}${filters}${(m.cold || isUn) ? "" : genreTray(m)}<div id="wall"></div>`;
+    main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
-  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}${main}</div>`;
+  const solo = (isPl || isMatch || isUn || m.cold) && lhead ? `<div class="lsolo">${lhead}</div>` : "";
+  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum)}<div class="lmain">${solo}${main}</div></div></div>`;
+}
+/* The filter controls; on the PC they live in the side list (Elias,
+   2026-11-06: "most of them could easily be in the left panel"). */
+const FOPTS = () => ({
+  src: [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]],
+  fmt: [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]],
+  air: [["all", "any"], ...Object.entries(AIR)] });
+const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel; return `${pick("src", cap("source"), o.src, srcLocked())}
+      ${pick("fmt", cap("format"), o.fmt)}
+      ${pick("air", cap("airing"), o.air)}
+      ${fdrop("year", cap("year"), frng("year", "year", ...yearBounds(), 1, String))}
+      ${fdrop("score", cap("my score"), frng("score", "my score", 0, 10, 0.5, (x) => String(x)))}
+      ${fdrop("average", cap("average"), frng("average", "average", 0, 100, 5, (x) => String(x)))}`; };
+/* The side-list layout: a PC window wider than 1000 px. */
+const isRail = () => mq("(min-width:1001px) and (not (pointer:coarse))");
+let railNow; // set by Lib(); crossing the width again redraws the Library
+addEventListener("resize", () => { if (railNow !== undefined && isRail() !== railNow && S.data && S.view === "library") render(); });
+/* The side list (Elias picked mockup B, 2026-11-06; like Settings' list): the
+   title, the lists with their filters and genres, your playlists, this PC's chores. */
+function libRail(m, sum) {
+  let n = 0;
+  const it = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}" style="--i:${n++}" data-a="tab" data-v="${t.k}">${esc(t.l)}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
+  const head = (t) => `<h4 style="--i:${n++}">${t}</h4>`;
+  const lists = m.tabs.filter((t) => !t.side), pl = m.tabs.filter((t) => t.k === "PLAYLISTS"), pc = m.tabs.filter((t) => t.k === "UNTRACKED" || t.k === "MATCH");
+  const gen = !m.cold && lists.some((t) => t.k === S.lib.tab) ? railGenres(m) : "";
+  return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
+    ${lists.length ? head(aniMode() ? "AniList lists" : "Lists") + lists.map(it).join("") : ""}
+    ${gen ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}</div>` + head("Genres") + gen : ""}
+    ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
+    ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
+}
+function railGenres(m) {
+  const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
+  const all = [...counts, ...S.lib.genres.filter((g) => !have.has(g)).map((g) => [g, 0])];
+  const TOP = 8, show = S.genOpen ? all : all.filter(([g], i) => i < TOP || S.lib.genres.includes(g)), rest = all.length - show.length;
+  return `<div class="lgen" role="group" aria-label="Genres">${show.map(([g, c]) => {
+    const on = S.lib.genres.includes(g);
+    return `<button class="gchip${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}">${esc(g)}<span class="n">${c}</span></button>`;
+  }).join("")}${rest > 0 ? `<button class="gchip lmore" data-a="gmore">${rest} more</button>` : S.genOpen && all.length > TOP ? '<button class="gchip lmore" data-a="gmore">Fewer</button>' : ""}</div>`;
 }
 function genreTray(m) {
   const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
@@ -1074,6 +1133,8 @@ function paintWall(fade) {
   const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
   let html = cards.join("");
   const empty = S.lib.tab === "PLAYLISTS" ? `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("list")}</div><b>Nothing on this playlist yet.</b><span>Type a name in the box above. ${mq("(pointer:coarse)") ? "Or open a show and use Add to playlist in its ⋯ menu." : "Or right-click a show's poster in the Library."}</span><button class="btn pri" data-a="plfocus">${ico("plus")}Add a show</button></div>` : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
+  const lc = $(".lmain .filters .lh .n"); // the heading counts what the filters leave
+  if (lc) lc.textContent = cards.length;
   const fx = fade && !reduceMotion();
   w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !plCurrent() && !m.cold ? " plgrid" : "") + (fx ? " fade" : "");
   clearTimeout(paintWall.more);
@@ -4047,7 +4108,9 @@ function render(inPlace = false) {
   const html = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran, week: Week }[S.view]();
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
+  const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
   if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !reduceMotion()); app.innerHTML = html; }
+  if (railTop) { const r = $(".lnav"); if (r) r.scrollTop = railTop; }
   app._view = viewKey();
   if (S.view === "fr") frLastSig = frSig();
   if (S.view === "library") { paintWall(!morph && S.fadeNext); S.fadeNext = false; startMetaWatch(); }
@@ -4411,11 +4474,18 @@ const A = {
   airscope: (v) => { S.airCal.scope = v; render(true); },
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
+  fpick: (v, t) => {
+    const k = t.dataset.k, d = t.closest(".fdrop");
+    S.lib[k] = v; saveLib(); paintWall(); syncFilters();
+    for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
+  },
+  fdrop: (v, t) => { const d = t.closest(".fdrop"), open = !d.classList.contains("open"); fdropClose(d); d.classList.toggle("open", open); t.setAttribute("aria-expanded", open); if (open) d.querySelector(".fpanel input, .fpanel .fopt.on")?.focus({ preventScroll: true }); },
   totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
   genre: (v, t) => {
     const on = !S.lib.genres.includes(v);
     S.lib.genres = on ? [...S.lib.genres, v] : S.lib.genres.filter((g) => g !== v);
-    t.classList.toggle("on", on); t.setAttribute("aria-pressed", on);
+    for (const b of $$(`.gchip[data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     saveLib(); paintWall(); syncFilters();
   },
   go: (v, t) => {
@@ -5029,17 +5099,22 @@ function ddClose(refocus) {
   const m = $("#ddm");
   if (!m || !ddSel) return;
   m.classList.remove("open"); m.innerHTML = "";
+  ddSel.closest(".fl")?.classList.toggle("ddon", false);
   if (refocus) ddSel.focus({ preventScroll: true });
   ddSel = null;
 }
 function ddOpen(sel) {
   const m = $("#ddm"), p = ddPlace((sel.closest(".fl") || sel).getBoundingClientRect(), zoomGet() / 100, innerWidth, innerHeight);
   ddSel = sel;
-  m.innerHTML = [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}>${esc(o.textContent)}</button>`).join("");
+  sel.closest(".fl")?.classList.add("ddon"); // its chip stays lit while the list is open
+  const cap = (sel.closest(".fl")?.firstChild?.nodeType === 3 ? sel.closest(".fl").firstChild.textContent : "").trim();
+  m.innerHTML = (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}><span>${esc(o.textContent)}</span>${o.selected ? ico("check") : ""}</button>`).join("");
   m.style.minWidth = p.width + "px"; m.style.left = p.left + "px";
   m.style.top = p.top === null ? "" : p.top + "px"; m.style.bottom = p.bottom === null ? "" : p.bottom + "px";
-  m.style.transformOrigin = p.top === null ? "bottom left" : "top left";
   m.classList.remove("open"); void m.offsetWidth; m.classList.add("open");
+  const box = (sel.closest(".fl") || sel).getBoundingClientRect(), z = zoomGet() / 100, right = box.left + box.width / 2 > innerWidth / 2;
+  if (right) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px"; // a chip on the right: the list hangs from its right edge (measured once shown)
+  m.style.transformOrigin = `${p.top === null ? "bottom" : "top"} ${right ? "right" : "left"}`;
   (m.querySelector("button.on") || m.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true });
 }
 function ddPick(i) {
