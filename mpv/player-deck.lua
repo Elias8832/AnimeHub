@@ -362,6 +362,34 @@ local function sleep_row()
     return { picks = items, title = left and left > 0 and ("Sleep " .. left .. "m left") or "Sleep timer" }
 end
 
+-- Sub or dub (TODO 153): the hub says what this episode can switch to
+-- (info.audio); a pick goes to it through user-data, like the sleep timer,
+-- and the note at the top (skip-credits.lua) shows it loading.
+local SWITCH_TEXT = { dub = "Loading the English dub…", sub = "Loading the Japanese audio…" }
+
+local function version_row()
+    local a = info.audio
+    if type(a) ~= "table" or type(a.options) ~= "table" or #a.options < 2 then return nil end
+    local items = {}
+    for _, m in ipairs(a.options) do
+        items[#items + 1] = { text = m == "dub" and "Dub" or "Sub", on = (st.audio_want or a.current) == m, run = function()
+            st.audio_asked = (st.audio_asked or 0) + 1
+            st.audio_want = m ~= a.current and m or nil
+            mp.set_property_native("user-data/anime-hub/audio", m .. " " .. st.audio_asked)
+            if m ~= a.current then
+                -- It stops at once: the other language takes over from this spot.
+                if not st.audio_paused and not mp.get_property_native("pause") then
+                    st.audio_paused = true
+                    mp.set_property_native("pause", true)
+                end
+                mp.commandv("script-message", "anime-hub-switch", utils.format_json({ state = "loading", text = SWITCH_TEXT[m] }))
+            end
+        end }
+    end
+    local title = st.audio_want and "Loading…" or (a.current == "dub" and "English dub" or "Japanese · subtitles")
+    return { picks = items, title = title }
+end
+
 local CONTENT = {
     Playback = function()
         local ahead = mp.get_property_number("demuxer-cache-duration")
@@ -375,6 +403,8 @@ local CONTENT = {
     end,
     Audio = function()
         local rows = { { head = "Language" } }
+        local version = version_row()
+        if version then table.insert(rows, 1, version) end
         for _, r in ipairs(tracks("audio")) do rows[#rows + 1] = r end
         rows[#rows + 1] = shift("Delay", "audio-delay", 2)
         return rows
@@ -1303,6 +1333,18 @@ end)
 for _, name in ipairs({ "volume", "mute", "track-list", "chapter-list", "duration", "speed", "sub-delay", "audio-delay" }) do
     mp.observe_property(name, "native", function() redraw() end)
 end
+
+mp.register_script_message("anime-hub-switch", function(raw)
+    local data = utils.parse_json(raw or "")
+    if type(data) == "table" and data.state ~= "loading" then
+        st.audio_want = nil
+        if st.audio_paused then  -- no switch after all: carry on
+            st.audio_paused = nil
+            mp.set_property_native("pause", false)
+        end
+        redraw()
+    end
+end)
 
 mp.register_script_message("anime-hub-info", function(raw)
     local data = utils.parse_json(raw or "")

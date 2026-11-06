@@ -23,6 +23,7 @@ from .config import config
 # and must not contain "flatpak" (see usable()).
 WAIT_SH = r"""#!/bin/sh
 # Written by Anime Hub (hub.py), regenerated on demand, edits are lost.
+: >"$HUB_ANICLI_GO.ready" 2>/dev/null
 n=0
 while [ ! -e "$HUB_ANICLI_GO" ]; do
     n=$((n + 1))
@@ -137,11 +138,14 @@ def _expire(slot):
     end(slot)
 
 
-def _spawn(key, link, token, mode, sock, mpv_env):
-    global _slot, _expiry, _swept
+def spawn(key, link, token, mode, sock, mpv_env):
+    """Start a prepared run and hand it back, without taking the one slot:
+    the player's Sub/Dub switch (TODO 153) gets the other language ready
+    while the episode keeps playing. None when it can't be."""
+    global _swept
     exe, script = system.find_program("mpv"), wait_script()
     if not exe or not script:
-        return
+        return None
     if not _swept:
         _swept = True
         shutil.rmtree(config.DATA / "prepared", ignore_errors=True)
@@ -156,8 +160,21 @@ def _spawn(key, link, token, mode, sock, mpv_env):
             proc = anicli.anicli_spawn(["--exit-after-play", "-e", token, link["query"]], env, subprocess.DEVNULL, f)
     except (OSError, anicli.AniCliError):
         shutil.rmtree(folder, ignore_errors=True)
+        return None
+    return {"key": key, "proc": proc, "dir": folder, "err": err, "sock": sock, "ts": time.time()}
+
+
+def ready(slot):
+    """ani-cli has the episode's link and waits for the go: its player
+    script has started."""
+    return (slot["dir"] / "go.ready").exists()
+
+
+def _spawn(key, link, token, mode, sock, mpv_env):
+    global _slot, _expiry
+    slot = spawn(key, link, token, mode, sock, mpv_env)
+    if not slot:
         return
-    slot = {"key": key, "proc": proc, "dir": folder, "err": err, "sock": sock, "ts": time.time()}
     _slot = slot
     _expiry = threading.Timer(TTL, _expire, (slot,))
     _expiry.daemon = True
