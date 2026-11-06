@@ -298,6 +298,23 @@ const accentIcon = (a) => ACCENT_ICONS[a] ? `/icons/${ACCENT_ICONS[a]}.svg` : "/
 const lookGet = (k) => { const v = lsGet(k, LOOKS[k][0]); return LOOKS[k].includes(v) ? v : LOOKS[k][0]; };
 const accentGet = () => { const v = lsGet("accent", "follow"); return ACCENTS.includes(v) ? v : "follow"; };
 const grainGet = () => lsGet("grain", true) !== false;
+/* Fonts (TODO 122, Decision 69): text and titles each pick a built-in
+   font or one imported in Settings → Appearance. Device preferences like
+   the rest; "fontCss" is what index.html puts on before first paint. */
+const FONTS = {
+  text: [["default", "Anime Hub", ""], ["system", "System", "system-ui, sans-serif"], ["serif", "Serif", '"Iowan Old Style", "Palatino Linotype", Georgia, serif'], ["mono", "Mono", '"JetBrains Mono", ui-monospace, monospace']],
+  title: [["default", "Anime Hub", ""], ["grotesk", "Grotesk", '"Hanken Grotesk", system-ui, sans-serif'], ["system", "System", "system-ui, sans-serif"], ["serif", "Serif", '"Iowan Old Style", "Palatino Linotype", Georgia, serif']],
+};
+const userFam = (id) => "hubu-" + String(id).replace(/[^A-Za-z0-9_-]/g, "_");
+const userFontUrl = (id) => "/user-fonts/" + encodeURIComponent(id);
+const fontGet = (role) => { const v = lsGet("font_" + role, "default"); return typeof v === "string" && (v.startsWith("u:") || FONTS[role].some(([k]) => k === v)) ? v : "default"; };
+const fontStack = (role, v) => v.startsWith("u:") ? `"${userFam(v.slice(2))}", ${role === "title" ? '"Barlow Condensed", ' : ""}"Hanken Grotesk", sans-serif` : FONTS[role].find(([k]) => k === v)?.[2] || "";
+/* One family per added font: its regular file up to weight 500, its bold
+   file (when it came with one) from 600; a variable font covers them all. */
+const fontFace = (f) => `@font-face{font-family:"${userFam(f.id)}";src:url("${f.url || userFontUrl(f.id)}");font-display:swap${f.variable ? ";font-weight:100 900" : f.bold ? ";font-weight:100 500" : ""}}`
+  + (f.bold ? `@font-face{font-family:"${userFam(f.id)}";src:url("${f.bold}");font-weight:600 900;font-display:swap}` : "");
+/* The added fonts as last seen, so the first paint knows their bold files before Settings loads. */
+const fontList = () => S.settings?.fonts || lsGet("fontList", []);
 function fmtIn(sec) {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${Math.max(1, m)} min`;
@@ -2111,7 +2128,7 @@ function setSections(s) {
   const stateTxt = { ok: "Watching this folder.", unconfigured: "No library folder is configured yet.", missing: "The folder is not accessible right now.", partial: "Some folders could not be read — part of the library may be missing." };
   const changed = s.scan?.root === "changed", conn = !!ani.connected, off = !conn;
   return {
-    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show, or keep one colour.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${plFanRow()}${srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture. Also in mpv's list.", tgl("hide_spoilers", "Hide spoilers", s.hide_spoilers))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
+    appearance: `<div class="group"><h3>Appearance</h3>${srow("Accent colour", "Follow the show, or keep one colour.", `<span class="looks" role="radiogroup" aria-label="Accent colour"><button class="follow${accentGet() === "follow" ? " on" : ""}" role="radio" aria-checked="${accentGet() === "follow"}" data-a="look" data-k="accent" data-v="follow">Follow the show</button>${ACCENTS.map((c) => `<button class="swatch${accentGet() === c ? " on" : ""}" role="radio" aria-checked="${accentGet() === c}" aria-label="Accent ${c}" style="background:${c}" data-a="look" data-k="accent" data-v="${c}"></button>`).join("")}</span>`)}${fontRows(s)}${srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]]))}${upscaleRow(s)}${srow("Top bar", "", lookSeg("bar", [["classic", "Classic"], ["tabs", "Tabs"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]]))}${plFanRow()}${srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture. Also in mpv's list.", tgl("hide_spoilers", "Hide spoilers", s.hide_spoilers))}${srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]]))}${srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]]))}${srow("Zoom", "", `<span class="zrow"><button class="btn" data-a="zoomout" aria-label="Zoom out">−</button><span class="zval" id="zoomval">${zoomGet()}%</span><button class="btn" data-a="zoomin" aria-label="Zoom in">+</button></span>`)}</div>`,
     library: `<div class="group"><h3>Library</h3>${srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`)}${DirPick("settings")}${lengthRow(s)}</div>${s.library_root ? extraGroup(s) : ""}`,
     player: playerGroup(s),
@@ -2219,6 +2236,85 @@ function plFanRow() {
   const cur = lookGet("fan");
   return `<div class="srow lkrow plfanrow"><div><b>Playlist stacks</b><p>What a playlist does when the mouse is on it.</p></div><div class="ctl lkpick" role="radiogroup" aria-label="Playlist stacks">${PL_FANS.map(([v, l, line]) =>
     `<button class="choice lkcard${cur === v ? " on" : ""}" role="radio" aria-checked="${cur === v}" data-a="look" data-k="fan" data-v="${v}">${plFanPreview(v)}<b>${l}</b><span>${line}</span></button>`).join("")}</div></div>`;
+}
+/* Fonts (TODO 122): a card per font with a sample in it, one row for
+   text and one for titles; imported fonts join both rows. */
+function fontRows(s) {
+  const mine = s.fonts || [];
+  let st = $("#ufonts-all"); // the previews need every imported font loaded
+  if (!st) { st = document.createElement("style"); st.id = "ufonts-all"; document.head.append(st); }
+  st.textContent = mine.map(fontFace).join("");
+  lsSet("fontList", mine);
+  const row = (role, title, line, sample) => {
+    const cur = fontGet(role), base = role === "text" ? '"Hanken Grotesk", sans-serif' : '"Barlow Condensed", sans-serif';
+    const opts = [...FONTS[role].map(([v, l, stack]) => [v, l, stack || base]), ...mine.map((f) => ["u:" + f.id, f.name, `"${userFam(f.id)}", sans-serif`])];
+    return `<div class="srow lkrow fontrow"><div><b>${title}</b><p>${line}</p></div><div class="ctl fontpick" role="radiogroup" aria-label="${title}">${opts.map(([v, l, stack]) =>
+      `<button class="fcard${cur === v ? " on" : ""}" role="radio" aria-checked="${cur === v}" data-a="font" data-k="${role}" data-v="${esc(v)}"><span class="fs ${role}" style="font-family:${esc(stack)}">${sample}</span><b>${esc(l)}</b></button>`).join("")}</div></div>`;
+  };
+  const list = mine.map((f) => `<span class="chip fchip">${esc(f.name)}<button class="fx" data-a="fontdel" data-v="${esc(f.id)}" aria-label="Remove ${esc(f.name)}">${ico("close")}</button></span>`).join("");
+  const add = s.phone ? "" : `<button class="btn fimp" data-a="fontpick">${ico("plus")}Add a font</button>`;
+  return row("text", "Text font", "Everything you read.", "Episode 12")
+    + row("title", "Title font", "Show names and big headings.", "Frieren")
+    + (add || list ? srow("Your fonts", mine.length ? "Added fonts show up in both rows." : "Pick one of the fonts on this PC.", `<span class="fmine">${list}${add}</span>`) : "");
+}
+/* Add a font (TODO 122): every font installed on the PC, each name set
+   in its own letters; a click copies it into the hub. A file still works. */
+const famKey = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+function FontDlg() {
+  const m = S.modal;
+  return `<h2 id="dt">Add a font</h2><p class="sub">The fonts on this PC. Click one to add it.</p>
+  <label class="fq">${ico("search")}<input id="fontq" type="search" placeholder="Find a font" autocomplete="off" value="${esc(m.q || "")}"></label>
+  <div class="flist" id="fontlist">${fontListRows()}</div>
+  <div class="actions"><label class="btn fimp">${ico("download")}From a file…<input type="file" data-a="fontfile" accept=".ttf,.otf,.woff,.woff2" hidden></label><span class="note2"></span><button class="btn" data-a="close">Done</button></div>`;
+}
+function fontListRows() {
+  const m = S.modal;
+  if (!m.list) return `<div class="dim">${m.err ? esc(m.err) : "Looking for fonts…"}</div>`;
+  const q = famKey(m.q), have = new Set(fontList().map((f) => famKey(f.name)));
+  const rows = m.list.filter((f) => !q || famKey(f.family).includes(q));
+  if (!rows.length) return `<div class="dim">No font called “${esc(m.q)}”.</div>`;
+  return rows.map((f) => {
+    const on = have.has(famKey(f.family)), busy = m.busy === f.family;
+    return `<button class="frow${on ? " on" : ""}" data-a="fontadd" data-v="${esc(f.family)}" ${on || busy ? "disabled" : ""}><span class="fn" style="font-family:&quot;${esc(f.family)}&quot;, var(--ui)">${esc(f.family)}</span><small>${busy ? "adding…" : on ? `${ico("check")}added` : f.styles > 1 ? `${f.styles} styles` : ""}</small></button>`;
+  }).join("");
+}
+async function fontPickOpen() {
+  openModal({ t: "fonts", list: null, q: "" });
+  let r;
+  try { r = await api("/api/fonts/system"); } catch { r = { error: "Could not reach the hub." }; }
+  if (S.modal?.t !== "fonts") return;
+  if (r.fonts) S.modal.list = r.fonts; else S.modal.err = r.error || "Could not list the fonts.";
+  $("#fontlist") && ($("#fontlist").innerHTML = fontListRows());
+}
+async function fontAdd(family) {
+  const m = S.modal;
+  if (!m || m.busy) return;
+  m.busy = family; $("#fontlist").innerHTML = fontListRows();
+  let r;
+  try { r = await api("/api/fonts/add", { family }); } catch { r = { error: "Could not reach the hub." }; }
+  m.busy = null;
+  if (r.ok && S.settings) S.settings.fonts = r.fonts;
+  if (S.modal === m) $("#fontlist").innerHTML = fontListRows();
+  if (!r.ok) return toast(r.error || "Could not add the font.");
+  toast(`${r.font.name} added — pick it for text or titles`);
+  if (S.view === "settings") render(true);
+}
+async function fontImport(file, input) {
+  if (!file) return;
+  if (file.size > 16_000_000) { input.value = ""; return toast("That font is over 16 MB."); }
+  toast(`Adding ${file.name}…`, "busy");
+  let r;
+  try {
+    const data = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1] || ""); fr.onerror = no; fr.readAsDataURL(file); });
+    r = await api("/api/fonts/import", { name: file.name, data });
+  } catch { r = { error: "Could not reach the hub." }; }
+  input.value = "";
+  toastDone();
+  if (!r.ok) return toast(r.error || "Could not add the font.");
+  if (S.settings) S.settings.fonts = r.fonts;
+  toast(`${r.font.name} added — pick it for text or titles`);
+  if (S.modal?.t === "fonts") closeModal();
+  if (S.view === "settings") render(true);
 }
 /* A segmented control for one Appearance preference. */
 function lookSeg(k, opts) {
@@ -2451,7 +2547,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
    every setting (switches flip right here) and commands — grouped, with a
    preview of the picked row and its keys. */
 const SETTINGS_INDEX = [
-  ["Accent colour", "appearance", "colour color accent theme follow"], ["Playlist stacks", "appearance", "playlist stack hover fan wide cascade peek open cards"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
+  ["Accent colour", "appearance", "colour color accent theme follow"], ["Text font", "appearance", "font fonts typeface text letters serif"], ["Title font", "appearance", "font fonts typeface title heading"], ["Your fonts", "appearance", "font fonts import add installed system pc upload ttf otf woff own remove"], ["Playlist stacks", "appearance", "playlist stack hover fan wide cascade peek open cards"], ["Background art", "appearance", "background art blur wallpaper image"], ["Sharper banners", "appearance", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "appearance", "upscayl upscale banner natural digital art tta model"], ["Top bar", "appearance", "top bar nav search settings button style island capsule"],
   ["Hide spoilers", "appearance", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
   ["Library folder", "library", "folder path library directory browse rescan scan"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Measure episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"], ["Detected tools", "data", "mpv ani-cli upscayl tools player"],
   ["Skip openings", "skipping", "skip opening op chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed chapter mpv"], ["Times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"], ["Ask without VPN", "skipping", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dub dual remember", "remember_tracks"],
@@ -3219,7 +3315,7 @@ function setSummary(k, s) {
     skipping: `openings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.op] || "ask"} · endings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.ed] || "ask"}`,
     subs: "remember tracks, subtitle look",
     online: s.tools?.["ani-cli"] ? `${st.mode === "dub" ? "dub" : "sub"} · ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "ani-cli not installed",
-    appearance: "accent, background art, motion, zoom",
+    appearance: "accent, fonts, background art, motion, zoom",
     library: s.library_root || "no folder chosen yet",
     anilist: ani.connected ? `connected as ${ani.user || "you"}` : "not connected",
     phone: "pair a phone with a QR code",
@@ -3554,7 +3650,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -4386,6 +4482,24 @@ const A = {
     $$(`[data-a=look][data-k="${k}"]`).forEach((b) => { const on = b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute(b.getAttribute("role") === "radio" ? "aria-checked" : "aria-pressed", on); });
     paintCanvas();
   },
+  font: (v, t) => {
+    const k = t.dataset.k;
+    lsSet("font_" + k, v); applyFonts();
+    $$(`[data-a=font][data-k="${k}"]`).forEach((b) => { const on = b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+  },
+  fontfile: (v, t) => fontImport(t.files?.[0], t),
+  fontpick: () => fontPickOpen(),
+  fontadd: (v) => fontAdd(v),
+  fontdel: async (v) => {
+    let r;
+    try { r = await api("/api/fonts/delete", { id: v }); } catch { r = { error: "Could not reach the hub." }; }
+    if (!r.ok) return toast(r.error || "Could not remove the font.");
+    for (const k of ["text", "title"]) if (fontGet(k) === "u:" + v) lsSet("font_" + k, "default");
+    applyFonts();
+    if (S.settings) S.settings.fonts = r.fonts;
+    toast("Font removed");
+    if (S.view === "settings") render(true);
+  },
   zoomin: () => zoomSet(zoomStep(zoomGet(), 1)),
   zoomout: () => zoomSet(zoomStep(zoomGet(), -1)),
   /* online episodes (ani-cli) */
@@ -4893,7 +5007,10 @@ document.addEventListener("keydown", (e) => {
     else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); S.plq = ""; e.target.value = ""; plResPaint(); e.target.blur(); }
   }
 }, true);
-document.addEventListener("input", (e) => { if (e.target.id === "plq") { S.plq = e.target.value; plResPaint(); } });
+document.addEventListener("input", (e) => {
+  if (e.target.id === "plq") { S.plq = e.target.value; plResPaint(); }
+  else if (e.target.id === "fontq" && S.modal?.t === "fonts") { S.modal.q = e.target.value; $("#fontlist").innerHTML = fontListRows(); }
+});
 document.addEventListener("focusout", (e) => { if (e.target.id === "plq") setTimeout(() => { if (!document.activeElement?.closest?.(".pladd")) $("#plres")?.classList.remove("on"); }, 150); });
 document.addEventListener("focusin", (e) => { if (e.target.id === "plq" && (S.plq || "").trim()) plResPaint(); });
 document.addEventListener("change", (e) => {
@@ -5002,6 +5119,19 @@ function applyLook() {
   d.dataset.motion = lookGet("motion"); d.dataset.art = lookGet("art"); d.dataset.bar = lookGet("bar"); d.dataset.plfan = lookGet("fan"); d.dataset.grain = grainGet() ? "on" : "off";
   a === "follow" ? d.style.removeProperty("--fixed") : d.style.setProperty("--fixed", a);
   $('link[rel="icon"]')?.setAttribute("href", accentIcon(a));
+  applyFonts();
+}
+function applyFonts() {
+  const d = document.documentElement, t = fontGet("text"), h = fontGet("title");
+  const ui = fontStack("text", t), display = fontStack("title", h);
+  const ids = [...new Set([t, h].filter((v) => v.startsWith("u:")).map((v) => v.slice(2)))];
+  ui ? d.style.setProperty("--ui", ui) : d.style.removeProperty("--ui");
+  display ? d.style.setProperty("--display", display) : d.style.removeProperty("--display");
+  let st = $("#ufonts");
+  if (!st) { st = document.createElement("style"); st.id = "ufonts"; document.head.append(st); }
+  const css = ids.map((id) => fontFace(fontList().find((f) => f.id === id) || { id })).join("");
+  st.textContent = css;
+  lsSet("fontCss", ui || display ? { ui, display, css } : null);
 }
 function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; }
 function zoomSet(z) { lsSet("hubZoom", z); applyZoom(); const el = $("#zoomval"); if (el) el.textContent = z + "%"; }

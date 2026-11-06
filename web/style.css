@@ -2391,3 +2391,35 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 
 /* Playlists on phones: two boxes a row (after the phone wall rule above) */
 @media (max-width:760px){.lib2 .wall.plgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 12px}}
+
+/* Fonts (TODO 122, Decision 69): a card per font, its sample set in it. */
+.fontpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;width:100%;max-width:640px}
+.set2 .fontrow .ctl.fontpick{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+.fcard{display:grid;gap:6px;text-align:left;padding:14px 14px 12px;border-radius:16px;background:rgba(255,255,255,.04);box-shadow:var(--edge);transition:background .2s,box-shadow .2s}
+.fcard:hover{background:rgba(255,255,255,.07)}
+.fcard.on{background:color-mix(in srgb,var(--accent) 10%,transparent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.fcard .fs{display:block;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fcard .fs.text{font-size:15px;font-weight:400}
+.fcard .fs.title{font-size:26px;line-height:1.05;font-weight:700;text-transform:uppercase}
+.fcard>b{font:500 12px var(--ui);color:var(--mute)}
+.fcard.on>b{color:var(--accent-hi)}
+.fmine{display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.fchip{padding-right:5px}.fchip .fx{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;color:var(--mute)}
+.fchip .fx:hover{background:rgba(255,255,255,.1);color:var(--ink)}.fchip .fx .ico{width:13px;height:13px}
+.fimp{cursor:pointer;display:inline-flex;align-items:center;gap:6px}.fimp .ico{width:15px;height:15px}
+.fimp:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+/* Add a font: the PC's fonts, each in its own letters. */
+.overlay[data-t=fonts] .dialog{width:min(560px,94vw)}
+.fq{display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:var(--edge);margin-bottom:12px;color:var(--mute)}
+.fq .ico{width:16px;height:16px;flex-shrink:0}.fq input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:15px}
+.fq:focus-within{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.flist{display:grid;align-content:start;gap:2px;height:min(420px,52vh);overflow:auto;margin:0 -8px 18px;padding:0 8px;scrollbar-width:thin}
+.flist .dim{padding:20px 12px;color:var(--mute)}
+.frow{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 12px;border-radius:12px;text-align:left;transition:background .15s}
+.frow:hover:not(:disabled){background:rgba(255,255,255,.06)}
+.frow .fn{flex:1;min-width:0;font-size:21px;line-height:1.2;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow small{display:inline-flex;align-items:center;gap:4px;font:500 12px var(--mono);color:var(--mute);white-space:nowrap}
+.frow small .ico{width:13px;height:13px}
+.frow.on small{color:var(--accent-hi)}.frow:disabled{cursor:default}.frow.on .fn{opacity:.6}
+.dialog .fq input{border:0;box-shadow:none;background:none;padding:0;height:auto;border-radius:0}
+.flist{overflow-x:hidden}.flist>*{min-width:0}
