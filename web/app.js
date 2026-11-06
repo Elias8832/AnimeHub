@@ -1597,6 +1597,8 @@ function cmItems({ id, ep, files, verId, online, onlineId, other, local, dl, fix
   if (online) rows.push(cmRow("playmode", onlineId, "play", `Play ${other === "dub" ? "dubbed" : "subbed"}`, "A", "", `data-m="${other}"`));
   const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}"`)];
   if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress"));
+  /* Right-click → Select (Elias, 2026-11-06): same multi-select as the ⋯ / Select button, starting with this episode. */
+  if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
   const end = [];
   if (dl) end.push(cmRow("dlep", onlineId, "download", "Download", "D", vpnTag));
   if (fix) end.push(cmRow("srcfix", "", "search", "Wrong episode? Find it"));
@@ -4509,6 +4511,7 @@ const A = {
       if (r.error) toast(r.error); else toast(v === "dub" ? "Online episodes are dubbed now" : "Online episodes are subbed now");
     }).catch(() => toast("Could not switch — is the hub running?")).finally(() => { S.modeBusy = null; frLoad(e.id); });
   },
+  selep: (v) => selToggle(v),
   selmode: () => { if (S.sel?.show === selKey()) return selEnd(); S.sel = { show: selKey(), ids: new Set(), anchor: null }; pagePatch(); paintSel(); },
   selall: () => {
     if (S.view === "fr") {
