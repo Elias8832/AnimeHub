@@ -167,3 +167,206 @@ class OneAtATime(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --- step 2: online episodes through the PC ---------------------------------
+
+import os  # noqa: E402
+import re  # noqa: E402
+import shutil  # noqa: E402
+import stat  # noqa: E402
+import tempfile  # noqa: E402
+import urllib.request  # noqa: E402
+from http.server import BaseHTTPRequestHandler  # noqa: E402
+from pathlib import Path  # noqa: E402
+from urllib.parse import parse_qs, urlparse  # noqa: E402
+
+from animehub import anicli, streaming  # noqa: E402
+
+REF = "https://ref.example/"
+SEG = bytes(range(256)) * 8
+MP4 = bytes(reversed(range(256))) * 16
+SITE = {
+    "/master.m3u8": b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nlow/index.m3u8\n",
+    "/low/index.m3u8": b'#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:6,\nseg0.ts\n#EXTINF:6,\nhttp://127.0.0.1:@PORT@/low/seg1.ts\n#EXT-X-ENDLIST\n',
+    "/low/key.bin": b"k" * 16,
+    "/low/seg0.ts": SEG,
+    "/low/seg1.ts": SEG[::-1],
+    "/subs.srt": b"1\r\n00:00:01,000 --> 00:00:02,500\r\nHello\r\n",
+}
+
+
+class Site(BaseHTTPRequestHandler):
+    """A stand-in streaming site: it answers only with ani-cli's referrer."""
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        if self.headers.get("Referer") != REF:
+            self.send_error(403)
+            return
+        path = urlparse(self.path).path
+        if path == "/video.mp4":
+            a, b = self.headers.get("Range", "bytes=0-").split("=")[1].split("-")
+            a, b = int(a), int(b) if b else len(MP4) - 1
+            self.send_response(206)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Range", f"bytes {a}-{b}/{len(MP4)}")
+            self.send_header("Content-Length", str(b - a + 1))
+            self.end_headers()
+            self.wfile.write(MP4[a:b + 1])
+            return
+        body = SITE.get(path)
+        if body is None:
+            self.send_error(404)
+            return
+        body = body.replace(b"@PORT@", str(self.server.server_address[1]).encode())
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.apple.mpegurl" if path.endswith(".m3u8") else "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class Relay(unittest.TestCase):
+    def setUp(self):
+        self.site = system.http_server_class()(("127.0.0.1", 0), Site)
+        self.site.daemon_threads = True
+        threading.Thread(target=self.site.serve_forever, daemon=True).start()
+        self.addCleanup(self.site.server_close)
+        self.addCleanup(self.site.shutdown)
+        self.base = f"http://127.0.0.1:{self.site.server_address[1]}"
+        self.hub = system.http_server_class()(("127.0.0.1", 0), server.Handler)
+        self.hub.daemon_threads = True
+        threading.Thread(target=self.hub.serve_forever, daemon=True).start()
+        self.addCleanup(self.hub.server_close)
+        self.addCleanup(self.hub.shutdown)
+        p = patch.object(phoneplay, "urlopen", urllib.request.urlopen)  # support.py blocks the network
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(phoneplay._links.clear)
+
+    def add(self, url, subs=()):
+        tok = "t" + str(len(phoneplay._links))
+        phoneplay._links[tok] = {"ep_id": "stream:1:1", "url": url, "referrer": REF, "subs": list(subs),
+                                 "allowed": {url}, "ts": phoneplay.time.time()}
+        return tok
+
+    def get(self, path, headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.hub.server_address[1], timeout=5)
+        c.request("GET", path, headers={"Host": f"127.0.0.1:{config.PORT}", **(headers or {})})
+        r = c.getresponse()
+        out = (r.status, dict(r.getheaders()), r.read())
+        c.close()
+        return out
+
+    def test_what_ani_cli_hands_its_player(self):
+        got = phoneplay.player_args(["--referrer=" + REF, "--sub-file=https://s.example/a.vtt", "--input-ipc-server=/x",
+                                     "--force-media-title=Show Episode 2", "https://v.example/x.m3u8", ""])
+        self.assertEqual(got, {"url": "https://v.example/x.m3u8", "referrer": REF, "subs": ["https://s.example/a.vtt"]})
+        self.assertIsNone(phoneplay.player_args(["--referrer=x", "--force-media-title=y"]))
+
+    def test_hls_through_the_pc(self):
+        tok = self.add(self.base + "/master.m3u8")
+        st, h, body = self.get(phoneplay.relay_url(tok, self.base + "/master.m3u8"))
+        self.assertEqual(st, 200)
+        self.assertEqual(h["Content-Type"], "application/vnd.apple.mpegurl")
+        low = body.decode().splitlines()[2]
+        self.assertTrue(low.startswith(f"/api/phone/relay/{tok}?u="), low)
+        st, _, body = self.get(low)
+        lines = body.decode().splitlines()
+        key = re.search(r'URI="([^"]+)"', lines[1]).group(1)
+        self.assertEqual(self.get(key)[2], b"k" * 16)
+        segs = [x for x in lines if x.startswith("/api/")]
+        self.assertEqual([self.get(x)[2] for x in segs], [SEG, SEG[::-1]])  # relative and absolute addresses
+
+    def test_it_is_not_an_open_proxy(self):
+        tok = self.add(self.base + "/master.m3u8")
+        self.assertEqual(self.get(phoneplay.relay_url(tok, self.base + "/low/seg0.ts"))[0], 404)  # not handed out yet
+        self.assertEqual(self.get(phoneplay.relay_url(tok, "http://127.0.0.1:1/x"))[0], 404)
+        self.assertEqual(self.get(phoneplay.relay_url("nope", self.base + "/master.m3u8"))[0], 404)
+        phoneplay._links[tok]["ts"] -= phoneplay.LINK_TTL + 1
+        self.assertEqual(self.get(phoneplay.relay_url(tok, self.base + "/master.m3u8"))[0], 404)
+
+    def test_a_plain_video_keeps_its_ranges(self):
+        tok = self.add(self.base + "/video.mp4")
+        st, h, body = self.get(phoneplay.relay_url(tok, self.base + "/video.mp4"), {"Range": "bytes=10-19"})
+        self.assertEqual((st, h["Content-Range"], body), (206, f"bytes 10-19/{len(MP4)}", MP4[10:20]))
+
+    def test_the_site_saying_no_is_passed_on(self):
+        tok = self.add(self.base + "/gone.m3u8")
+        self.assertEqual(self.get(phoneplay.relay_url(tok, self.base + "/gone.m3u8"))[0], 404)
+
+    def test_subtitles_become_webvtt(self):
+        tok = self.add(self.base + "/master.m3u8", [self.base + "/subs.srt"])
+        st, h, body = self.get(f"/api/phone/sub/{tok}/0")
+        self.assertEqual(st, 200)
+        self.assertTrue(h["Content-Type"].startswith("text/vtt"))
+        self.assertEqual(body.decode(), "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.500\nHello\n")
+        self.assertEqual(self.get(f"/api/phone/sub/{tok}/1")[0], 404)
+
+
+# ani-cli as far as the phone needs it: it hands its player what the real
+# one hands mpv (referrer, subtitle file, link).
+FAKE_ANICLI = b"""#!/bin/sh
+# ANI_CLI_MENU ANI_CLI_PLAYER_FLAGS ANI_CLI_PLAYER ANI_CLI_MODE ANI_CLI_QUALITY
+version_number="5.1.0"
+episode=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -V) echo "$version_number"; exit 0 ;;
+        -e) episode=$2; shift ;;
+    esac
+    shift
+done
+[ "$ANI_CLI_MODE" = dub ] && [ -n "$HUB_TEST_NODUB" ] && { printf '\\033[1;31mNo sources found for dub\\033[0m\\n' >&2; exit 1; }
+"$ANI_CLI_PLAYER" --referrer="$HUB_TEST_REF" --sub-file="$HUB_TEST_SUB" "--force-media-title=Test Show Episode $episode" "$HUB_TEST_URL#$ANI_CLI_MODE"
+"""
+
+
+class OnlineStart(unittest.TestCase):
+    def setUp(self):
+        d = Path(tempfile.mkdtemp(dir=support.TMP))
+        self.addCleanup(shutil.rmtree, d, True)
+        exe = d / "ani-cli"
+        exe.write_bytes(FAKE_ANICLI)
+        exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+        self.link = {"media_id": 900, "query": "Test Show", "title": "Test Show", "idx": 1, "mode": "sub",
+                     "episodes": ["1", "2"], "episodes_ts": phoneplay.time.time()}
+        sea = {"label": "Episodes", "season": 1, "episodes": [{"id": "stream:900:2", "number": 2}]}
+        show = {"id": "aid:900", "title": "Test Show", "seasons": [sea]}
+        for p in (patch.object(anicli, "anicli_path", return_value=str(exe)),
+                  patch.object(anicli, "anicli_check", return_value={"ok": True, "missing": []}),
+                  patch.object(anicli, "anicli_outdated", return_value=False),
+                  patch.object(streaming, "stream_autolink", return_value=self.link),
+                  patch.object(streaming, "stream_set_mode", lambda mid, m: None),
+                  patch.object(library, "episode_by_id", return_value=(show, sea["episodes"][0])),
+                  patch.dict(os.environ, {"HUB_TEST_REF": REF, "HUB_TEST_SUB": "https://s.example/a.vtt",
+                                          "HUB_TEST_URL": "https://v.example/ep2/master.m3u8"})):
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(phoneplay._links.clear)
+        self.addCleanup(phoneplay._session.clear)
+
+    def test_ani_cli_finds_it_and_the_phone_gets_the_relay(self):
+        r = phoneplay.start_online("stream:900:2")
+        self.assertTrue(r.get("ok"), r)
+        self.assertTrue(r["hls"])
+        tok = r["src"].split("/")[4].split("?")[0]
+        L = phoneplay._links[tok]
+        self.assertEqual((L["url"], L["referrer"], L["subs"]), ("https://v.example/ep2/master.m3u8#sub", REF, ["https://s.example/a.vtt"]))
+        self.assertEqual(r["subs"], [f"/api/phone/sub/{tok}/0"])
+        self.assertEqual(parse_qs(urlparse(r["src"]).query)["u"], [L["url"]])
+        self.assertEqual(phoneplay.now()["ep_id"], "stream:900:2")
+        self.assertFalse(list((config.DATA / "phone").glob("*")), "its folder stays behind")
+
+    def test_no_dub_yet_plays_the_sub(self):
+        self.link["mode"] = "dub"
+        with patch.dict(os.environ, {"HUB_TEST_NODUB": "1"}):
+            r = phoneplay.start_online("stream:900:2")
+        self.assertTrue(r["src"].endswith(phoneplay._q("#sub")), r["src"])
+        self.assertIn("isn't dubbed yet", r["note"])
+
+    def test_not_out_yet(self):
+        self.assertEqual(phoneplay.start_online("stream:900:3"), {"error": "E3 isn't out yet."})

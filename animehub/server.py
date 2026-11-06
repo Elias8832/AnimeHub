@@ -11,8 +11,10 @@ import subprocess
 import sys
 import threading
 import time
+from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mapping, metadata, pages, phoneplay, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
@@ -237,6 +239,44 @@ class Handler(BaseHTTPRequestHandler):
                     left -= len(chunk)
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass  # the player jumped elsewhere and dropped this piece
+
+    def send_relay(self, tok, url):
+        """Pass one piece of an online episode on to the phone: a playlist
+        rewritten to point back here, anything else as it comes."""
+        try:
+            kind, got = phoneplay.relay_open(tok, url, self.headers.get("Range"))
+        except phoneplay.RelayRefused:
+            self.send_error(404)
+            return
+        except HTTPError as e:
+            e.close()
+            self.send_error(e.code if 400 <= e.code < 600 else 502)
+            return
+        except (OSError, HTTPException, ValueError) as e:
+            util.log("phone relay: %s" % e)
+            self.send_error(502)
+            return
+        if kind == "playlist":
+            self.send_file_body(got.encode(), "application/vnd.apple.mpegurl")
+            return
+        if kind == "bytes":
+            self.send_file_body(got, "application/octet-stream")
+            return
+        with got:
+            self.send_response(got.status)
+            for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+                if got.headers.get(h):
+                    self.send_header(h, got.headers[h])
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                while True:
+                    chunk = got.read(256 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            except (OSError, HTTPException):
+                pass  # the phone jumped elsewhere, or the site stopped
 
     def send_file_body(self, body, ctype, cache=False):
         self.send_response(200)
@@ -471,6 +511,25 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_video(hit[0])
             else:
                 self.send_error(404)
+        elif route.startswith("/api/phone/relay/"):
+            # An online episode for the phone, through the PC (Decision 71).
+            u = (parse_qs(urlparse(self.path).query).get("u") or [""])[0]
+            self.send_relay(route.rsplit("/", 1)[1], u)
+        elif route.startswith("/api/phone/sub/"):
+            parts = route.split("/")
+            try:
+                text = phoneplay.subtitle(parts[4], int(parts[5]))
+            except (IndexError, ValueError, phoneplay.RelayRefused):
+                self.send_error(404)
+                return
+            except (OSError, HTTPException) as e:
+                util.log("phone subtitles: %s" % e)
+                self.send_error(502)
+                return
+            self.send_file_body(text.encode(), "text/vtt; charset=utf-8")
+        elif route == "/hls.light.min.js":
+            # hls.js (Apache-2.0, web/vendor), for phones that can't play HLS themselves.
+            self.send_file(WEB / "vendor" / "hls.light.min.js", "text/javascript; charset=utf-8", cache=True)
         elif route == "/api/phone/skips":
             q = parse_qs(urlparse(self.path).query)
             try:
@@ -666,7 +725,19 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(start, bool):
                     self._bad("'from_start' must be a boolean")
                     return
-                r = phoneplay.start(body["id"], body.get("version", 0), from_start=start)
+                mode, aniskip_ok = body.get("mode"), body.get("aniskip")
+                if mode is not None and mode not in anicli.STREAM_MODES:
+                    self._bad("'mode' must be one of: %s" % ", ".join(anicli.STREAM_MODES))
+                    return
+                if aniskip_ok is not None:
+                    if not isinstance(aniskip_ok, bool):
+                        self._bad("'aniskip' must be a boolean")
+                        return
+                    player.answer_aniskip(body["id"], aniskip_ok)
+                if body["id"].startswith("stream:"):
+                    r = phoneplay.start_online(body["id"], mode, from_start=start)
+                else:
+                    r = phoneplay.start(body["id"], body.get("version", 0), from_start=start)
                 self.send_json(r, 404 if r.get("error") else 200)
         elif route == "/api/phone/progress":
             ep, pos, dur = body.get("id"), body.get("position"), body.get("duration")
