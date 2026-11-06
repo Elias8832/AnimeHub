@@ -92,13 +92,27 @@ test("empty activity and removed episodes do not crash the hero picker", () => {
   assert.equal(app.nextUpInfo(), null);
 });
 
-test("the latest fully watched show gets a rewatch banner", () => {
-  const older = episode("older", earlier);
-  const finished = { ...episode("finished", latest, true, 1430), duration: 1440 };
+test("the latest fully watched show gets a rewatch banner when nothing else is in progress", () => {
+  const older = episode("older", earlier, true, 1430);
+  const finished = episode("finished", latest, true, 1430);
   const app = homepage({ shows: [show("Older", [older]), show("Finished", [finished])],
-    continue: [older], history: [finished, older] });
+    continue: [], history: [finished, older] });
   assert.equal(app.nextUpInfo().s.title, "Finished");
   assert.equal(app.nextUpInfo().label, "Rewatch");
+});
+
+test("a show in Continue watching leads instead of a rewatch banner", () => {
+  const older = episode("older", earlier);
+  const finished = episode("finished", latest, true, 1430);
+  const app = homepage({ shows: [show("Older", [older]), show("Finished", [finished])],
+    continue: [older], history: [finished, older] });
+  const up = app.nextUpInfo();
+  assert.equal(up.s.title, "Older");
+  assert.equal(up.label, "Continue watching");
+  const html = app.Home();
+  assert.match(html, /<h1>Older<\/h1>/);
+  assert.doesNotMatch(html, /Rewatch/);
+  assert.doesNotMatch(html, /<h3>Older<\/h3>/); // not twice
 });
 
 test("a watched episode stopped halfway says Continue, not Rewatch", () => {
