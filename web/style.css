@@ -858,11 +858,12 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .home2 .sum b{color:var(--ink);font-weight:500}
 .home2 .sep{width:3px;height:3px;border-radius:50%;background:var(--mute);display:inline-block}
 /* up next: one big card, the art inside it */
-.upn{position:relative;isolation:isolate;min-height:380px;border-radius:26px;overflow:hidden;display:flex;align-items:flex-end;box-shadow:0 30px 70px rgba(0,0,0,.4),var(--edge);background:hsl(var(--h) 20% 14%)}
+.upn{position:relative;isolation:isolate;min-height:380px;border-radius:26px;overflow:hidden;display:flex;align-items:flex-end;box-shadow:0 30px 70px rgba(0,0,0,.4);background:hsl(var(--h) 20% 14%)}
 /* hover zooms with `scale`, not `transform`: the opening artIn owns transform, and sharing it made the zoom snap in when the opening ended under the mouse */
 .upn .upa{position:absolute;inset:0;z-index:-1;background-size:cover;background-position:center 30%;transition:scale 1.2s var(--ease)}
 .upn:hover .upa{scale:1.03}
-.upn::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(10,11,14,.86),rgba(10,11,14,.4) 55%,rgba(10,11,14,.05)),linear-gradient(0deg,rgba(10,11,14,.6),transparent 50%);pointer-events:none}
+/* the dark wash lives inside the art, so the hover zoom moves and clips both as one: as a sibling it was clipped apart from the zoomed art and the art peeked out at the corners */
+.upn .upa::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,11,14,.86),rgba(10,11,14,.4) 55%,rgba(10,11,14,.05)),linear-gradient(0deg,rgba(10,11,14,.6),transparent 50%);pointer-events:none}
 .upn .upc{padding:40px 44px}
 .upn .eye{display:flex;align-items:center;gap:10px;font:500 12px var(--mono);color:var(--ink-2)}
 .upn .eye .ok{color:var(--accent)}
