@@ -51,7 +51,9 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # Pick the show's last audio/subtitle track again (tracks.py).
                        "remember_tracks": True,
                        # Openings/endings as marks on mpv's timeline (Decision 45).
-                       "mpv_marks": True}
+                       "mpv_marks": True,
+                       # Playing on the phone leaves mpv on the PC playing (Decision 71).
+                       "phone_play_both": False}
 
 
 # Opening/ending skipping in mpv (Decision 39): off, a prompt (Enter skips)
@@ -247,6 +249,7 @@ def settings_payload():
         "hide_spoilers": automation_enabled("hide_spoilers"),
         "measure_lengths": automation_enabled("measure_lengths"),
         "remember_tracks": automation_enabled("remember_tracks"),
+        "phone_play_both": automation_enabled("phone_play_both"),
         # additive (Decision 45): mpv options, "on" / "off" / "own"
         "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks"),
                 "look": player_look(), "looks": list(PLAYER_LOOKS),

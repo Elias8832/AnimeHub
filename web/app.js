@@ -2333,7 +2333,9 @@ const MPVMODES = [["on", "On"], ["off", "Off"], ["own", "My config"]];
 const mpvSeg = (m, k, label) => mpick(m, k, label, MPVMODES);
 function playerGroup(s) {
   const m = s.mpv || {}, hub = m.design === "on";
-  return `<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. On or Off here overrides it.</p>
+  const w = playWhere();
+  const here = awayDevice() ? `<div class="group"><h3>On this phone</h3>${srow("Play button", "Where episodes play when you tap Play here. Online ones come through the PC.", `<span class="seg" role="group" aria-label="Play button">${[["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]].map(([k, l]) => `<button class="${(w || "") === k ? "on" : ""}" aria-pressed="${(w || "") === k}" data-a="playwhere" data-v="${k}">${l}</button>`).join("")}</span>`)}</div>` : "";
+  return `${here}<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. On or Off here overrides it.</p>
     ${srow("Fullscreen", "", mpvSeg(m, "fullscreen", "Fullscreen"))}
     ${srow("Starting volume", "Last: where you left it.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Last"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
     <div class="group"><h3>Controls</h3><p class="sub">Apply from the next episode.</p>
@@ -2391,7 +2393,7 @@ function phoneGroup() {
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
     ${srow("Phone remote", "Control playback from your phone. Same Wi-Fi, no app.", `<button class="switch" role="switch" aria-checked="${r.on}" aria-label="Phone remote" data-a="rmton"></button>`)}
-    ${pair}${S.settings?.background_ok ? bgRows(S.settings) : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
+    ${pair}${S.settings?.background_ok ? bgRows(S.settings) : ""}${r.on ? srow("Keep the PC playing", "Off: playing an episode on the phone stops mpv here. On: both play at once.", tgl("phone_play_both", "Keep the PC playing", S.settings?.phone_play_both)) : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
 }
 function phoneWatch() {
   phoneGroup.t = 0;
@@ -3652,7 +3654,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -4339,9 +4341,186 @@ function accentHex(show) {
 }
 /* skipOk: undefined = not asked yet, true/false = the AniSkip answer
    (yes to the online VPN dialog counts as yes). */
-async function play(id, version = 0, mode, asked, fromStart, skipOk) {
-  if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk) });
+/* @phoneplay — watching on the phone (Decision 71). A file plays in the
+   phone's own <video>: the PC sends the file in pieces, the phone reports
+   where it is every few seconds, and the hub counts it like mpv (resume,
+   watched, AniList, auto-next). Online episodes come through the PC (the relay). */
+/* A phone: paired over the Wi-Fi, or a touch screen reaching the hub from
+   elsewhere (Tailscale). A PC through Tailscale is not one (Elias, 2026-11-07). */
+const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && !matchMedia("(any-pointer:fine)").matches);
+const playWhere = () => { const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; };
+const PP = { id: null, ended: false, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
+function WhereDlg() {
+  return `<h2 id="dt">Play where?</h2>
+  <p class="sub">Episodes can play on this phone, online ones too (they come through the PC). Change it any time in Settings → Player.</p>
+  <div class="actions"><button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button></div>`;
+}
+const ppVideo = () => $("#pp video");
+/* The player opens at the tap (a tap lets it play with sound and go full
+   screen later), then waits for the hub: a file at once, an online episode
+   once ani-cli has found it (up to a minute and a half). */
+async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
+  if (PP.id && !PP.ended) ppReport({ stop: true });
+  PP.ac?.abort();
+  ppTeardown();
+  const online = id.startsWith("stream:"), ctx = findEpContext(id);
+  const what = ctx ? `${ctx.s.title} · ${epCode(ctx.sea, ctx.ep)}` : "the episode";
+  Object.assign(PP, { id, version, ended: false, segs: [], skipped: new Set(), next: null, closing: false, hls: null, triedHls: false });
+  clearInterval(PP.cd); clearInterval(PP.tick);
+  let el = $("#pp");
+  if (!el) { el = document.createElement("div"); el.id = "pp"; document.body.appendChild(el); }
+  /* The next episode reuses the player: the phone let this one play with sound. */
+  let v = ppVideo();
+  if (!v) {
+    el.innerHTML = `<video playsinline preload="auto" controls controlslist="nofullscreen nodownload noremoteplayback" disablepictureinpicture crossorigin="anonymous"></video>
+    <div class="pp-wait"><i class="pp-spin"></i><span></span></div>
+    <div class="pp-top"><button class="ib" data-a="ppclose" aria-label="Close the player">${ico("back")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="ib" data-a="ppfull" aria-label="Fullscreen">${ico("tv")}</button></div>
+    <button class="pp-skip btn pri" data-a="ppskip" hidden></button><div class="pp-end" hidden></div>`;
+    v = ppVideo();
+  } else {
+    v.pause(); v.querySelectorAll("track").forEach((t) => t.remove()); v.removeAttribute("src"); v.load();
+    el.querySelector(".pp-skip").hidden = true; el.querySelector(".pp-end").hidden = true;
+  }
+  el.querySelector(".pp-wait span").textContent = online ? `Finding ${what} online…` : `Loading ${what}…`;
+  el.querySelector(".pp-t b").textContent = ctx?.s.title || ""; el.querySelector(".pp-t span").textContent = ctx ? epCode(ctx.sea, ctx.ep) : "";
+  el.classList.add("on", "ui", "wait");
+  document.body.classList.add("pp-open");
+  if (typeof ovOpen === "function") ovOpen("pp", () => ppClose(true));
+  const ac = PP.ac = new AbortController(), on = (ev, fn, o) => v.addEventListener(ev, fn, { signal: ac.signal, ...o });
+  v.play().catch(() => {}); // still inside the tap: this player may play with sound later
+  ppFull(true);
+  const body = { id, version, from_start: !!fromStart };
+  if (mode) body.mode = mode;
+  if (skipOk !== undefined) body.aniskip = skipOk;
+  const r = await api("/api/phone/play", body).catch(() => ({ error: "Could not reach the hub." }));
+  if (PP.id !== id || ppVideo() !== v) return; // closed or replaced meanwhile
+  if (r.error) { toast(r.error, "err"); return ppClose(false, true); }
+  if (r.note) toast(r.note);
+  el.querySelector(".pp-t b").textContent = r.show; el.querySelector(".pp-t span").textContent = r.label;
+  on("loadedmetadata", () => {
+    el.classList.remove("wait");
+    if (r.start && r.start < v.duration - 3) v.currentTime = r.start;
+    api(`/api/phone/skips?id=${encodeURIComponent(id)}&d=${v.duration}&v=${version}`).then((x) => { if (PP.id === id) PP.segs = x.segments || []; }).catch(() => {});
+  }, { once: true });
+  on("timeupdate", ppSkipCheck);
+  on("pause", () => { if (!v.ended && !PP.closing) ppReport({}); ppShowBar(); });
+  on("play", () => ppShowBar());
+  on("ended", () => { if (!PP.ended) ppReport({ ended: true }); });
+  on("error", () => {
+    if (PP.id !== id || PP.closing) return;
+    if (online && !PP.triedHls) return ppSource(v, r, true); // not what its address said: try it as HLS
+    el.classList.remove("wait");
+    toast(online ? "This phone couldn't play the episode." : "This phone can't play this file.", "err");
+  });
+  el.onclick = (e) => { if (e.target === v) ppShowBar(); };
+  for (const [i, src] of (r.subs || []).entries()) v.insertAdjacentHTML("beforeend", `<track kind="subtitles" srclang="en" label="${i ? "English " + (i + 1) : "English"}" src="${esc(src)}"${i ? "" : " default"}>`);
+  await ppSource(v, r, false);
+  v.play().catch(() => ppShowBar());
+  PP.tick = setInterval(() => { const x = ppVideo(); if (x && !x.paused) ppReport({}); }, 5000);
+}
+/* An online episode often comes as HLS (a playlist of short pieces):
+   hls.js plays it, loaded the first time it's needed. */
+let hlsLoad = null;
+const ppLoadHls = () => hlsLoad || (hlsLoad = new Promise((ok, no) => { const sc = document.createElement("script"); sc.src = "/hls.light.min.js"; sc.onload = ok; sc.onerror = () => { hlsLoad = null; no(); }; document.head.appendChild(sc); }));
+async function ppSource(v, r, forceHls) {
+  /* hls.js wherever it runs (Android): sites dress the pieces up as other
+     files, which it doesn't mind; else the phone's own HLS (iPhone). */
+  if (r.hls || forceHls) {
+    PP.triedHls = true;
+    try { await ppLoadHls(); } catch {}
+    if (window.Hls?.isSupported()) {
+      const h = PP.hls = new Hls({ maxBufferLength: 60 });
+      h.on(Hls.Events.ERROR, (_, d) => { if (d.fatal && PP.hls === h) { toast("This phone couldn't play the episode.", "err"); h.destroy(); PP.hls = null; $("#pp")?.classList.remove("wait"); } });
+      h.loadSource(r.src); h.attachMedia(v);
+      return;
+    }
+  }
+  v.src = r.src;
+}
+function ppTeardown() { if (PP.hls) { PP.hls.destroy(); PP.hls = null; } }
+function ppShowBar() {
+  const el = $("#pp"); if (!el) return;
+  el.classList.add("ui");
+  clearTimeout(PP.hideT);
+  PP.hideT = setTimeout(() => { const v = ppVideo(); if (v && !v.paused) el.classList.remove("ui"); }, 3000);
+}
+function ppFull(auto) {
+  const el = $("#pp");
+  if (!el) return;
+  if (document.fullscreenElement) { if (!auto) document.exitFullscreen().catch(() => {}); return; }
+  el.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {});
+}
+/* The opening/ending ranges, the same as mpv's: auto skips, prompt shows a button. */
+function ppSkipCheck() {
+  const v = ppVideo(), b = $("#pp .pp-skip");
+  if (!v || !b) return;
+  const t = v.currentTime, seg = PP.segs.find((x) => t >= x.start - 1 && t < x.end - 1);
+  if (seg && seg.auto && !PP.skipped.has(seg.start)) { PP.skipped.add(seg.start); return ppDoSkip(seg); }
+  b.hidden = !seg || seg.auto;
+  if (seg) { b.textContent = seg.kind === "op" ? "Skip opening" : seg.finish ? "Next episode" : "Skip ending"; b.dataset.s = seg.start; }
+}
+function ppDoSkip(seg) {
+  const v = ppVideo();
+  if (!v || !seg) return;
+  if (seg.finish) { if (!PP.ended) { v.pause(); ppReport({ ended: true }); } } else v.currentTime = seg.end;
+}
+async function ppReport({ ended = false, stop = false }) {
+  const v = ppVideo(), id = PP.id;
+  if (!v || !id || PP.ended) return;
+  if (ended) PP.ended = true;
+  const body = { id, position: ended ? v.duration || 0 : v.currentTime || 0, duration: v.duration || 0, ended, stop };
+  if (!isFinite(body.duration)) body.duration = 0;
+  const r = await fetch("/api/phone/progress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: stop || ended })
+    .then((x) => x.json()).catch(() => null);
+  if (!r || PP.id !== id) return;
+  if (r.stopped) { toast(r.stopped); return ppClose(false, true); }
+  if (ended) ppEnd(r.next);
+}
+/* The end of an episode: the next file plays here after 5 s, an online one is offered on the PC. */
+function ppEnd(next) {
+  const box = $("#pp .pp-end");
+  if (!box) return;
+  PP.next = next || null;
+  if (!next) { box.hidden = false; box.innerHTML = `<b>That was the last episode</b><div class="actions"><button class="btn pri" data-a="ppclose">Close</button></div>`; return; }
+  const what = `${esc(next.show || "")} · ${esc(next.label || "")}`;
+  let n = 5;
+  const paint = () => { box.innerHTML = `<span class="cap2">Up next${next.source === "online" ? " · online" : ""} in ${n}</span><b>${what}</b><div class="actions"><button class="btn" data-a="ppstay">Stop</button><button class="btn pri" data-a="ppnext">Play now</button></div>`; };
+  box.hidden = false; paint();
+  clearInterval(PP.cd);
+  PP.cd = setInterval(() => { n--; if (n <= 0) { clearInterval(PP.cd); A.ppnext(); } else paint(); }, 1000);
+}
+function ppClose(fromBack, quiet) {
+  const el = $("#pp");
+  if (!el) return;
+  const v = ppVideo();
+  if (!quiet && PP.id && v && !PP.ended) ppReport({ stop: true });
+  PP.closing = true;
+  PP.ac?.abort();
+  clearInterval(PP.tick); clearInterval(PP.cd);
+  ppTeardown();
+  if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+  PP.id = null;
+  el.classList.remove("on", "ui"); el.innerHTML = "";
+  document.body.classList.remove("pp-open");
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  try { screen.orientation?.unlock?.(); } catch {}
+  if (!fromBack && typeof ovClosed === "function") ovClosed("pp");
+  setTimeout(reload, 400);
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); });
+/* where: "pc" or "phone" to skip the phone's "Play where?" (Decision 71). */
+async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   const online = id.startsWith("stream:");
+  if (awayDevice() && where !== "pc") {
+    const w = where || playWhere();
+    if (!w) return openModal({ t: "where", go: (v) => play(id, version, mode, asked, fromStart, skipOk, v) });
+    if (w === "phone") {
+      if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok, "phone"), aniskipAsk());
+      if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok, "phone") });
+      return phonePlay(id, version, fromStart, mode, skipOk);
+    }
+  }
+  if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk, where) });
   if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
   if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
   S.playBusy = true;
@@ -4662,6 +4841,20 @@ const A = {
   nxstop: () => { closeModal(); api("/api/next-prompt/dismiss", {}).catch(() => {}); },
   vpngo: () => { const go = S.modal?.go; closeModal(); go?.(true); },
   vpnno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
+  wherego: (v) => { lsSet("playWhere", v); const go = S.modal?.go; closeModal(); go?.(v); },
+  playwhere: (v) => { lsSet("playWhere", v || null); render(true); },
+  ppclose: () => ppClose(false),
+  ppfull: () => ppFull(false),
+  ppskip: (v, t) => ppDoSkip(PP.segs.find((x) => String(x.start) === t.dataset.s)),
+  ppstay: () => { clearInterval(PP.cd); const b = $("#pp .pp-end"); if (b) b.innerHTML = `<b>Stopped</b><div class="actions"><button class="btn pri" data-a="ppclose">Close</button></div>`; },
+  ppnext: () => {
+    clearInterval(PP.cd); const n = PP.next;
+    if (!n?.id) return;
+    if (n.source !== "online") return phonePlay(n.id, PP.version);
+    /* Online: the same VPN question as any Play; it shows above the player. */
+    if (document.fullscreenElement && S.data?.vpn?.known && !vpnOn() && S.settings?.vpn_warn !== false) document.exitFullscreen().catch(() => {});
+    play(n.id, 0, undefined, undefined, false, undefined, "phone");
+  },
   skpgo: () => { const go = S.modal?.go; closeModal(); go?.(true); },
   skpno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
   folder: (v) => api("/api/open-folder", { show_id: v }).then((r) => { if (!r.ok) toast(r.error || "Could not open the folder"); }).catch(() => toast("Could not open the folder — is the hub running?")),
