@@ -1516,12 +1516,15 @@ body.srch #pal{display:grid}
 }
 
 /* Dropdown list (replaces the browser's own for mouse clicks) */
-#ddm{position:fixed;z-index:80;display:none;flex-direction:column;gap:2px;max-height:320px;overflow-y:auto;padding:6px;border-radius:16px;background:var(--glass-pop);box-shadow:0 20px 50px rgba(0,0,0,.5),var(--edge);backdrop-filter:blur(30px);scrollbar-width:thin}
-#ddm.open{display:flex;animation:popIn .18s var(--ease) both}
-#ddm button{display:flex;align-items:center;gap:10px;height:34px;padding:0 12px;border-radius:10px;font:500 13px var(--ui);color:var(--ink-2);text-align:left;white-space:nowrap}
-#ddm button:hover,#ddm button:focus-visible{background:rgba(255,255,255,.08);color:var(--ink);outline:0}
-#ddm button.on{color:var(--ink);background:var(--pick)}
-#ddm button.on:after{content:"";margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+/* The drop-down list (Library polish round 4, Elias: "overhaul the pop up"): a quiet caption, roomy rows, a check on the picked one. */
+#ddm{position:fixed;z-index:80;display:none;flex-direction:column;gap:1px;min-width:190px;max-height:340px;overflow-y:auto;padding:6px;border-radius:18px;background:rgba(20,21,25,.94);box-shadow:0 24px 60px -12px rgba(0,0,0,.75),0 2px 8px rgba(0,0,0,.3),var(--edge);backdrop-filter:blur(30px) saturate(1.3);scrollbar-width:thin}
+#ddm.open{display:flex;animation:ddIn .2s var(--ease) both}
+@keyframes ddIn{from{opacity:0;transform:translateY(-4px) scale(.96)}}
+#ddm .ddcap{padding:8px 12px 6px;font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+#ddm button{display:flex;align-items:center;gap:14px;height:38px;padding:0 12px;border-radius:12px;font:500 14px var(--ui);color:var(--ink-2);text-align:left;white-space:nowrap;transition:background .15s,color .15s}
+#ddm button:hover,#ddm button:focus-visible{background:rgba(255,255,255,.07);color:var(--ink);outline:0}
+#ddm button.on{color:var(--ink);font-weight:600}
+#ddm button .ico{margin-left:auto;width:16px;height:16px;stroke-width:2.4;color:var(--accent-hi)}
 #ddm button:disabled{opacity:.4}
 /* Episode menu (mockup "4 · downloads + episode menu") */
 #cm{width:270px;min-width:0;padding:8px;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.55),var(--edge)}
@@ -2424,6 +2427,88 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .frow.on small{color:var(--accent-hi)}.frow:disabled{cursor:default}.frow.on .fn{opacity:.6}
 .dialog .fq input{border:0;box-shadow:none;background:none;padding:0;height:auto;border-radius:0}
 .flist{overflow-x:hidden}.flist>*{min-width:0}
+
+/* ───────── Library side list (Elias picked mockup B, 2026-11-06) ─────────
+   PC only: the title, lists, chores and genres move into a sticky side list
+   (like Settings'), the grid gets one quiet line of filters; the ranges hide
+   behind chips. Narrow windows and touch keep the tabs + sheet. */
+.lnav,.lh,.lsolo,.fdb{display:none}
+.fdrop,.fpanel{display:contents}
+#app.nav-in .lnav>*{animation:rise .3s var(--ease) backwards;animation-delay:calc(min(var(--i,0),14)*14ms + .02s)}
+@media (min-width:1001px) and (not (pointer:coarse)){
+  .lib2>.hello,.lib2>.tabs,.lib2 .filters [data-a=rescan]{display:none}
+  .libg{display:grid;grid-template-columns:208px minmax(0,1fr);gap:44px;align-items:start}
+  .lnav{display:flex;flex-direction:column;gap:2px;position:sticky;top:76px;max-height:calc(100vh - 128px);overflow-y:auto;scrollbar-width:none;margin-left:-14px;padding:24px 0 24px}
+  .lnav::-webkit-scrollbar{display:none}
+  .lnav{padding-bottom:48px;-webkit-mask:linear-gradient(#000 calc(100% - 44px),transparent);mask:linear-gradient(#000 calc(100% - 44px),transparent)} /* a soft edge says the list goes on */
+  .lhello{padding:0 14px 4px}
+  .lnav .hd{font:700 56px/.9 var(--display);text-transform:uppercase;margin:0}
+  .lnav .sum{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:12px;padding:0;font:400 11.5px var(--mono);color:var(--mute)}
+  .lnav .sum b{color:var(--ink-2);font-weight:500}.lnav .sum .sep{display:none}
+  .lnav h4{margin:22px 0 6px;padding:0 14px;font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+  .lnav>button{display:flex;align-items:center;gap:8px;flex:none;height:36px;padding:0 14px;border-radius:12px;font:600 14px var(--ui);color:var(--ink-2);text-align:left;transition:background .2s,color .2s}
+  .lnav>button:hover{color:var(--ink);background:rgba(255,255,255,.05)}
+  .lnav>button.on{background:var(--pick);color:var(--ink)}
+  .lnav>button .n{margin-left:auto;font:400 11px var(--mono);color:var(--mute)}.lnav>button.on .n{color:var(--ink-2)}
+  .lnav .att{width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px rgb(var(--warn-rgb)/.7)}
+  .lnav .lrescan{font-weight:500;color:var(--mute)}.lrescan .ico{width:15px;height:15px}.lrescan.busy .ico{animation:spin .8s linear infinite}
+  .lgen{display:flex;flex-wrap:wrap;gap:6px;padding:2px 6px 0 10px}
+  .lmain{min-width:0;padding-top:34px}
+  .lh{display:flex;align-items:baseline;gap:10px;margin:0 8px 0 0;font:650 22px var(--ui);letter-spacing:-.01em;white-space:nowrap}
+  .lh .n{font:400 12px var(--mono);color:var(--mute)}
+  .lsolo{display:block}
+  .lib2 .lmain .filters{padding:0;animation:none} /* rebuilt on every click in the side list: rising each time flickered (Elias) */
+  #app.nav-in .lib2 .lmain .filters{animation:rise .4s var(--ease) both}
+  /* show + sort as plain words, no pill (Elias, 2026-11-06); a soft wash on hover */
+  .lib2 .lmain .filters .fl{height:32px;padding:0 0 0 12px;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:400 11px var(--mono);color:var(--mute);transition:background .2s}
+  .lib2 .lmain .filters .fl:hover,.lib2 .lmain .filters .fl.ddon{background:rgba(255,255,255,.06)} /* lit while hovered or open — not by focus, which the closing click leaves on the select */
+  .lib2 .lmain .filters .fl select{height:32px;padding:0 26px 0 7px;font:600 14px var(--ui);color:var(--ink-2);background-position:right 9px center}
+  .lib2 .lmain .filters .fl:hover select{color:var(--ink)}
+  .lib2 .lmain .filters .fl+.fl{margin-left:-4px}
+  .lib2 .lmain .filters .fl,.lib2 .lmain .filters .fl select,.lib2 .lmain .filters .clr{text-shadow:0 1px 8px rgba(0,0,0,.55)}
+  .lib2 .lmain .filters .fl{color:#a4a4aa}
+  .lib2 .lmain .filters .clr{height:32px;padding:0 12px;border:0;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:600 14px var(--ui)}
+  .lib2 .lmain .filters .clr:hover{background:rgba(255,255,255,.06)}
+  /* the filters as rows of the side list: name left, value right; a range opens in place */
+  .lflt{display:flex;flex-direction:column;gap:2px}
+  .lib2 .lflt .fl,.lflt .fdb{display:flex;align-items:center;justify-content:space-between;width:100%;height:34px;padding:0 0 0 14px;border-radius:12px;background:none;box-shadow:none;backdrop-filter:none;font:500 14px var(--ui);color:var(--ink-2);transition:background .2s,color .2s}
+  .lflt .fdb{padding-right:12px;gap:6px}
+  .lib2 .lflt .fl:hover,.lflt .fdb:hover{background:rgba(255,255,255,.05);color:var(--ink)}
+  .lib2 .lflt .fl select{height:34px;padding:0 30px 0 6px;font:400 12px var(--mono);color:var(--mute);text-align:right;background-position:right 12px center}
+  .lflt .fdb b{margin-left:auto;font:400 12px var(--mono);color:var(--mute)}
+  .lib2 .lflt .fl:has(select.set),.lflt .fdrop.set .fdb,.lflt .fdrop.open .fdb{background:none;color:var(--ink)}
+  .lib2 .lflt .fl select.set,.lflt .fdrop.set .fdb b{color:var(--accent-hi);font-weight:500}
+  .lflt .fdrop.open .fdb{background:rgba(255,255,255,.05)}
+  .lflt .fpanel{position:static;padding:10px 14px 12px;border-radius:0;background:none;box-shadow:none;backdrop-filter:none}
+  .lib2 .lflt .fpanel .rng .rt{width:100%}.lib2 .lflt .fpanel .rng{display:flex;width:100%}.lib2 .lflt .fpanel .rv{display:none}
+  .lflt .fchips{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px 14px;padding-left:10px;border-left:1px solid var(--line)}
+  .lflt .fpanel:has(.fchips){padding:0}
+  .lflt .fopt{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px 0 10px;border-radius:9px;font:500 13.5px var(--ui);color:var(--mute);text-align:left;transition:background .15s,color .15s}
+  .lflt .fopt:hover{background:rgba(255,255,255,.05);color:var(--ink)}
+  .lflt .fopt.on{color:var(--ink);font-weight:600}
+  .lflt .fopt .ico{margin-left:auto;width:14px;height:14px;stroke-width:2.4;color:var(--accent-hi);opacity:0}
+  .lflt .fopt.on .ico{opacity:1}
+  .lflt .fdrop.locked .fdb{cursor:default}.lflt .fdrop.locked .fdb .ico{display:none}
+  .lgen .lmore{color:var(--mute);background:none}.lgen .lmore:hover{color:var(--ink)}
+  .lnav .sum span:nth-of-type(1),.lnav .sum span:nth-of-type(3){display:none} /* the shows count is on All, the folders on Needs a look */
+  .fdrop{display:block;position:relative}
+  .fdb{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 14px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px);font:400 11px var(--mono);color:var(--mute);transition:background .2s}
+  .fdb b{font:600 13px var(--ui);color:var(--ink);font-variant-numeric:tabular-nums}
+  .fdb .ico{width:12px;height:12px;stroke-width:2.6;color:#b0b0b4;transition:transform .2s var(--ease)}
+  .fdb:hover{background:var(--glass-h)}
+  .fdrop.set .fdb,.fdrop.open .fdb{background:var(--pick)}
+  .fdrop.set .fdb,.lib2 .lmain .fl:has(select.set){color:var(--ink-2)} /* the label stays readable on the lighter chip */
+  .fdrop.open .fdb .ico{transform:rotate(180deg)}
+  .fpanel{display:none;position:absolute;top:44px;left:0;z-index:30;padding:16px 18px;border-radius:18px;background:var(--glass-pop);box-shadow:var(--sh-pop);backdrop-filter:blur(24px)}
+  .fdrop.open .fpanel{display:block;animation:popIn .18s var(--ease) both}
+  .lib2 .fpanel .rng{height:auto;padding:0;background:none;box-shadow:none;backdrop-filter:none}
+  .lib2 .fpanel .rng>span{display:none}
+  .lib2 .fpanel .rng .rt{width:220px}
+  .lib2 .lmain .intro{margin-top:14px}
+  .lib2 .lsolo+.mgrid,.lib2 .lsolo+#wall{margin-top:22px}
+  .lib2 .card h3{white-space:normal;align-items:flex-start;line-height:1.28}
+  .lib2 .card .ttl{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal}
+}
 /* Watching on the phone (Decision 71): the phone's own player, full screen. No backdrop blur (it lags phones). */
 #pp{display:none}
 #pp.on{display:block;position:fixed;inset:0;top:0;left:0;width:100vw;height:100vh;height:100dvh;z-index:55;background:#000;color:var(--ink);font-family:var(--ui)}
