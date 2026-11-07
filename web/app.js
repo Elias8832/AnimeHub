@@ -14,7 +14,7 @@ const S = {
   lib: (({ year, score, average, genres, air, ...l }) => ({ tab: null, src: "all", fmt: "all", sort: "updated", group: "all", ...l,
          air: air === "FINISHED_AIRING" ? "FINISHED" : air || "all", genres: Array.isArray(genres) ? genres : [],
          year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all", average: Array.isArray(average) ? average : "all" }))(lsGet("hubLib", {})),
-  histRange: lsGet("histRange", "7d"), histMax: 120,
+  histRange: lsGet("histRange", "7d"), histMax: 120, jTab: lsGet("jTab", "history"),
   match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, opener: null,
   slink: {}, dl: [], loadingEp: null, frDown: {},
 };
@@ -2109,6 +2109,20 @@ function Hist() {
   const heat = `<div class="jcard"><div class="sh"><b>${esc(now.toLocaleDateString(undefined, { month: "long" }))}</b><span>episodes per day</span></div><div class="heat">${["M", "T", "W", "T", "F", "S", "S"].map((x) => `<span class="h">${x}</span>`).join("")}${"<i class=\"pad\"></i>".repeat(lead)}${Array.from({ length: dim }, (_, i) => `<i class="${lvl(perDay[i + 1])}${i + 1 === now.getDate() ? " today" : ""}" title="${i + 1}: ${perDay[i + 1] || 0}"></i>`).join("")}</div>
     <div class="legend">less <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i> more</div></div>`;
   const st = Stats(true); // all time, in the same two columns (no gaps: each column stacks on its own)
+  /* Phones (TODO 177, Elias picked "Tabs"): the numbers as one sideways row, the
+     range's chart, then History or Stats: two short pages, not one long scroll. */
+  if (isPhone()) {
+    const tab = S.jTab === "stats" ? "stats" : "history";
+    const chips = [[`${T.hours.toLocaleString()}<small>h</small>`, "watched"], [T.eps.toLocaleString(), "episodes"], [T.done, "completed"], [T.mean, "mean score"], [`${cur}<small>day${cur === 1 ? "" : "s"}</small>`, `streak · <em>best ${best}</em>`]]
+      .map(([v, k], i) => `<div class="n" style="--i:${i}"><b class="v">${v}</b><span class="k">${k}</span></div>`).join("");
+    const hist = `<div class="jcard tl"><p class="jnote">Played on this PC</p><div class="tlg">${out || `<p class="empty">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"} on this PC.</p>`}</div>
+      ${hev.length > S.histMax ? `<div class="more"><button class="btn sm" data-a="histmore">Show earlier (${hev.length - S.histMax} left)</button></div>` : ""}</div>`;
+    const at = tab === "stats" ? 1 : 0;
+    return `<div class="jr2 phone" style="--p:${at}">${head}<div class="jchips">${chips}</div>
+      <div class="jcard jweek"><div class="sh"><b>${esc(rl[0].toUpperCase() + rl.slice(1))}</b><span>${eps} episode${eps === 1 ? "" : "s"}</span></div>${jBars(bars, "days")}</div>
+      <div class="jtabs"><span class="seg" role="tablist"><i class="jind"></i>${[["history", "History"], ["stats", "Stats"]].map(([k, l]) => `<button role="tab" class="${k === tab ? "on" : ""}" aria-selected="${k === tab}" data-a="jtab" data-v="${k}">${l}</button>`).join("")}</span></div>
+      <div class="jpages"><div class="jtrack"><div class="jpane${at ? "" : " on"}" data-k="history">${hist}</div><div class="jpane${at ? " on" : ""}" data-k="stats">${most + genres + heat + st.main + st.side}</div></div></div></div>`;
+  }
   return `<div class="jr2">${head}
     ${band}
     <div class="jcols"><div class="jmain"><div class="jcard tl"><div class="sh"><b>History</b><span>on this PC</span></div><div class="tlg">${out || `<p class="empty">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"}.</p>`}</div>
@@ -2116,6 +2130,43 @@ function Hist() {
       ${st.main}</div>
       <div class="jside">${most}${genres}${heat}${st.side}</div></div></div>`;
 }
+
+/* The phone Journal's two tabs slide, and follow a sideways finger (Elias):
+   p runs from 0 (History) to 1 (Stats). The tab not shown folds to no height,
+   so the page is as long as the tab you see. */
+function jPaint(p, live) {
+  const r = $("#app .jr2.phone"); if (!r) return;
+  r.style.setProperty("--p", p);
+  r.classList.add("jmove"); r.classList.toggle("jdrag", !!live);
+  r.querySelectorAll(".jtabs button").forEach((b, i) => { const on = Math.round(p) === i; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
+  clearTimeout(jPaint.t);
+  if (!live) jPaint.t = setTimeout(() => { r.classList.remove("jmove"); r.querySelectorAll(".jpane").forEach((x, i) => x.classList.toggle("on", i === Math.round(p))); }, 360);
+}
+/* Past the end (History → right, Stats → left) the swipe is the page's: on to Library or Calendar. */
+let jg = null;
+document.addEventListener("touchstart", (e) => {
+  const t = e.touches[0];
+  jg = e.touches.length === 1 && e.target.closest?.("#app .jr2.phone .jpages") ? { x: t.clientX, y: t.clientY, t: Date.now(), at: S.jTab === "stats" ? 1 : 0, axis: null, dx: 0, f: 0 } : null;
+}, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  const g = jg, t = e.touches[0]; if (!g || !t) return;
+  g.dx = t.clientX - g.x; const dy = t.clientY - g.y;
+  if (!g.axis) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(g.dx)) { jg = null; return; }
+    if (!(Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(dy) * 1.5)) return;
+    if ((g.at === 0 && g.dx > 0) || (g.at === 1 && g.dx < 0)) { jg = null; return; }
+    g.axis = "x"; g.x0 = t.clientX;
+  }
+  e.preventDefault();
+  g.f = Math.max(0, Math.min(1, g.at - (t.clientX - g.x0) / innerWidth));
+  jPaint(g.f, true);
+}, { passive: false });
+document.addEventListener("touchend", () => {
+  const g = jg; jg = null;
+  if (!g?.axis) return;
+  const go = Math.abs(g.f - g.at) > 0.22 || (Date.now() - g.t < 250 && Math.abs(g.dx) > 40);
+  A.jtab((go ? 1 - g.at : g.at) ? "stats" : "history");
+}, { passive: true });
 
 /* ---------- stats ---------- */
 function statsEntries() {
@@ -3258,8 +3309,37 @@ function CalDesk() {
     <div class="sum airsum">${sum}</div>
     ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
 }
+/* Phones (TODO 177, Elias picked "Agenda"): the next seven days as a strip
+   (a dot: something airs; tap one to jump to it), then day by day what airs
+   in the next four weeks, from AniList's schedule, with time and countdown. */
+function CalPhone() {
+  const now = Date.now(), today = new Date(now), tk = airKey(today);
+  const c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: tk, scope: "all", mode: lsGet("airMode", "month") });
+  if (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3)) loadSched();
+  const days = calEvents(), day = (i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+  const end = airKey(day(28)), wk = airKey(day(7));
+  const keys = [...days.keys()].filter((k) => k >= tk && k < end).sort();
+  if (!keys.length) { const later = [...days.keys()].filter((k) => k >= end).sort()[0]; if (later) keys.push(later); }
+  const week = keys.filter((k) => k < wk).flatMap((k) => days.get(k)).filter((x) => !x.start).length;
+  const strip = Array.from({ length: 7 }, (_, i) => { const d = day(i), k = airKey(d), n = (days.get(k) || []).length;
+    return `<button class="agd${i ? "" : " is-today"}${n ? " has" : ""}" style="--i:${i}" data-a="agjump" data-v="${k}" aria-label="${esc(d.toDateString())}: ${n} episode${n === 1 ? "" : "s"}"><span>${DAYS[(d.getDay() + 6) % 7].slice(0, 2)}</span><b>${d.getDate()}</b><i></i></button>`; }).join("");
+  const name = (k) => { const d = new Date(`${k}T00:00:00`), n = Math.round((d - new Date(`${tk}T00:00:00`)) / 864e5);
+    return [n === 0 ? "Today" : n === 1 ? "Tomorrow" : n < 7 ? d.toLocaleDateString(undefined, { weekday: "long" }) : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }),
+      n < 7 ? d.toLocaleDateString(undefined, n < 2 ? { weekday: "short", day: "numeric", month: "short" } : { day: "numeric", month: "short" }) : ""]; };
+  const row = (x, i) => { const sec = (x.t - now) / 1000, t = airTag(x), seen = airSeen(x);
+    const when = x.start ? (sec > 0 ? "in " + fmtIn(sec) : "today") : sec > 0 ? "in " + fmtIn(sec) : seen ? "seen" : "out";
+    return `<button class="agr${seen ? " is-seen" : ""}" style="--i:${Math.min(i, 10)}" data-a="entry" data-v="${esc(x.e.id)}"><i class="agp"${airStyle(x)}></i><span class="agx"><b>${esc(x.e.title)}</b><small>${x.start ? "Starts" : `Episode ${esc(x.ep)}${x.e.episodes ? " of " + x.e.episodes : ""} · ${airTime(x)}`}</small>${t ? `<u class="${t === "Finale" ? "is-end" : ""}">${t}</u>` : ""}</span><span class="agc${sec > 0 ? "" : " is-out"}">${esc(when)}</span></button>`; };
+  let n = 0;
+  const list = keys.map((k) => { const [a, b] = name(k);
+    return `<section class="agday" id="ag-${k}"><div class="dh"><b>${esc(a)}</b>${b ? `<span>${esc(b)}</span>` : ""}</div>${days.get(k).map((x) => row(x, n++)).join("")}</section>`; }).join("");
+  const scope = ["all", "watching"].map((v) => `<button class="${c.scope === v ? "on" : ""}" aria-pressed="${c.scope === v}" data-a="airscope" data-v="${v}">${v === "all" ? "All lists" : "Watching"}</button>`).join("");
+  return `<div class="wk2 agw"><div class="hello"><h1 class="hd">Calendar</h1><div class="sum"><span><b>${week}</b> episode${week === 1 ? "" : "s"} this week</span>${S.sched?.state === "loading" ? '<span class="mut"><i class="spin"></i> getting the schedule</span>' : ""}</div>
+    <span class="seg" role="group" aria-label="Which shows">${scope}</span></div>
+    <div class="agstrip">${strip}</div>${list || `<p class="empty">Nothing airs in the next four weeks${c.scope === "watching" ? " on Watching" : ""}.</p>`}</div>`;
+}
 function Week() {
   if (!isPhone() && mq("(min-width:1001px)") && aniMode()) return CalDesk();
+  if (isPhone() && aniMode()) return CalPhone();
   const now = Date.now(), list = airingList();
   const head = `<div class="hello"><h1 class="hd">Calendar</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
   /* Logged out: one clear way in, not two lines that contradict each other. */
@@ -3360,9 +3440,10 @@ function srHTMLTouch() {
     const local = srLocal(ql, 6);
     const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
     const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, k })).filter((y) => !have.has(y.x.id)).sort((a, b) => a.r - b.r).slice(0, 9);
-    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s);
-      return mi(`data-a="open" data-v="${esc(s.id)}"`, "srrow", `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>${ico("chevr")}`); }).join("");
-    if (remote.length) h += sec("On AniList") + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+    /* Your own shows as wide cards on their banner (TODO 177, Elias picked B): they're what you're most likely after. */
+    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s), art = s.banner || s.poster;
+      return mi(`data-a="open" data-v="${esc(s.id)}"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}`, "srwide", `<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>`); }).join("");
+    if (remote.length) h += sec(`On AniList <small>${remote.length}</small>`) + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
       return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
     const sets = srSets(ql, 4);
     if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
@@ -3473,7 +3554,7 @@ function paintRemote() {
   }
   const ctx = findEpContext(now.episode_id), s = ctx?.s, l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
   const hasNext = !!now.next && (now.next.source === "local" || now.next.source === "online");
-  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster]);
+  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, S.rmtRow]);
   if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
     rmtSig = sig;
     document.body.classList.add("rmt-on");
@@ -3483,24 +3564,29 @@ function paintRemote() {
     const thumb = s?.poster ? `<img alt="" src="${esc(s.poster)}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
     const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
     const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
-    const opts = [
-      tr.audio.length > 1 ? `<div class="ropt"><span class="rk">audio</span>${seg("audio", tr.audio.map((t, i) => [t.id, trackName(t, i), t.selected]), "Audio")}</div>` : "",
-      tr.sub.length ? `<div class="ropt"><span class="rk">subtitles</span>${seg("sub", [["no", "Off", !subOn], ...tr.sub.map((t, i) => [t.id, trackName(t, i), t.selected])], "Subtitles")}</div>` : "",
-      subOn ? `<div class="ropt"><span class="rk">subtitle timing · this episode</span><div class="rstep"><button class="btn ic" data-a="rmtdelay" data-v="-0.1" aria-label="Subtitles 0.1 s earlier">${ico("minus")}</button><b>${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s</b><button class="btn ic" data-a="rmtdelay" data-v="0.1" aria-label="Subtitles 0.1 s later">${ico("plus")}</button>${delay ? '<button class="btn" data-a="rmtdelay" data-v="0">Reset</button>' : `<span class="rk">${"earlier ← → later"}</span>`}</div></div>` : "",
-      typeof l.speed === "number" ? `<div class="ropt"><span class="rk">speed</span>${seg("speed", SPEEDS.map((v) => [v, v + "×", Math.abs(v - speed) < 0.01]), "Speed")}</div>` : "",
-      typeof l.volume === "number" ? `<div class="ropt"><span class="rk">volume</span><label class="rvol">${ico("vol")}<input class="rrange" type="range" min="0" max="130" step="5" value="${Math.round(l.volume)}" data-a="rmtvol" aria-label="Volume"><span>${Math.round(l.volume)}%</span></label></div>` : "",
+    /* The remote (TODO 177, Elias picked B): the show's art fills the top, big −10 · Play · +10
+       under the timeline, the choices as rows that open in place, episodes as a sideways row. */
+    const name = (l2, none) => { const i = l2.findIndex((t) => t.selected); return i < 0 ? none : trackName(l2[i], i); };
+    const row = (k, label, val, body) => `<div class="rrow${S.rmtRow === k ? " on" : ""}"><button class="rrh" data-a="rmtrow" data-v="${k}" aria-expanded="${S.rmtRow === k}"><span>${label}</span><em>${esc(val)}</em>${ico("chevr")}</button>${S.rmtRow === k ? `<div class="rrb">${body}</div>` : ""}</div>`;
+    const rows = [
+      tr.audio.length > 1 ? row("audio", "Audio", name(tr.audio, ""), seg("audio", tr.audio.map((t, i) => [t.id, trackName(t, i), t.selected]), "Audio")) : "",
+      tr.sub.length ? row("sub", "Subtitles", subOn ? name(tr.sub, "Off") : "Off", seg("sub", [["no", "Off", !subOn], ...tr.sub.map((t, i) => [t.id, trackName(t, i), t.selected])], "Subtitles")) : "",
+      subOn ? row("delay", "Subtitle timing", `${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s`, `<div class="rstep"><button class="btn ic" data-a="rmtdelay" data-v="-0.1" aria-label="Subtitles 0.1 s earlier">${ico("minus")}</button><b>${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s</b><button class="btn ic" data-a="rmtdelay" data-v="0.1" aria-label="Subtitles 0.1 s later">${ico("plus")}</button>${delay ? '<button class="btn" data-a="rmtdelay" data-v="0">Reset</button>' : '<span class="rk">this episode</span>'}</div>`) : "",
+      typeof l.speed === "number" ? row("speed", "Speed", speed + "×", seg("speed", SPEEDS.map((v) => [v, v + "×", Math.abs(v - speed) < 0.01]), "Speed")) : "",
+      typeof l.volume === "number" ? `<div class="rrow"><div class="rrh rvolrow"><span>Volume</span><label class="rvol"><input class="rrange" type="range" min="0" max="130" step="5" value="${Math.round(l.volume)}" data-a="rmtvol" aria-label="Volume"><span>${Math.round(l.volume)}%</span></label></div></div>` : "",
+      `<div class="rrow"><div class="rrh"><span>Stop after this episode<small>${l.stop_after ? `mpv closes when ${esc(epNo)} ends` : "else the next one starts by itself"}</small></span><button class="switch" role="switch" aria-checked="${!!l.stop_after}" aria-label="Stop after this episode" data-a="rmtsleep"></button></div></div>`,
     ].join("");
     const segBand = (l.segments || []).filter(() => l.duration).map((x) => `<i class="rsegb" style="left:${(x.start / l.duration) * 100}%;width:${((x.end - x.start) / l.duration) * 100}%"></i>`).join("");
-    const view = `<div class="sp2 rv">
-        ${grab}<div class="rtop"><button class="backbtn" data-a="rmtclose">${ico("chevd")}Close</button><span class="rpc"><i class="led"></i>${now.loading ? "starting on the PC…" : "playing on the PC"}</span></div>
-        <div class="rhero"><div class="meta"><i class="mdot"></i><span>${esc(now.label)}${ctx?.ep && (ctx.ep.duration || ctx.ep.length) ? ` · ${minsOf(ctx.ep.duration || ctx.ep.length)} min` : ""}</span></div>
-          <h1>${esc(s?.title || now.show)}</h1>${ctx ? `<p class="eptitle">${esc(epTitle(s, ctx.sea, ctx.ep) || "Episode " + ctx.ep.number)}</p>` : ""}</div>
+    const art = s?.poster || s?.banner;
+    const view = `<div class="sp2 rv">${art ? `<div class="rart" style="background-image:${esc(cssUrl(art))}"></div>` : ""}
+        ${grab}<div class="rtop"><button class="backbtn" data-a="rmtclose" aria-label="Close">${ico("chevd")}<span>Close</span></button><span class="rpc"><i class="led"></i>${now.loading ? "starting on the PC…" : "playing on the PC"}</span></div>
+        <div class="rhero"><h1>${esc(s?.title || now.show)}</h1><p class="eptitle">${esc([epNo, ctx ? epTitle(s, ctx.sea, ctx.ep) || "Episode " + ctx.ep.number : "", ctx?.ep && (ctx.ep.duration || ctx.ep.length) ? minsOf(ctx.ep.duration || ctx.ep.length) + " min" : ""].filter(Boolean).join(" · "))}</p></div>
         <div class="rseek"><div class="rtrack">${segBand}<input class="rrange" type="range" min="0" max="${Math.max(1, Math.round(l.duration || 0))}" step="1" value="${Math.round(livePos())}" data-a="rmtseek" aria-label="Position" ${l.duration && !now.loading ? "" : "disabled"}></div>
           <div class="rtimes"><span class="rcur">${tclock(livePos())}</span><span class="rmid"></span><span class="rleft">-${tclock((l.duration || 0) - livePos())}</span></div></div>
-        <div class="rskip">${skip("big")}</div>
-        <div class="cta rctl"><button class="btn big ic" data-a="rmt" data-v="stop" aria-label="Stop">${ico("stop")}</button><button class="btn big ic" data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>${ico("rew")}</button>${pp("big rpp")}<button class="btn big ic" data-a="rmt" data-v="fwd" aria-label="Forward 10 seconds" ${busy}>${ico("fwd")}</button><button class="btn big ic" data-a="rmt" data-v="next" aria-label="Next episode" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}</button></div>
-        ${opts ? `<div class="ropts">${opts}</div>` : ""}
-        <div class="rsleep"><div><b>Stop after this episode</b><p>${l.stop_after ? `mpv closes when ${esc(epNo)} ends. No auto-play.` : "Otherwise the next episode starts by itself."}</p></div><button class="switch" role="switch" aria-checked="${!!l.stop_after}" aria-label="Stop after this episode" data-a="rmtsleep"></button></div>
+        <div class="rctl"><button class="btn ic rj" data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>−10</button>${pp("rpp")}<button class="btn ic rj" data-a="rmt" data-v="fwd" aria-label="Forward 10 seconds" ${busy}>+10</button></div>
+        <div class="rskip">${skip("rsk")}</div>
+        <div class="rmore"><button class="btn" data-a="rmt" data-v="stop">${ico("stop")}Stop</button><button class="btn" data-a="rmt" data-v="next" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}Next episode</button></div>
+        <div class="rlist">${rows}</div>
         ${rmtEpisodes(ctx, now.episode_id)}
       </div>`;
     const barIn = `${thumb}<div class="rt"><b>${esc(s?.title || now.show)}</b><span><i class="led"></i>${now.loading ? "starting on the PC…" : esc(epNo)}<span class="rbt"></span></span></div>${skip("rbskip")}${pp("rp")}<i class="rprog"><i></i></i>`;
@@ -3517,7 +3603,7 @@ function paintRemote() {
       vw.innerHTML = view;
       for (const x of vw.querySelectorAll("[data-bg]")) { if (x.dataset.bg) { x.style.backgroundImage = cssUrl(x.dataset.bg); x.style.backgroundPosition = x.dataset.bp || "50% 50%"; } }
       const st = vw.querySelector(".eps.strip");
-      if (st) st.scrollLeft = fresh || sl == null ? Math.max(0, Number(st.dataset.at) * 234 - 40) : sl;
+      if (st) st.scrollLeft = fresh || sl == null ? Math.max(0, (st.querySelector(".ep.resume")?.offsetLeft || 0) - 16) : sl;
     }
     if (fk) [...el.querySelectorAll("[data-a]")].find((x) => x.dataset.a === fk[0] && x.dataset.v === fk[1] && x.dataset.k === fk[2])?.focus({ preventScroll: true });
     document.body.classList.toggle("rmt-open", !!S.rmtOpen);
@@ -4976,6 +5062,13 @@ const A = {
   airtoday: () => { const d = new Date(); Object.assign(S.airCal, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) }); render(true); },
   airday: (v) => { S.airCal.sel = v; render(true); },
   airscope: (v) => { S.airCal.scope = v; render(true); },
+  /* The phone's day strip: to that day, or the next one something airs. */
+  agjump: (v) => {
+    const days = [...document.querySelectorAll("#app .agday")], el = days.find((x) => x.id.slice(3) >= v);
+    if (!el) return toast("Nothing airs from that day on");
+    if (el.id.slice(3) !== v) toast("Nothing airs that day");
+    el.scrollIntoView({ behavior: mq("(prefers-reduced-motion:reduce)") ? "auto" : "smooth", block: "start" });
+  },
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   fpick: (v, t) => {
@@ -5020,6 +5113,13 @@ const A = {
   },
   tab: (v) => { S.lib.tab = v; saveLib(); S.fadeNext = true; render(); },
   filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") return render(); paintWall(); syncFilters(); },
+  jtab: (v) => {
+    const was = S.jTab; S.jTab = v; lsSet("jTab", v);
+    if (!$("#app .jr2.phone .jpages")) return render(true);
+    jPaint(v === "stats" ? 1 : 0);
+    const tb = $("#app .jr2.phone .jtabs"); // switched while far down: back to the tabs, the other tab starts at its top
+    if (was !== v && tb && tb.getBoundingClientRect().top < 0) scrollTo({ top: scrollY + tb.getBoundingClientRect().top - 70, behavior: "smooth" });
+  },
   hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(); },
   histmore: () => { S.histMax += 200; render(); },
   play: (v) => play(v), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
@@ -5349,6 +5449,7 @@ const A = {
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
   rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },
   rmtclose: () => { S.rmtOpen = false; paintRemote(); paintCanvas(); ovClosed("rmt"); },
+  rmtrow: (v) => { S.rmtRow = S.rmtRow === v ? null : v; paintRemote(); },
   rmtsleep: () => remoteSend("stop_after", !S.live?.stop_after),
   rmtdelay: (v) => remoteSend("sub_delay", Number(v) === 0 ? 0 : Math.round(((S.live?.sub_delay || 0) + Number(v)) * 10) / 10),
   rmt: (v) => v === "back" ? remoteSend("seek", -10) : v === "fwd" ? remoteSend("seek", 10) : remoteSend(v),
@@ -6057,7 +6158,7 @@ document.addEventListener("touchstart", (e) => {
   } else if (t.closest?.(".rbar") && !t.closest("button")) pull = { kind: "rbar", y };
   else if (isPhone() && inApp && x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture
     const ptrOK = scrollY <= 0 && ["home", "library", "history", "stats", "week"].includes(S.view) && !ptrBusy;
-    if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
+    if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK, jp: !!t.closest(".jr2.phone .jpages") };
     else if (["show", "fr", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
   }
 }, { passive: true });
@@ -6087,6 +6188,7 @@ document.addEventListener("touchmove", (e) => {
     if (!p.side) {
       if (p.ptrOK && dy > 10 && dy > Math.abs(dx) && scrollY <= 0) { p.kind = "ptr"; p.y0 = y; e.preventDefault(); return; }
       if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pull = null; return; }
+      if (p.jp && Math.abs(dx) > 12 && (S.jTab === "stats") === dx > 0) { pull = null; return; } // the Journal's tabs take it
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
       else return;
     }

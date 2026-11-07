@@ -133,7 +133,7 @@ class TabSlideAndSearch(unittest.TestCase):
         self.assertIn('sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";', APP)
         for a in ("srshow:", "srclr:", "srlist:", "srgo:"):
             self.assertIn(a, APP)
-        self.assertIn('#pal .pclose:after{content:"Cancel"', CSS)
+        self.assertIn('#pal .pclose:after{content:"";display:block;width:18px', CSS)  # a round close button (round 4, Search B)
 
     def test_keyboard_does_not_push_the_page(self):
         self.assertIn("interactive-widget=resizes-content", HTML)
@@ -247,7 +247,7 @@ class PhonePolish(unittest.TestCase):
     def test_small_fixes(self):
         self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top
         self.assertIn(".match.mc .guess.none{display:block", CSS)
-        self.assertIn(".ropt .seg{display:flex;flex-wrap:wrap", CSS)
+        self.assertIn(".rview .rrb .seg{display:flex;flex-wrap:wrap", CSS)  # remote choices wrap, not run off the edge
         self.assertIn("#pal .plist{-webkit-mask:linear-gradient", CSS)
 
     def test_home_a_hero_and_rails(self):
@@ -345,6 +345,61 @@ class PhonePlayerDeck(unittest.TestCase):
         self.assertIn("#pp .pp-seek::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:transparent}", CSS)
         self.assertIn("z-index:0;pointer-events:none;border-radius:2px;background:rgba(255,255,255,.18)}", CSS)
         self.assertIn('r.parentElement.style.setProperty("--p"', APP)
+
+
+
+class PhoneRound3(unittest.TestCase):
+    """TODO 177 round 3: Elias picked Calendar A (agenda), Journal A (tabs), Settings B (inline rows)."""
+
+    def test_calendar_is_an_agenda_on_phones(self):
+        self.assertIn("if (isPhone() && aniMode()) return CalPhone();", APP)
+        self.assertIn('<div class="agstrip">', APP)
+        self.assertIn('data-a="agjump"', APP)
+        self.assertIn("agjump: (v) =>", APP)
+        self.assertIn(".agday{scroll-margin-top:76px}", CSS)
+
+    def test_the_tablet_timeline_is_not_squeezed_by_the_progress_bar(self):
+        # the download bar's .tline (6 px tall) hid the calendar's airing list
+        self.assertIn("span.tline{flex:1;height:6px;", CSS)
+        self.assertNotIn("\n.tline{flex:1;height:6px;", CSS)
+
+    def test_journal_has_history_and_stats_tabs_on_phones(self):
+        self.assertIn('jTab: lsGet("jTab", "history")', APP)
+        self.assertIn('data-a="jtab"', APP)
+        self.assertIn('<div class="jchips">', APP)
+        self.assertIn("jtab: (v) =>", APP)
+
+    def test_journal_tabs_follow_a_sideways_finger(self):
+        self.assertIn("function jPaint(p, live)", APP)
+        self.assertIn('<div class="jpages"><div class="jtrack">', APP)
+        self.assertIn("jp: !!t.closest(\".jr2.phone .jpages\")", APP)  # the page swipe yields while the tabs can move
+        self.assertIn(".jr2.phone:not(.jmove) .jpane:not(.on){height:0;overflow:hidden}", CSS)
+
+    def test_settings_rows_put_the_choice_beside_the_name(self):
+        self.assertIn(".set2:not(.phone) .srow>div:first-child{display:contents}", CSS)
+        self.assertIn(".set2:not(.phone) .srow{flex-direction:row!important;flex-wrap:wrap;", CSS)
+
+
+
+class PhoneRound4(unittest.TestCase):
+    """TODO 177 round 4: Elias picked Search B (field at the thumb, tidied) and Remote B (big controls on the art)."""
+
+    def test_search_library_hits_are_wide_cards(self):
+        self.assertIn('"srwide", `<span class="tx"><b>${hl(s.title, qq)}</b>', APP)
+        self.assertIn("sec(`On AniList <small>${remote.length}</small>`)", APP)
+        self.assertIn('.pal2.touch .mi.srwide:before{content:"";display:block;position:absolute;inset:0;width:auto;', CSS)  # beats the PC list's 3 px selection bar
+
+    def test_search_field_is_a_dock_pill(self):
+        self.assertIn("#pal .pin{height:62px;padding:0 9px 0 18px;gap:12px;border-radius:26px;background:rgba(28,29,34,.96)", CSS)
+        self.assertNotIn('content:"Cancel"', CSS)
+
+    def test_remote_has_art_big_controls_and_rows(self):
+        self.assertIn('<div class="rart" style="background-image:', APP)
+        self.assertIn('data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>−10</button>', APP)
+        self.assertIn("rmtrow: (v) =>", APP)
+        self.assertIn("S.rmtRow]);", APP)  # opening a row redraws the remote
+        self.assertNotIn("rsleep", APP)
+        self.assertIn(".sp2.rv .eps.strip{flex-direction:row", CSS.replace(".sp2.frpage .eps.strip,", ""))
 
 
 if __name__ == "__main__":
