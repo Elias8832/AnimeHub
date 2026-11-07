@@ -84,7 +84,7 @@ class Frontend(unittest.TestCase):
                          ["RELEASING", "FINISHED", "NOT_YET_RELEASED", "HIATUS", "CANCELLED"])
         for air, ids in (("FINISHED", [2]), ("HIATUS", [3]), ("CANCELLED", [4])):
             self.assertEqual(self.filtered(air=air), ids, air)
-        self.assertIn('fsel("air", "airing", [["all", "any"], ...Object.entries(AIR)])', APP)
+        self.assertIn('air: [["all", "any"], ...Object.entries(AIR)] });', APP)
 
     def test_season_tab_counts_every_episode(self):
         # TODO 7: the tab shows the entry's size, not what's left to watch
@@ -105,14 +105,15 @@ class Frontend(unittest.TestCase):
 
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
-        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["classic", "tabs", "line", "capsule", "island"],
+        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["tabs", "classic", "line", "capsule", "island"],
                                                     "fan": ["fan", "wide", "cascade", "peek"]})  # Playlist stacks (Decision 64)
         self.assertEqual(run_js("return lookGet('fan');"), "fan")
         self.assertEqual(run_js("return lookGet('fan');", {"fan": "peek"}), "peek")
         for fan in ("fan", "wide", "cascade", "peek"):
             self.assertIn('[data-plfan="%s"] .plbox:hover' % fan, CSS)
+        self.assertEqual(run_js("return lookGet('bar');"), "tabs")  # Tabs is the default top bar
         self.assertEqual(run_js("return lookGet('bar');", {"bar": "island"}), "island")  # Settings → Appearance → Top bar
-        self.assertIn('d.dataset.bar=g("bar")||"classic";', HTML)
+        self.assertIn('d.dataset.bar=g("bar")||"tabs";', HTML)
         for bar in ("tabs", "line", "capsule", "island"):
             self.assertIn(":root[data-bar=%s]" % bar, CSS)
         self.assertEqual(run_js("return lookGet('motion');", {"motion": "calm"}), "calm")
@@ -300,6 +301,42 @@ class Library(unittest.TestCase):
         # The background waits for a rest on the poster; the accent follows at once.
         self.assertIn('accentFrom(art.blur, art.color);', APP)
         self.assertIn('}, 450) };', APP)
+
+
+class LibrarySideList(unittest.TestCase):
+    """Library polish (Elias picked mockup B, 2026-11-06): on a PC the lists,
+    chores and genres sit in a side list; ranges hide behind chips; narrow
+    windows and touch keep the tabs and the filter sheet."""
+    def test_side_list(self):
+        self.assertIn('<div class="libg">${isPhone() ? "" : libRail(m, sum)}<div class="lmain">', APP)
+        self.assertIn('head("On this PC")', APP)
+        self.assertIn('data-a="rescan" title="Look for new files and fetch missing metadata">', APP)
+        self.assertIn('${fdrop("year", cap("year"), frng("year"', APP)
+        # the filters sit in the side list on a PC, the 8 biggest genres first
+        self.assertIn('${rail ? "" : filterCtl()}', APP)
+        self.assertIn('head("Filter") + `<div class="lflt"', APP)
+        self.assertIn('const TOP = 8, show = S.genOpen', APP)
+        # a genre picked in one tray shows as picked in the other
+        self.assertIn('for (const b of $$(`.gchip[data-v="${CSS.escape(v)}"]`))', APP)
+        block = CSS[CSS.index("/* ───────── Library side list"):]
+        self.assertIn("@media (min-width:1001px) and (not (pointer:coarse)){", block)
+        # show/sort stay lit while their list is open, not by the focus a closing click leaves (Elias, 2026-11-07)
+        self.assertIn('sel.closest(".fl")?.classList.add("ddon");', APP)
+        self.assertIn('ddSel.closest(".fl")?.classList.toggle("ddon", false);', APP)
+        self.assertIn(".lib2 .lmain .filters .fl.ddon{background:rgba(255,255,255,.06)}", block)
+        self.assertNotIn(".lmain .filters .fl:focus-within", block)
+        # a click in the side list neither replays the heading's rise nor scrolls the list back up
+        self.assertIn(".lib2 .lmain .filters{padding:0;animation:none}", block)
+        self.assertIn("#app.nav-in .lib2 .lmain .filters{animation:rise", block)
+        self.assertIn("if (railTop) { const r = $(\".lnav\"); if (r) r.scrollTop = railTop; }", APP)
+        # source / format / airing open in place as chips in the side list, no popup
+        self.assertIn("const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel;", APP)
+        self.assertIn('data-a="fpick" data-k="${k}"', APP)
+        self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills
+        # the drop-down list: a caption, a check on the picked one, hung from a right-hand chip's right edge
+        self.assertIn('`<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>`', APP)
+        self.assertIn('if (right) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px";', APP)
+        self.assertIn(".fdrop,.fpanel{display:contents}", block)  # the phone sheet shows the sliders themselves
 
 
 class Journal(unittest.TestCase):
