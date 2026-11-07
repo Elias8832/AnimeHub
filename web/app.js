@@ -60,6 +60,8 @@ const ICONS = {
   chevd: ['<path d="m6 9 6 6 6-6"/>'],
   home: ['<path d="M4 11 12 4l8 7v8.5a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>'],
   grid: ['<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'],
+  filter: ['<path d="M4 6.5h16M7 12h10M10 17.5h4"/>'],
+  sort: ['<path d="M7.5 4.5v15m-3.5-3.5 3.5 3.5 3.5-3.5M16.5 19.5v-15m-3.5 3.5 3.5-3.5 3.5 3.5"/>'],
   sliders: ['<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'],
   cal: ['<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4m7-4v4"/>'],
 };
@@ -1061,12 +1063,18 @@ function Lib() {
       ${m.unclear.length ? `<p class="intro">Episode numbers to check: these file names don't say which episode they are, so they're numbered in file order. Fix any that are wrong, then save. Your files aren't renamed.</p><div class="mgrid">${m.unclear.map(numUI).join("")}</div>` : ""}`;
   } else {
     const rail = (railNow = isRail());
-    const filters = (m.cold || isUn) ? "" : `<div class="filters">${lhead}
+    /* Phones (TODO 177): the sheet lists the filters as rows, like the PC's side
+       list; sort sits on the line above the grid. */
+    const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
+    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
+      <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
-    const fltb = filters ? `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>` : "";
+    const nf = [!srcLocked() && S.lib.src !== "all", S.lib.fmt !== "all", S.lib.air !== "all", ...["year", "score", "average"].map((k) => Array.isArray(S.lib[k])), S.lib.group !== "all"].filter(Boolean).length;
+    const fltb = !filters ? "" : ph ? `<div class="lsort"><label class="srt">${ico("sort")}<select data-a="filt" data-k="sort" aria-label="Sort">${[["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]].map(([v, l]) => `<option value="${v}" ${v === S.lib.sort ? "selected" : ""}>${l}</option>`).join("")}</select></label><span class="fill"></span>
+      <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
   const solo = (isPl || isMatch || isUn || m.cold) && lhead ? `<div class="lsolo">${lhead}</div>` : "";
@@ -1504,18 +1512,19 @@ function Fran() {
   const note = e.slots.length ? (!e.slots.some((x) => x.local) && !ready ? '<p class="sub eps-note">Install ani-cli to watch these online.</p>'
       : ready && !e.online.available && e.slots.some((x) => !x.local) ? `<p class="sub eps-note">Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button></p>` : "")
     : `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : e.status === "NOT_YET_RELEASED" ? `Not out yet${airing ? " — " + esc(airing) : ""}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
-  const framed = !(e.banner || p.banner) || lookGet("art") !== "full";
+  const framed = isPhone() || !(e.banner || p.banner) || lookGet("art") !== "full"; // phones: poster beside the title (TODO 177, Show C)
   const title = e.title || p.title;
-  const dlBtn = missing.length ? `<button class="gb" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}<span>${esc(dlLabel)}</span>${vpnTag}</button>` : "";
-  const bulkBtn = seen.length ? `<button class="gb" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}<span>${allW ? (movie ? "Unwatch" : "Unwatch all") : movie ? "Mark watched" : "Mark all watched"}</span></button>` : "";
+  const ph = isPhone(); // phones show these as a row of icons with short words (TODO 177)
+  const dlBtn = missing.length ? `<button class="gb" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}<span>${esc(ph ? "Download" : dlLabel)}</span>${vpnTag}</button>` : "";
+  const bulkBtn = seen.length ? `<button class="gb" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}<span>${allW ? (movie || ph ? "Unwatch" : "Unwatch all") : movie ? "Mark watched" : ph ? "All watched" : "Mark all watched"}</span></button>` : "";
   return `<div class="sp2 frpage">${backBtn()}
   <div class="fold">
   <div class="hero${framed ? " framed" : ""}"><div class="hl2">
     <div class="meta">${e.format_label ? `<span class="fmt">${esc(e.format_label)}</span>` : ""}<span>${esc(facts.join(" · "))}</span>${e.id ? `<span class="sep">·</span><a class="alk" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}" title="Open on AniList">AniList${e.score ? " " + e.score : ""}</a>` : ""}<span class="live-t" id="airline">${esc(airing)}</span>${playing}</div>
     <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
-    ${e.overview ? `<p class="desc">${esc(e.overview)}</p>` : ""}
+    ${e.overview ? `<p class="desc" data-a="descx">${esc(e.overview)}</p>` : ""}
     <div class="stats2" id="entrystats"></div>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}<span class="lbl">More</span></button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
   <div class="eps-head"><div class="tabs2">${tabs || `<h2>${esc(byOrder && e.label !== title ? e.label : movie ? "Movie" : "Episodes")}</h2>`}</div><span class="srcl">${esc(srcLine)}</span>${byOrder ? `<button class="link-btn tord" data-a="frorder">watch order ${ico("chevd")}</button>` : ""}<div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
@@ -1616,17 +1625,9 @@ function frMore(x0, y0) {
     ${folders.map((l) => `<button class="mi" data-a="pinopen" data-s="${esc(l.show_id)}" data-k="${esc(l.season)}" data-l="${esc(l.folder + " · " + l.season_label)}">${ico("tv")}Wrong season? <small>${esc(l.season_label)}</small></button>`).join("")}
     ${ready && e.online.linked ? `<button class="mi" data-a="srcfix">${ico("search")}Wrong online episodes?</button>` : ""}
     <a class="mi" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}">${ico("ext")}Open on AniList</a>`;
-  /* Phones (S2): the page shows only Play; its other buttons (download,
-     mark all watched, edit entry) open from here, first. */
-  if (isPhone()) {
-    const cap = m.querySelector(".cap");
-    for (const b of [...$$("#app .frpage .cta .grp .gb:not([data-a=frmore])")].reverse()) {
-      const c = b.cloneNode(true);
-      c.className = "mi"; c.querySelectorAll(".kb").forEach((k) => k.remove());
-      cap.after(c);
-    }
-    m.insertAdjacentHTML("afterbegin", grab);
-  }
+  /* Phones: a sheet with a grab bar. Download, mark all watched and the
+     entry buttons sit in the row under the title (TODO 177, Show C). */
+  if (isPhone()) m.insertAdjacentHTML("afterbegin", grab);
   m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
   const z = zoomGet() / 100;
   m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:${Math.min(x0 / z, innerWidth / z - 270)}px;top:${Math.min(y0 / z, innerHeight / z - 280)}px`;
@@ -1792,7 +1793,7 @@ function entryStats(f, pending) {
 /* The actions that depend on your entry, inside the page's action pill:
    off the list → Add to Planning; on it → Edit and ♥. */
 function entryActs(f, pending) {
-  if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>Add to Planning</span></button>`;
+  if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>${isPhone() ? "Planning" : "Add to Planning"}</span></button>`;
   return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite ? "Remove from favourites" : "Favourite"}</span></button>`;
 }
 /* Episode ticks are this PC's own (TODO 166): when AniList is further
@@ -2915,8 +2916,9 @@ function paintTabbar() {
   if (!el) return;
   if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
-  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}</div>
-    <button class="sq" data-a="sropen" aria-label="Search">${ico("search")}</button>`;
+  /* Phone polish (TODO 177, Elias picked A): one glass dock, search inside the
+     pill so it sits centred; the remote strip and the show's Play row dock on top. */
+  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">${ico("search")}<span>Search</span></button></div>`;
   /* The highlight glides to the open tab (One UI 9); none on Settings. */
   let on = null;
   for (const b of el.querySelectorAll(".tb button")) { const y = b.dataset.v === cur; b.classList.toggle("on", y); b.setAttribute("aria-selected", y); if (y) on = b; }
@@ -2925,6 +2927,18 @@ function paintTabbar() {
   ind.style.opacity = on ? "1" : "0";
   if (on) { ind.style.width = on.offsetWidth + "px"; ind.style.transform = `translateX(${on.offsetLeft}px)`; }
 }
+/* The dock shrinks while you scroll down and comes back on the way up (iOS 26). */
+let dockY = 0;
+function dockScroll() {
+  if (!isPhone()) return;
+  const y = scrollY, d = y - dockY, b = document.body;
+  if (y < 80) b.classList.remove("tb-min");
+  else if (d > 6) b.classList.add("tb-min");
+  else if (d < -6) b.classList.remove("tb-min");
+  if (Math.abs(d) > 6 || y < 80) dockY = y;
+}
+/* The highlight follows the tab's new width once the dock has changed size. */
+document.getElementById("tabbar")?.addEventListener("transitionend", (e) => { if (e.target.matches?.("#tabbar .tb button") && e.propertyName === "height") paintTabbar(); });
 /* Airing entries on your lists, soonest first (Home and the week share it). */
 function airingList() {
   return aniMode() ? S.data.spine.entries.filter((e) => e.airing === "RELEASING" && e.next_episode && inProg(e.status))
@@ -2944,15 +2958,23 @@ function watchRow({ s, t }) {
   return `<div class="prow" data-a="open" data-v="${esc(s.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : "next"} · ${seen}/${sea.episodes.length}</small></span>
     <button class="btn ic" data-a="play" data-v="${esc(t.ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></div>`;
 }
-function upPhone(up) {
-  const s = up.s, ep = up.ep, sea = up.sea, art = s.banner || safeThumb(sea, ep) || s.poster;
+/* Home A (TODO 177, Elias picked it): the up-next as an edge-to-edge hero,
+   what else you're watching as a rail of episode stills. */
+function upHero(up) {
+  const s = up.s, ep = up.ep, sea = up.sea, art = s.poster || safeThumb(sea, ep) || s.banner; // a tall hero: the poster fits it, a wide banner would show a sliver
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="upp"><button class="upa2" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
-    <div class="upb"><div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
-    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
-    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
-    <button class="btn pri big wide" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div>`;
+  return `<div class="uph"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
+    <div class="uph-in"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
+    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
+    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}</div>` : ""}
+    <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button><button class="btn ic big" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}">${ico("chevr")}</button></div></div></div>`;
+}
+function contStill({ s, t }) {
+  const ep = t.ep, sea = t.sea, art = safeThumb(sea, ep) || s.banner || s.poster;
+  const pct = t.kind === "resume" && ep.duration ? Math.min(100, Math.round((ep.position / ep.duration) * 100)) : 0;
+  return `<div class="ccard" data-a="open" data-v="${esc(s.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"><em>${esc(epCode(sea, ep))}</em>${pct ? `<i style="width:${pct}%"></i>` : ""}<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></span>
+    <b>${esc(s.title)}</b><small>${t.kind === "resume" ? esc(fmtLeft(ep.duration, ep.position)) + " left" : esc(epCode(sea, ep)) + " next"}</small></div>`;
 }
 function HomePhone() {
   const d = S.data, up = nextUpInfo(), L = keepWatching(up && up.s.id), airing = airingList(), now = Date.now();
@@ -2960,8 +2982,8 @@ function HomePhone() {
   const touched = new Set((d.history || []).map((e) => e.show_id));
   const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
   const sum = [L.length + (up ? 1 : 0) ? `<span><b>${L.length + (up ? 1 : 0)}</b> in progress</span>` : "", airing.length ? `<span><b>${airing.length}</b> airing</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
-  let body = up ? upPhone(up) : "";
-  if (L.length) body += `<section class="psec"><div class="sh"><h2>Also watching</h2><span class="mut">${L.length}</span></div>${L.map(watchRow).join("")}</section>`;
+  let body = up ? upHero(up) : "";
+  if (L.length) body += `<section class="psec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span></div><div class="crail">${L.map(contStill).join("")}</div></section>`;
   if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
   const recs = recsFor();
   body += plHomeHTML(); // pinned playlists (Decision 64)
@@ -2969,7 +2991,7 @@ function HomePhone() {
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
     `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
   if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
-  return `<div class="home2 phone"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${body}</div>`;
+  return `<div class="home2 phone${up ? " has-uph" : ""}">${up ? "" : `<div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>`}${body}</div>`;
 }
 /* Tablet portrait: what you're watching and the week side by side. */
 function homePair(L, airing) {
@@ -3285,7 +3307,7 @@ function paintPortals() {
     if (b) html += `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
   }
   const flt = isPhone() && S.view === "library" && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
-  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet">${flt.outerHTML.replace('<div class="filters">', '<div class="filters">' + grab + '<b class="fsh">Sort & filter</b>')}</div>`;
+  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet">${flt.outerHTML.replace('<div class="filters">', '<div class="filters">' + grab + '<b class="fsh">Filter</b>')}</div>`;
   else document.body.classList.remove("flt-open");
   if (el._html !== html) { el._html = html; el.innerHTML = html; }
   document.body.classList.toggle("has-pbar", html.includes('class="pbar"'));
@@ -4173,10 +4195,10 @@ function nav(view, fn) {
   if (TAB_AT[from] != null) tabScroll[from] = scrollY;
   dip(() => {
     const prev = S.view;
-    S.navIn = true; S.view = view; clearSearch(); fIdx = -1;
+    S.navIn = true; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
     if (view === "library") S.fadeNext = true;
     if (fn) fn(prev);
-    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); pushNav();
+    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); dockY = scrollY; pushNav();
   });
   tabSlide(from, view);
 }
@@ -4804,7 +4826,9 @@ const A = {
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   fpick: (v, t) => {
     const k = t.dataset.k, d = t.closest(".fdrop");
-    S.lib[k] = v; saveLib(); paintWall(); syncFilters();
+    S.lib[k] = v; saveLib();
+    if (k === "group" || isPhone()) return render(); // phones: the sheet and the Filter count follow
+    paintWall(); syncFilters();
     for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
   },
@@ -5159,7 +5183,7 @@ const A = {
     }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
   },
   sidetab: (v) => { S.sideTab = v; paintSide(); },
-  fltopen: () => { document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); paintPortals(); },
+  fltopen: () => { document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); render(); },
   fltclose: () => { document.body.classList.remove("flt-open"); paintPortals(); ovClosed("flt"); },
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
@@ -5326,6 +5350,7 @@ const A = {
   },
   castlang: (v) => { S.castLang = v; const e = frEntry(); if (e) aboutPaint(e.id); },
   tagspoil: (v) => { (S.tagsOpen ||= {})[v] = true; aboutPaint(+v); },
+  descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }, // phones: the summary opens in place
   frorder: () => $("#app .frpage .hsec.ford")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }),
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
@@ -5673,7 +5698,7 @@ function paintTop() {
   if (!el) { el = document.createElement("button"); el.id = "totop"; el.dataset.a = "totop"; el.setAttribute("aria-label", "Back to top"); el.innerHTML = ico("up"); document.body.append(el); }
   el.classList.toggle("on", S.view === "library" && scrollY > 500);
 }
-addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); }, { passive: true });
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); dockScroll(); }, { passive: true });
 /* The show page's art fades into the dark as you scroll (Decision 67): --sd
    on the wash layer alone, once per frame. */
 function artDim() {

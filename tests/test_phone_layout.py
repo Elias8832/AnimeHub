@@ -162,13 +162,24 @@ class BackAndSwipes(unittest.TestCase):
 
 
 class ShowPagePhone(unittest.TestCase):
-    """S2: only Play (+ ⋯) at the bottom; the page's other buttons open from
-    ⋯ as a bottom sheet; no studio line, no big stats."""
+    """S2, redone as Show C (TODO 177): Play (+ ⋯) docked at the bottom; the
+    page's other buttons are a row of icons under the title; ⋯ opens as a
+    bottom sheet with the rare actions."""
 
     def test_s2(self):
-        self.assertIn(".frpage .cta,.frpage .srcl{display:none!important}", CSS)
-        self.assertIn('for (const b of [...$$("#app .frpage .cta .grp .gb:not([data-a=frmore])")].reverse()) {', APP)
+        self.assertIn(".sp2.frpage .hero .cta{grid-column:1/-1;display:block!important", CSS)
+        self.assertIn(".sp2.frpage .hero .cta>.btn.pri{display:none}", CSS)  # Play lives in the dock
+        self.assertNotIn(".frpage .cta .grp .gb:not([data-a=frmore])", APP)  # no longer copied into ⋯
         self.assertIn("#cm{z-index:48;left:0!important;right:0;top:auto!important;bottom:0;", CSS)
+
+    def test_show_c_poster_header(self):
+        self.assertIn("const framed = isPhone() ||", APP)
+        self.assertIn(".sp2.frpage .hero .hl2{display:contents}", CSS)
+        # .hp is also the old 3 px progress bar class: the poster must not be clipped by it
+        self.assertIn(".sp2.frpage .hp{display:block;grid-column:1;grid-row:1/3;align-self:end;width:auto;height:auto;overflow:visible", CSS)
+        self.assertIn(".sp2.frpage .eps.strip{flex-direction:row", CSS)
+        self.assertIn('descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }', APP)
+        self.assertIn("body:has(.sp2.frpage) .cv-art{opacity:0!important}", CSS)
 
 
 class InstallAsApp(unittest.TestCase):
@@ -206,6 +217,46 @@ class AppIcon(unittest.TestCase):
 
     def test_default_icon_is_the_orange_one(self):
         self.assertEqual((WEB / "icon.svg").read_bytes(), (WEB / "icons" / "orange.svg").read_bytes())
+
+
+class PhonePolish(unittest.TestCase):
+    """TODO 177 (Elias picked mockup A): one glass dock, the Library's sort
+    line and row sheet, and the small phone fixes."""
+
+    def test_search_sits_inside_the_pill(self):
+        self.assertIn('<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">', APP)
+        self.assertIn("#tabbar{display:flex;position:fixed;left:12px;right:12px", CSS)
+
+    def test_dock_shrinks_on_scroll_and_resets_on_navigation(self):
+        self.assertIn("function dockScroll()", APP)
+        self.assertIn("artDim(); dockScroll(); }", APP)
+        self.assertIn('document.body.classList.remove("tb-min");', APP)
+        self.assertIn("body.tb-min{--dock:46px}", CSS)
+
+    def test_play_row_and_remote_dock_on_the_tabs(self):
+        self.assertIn("bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom))", CSS)
+        self.assertIn("body.rmt-on #tabbar .tb,body.has-pbar #tabbar .tb{border-radius:0 0 26px 26px", CSS)
+
+    def test_library_sort_line_and_row_sheet(self):
+        self.assertIn('<div class="lsort"><label class="srt">', APP)
+        self.assertIn('data-a="fltopen">${ico("filter")}Filter', APP)
+        self.assertIn('<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>', APP)
+        self.assertIn(".fsheet .filters{gap:0;padding-top:12px;flex-wrap:nowrap}", CSS)  # a tall sheet wrapped into columns
+        self.assertIn('if (k === "group" || isPhone()) return render();', APP)
+
+    def test_small_fixes(self):
+        self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top
+        self.assertIn(".match.mc .guess.none{display:block", CSS)
+        self.assertIn(".ropt .seg{display:flex;flex-wrap:wrap", CSS)
+        self.assertIn("#pal .plist{-webkit-mask:linear-gradient", CSS)
+
+    def test_home_a_hero_and_rails(self):
+        # Round 2 (Elias picked Home A): the up-next fills the top, the rest are sideways rails.
+        self.assertIn("function upHero(up)", APP)
+        self.assertIn("art = s.poster || safeThumb(sea, ep) || s.banner;", APP)  # a wide banner shows a sliver in a tall hero
+        self.assertIn('<div class="crail">${L.map(contStill).join("")}</div>', APP)
+        self.assertIn(".home2.phone .rdy{flex-wrap:nowrap;overflow-x:auto", CSS)
+        self.assertIn("function Home() {\n  if (isPhone()) return HomePhone();", APP)  # the PC Home is untouched
 
 
 if __name__ == "__main__":
