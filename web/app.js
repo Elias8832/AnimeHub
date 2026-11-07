@@ -64,6 +64,9 @@ const ICONS = {
   sort: ['<path d="M7.5 4.5v15m-3.5-3.5 3.5 3.5 3.5-3.5M16.5 19.5v-15m-3.5 3.5 3.5-3.5 3.5 3.5"/>'],
   sliders: ['<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'],
   cal: ['<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4m7-4v4"/>'],
+  cc: ['<rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="M7.5 13h3M13.5 13h3M7.5 10h9"/>'],
+  speed: ['<path d="M4.5 17.5a8.5 8.5 0 1 1 15 0"/><path d="m12 13 3.5-4"/>'],
+  lock: ['<rect x="5.5" y="10.5" width="13" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
 /* Lucide icons (ISC licence, web/icons/LICENSE-lucide.txt), the set T3 Code's
@@ -2966,10 +2969,10 @@ function upHero(up) {
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
   return `<div class="uph"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
-    <div class="uph-in"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
+    <div class="uph-in" data-a="open" data-v="${esc(s.id)}"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
     ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}</div>` : ""}
-    <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button><button class="btn ic big" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}">${ico("chevr")}</button></div></div></div>`;
+    <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div></div>`; // the whole card opens the show; Play plays (Elias)
 }
 function contStill({ s, t }) {
   const ep = t.ep, sea = t.sea, art = safeThumb(sea, ep) || s.banner || s.poster;
@@ -4462,16 +4465,22 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
   if (!v) {
     el.innerHTML = `<video playsinline preload="auto" disablepictureinpicture disableremoteplayback crossorigin="anonymous"></video>
     <div class="pp-wait"><i class="pp-spin"></i><span></span></div>
-    <div class="pp-top"><button class="ib" data-a="ppclose" aria-label="Close the player">${ico("back")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="ib" data-a="ppeps" aria-label="Episodes">${ico("list")}</button><button class="ib" data-a="ppmenu" aria-label="Player settings">${ico("sliders")}</button>${ppCanFull() ? `<button class="ib" data-a="ppfull" aria-label="Fullscreen">${ico("tv")}</button>` : ""}</div>
-    <div class="pp-mid"><button class="pp-jump" data-a="ppjump" data-v="-10" aria-label="Back 10 seconds">${ico("rew")}</button><button class="pp-big" data-a="pptoggle" aria-label="Play or pause">${ico("pause")}</button><button class="pp-jump" data-a="ppjump" data-v="10" aria-label="Forward 10 seconds">${ico("fwd")}</button></div>
-    <div class="pp-bot"><span class="pp-time mono">0:00</span><span class="pp-track"><span class="pp-marks" aria-hidden="true"></span><input class="pp-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Position"></span><span class="pp-dur mono">0:00</span><button class="ib pp-cc" data-a="ppcc" aria-label="Subtitles" hidden>CC</button></div>
-    <button class="pp-skip btn pri" data-a="ppskip" hidden></button><div class="pp-end" hidden></div><div class="pp-panel" hidden></div><div class="pp-note" role="status"></div>`;
+    <div class="pp-tap" aria-hidden="true"><b class="l"></b><b class="c"></b><b class="r"></b></div>
+    <div class="pp-top"><button class="pp-ic" data-a="ppclose" aria-label="Close the player">${ico("chevl")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="pp-ic" data-a="pplock" aria-label="Lock the controls">${ico("lock")}</button></div>
+    <button class="pp-unlock" data-a="pplock">${ico("lock")}<span>Tap to unlock</span></button>
+    <button class="pp-skip" data-a="ppskip" hidden></button>
+    <div class="pp-deck">
+      <div class="pp-bot"><button class="pp-pb" data-a="pptoggle" aria-label="Play or pause">${ico("pause")}</button><span class="pp-time mono">0:00</span><span class="pp-track"><span class="pp-marks" aria-hidden="true"></span><input class="pp-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Position"></span><span class="pp-dur mono">0:00</span></div>
+      <div class="pp-tabs"><button data-a="pptab" data-v="eps">${ico("list")}<span>Episodes</span></button><button data-a="pptab" data-v="audio">${ico("cc")}<span class="lw">Audio &amp; subtitles</span><span class="sw">Audio &amp; subs</span></button><button data-a="pptab" data-v="menu">${ico("speed")}<span class="pp-spd">Speed 1×</span></button><button class="pp-nx" data-a="ppnextep">${ico("next")}<span class="lw">Next episode</span><span class="sw">Next ep</span></button></div>
+    </div>
+    <div class="pp-end" hidden></div><div class="pp-panel" hidden></div><div class="pp-note" role="status"></div>`;
     v = ppVideo();
     ppWireControls(el);
   } else {
     v.pause(); v.querySelectorAll("track").forEach((t) => t.remove()); v.removeAttribute("src"); v.load();
     el.querySelector(".pp-skip").hidden = true; el.querySelector(".pp-end").hidden = true; ppPanel(null);
   }
+  PP.locked = false; el.classList.remove("locked", "unl");
   PP.seeking = false; ppPaintTime(); ppPaintPlay();
   el.querySelector(".pp-wait span").textContent = online ? `Finding ${what} online…` : `Loading ${what}…`;
   el.querySelector(".pp-t b").textContent = ctx?.s.title || ""; el.querySelector(".pp-t span").textContent = ctx ? epCode(ctx.sea, ctx.ep) : "";
@@ -4524,7 +4533,7 @@ async function ppLoad(id, version, r) {
   for (const [i, src] of (r.subs || []).entries()) v.insertAdjacentHTML("beforeend", `<track kind="subtitles" srclang="en" label="${i ? "English " + (i + 1) : "English"}" src="${esc(src)}"${i ? "" : " default"}>`);
   const tr = v.querySelector("track");
   if (tr) tr.addEventListener("load", () => ppSubDelay(0), { signal: ac.signal });
-  const cc = el.querySelector(".pp-cc"); cc.hidden = !(r.subs || []).length; cc.classList.add("on");
+  ppPaintSpeed(); ppEpsLoad().then(ppPaintNext);
   el.classList.toggle("fill", !!lsGet("ppFill", false));
   await ppSource(v, r, false);
   v.play().catch(() => ppShowBar());
@@ -4580,37 +4589,100 @@ function ppSleep(v) {
   if (typeof v === "number") { PP.sleepUntil = Date.now() + v * 60000; PP.sleepT = setTimeout(() => { PP.sleep = null; ppVideo()?.pause(); ppNote("Sleep timer: paused"); ppPanel(PP.panel); }, v * 60000); }
 }
 const ppRow = (label, act, opts, cur) => `<div class="pp-row"><span>${label}</span><span class="seg">${opts.map(([k, l]) => `<button class="${String(cur) === String(k) ? "on" : ""}" aria-pressed="${String(cur) === String(k)}" data-a="${act}" data-v="${k}">${l}</button>`).join("")}</span></div>`;
+/* Playback tab: speed, sleep, picture, Finish. */
 function ppMenuHTML() {
-  const r = PP.r || {}, a = r.audio, subs = (r.subs || []).length, tr = ppVideo()?.textTracks[0];
   const left = typeof PP.sleep === "number" ? Math.max(1, Math.round((PP.sleepUntil - Date.now()) / 60000)) : 0;
-  return `<h3>Playback</h3>${ppRow("Speed", "ppspeed", [[0.75, "0.75×"], [1, "1×"], [1.25, "1.25×"], [1.5, "1.5×"], [2, "2×"]], ppSpeed())}
+  return `${ppRow("Speed", "ppspeed", [[0.75, "0.75×"], [1, "1×"], [1.25, "1.25×"], [1.5, "1.5×"], [2, "2×"]], ppSpeed())}
     ${ppRow(left ? `Sleep · ${left} min left` : "Sleep", "ppsleep", [["", "Off"], [15, "15m"], [30, "30m"], [60, "60m"], ["end", "This ep"]], PP.sleep ? PP.sleep : "")}
     ${ppRow("Fill screen", "ppfill", [[0, "Off"], [1, "On"]], lsGet("ppFill", false) ? 1 : 0)}
-    ${a ? `<h3>Audio</h3>${ppRow(a.current === "dub" ? "English dub" : "Japanese · subtitles", "ppaudio", [["sub", "Sub"], ["dub", "Dub"]], a.current)}` : ""}
-    ${subs ? `<h3>Subtitles</h3>${ppRow("Show", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Timing</span><span class="pp-step"><button class="btn" data-a="ppsubd" data-v="-0.25" aria-label="Earlier">−</button><b class="mono">${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button class="btn" data-a="ppsubd" data-v="0.25" aria-label="Later">+</button></span></div>` : ""}
+    ${ppCanFull() ? ppRow("Full screen", "ppfull", [[0, "Off"], [1, "On"]], document.fullscreenElement ? 1 : 0) : ""}
     <button class="btn pp-finish" data-a="ppfinish">${ico("next")}Finish episode</button>`;
 }
+/* Audio tab: Sub/Dub, subtitles on/off and their timing. */
+function ppAudioHTML() {
+  const r = PP.r || {}, a = r.audio, subs = (r.subs || []).length, tr = ppVideo()?.textTracks[0];
+  if (!a && !subs) return `<p class="sub">This episode has one language and no separate subtitles.</p>`;
+  return `${a ? ppRow("Language", "ppaudio", [["sub", "Sub"], ["dub", "Dub"]], a.current) : ""}
+    ${subs ? `${ppRow("Subtitles", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Subtitle timing</span><span class="pp-step seg"><button data-a="ppsubd" data-v="-0.25" aria-label="Earlier">${ico("minus")}</button><b class="mono">${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button data-a="ppsubd" data-v="0.25" aria-label="Later">${ico("plus")}</button></span></div>` : ""}
+    ${a ? `<p class="sub">Switching goes back 5 s.</p>` : ""}`;
+}
+/* Episodes tab: stills like the show page's, from the library the page already has. */
 function ppEpsHTML() {
   const eps = PP.eps;
-  if (!eps) return `<h3>Episodes</h3><p class="sub">Loading…</p>`;
-  if (!eps.length) return `<h3>Episodes</h3><p class="sub">No episode list for this one.</p>`;
-  return `<h3>Episodes</h3><div class="pp-eps">${eps.map((x) => `<button class="pp-ep${x.id === PP.id ? " cur" : ""}${x.watched ? " seen" : ""}" data-a="ppep" data-v="${esc(x.id)}"><b class="mono">E${esc(String(x.number))}</b><span>${esc(x.title || (x.id === PP.id ? "Playing now" : ""))}</span>${x.online ? '<small class="mono">online</small>' : ""}${x.watched ? ico("check") : ""}</button>`).join("")}</div>`;
+  if (!eps) return `<p class="sub">Loading…</p>`;
+  if (!eps.length) return `<p class="sub">No episode list for this one.</p>`;
+  return `<div class="pp-eps">${eps.map((x) => {
+    const c = findEpContext(x.id), art = x.thumb || (c ? safeThumb(c.sea, c.ep) : null), cur = x.id === PP.id; // the hub's still (online ones too), else the library's
+    const p = c?.ep?.duration ? Math.min(100, Math.round((c.ep.position || 0) / c.ep.duration * 100)) : 0;
+    const what = cur ? "Playing now" : x.watched ? "Watched" : x.online ? "Online" : p > 1 ? `${p}% watched` : "";
+    return `<button class="pp-ep${cur ? " cur" : ""}${x.watched ? " seen" : ""}" data-a="ppep" data-v="${esc(x.id)}"><span class="pp-th"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}><i class="mono">E${esc(String(x.number))}</i>${p > 1 && !x.watched ? `<em style="width:${p}%"></em>` : ""}</span><span class="pp-et"><b>${esc(x.title || `Episode ${x.number}`)}</b><small class="mono">${what}</small></span>${x.watched ? ico("check") : ""}</button>`;
+  }).join("")}</div>`;
 }
-function ppPanel(kind) {
-  const p = $("#pp .pp-panel"); if (!p) return;
+const PP_TABS = [["eps", "Episodes"], ["audio", "Audio"], ["menu", "Playback"]];
+/* One sheet with three tabs, opened from the deck's buttons or a swipe up. The
+   three tabs sit side by side and slide; a finger can drag them sideways and the
+   sheet itself down (TODO 177). */
+function ppPanel(kind, o = {}) {
+  const p = $("#pp .pp-panel"), el = $("#pp"); if (!p) return;
+  const was = PP.panel;
   PP.panel = kind || null;
-  p.hidden = !kind;
-  if (!kind) return;
-  p.innerHTML = kind === "eps" ? ppEpsHTML() : ppMenuHTML();
-  ppShowBar();
-  if (kind === "eps" && !PP.eps) {
-    const id = PP.id;
-    api(`/api/phone/episodes?id=${encodeURIComponent(id)}`).then((x) => { if (PP.id === id) { PP.eps = x.episodes || []; if (PP.panel === "eps") ppPanel("eps"); } }).catch(() => { PP.eps = []; });
+  clearTimeout(PP.sheetT);
+  el.classList.toggle("sheet", !!kind);
+  if (!kind) {
+    if (p.hidden || !was) { p.hidden = true; return; }
+    p.style.transition = ""; p.classList.add("out"); p.style.transform = "";
+    PP.sheetT = setTimeout(() => { p.hidden = true; p.classList.remove("out"); p.innerHTML = ""; }, 260);
+    return;
   }
-  if (kind === "eps") requestAnimationFrame(() => p.querySelector(".pp-ep.cur")?.scrollIntoView({ block: "center" }));
+  const idx = PP_TABS.findIndex(([k]) => k === kind);
+  const fresh = p.hidden || !p.querySelector(".pp-pages");
+  p.classList.remove("out");
+  if (fresh) {
+    p.innerHTML = `<i class="pp-grab"></i><div class="pp-sh"><span class="seg" role="tablist"><i class="pp-ind"></i>${PP_TABS.map(([k, l]) => `<button role="tab" data-a="pptab" data-v="${k}">${l}</button>`).join("")}</span></div><div class="pp-pages">${PP_TABS.map(([k]) => `<div class="pp-body" data-k="${k}"></div>`).join("")}</div>`;
+    p.hidden = false;
+    p.classList.toggle("enter", !o.drag);
+    if (!o.drag) setTimeout(() => p.classList.remove("enter"), 400);
+  }
+  for (const pane of p.querySelectorAll(".pp-body")) {
+    const k = pane.dataset.k, top = pane.scrollTop;
+    pane.innerHTML = k === "eps" ? ppEpsHTML() : k === "audio" ? ppAudioHTML() : ppMenuHTML();
+    pane.scrollTop = top;
+  }
+  ppPage(idx, !fresh && was !== kind);
+  ppShowBar();
+  if (!PP.eps) ppEpsLoad().then(() => { if (PP.panel) ppPanel(PP.panel); });
+  if (kind === "eps" && (fresh || was !== "eps")) ppEpsCenter();
 }
-/* Another episode from inside the player: a file at once, an online one
-   through the same VPN question as any Play (shown above the player). */
+/* Show tab i: the row of tabs slides (animated unless told not to), the highlight moves to its button.
+   `f` (-1..1) is a finger part of the way to the next or previous tab. */
+function ppPage(i, anim = true, f = 0) {
+  const p = $("#pp .pp-panel"); if (!p) return;
+  const pages = p.querySelector(".pp-pages"), btns = [...p.querySelectorAll(".pp-sh button")], ind = p.querySelector(".pp-ind");
+  pages.style.transition = anim ? "" : "none";
+  pages.style.transform = `translateX(${(-i - f) * 100}%)`;
+  const bi = Math.max(0, Math.min(btns.length - 1, f > 0 ? i + 1 : f < 0 ? i - 1 : i)), t = Math.abs(f), near = t > 0.5 ? bi : i;
+  btns.forEach((x, j) => { x.classList.toggle("on", j === near); x.setAttribute("aria-selected", j === i); });
+  const a = btns[i], b = btns[bi];
+  if (!a || !ind) return;
+  ind.style.transition = anim ? "" : "none";
+  ind.style.transform = `translateX(${a.offsetLeft + (b.offsetLeft - a.offsetLeft) * t}px)`;
+  ind.style.width = `${a.offsetWidth + (b.offsetWidth - a.offsetWidth) * t}px`;
+}
+function ppEpsCenter() {
+  requestAnimationFrame(() => {
+    const pane = $('#pp .pp-body[data-k="eps"]'), c = pane?.querySelector(".pp-ep.cur");
+    if (c) pane.scrollTop = Math.max(0, c.offsetTop - (pane.clientHeight - c.offsetHeight) / 2);
+  });
+}
+/* The season's list, once per episode (the hub's, the same as mpv's). */
+function ppEpsLoad() {
+  const id = PP.id;
+  if (PP.eps) return Promise.resolve(PP.eps);
+  return api(`/api/phone/episodes?id=${encodeURIComponent(id)}`).then((x) => { if (PP.id === id) PP.eps = x.episodes || []; return PP.eps; }).catch(() => { if (PP.id === id) PP.eps = []; return PP.eps; });
+}
+const ppNextEp = () => { const eps = PP.eps || [], i = eps.findIndex((x) => x.id === PP.id); return i >= 0 ? eps[i + 1] || null : null; };
+function ppPaintNext() { const b = $("#pp .pp-nx"); if (b) b.disabled = !!PP.eps && !ppNextEp(); }
+function ppPaintSpeed() { const b = $("#pp .pp-spd"); if (b) b.textContent = `Speed ${ppSpeed()}×`; }
 function ppGo(id, version = 0) {
   if (!id.startsWith("stream:")) return phonePlay(id, version);
   if (document.fullscreenElement && S.data?.vpn?.known && !vpnOn() && S.settings?.vpn_warn !== false) document.exitFullscreen().catch(() => {});
@@ -4639,6 +4711,7 @@ async function ppSwitch(want) {
    the last touch, while paused they stay until tapped away. */
 function ppShowBar() {
   const el = $("#pp"); if (!el) return;
+  if (!el.classList.contains("ui") && Date.now() - (PP.quiet || 0) < 1500) return; // a double tap's own pause/play
   el.classList.add("ui");
   clearTimeout(PP.hideT);
   PP.hideT = setTimeout(() => { const v = ppVideo(); if (v && !v.paused && !PP.seeking && !PP.panel) el.classList.remove("ui"); }, 3000);
@@ -4651,10 +4724,10 @@ function ppPaintTime() {
   el.querySelector(".pp-dur").textContent = ppClock(d);
   const r = el.querySelector(".pp-seek");
   if (!PP.seeking) r.value = d ? Math.round(t / d * 1000) : 0;
-  r.style.setProperty("--p", (d ? t / d * 100 : 0) + "%");
+  r.parentElement.style.setProperty("--p", (d ? t / d * 100 : 0) + "%"); // the bar under the slider (.pp-marks)
 }
 function ppPaintPlay() {
-  const v = ppVideo(), b = $("#pp .pp-big"); if (!v || !b) return;
+  const v = ppVideo(), b = $("#pp .pp-pb"); if (!v || !b) return;
   b.innerHTML = ico(v.paused ? "play" : "pause");
 }
 function ppWireControls(el) {
@@ -4663,15 +4736,95 @@ function ppWireControls(el) {
   r.addEventListener("change", () => { const v = ppVideo(); PP.seeking = false; if (v && isFinite(v.duration)) v.currentTime = PP.seekTo; ppPaintTime(); ppShowBar(); });
   if (el.dataset.wired) return;
   el.dataset.wired = "1";
-  /* Any touch keeps the controls up; a tap on the picture itself toggles them. */
+  /* Any touch keeps the controls up. */
   el.addEventListener("pointerdown", () => { if (el.classList.contains("ui")) ppShowBar(); }, true);
+  /* Swipes, following the finger (touch events: a list scrolling under it cancels pointer events):
+     up on the picture pulls the sheet up; on the sheet, sideways moves between its tabs and down
+     (from its top, or a list already at its top) pulls it away. */
+  el.addEventListener("touchstart", (e) => {
+    const t = e.touches[0], sheet = e.target.closest(".pp-panel"), pane = e.target.closest(".pp-body");
+    PP.g = e.touches.length > 1 || PP.locked || (!sheet && (PP.panel || e.target.closest(".pp-deck, .pp-top, input"))) ? null
+      : { x: t.clientX, y: t.clientY, t: Date.now(), sheet: !!sheet, top: !pane || pane.scrollTop <= 0, axis: null, dx: 0, dy: 0 };
+  }, { capture: true, passive: true });
+  el.addEventListener("touchmove", (e) => {
+    const g = PP.g, t = e.touches[0]; if (!g || !t) return;
+    g.dx = t.clientX - g.x; g.dy = t.clientY - g.y;
+    const ax = Math.abs(g.dx), ay = Math.abs(g.dy);
+    if (!g.axis) {
+      if (ax < 10 && ay < 10) return;
+      g.axis = g.sheet ? (ax > ay ? "x" : g.dy > 0 && g.top ? "down" : "scroll") : (g.dy < 0 && ay > ax ? "up" : "none");
+      if (g.axis === "up") ppPanel("eps", { drag: true });
+    }
+    const p = $("#pp .pp-panel"); if (!p) return;
+    if (g.axis === "x") {
+      const i = PP_TABS.findIndex(([k]) => k === PP.panel), w = p.clientWidth || 1;
+      let f = -g.dx / w;
+      if ((i === 0 && f < 0) || (i === PP_TABS.length - 1 && f > 0)) f /= 3; // the ends give a little, then stop
+      ppPage(i, false, Math.max(-1, Math.min(1, f)));
+    } else if (g.axis === "down" || g.axis === "up") {
+      const h = p.offsetHeight || 1;
+      const y = g.axis === "down" ? Math.max(0, g.dy) : Math.max(0, h + g.dy);
+      p.style.transition = "none"; p.style.transform = `translateY(${y}px)`;
+      el.style.setProperty("--dim", String(Math.max(0, 1 - y / h)));
+    }
+  }, { capture: true, passive: true });
+  el.addEventListener("touchend", () => {
+    const g = PP.g; PP.g = null;
+    if (!g || !g.axis || g.axis === "scroll" || g.axis === "none") return;
+    PP.swiped = Date.now();
+    const p = $("#pp .pp-panel"), fast = Date.now() - g.t < 250;
+    el.style.removeProperty("--dim");
+    if (!p) return;
+    if (g.axis === "x") {
+      const i = PP_TABS.findIndex(([k]) => k === PP.panel), w = p.clientWidth || 1;
+      const go = g.dx < -w * 0.22 || (fast && g.dx < -40) ? 1 : g.dx > w * 0.22 || (fast && g.dx > 40) ? -1 : 0;
+      const n = Math.max(0, Math.min(PP_TABS.length - 1, i + go));
+      return n === i ? ppPage(i) : ppPanel(PP_TABS[n][0]);
+    }
+    const h = p.offsetHeight || 1, y = g.axis === "down" ? g.dy : h + g.dy;
+    p.style.transition = ""; p.style.transform = "";
+    // pulled down: closes past a third or on a flick; pulled up: stays open past 40 % or on a flick
+    const shut = g.axis === "down" ? y > h * 0.3 || (fast && g.dy > 40) : y > h * 0.6 && !(fast && g.dy < -40);
+    if (shut) ppPanel(null);
+  }, { capture: true, passive: true });
   el.addEventListener("click", (e) => {
-    if (e.target.closest("button, input, .pp-end") && !PP.panel) return;
-    if (e.target.closest(".pp-panel")) return;
-    if (PP.panel) { if (!e.target.closest(".pp-panel")) ppPanel(null); return; } // a tap beside an open menu closes it
-    /* Paused too (Elias, 2026-11-07): a paused picture can be looked at without the controls. */
-    if (el.classList.contains("ui")) { clearTimeout(PP.hideT); el.classList.remove("ui"); } else ppShowBar();
+    if (Date.now() - (PP.swiped || 0) < 400) return;
+    if (PP.locked) { if (!e.target.closest(".pp-unlock")) ppUnlockHint(); return; }
+    if (e.target.closest("button, input, .pp-end, .pp-panel, .pp-deck, .pp-top")) return;
+    if (PP.panel) return ppPanel(null); // a tap beside the sheet closes it
+    ppTap(e);
   });
+}
+/* A tap on the picture shows or hides the controls (after a short wait, in case a
+   second tap follows). Two quick taps: in the middle play or pause, on the left or
+   right third jump 10 s, each tap soon after adds 10 more. Double taps never bring
+   the controls up (Elias, TODO 177). */
+function ppTap(e) {
+  const el = $("#pp"), v = ppVideo(), w = el.clientWidth, now = Date.now(), T = PP.tap || {};
+  const side = e.clientX < w * 0.36 ? -1 : e.clientX > w * 0.64 ? 1 : 0;
+  const again = T.t && side === T.side && now - T.t < (T.run ? 700 : 300) && (!T.run || side);
+  clearTimeout(T.timer);
+  if (again) {
+    PP.quiet = now;
+    if (!side) { PP.tap = {}; if (v) v.paused ? v.play().catch(() => {}) : v.pause(); return ppRipple(0, v && !v.paused ? "pause" : "play"); }
+    Object.assign(T, { t: now, n: T.run ? T.n + 1 : 1, run: true });
+    if (v && isFinite(v.duration)) v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + side * 10));
+    return ppRipple(side, T.n * 10);
+  }
+  const flip = () => { if (el.classList.contains("ui")) { clearTimeout(PP.hideT); el.classList.remove("ui"); } else ppShowBar(); };
+  PP.tap = { side, t: now, run: false, n: 0, timer: setTimeout(flip, 300) };
+}
+function ppRipple(side, what) {
+  const b = $(`#pp .pp-tap .${side < 0 ? "l" : side > 0 ? "r" : "c"}`); if (!b) return;
+  b.innerHTML = side ? `${ico(side < 0 ? "rew" : "fwd")}<span class="mono">${side < 0 ? "−" : "+"}${what} s</span>` : `<i>${ico(what)}</i>`;
+  b.classList.remove("on"); void b.offsetWidth; b.classList.add("on");
+  clearTimeout(b._t); b._t = setTimeout(() => b.classList.remove("on"), 650);
+}
+/* Locked: nothing on screen reacts, so a pocket or a sleepy hand can't pause it. */
+function ppUnlockHint() {
+  const el = $("#pp"); if (!el) return;
+  el.classList.add("unl"); clearTimeout(PP.unlT);
+  PP.unlT = setTimeout(() => el.classList.remove("unl"), 2500);
 }
 /* An iPhone can only put the video alone in full screen (Apple's own player),
    which would leave Skip, Up next and Back behind: there the player just
@@ -4691,7 +4844,7 @@ function ppSkipCheck() {
   const t = v.currentTime, seg = PP.segs.find((x) => t >= x.start - 1 && t < x.end - 1);
   if (seg && seg.auto && !PP.skipped.has(seg.start)) { PP.skipped.add(seg.start); return ppDoSkip(seg); }
   b.hidden = !seg || seg.auto;
-  if (seg) { b.textContent = seg.kind === "op" ? "Skip opening" : seg.finish ? "Next episode" : "Skip ending"; b.dataset.s = seg.start; }
+  if (seg && b.dataset.s !== String(seg.start)) { b.innerHTML = `<i class="dot ${seg.kind === "op" ? "op" : "ed"}"></i>${seg.kind === "op" ? "Skip opening" : seg.finish ? "Next episode" : "Skip ending"}${ico("arrowr")}`; b.dataset.s = seg.start; }
 }
 function ppDoSkip(seg) {
   const v = ppVideo();
@@ -5088,20 +5241,25 @@ const A = {
   wherego: (v) => { lsSet("playWhere", v); const go = S.modal?.go; closeModal(); go?.(v); },
   playwhere: (v) => { lsSet("playWhere", v || null); render(true); },
   ppclose: () => ppClose(false),
-  ppfull: () => ppFull(false),
-  ppmenu: () => ppPanel(PP.panel === "menu" ? null : "menu"),
-  ppeps: () => ppPanel(PP.panel === "eps" ? null : "eps"),
-  ppspeed: (val) => { lsSet("ppSpeed", +val); const v = ppVideo(); if (v) v.defaultPlaybackRate = v.playbackRate = +val; ppPanel("menu"); },
+  ppfull: () => { ppFull(false); setTimeout(() => { if (PP.panel === "menu") ppPanel("menu"); }, 400); },
+  pptab: (val, t) => ppPanel(PP.panel === val && !t.closest(".pp-sh") ? null : val), // the deck's button again closes; a tab in the sheet only switches
+  pplock: () => {
+    const el = $("#pp"); if (!el) return;
+    PP.locked = !PP.locked; ppPanel(null);
+    el.classList.toggle("locked", PP.locked); el.classList.remove("unl");
+    if (PP.locked) { el.classList.remove("ui"); ppUnlockHint(); } else ppShowBar();
+  },
+  ppnextep: async () => { await ppEpsLoad(); const n = ppNextEp(); if (n) ppGo(n.id, n.online ? 0 : PP.version); else { ppPaintNext(); ppNote("That was the last episode"); } },
+  ppspeed: (val) => { lsSet("ppSpeed", +val); const v = ppVideo(); if (v) v.defaultPlaybackRate = v.playbackRate = +val; ppPaintSpeed(); ppPanel("menu"); },
   ppsleep: (val) => { ppSleep(val === "" ? null : val === "end" ? "end" : +val); ppPanel("menu"); if (val) ppNote(val === "end" ? "Stops after this episode" : `Pauses in ${val} minutes`); },
   ppfill: (val) => { lsSet("ppFill", val === "1"); $("#pp")?.classList.toggle("fill", val === "1"); ppPanel("menu"); },
   ppaudio: (val) => { ppPanel(null); ppSwitch(val); },
-  ppsubs: (val) => { const tr = ppVideo()?.textTracks[0]; if (tr) tr.mode = val === "1" ? "showing" : "hidden"; $("#pp .pp-cc")?.classList.toggle("on", val === "1"); ppPanel("menu"); },
-  ppsubd: (val) => { ppSubDelay(+val); ppPanel("menu"); },
+  ppsubs: (val) => { const tr = ppVideo()?.textTracks[0]; if (tr) tr.mode = val === "1" ? "showing" : "hidden"; ppPanel("audio"); },
+  ppsubd: (val) => { ppSubDelay(+val); ppPanel("audio"); },
   ppfinish: () => { ppPanel(null); const v = ppVideo(); if (v && !PP.ended) { v.pause(); ppReport({ ended: true }); } },
   ppep: (val) => { ppPanel(null); if (val !== PP.id) ppGo(val, 0); },
   pptoggle: () => { const v = ppVideo(); if (v) v.paused ? v.play().catch(() => {}) : v.pause(); ppShowBar(); },
   ppjump: (val) => { const v = ppVideo(); if (v && isFinite(v.duration)) v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + +val)); ppShowBar(); },
-  ppcc: (val, t) => { const tr = ppVideo()?.textTracks[0]; if (!tr) return; const on = tr.mode !== "showing"; tr.mode = on ? "showing" : "hidden"; t.classList.toggle("on", on); ppShowBar(); },
   ppskip: (v, t) => ppDoSkip(PP.segs.find((x) => String(x.start) === t.dataset.s)),
   ppstay: () => { clearInterval(PP.cd); const b = $("#pp .pp-end"); if (b) b.innerHTML = `<b>Stopped</b><div class="actions"><button class="btn pri" data-a="ppclose">Close</button></div>`; },
   ppnext: () => {

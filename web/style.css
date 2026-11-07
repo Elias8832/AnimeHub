@@ -2523,22 +2523,14 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lib2 .card h3{white-space:normal;align-items:flex-start;line-height:1.28}
   .lib2 .card .ttl{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal}
 }
-/* Watching on the phone (Decision 71): the phone's own player, full screen. No backdrop blur (it lags phones). */
+/* Watching on the phone (Decision 71): the phone's own player, full screen. No backdrop blur (it lags phones).
+   Its look is the app's (TODO 177 round 2, Elias picked D1 in the app's look): the controls are one
+   deck made like the dock, the menus one sheet like the Library's filter sheet. */
 #pp{display:none}
-#pp.on{display:block;position:fixed;inset:0;top:0;left:0;width:100vw;height:100vh;height:100dvh;z-index:55;background:#000;color:var(--ink);font-family:var(--ui)}
+#pp.on{display:block;position:fixed;inset:0;top:0;left:0;width:100vw;height:100vh;height:100dvh;z-index:55;background:#000;color:var(--ink);font-family:var(--ui);touch-action:none;-webkit-user-select:none;user-select:none;--deck:122px;--pbot:max(16px,env(safe-area-inset-bottom));--pdock:#1c1d22;--pedge:inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.1);--pshadow:0 14px 38px -10px rgba(0,0,0,.7)}
 body.pp-open{overflow:hidden}
 #pp video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
-#pp .pp-top{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:10px;padding:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 28px max(12px,env(safe-area-inset-left));background:linear-gradient(rgba(0,0,0,.72),transparent);opacity:0;pointer-events:none;transition:opacity .25s}
-#pp.ui .pp-top{opacity:1;pointer-events:auto}
-#pp .pp-top .ib{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);color:var(--ink);border:0}
-#pp .pp-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-#pp .pp-t b{font:700 16px/1.2 var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#pp .pp-t span{font-size:12px;color:var(--ink-2)}
-#pp .pp-skip{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:84px;z-index:2;box-shadow:0 12px 30px -8px rgba(0,0,0,.7)}
-#pp .pp-end{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:84px;z-index:3;width:min(340px,calc(100% - 32px));padding:16px 18px;border-radius:18px;background:rgba(22,23,27,.94);box-shadow:0 18px 44px -12px rgba(0,0,0,.75),var(--edge);display:flex;flex-direction:column;gap:6px}
-#pp .pp-end b{font:700 16px/1.3 var(--ui)}
-#pp .pp-end .sub{margin:0;font-size:13px;color:var(--ink-2)}
-#pp .pp-end .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+#pp.fill video{object-fit:cover}
 #pp [hidden]{display:none!important}
 #pp .pp-wait{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 32px;text-align:center;font:500 15px/1.4 var(--ui);color:var(--ink-2);pointer-events:none}
 #pp.wait .pp-wait{display:flex}
@@ -2546,62 +2538,123 @@ body.pp-open{overflow:hidden}
 #pp.wait video{visibility:hidden}
 /* A question asked while the player is open (the VPN one before an online episode) shows above it. */
 body.pp-open #modal{z-index:70}
-/* The player's own controls: top bar, middle buttons and timeline show and hide together. */
-#pp .pp-mid,#pp .pp-bot{opacity:0;pointer-events:none;transition:opacity .25s}
-#pp.ui .pp-mid,#pp.ui .pp-bot{opacity:1;pointer-events:auto}
-#pp.wait .pp-mid,#pp.wait .pp-bot{opacity:0;pointer-events:none}
-#pp.ui::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.28);pointer-events:none}
-#pp .pp-top,#pp .pp-mid,#pp .pp-bot,#pp .pp-skip,#pp .pp-end{z-index:2}
-#pp .pp-mid{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:clamp(24px,8vw,56px)}
-#pp .pp-big{width:72px;height:72px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(255,255,255,.14);color:var(--ink)}
-#pp .pp-big .ico{width:30px;height:30px}
-#pp .pp-jump{position:relative;width:52px;height:52px;border-radius:50%;border:0;display:grid;place-items:center;background:transparent;color:var(--ink)}
-#pp .pp-jump .ico{width:24px;height:24px}
-#pp .pp-bot{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:12px;padding:28px max(16px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:linear-gradient(transparent,rgba(0,0,0,.72))}
-#pp .pp-time,#pp .pp-dur{flex:none;font-size:12px;color:var(--ink-2);min-width:38px}
+/* Top row: bare icons like the show page's, the title in its tall caps. */
+#pp .pp-top{position:absolute;z-index:2;left:0;right:0;top:0;display:flex;align-items:center;gap:6px;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 40px max(10px,env(safe-area-inset-left));background:linear-gradient(rgba(0,0,0,.66),transparent);opacity:0;pointer-events:none;transition:opacity .25s}
+#pp.ui .pp-top{opacity:1;pointer-events:auto}
+#pp .pp-ic{width:44px;height:44px;flex:none;display:grid;place-items:center;border:0;background:none;color:#fff;padding:0}
+#pp .pp-ic .ico{width:24px;height:24px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.65))}
+#pp .pp-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+#pp .pp-t b{font:700 22px/1 var(--display);text-transform:uppercase;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 6px rgba(0,0,0,.5)}
+#pp .pp-t span{font-size:11.5px;color:#d6d6d4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+/* The deck: the dock's colour, edge and buttons; the timeline with Play on top, the labelled buttons under it. */
+#pp .pp-deck{position:absolute;z-index:2;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:var(--pbot);padding:6px 6px 5px;border-radius:26px;background:var(--pdock);box-shadow:var(--pshadow),var(--pedge);opacity:0;pointer-events:none;transform:translateY(12px);transition:opacity .25s,transform .35s var(--ease)}
+#pp.ui .pp-deck{opacity:1;pointer-events:auto;transform:none}
+#pp.wait .pp-deck{opacity:0;pointer-events:none}
+#pp .pp-bot{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px 0 4px}
+#pp .pp-pb{width:44px;height:44px;flex:none;border-radius:50%;border:0;padding:0;display:grid;place-items:center;background:rgba(255,255,255,.1);color:var(--ink)}
+#pp .pp-pb .ico{width:20px;height:20px}
+#pp .pp-time,#pp .pp-dur{flex:none;font-size:12px;color:var(--ink-2);min-width:36px}
 #pp .pp-dur{text-align:right}
-#pp .pp-seek{flex:1;min-width:0;height:28px;margin:0;background:transparent;-webkit-appearance:none;appearance:none;--p:0%}
-#pp .pp-seek::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--accent) var(--p),rgba(255,255,255,.22) var(--p))}
-#pp .pp-seek::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;margin-top:-6px;border-radius:50%;background:var(--ink);border:0}
-#pp .pp-seek::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
-#pp .pp-seek::-moz-range-progress{height:4px;border-radius:2px;background:var(--accent)}
-#pp .pp-seek::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--ink);border:0}
-#pp .pp-cc{flex:none;width:38px;height:30px;border-radius:8px;border:0;background:rgba(255,255,255,.1);color:var(--ink-2);font:700 11px/1 var(--ui);letter-spacing:.04em}
-#pp .pp-cc.on{background:var(--ink);color:#000}
-#pp .pp-skip,#pp .pp-end{bottom:76px}
-/* Phone player: menu, episodes, note and timeline marks (Elias, 2026-11-07). */
-#pp .pp-top .ib + .ib{margin-left:-2px}
-#pp.fill video{object-fit:cover}
 #pp .pp-track{position:relative;flex:1;min-width:0;display:flex;align-items:center}
-#pp .pp-track .pp-seek{flex:1;position:relative;z-index:1}
-#pp .pp-marks{position:absolute;left:8px;right:8px;top:50%;height:4px;margin-top:-2px;z-index:2;pointer-events:none}
+#pp .pp-seek{flex:1;min-width:0;height:36px;margin:0;background:transparent;-webkit-appearance:none;appearance:none;--p:0%;position:relative;z-index:1;touch-action:none}
+#pp .pp-seek::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:transparent}
+#pp .pp-seek::-webkit-slider-thumb{-webkit-appearance:none;position:relative;z-index:3;width:16px;height:16px;margin-top:-6px;border-radius:50%;background:var(--ink);border:0;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+#pp .pp-seek::-moz-range-track,#pp .pp-seek::-moz-range-progress{height:4px;background:transparent}
+#pp .pp-seek::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--ink);border:0}
+/* The bar is drawn under the slider (played part, then the opening/ending marks), so only the dot sits on top (Elias: a mark ran over the dot). */
+#pp .pp-marks{position:absolute;left:8px;right:8px;top:50%;height:4px;margin-top:-2px;z-index:0;pointer-events:none;border-radius:2px;background:rgba(255,255,255,.18)}
+#pp .pp-marks::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p,0%);border-radius:2px;background:var(--accent)}
 #pp .pp-marks i{position:absolute;top:0;bottom:0;border-radius:2px;opacity:.95}
 #pp .pp-marks i.op{background:var(--online)}
 #pp .pp-marks i.ed{background:#c9a3ff}
-#pp .pp-seek::-webkit-slider-thumb{position:relative;z-index:3}
-#pp .pp-panel{position:absolute;z-index:4;right:max(12px,env(safe-area-inset-right));top:74px;bottom:74px;width:min(360px,calc(100% - 24px));overflow:auto;overscroll-behavior:contain;padding:6px 16px 16px;border-radius:18px;background:rgba(22,23,27,.96);box-shadow:0 18px 44px -12px rgba(0,0,0,.75),var(--edge)}
-#pp .pp-panel h3{margin:14px 0 6px;font:600 11px/1 var(--mono,monospace);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
-#pp .pp-panel .sub{margin:4px 0;font-size:13px;color:var(--ink-2)}
-#pp .pp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;font-size:14px}
-#pp .pp-row>span:first-child{color:var(--ink-2)}
-#pp .pp-row .seg{flex:none;flex-wrap:wrap;justify-content:flex-end}
-#pp .pp-step{display:flex;align-items:center;gap:8px}
-#pp .pp-step .btn{width:36px;height:32px;padding:0;justify-content:center}
-#pp .pp-step b{min-width:62px;text-align:center;font-size:13px}
-#pp .pp-finish{width:100%;margin-top:14px;justify-content:center;gap:8px}
-#pp .pp-eps{display:flex;flex-direction:column;gap:2px}
-#pp .pp-ep{display:flex;align-items:center;gap:12px;min-height:46px;padding:6px 10px;border:0;border-radius:12px;background:transparent;color:var(--ink);text-align:left;font:500 14px/1.3 var(--ui)}
-#pp .pp-ep b{flex:none;min-width:34px;font-size:13px;color:var(--ink-2)}
-#pp .pp-ep span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#pp .pp-ep small{flex:none;font-size:11px;color:var(--online)}
-#pp .pp-ep .ico{flex:none;width:16px;height:16px;color:var(--ok)}
-#pp .pp-ep.seen{color:var(--ink-2)}
-#pp .pp-ep.cur{background:rgba(255,255,255,.1)}
-#pp .pp-ep.cur b{color:var(--accent)}
-#pp .pp-note{position:absolute;z-index:5;left:50%;top:max(16px,env(safe-area-inset-top));max-width:min(520px,80%);padding:9px 16px;border-radius:16px;background:rgba(22,23,27,.94);box-shadow:0 12px 30px -8px rgba(0,0,0,.7),var(--edge);font:500 14px/1.3 var(--ui);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .2s,transform .3s var(--spring)}
+#pp .pp-tabs{display:flex;padding-top:4px;margin-top:0;border-top:1px solid rgba(255,255,255,.07)}
+#pp .pp-tabs button{flex:1;min-width:0;height:52px;border:0;padding:0;border-radius:999px;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:600 11px var(--ui);color:var(--ink-2);white-space:nowrap}
+#pp .pp-tabs button .ico{width:21px;height:21px}
+#pp .pp-tabs button:active{background:rgba(255,255,255,.16);color:var(--ink)}
+#pp .pp-tabs button:disabled{opacity:.35}
+#pp .pp-tabs .lw{display:none}
+/* Skip: a pill of the dock's material; its dot has the timeline mark's colour. */
+#pp .pp-skip{position:absolute;z-index:2;right:max(12px,env(safe-area-inset-right));bottom:var(--pbot);display:flex;align-items:center;gap:9px;height:44px;padding:0 14px 0 16px;border:0;border-radius:999px;background:var(--pdock);color:var(--ink);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:650 14px var(--ui);transition:bottom .35s var(--ease)}
+#pp.ui .pp-skip{bottom:calc(var(--pbot) + var(--deck) + 10px)}
+#pp .pp-skip .dot{width:8px;height:8px;border-radius:50%;background:var(--online)}
+#pp .pp-skip .dot.ed{background:#c9a3ff}
+#pp .pp-skip .ico{width:18px;height:18px;color:var(--ink-2)}
+/* Up next / the last episode: a card of the same material, above the deck. */
+#pp .pp-end{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:calc(var(--pbot) + var(--deck) + 10px);z-index:3;width:min(340px,calc(100% - 24px));padding:16px 18px;border-radius:22px;background:var(--pdock);box-shadow:var(--pshadow),var(--pedge);display:flex;flex-direction:column;gap:6px}
+#pp .pp-end b{font:700 16px/1.3 var(--ui)}
+#pp .pp-end .sub{margin:0;font-size:13px;color:var(--ink-2)}
+#pp .pp-end .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+/* Two taps on a side: a soft light from that edge with the seconds. */
+#pp .pp-tap b{position:absolute;z-index:1;top:0;bottom:0;width:40%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:13px;opacity:0;pointer-events:none;transition:opacity .3s}
+#pp .pp-tap .l{left:0;background:radial-gradient(circle at 0 50%,rgba(255,255,255,.2),transparent 70%)}
+#pp .pp-tap .r{right:0;background:radial-gradient(circle at 100% 50%,rgba(255,255,255,.2),transparent 70%)}
+#pp .pp-tap .c{left:30%;width:40%;background:none}
+#pp .pp-tap .c i{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;background:rgba(20,21,25,.55)}
+#pp .pp-tap .c .ico{width:30px;height:30px}
+#pp .pp-tap b.on{opacity:1;transition:none}
+#pp .pp-tap .ico{width:30px;height:30px;filter:drop-shadow(0 1px 4px rgba(0,0,0,.6))}
+#pp .pp-tap span{text-shadow:0 1px 4px rgba(0,0,0,.7)}
+/* Locked: everything hides; a tap shows how to unlock. */
+#pp .pp-unlock{position:absolute;z-index:5;left:50%;top:max(16px,env(safe-area-inset-top));display:flex;align-items:center;gap:8px;height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--pdock);color:var(--ink);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:650 14px var(--ui);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .2s,transform .3s var(--spring)}
+#pp .pp-unlock .ico{width:18px;height:18px}
+#pp.locked.unl .pp-unlock{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
+#pp.locked .pp-top,#pp.locked .pp-deck,#pp.locked .pp-skip{opacity:0!important;pointer-events:none!important}
+/* The sheet: Episodes · Audio · Playback, like the Library's filter sheet; the picture dims behind it. */
+#pp.on::after{content:"";position:absolute;inset:0;z-index:3;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .26s}
+#pp.sheet::after{opacity:var(--dim,1)}
+#pp .pp-panel{position:absolute;z-index:4;left:0;right:0;bottom:0;margin:0 auto;width:100%;max-height:min(64%,600px);display:flex;flex-direction:column;padding:8px 0 max(14px,env(safe-area-inset-bottom));border-radius:26px 26px 0 0;background:var(--pdock);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13);touch-action:pan-y;transition:transform .32s var(--ease)}
+#pp .pp-panel.enter{animation:ppSheet .34s var(--ease)}
+#pp .pp-panel.out{transform:translateY(100%)!important;transition:transform .26s cubic-bezier(.4,0,1,1)}
+@keyframes ppSheet{from{transform:translateY(100%)}}
+#pp .pp-grab{display:block;flex:none;width:36px;height:5px;border-radius:5px;background:rgba(255,255,255,.25);margin:0 auto 12px}
+#pp .pp-sh{flex:none;display:flex;justify-content:center;margin-bottom:8px}
+#pp .pp-pages{flex:1;min-height:0;display:flex;transition:transform .34s var(--ease);will-change:transform}
+#pp .pp-panel{overflow:hidden}
+#pp .pp-body{position:relative;flex:none;width:100%;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 16px 4px}
+#pp .seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:rgba(14,15,18,.5);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);-webkit-backdrop-filter:none;backdrop-filter:none}
+#pp .seg button{height:34px;padding:0 13px;border:0;border-radius:999px;background:none;font:650 12px var(--ui);color:var(--ink-2)}
+#pp .seg button.on{background:var(--accent);color:#111}
+#pp .pp-sh .seg{position:relative}
+#pp .pp-sh .seg button{position:relative;z-index:1;padding:0 16px;font-size:13px;transition:color .2s}
+#pp .pp-sh .seg button.on{background:none;color:#111}
+#pp .pp-ind{position:absolute;left:0;top:3px;bottom:3px;border-radius:999px;background:var(--accent);transition:transform .34s var(--ease),width .34s var(--ease)}
+#pp .pp-panel .sub{margin:8px 2px;font-size:13px;color:var(--ink-2)}
+#pp .pp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:56px;font-size:15px;border-bottom:1px solid rgba(255,255,255,.07)}
+#pp .pp-row:last-of-type{border-bottom:0}
+#pp .pp-row>span:first-child{color:var(--ink)}
+#pp .pp-row .seg{flex:none;flex-wrap:nowrap}
+#pp .pp-step{align-items:center}
+#pp .pp-step button{width:36px;padding:0;display:grid;place-items:center}
+#pp .pp-step button .ico{width:16px;height:16px}
+#pp .pp-step b{min-width:66px;text-align:center;font-size:12px;font-weight:500;color:var(--ink)}
+#pp .pp-finish{width:100%;height:46px;margin-top:12px;justify-content:center;gap:8px;border-radius:999px;background:rgba(255,255,255,.1);border:0;color:var(--ink)}
+#pp .pp-eps{display:flex;flex-direction:column;gap:4px}
+#pp .pp-ep{display:flex;align-items:center;gap:12px;padding:6px 4px;border:0;border-radius:16px;background:none;color:var(--ink);text-align:left;font:inherit;width:100%}
+#pp .pp-th{position:relative;flex:none;width:128px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 18%,#1a1b20),#17181c) center/cover;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+#pp .pp-th i{position:absolute;left:6px;bottom:6px;font-size:10px;font-style:normal;padding:2px 7px;border-radius:999px;background:rgba(20,20,24,.62);color:var(--ink)}
+#pp .pp-th em{position:absolute;left:0;bottom:0;height:3px;background:var(--accent)}
+#pp .pp-ep.cur .pp-th{outline:2px solid var(--ink);outline-offset:2px}
+#pp .pp-ep.seen .pp-th{filter:saturate(.3) brightness(.6)}
+#pp .pp-et{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+#pp .pp-et b{font:600 14px/1.3 var(--ui);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#pp .pp-et small{font-size:11px;color:var(--mute)}
+#pp .pp-ep.cur small{color:var(--accent)}
+#pp .pp-ep>.ico{flex:none;width:18px;height:18px;color:var(--ink-2);margin-right:6px}
+#pp .pp-note{position:absolute;z-index:6;left:50%;top:max(16px,env(safe-area-inset-top));max-width:min(520px,80%);padding:10px 16px;border-radius:999px;background:var(--pdock);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:500 14px/1.3 var(--ui);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .2s,transform .3s var(--spring)}
 #pp .pp-note.on{opacity:1;transform:translate(-50%,0)}
 #pp .pp-note[data-k=err]{color:var(--bad)}
-#pp .seg{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(255,255,255,.08)}
+/* Sideways: the deck leaves room at the sides, its buttons sit in one row with their full words. */
+@media (orientation:landscape){
+  #pp.on{--deck:114px;--pbot:max(12px,env(safe-area-inset-bottom))}
+  #pp .pp-deck{left:max(48px,env(safe-area-inset-left));right:max(48px,env(safe-area-inset-right))}
+  #pp .pp-skip,#pp .pp-end{right:max(48px,env(safe-area-inset-right))}
+  #pp .pp-tabs button{flex-direction:row;gap:8px;height:44px;font-size:13px}
+  #pp .pp-tabs button .ico{width:19px;height:19px}
+  #pp .pp-tabs .lw{display:inline}
+  #pp .pp-tabs .sw{display:none}
+  #pp .pp-panel{width:min(600px,calc(100% - 96px));max-height:calc(100% - 16px)}
+  #pp .pp-top{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+}
 
 /* ───────── phone polish (TODO 177, Elias picked mockup A, 2026-11-07) ─────────
    Library: the lists as chips, one line for sort / Swipe / Filter, the filter
@@ -2761,8 +2814,7 @@ body.pp-open #modal{z-index:70}
   .home2.phone .uph{display:block;position:relative;margin:-80px -16px 0;height:min(76vh,620px);min-height:480px}
   .uph-art{position:absolute;inset:0;width:100%;border:0;border-radius:0;background:hsl(var(--h,220) 30% 24%) center 18%/cover;cursor:pointer}
   .uph:after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(16,17,20,.55) 0,transparent 22%,transparent 38%,rgba(16,17,20,.72) 64%,var(--bg) 99%)}
-  .uph-in{position:absolute;left:16px;right:16px;bottom:4px;z-index:2;pointer-events:none}
-  .uph-in>*{pointer-events:auto}
+  .uph-in{position:absolute;left:16px;right:16px;bottom:4px;z-index:2;cursor:pointer}
   .uph .eye{font:400 11.5px var(--mono);color:var(--ink-2);text-shadow:0 1px 8px rgba(0,0,0,.6)}
   .uph .eye .ok{color:var(--accent)}
   .uph h2{font:700 46px/.92 var(--display);text-transform:uppercase;letter-spacing:.004em;margin:8px 0 6px;text-wrap:balance;text-shadow:0 2px 18px rgba(0,0,0,.45)}
@@ -2809,11 +2861,19 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){
   /* Sideways rows snap a tile to the page's 16 px edge; tiles sit 10 px apart, so
      6 px of the one before peeked in. The row fades out over that edge instead (Elias). */
-  #app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 4px,#000 16px);mask:linear-gradient(90deg,transparent 0,transparent 4px,#000 16px)}
+  #app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px);mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px)}
 }
 @media (max-width:700px){
   /* Home's hero is the art: the blurred art behind the page made a lighter band the
      hero's fade didn't meet, an edge under Play while scrolling (Elias). Plain dark here. */
   body:has(.home2.has-uph) #canvas>i:not(.cv-grain){opacity:0!important}
   body:has(.home2.has-uph) #canvas{background:var(--bg)} /* and the accent glow at the top */
+}
+/* Show page episode tiles (Elias): the art may not zoom past its outline, and the
+   progress bar follows the art's 16px corners instead of 4px ones */
+@media (max-width:700px){
+  .sp2 .eps.strip .ep:hover .epimg{transform:none}
+  .sp2 .eps.strip .ep .eprog{height:16px;border-radius:0 0 16px 16px;overflow:hidden;background:linear-gradient(transparent 12px,rgba(0,0,0,.5) 0)}
+  .sp2 .eps.strip .ep .eprog i{height:4px;margin-top:12px;border-radius:0}
+  .sp2 .eps.strip .ep.resume .eprog,.sp2 .eps.strip .ep.sel .eprog{left:2px;right:2px;bottom:2px;border-radius:0 0 14px 14px} /* inside the ring, not under it */
 }

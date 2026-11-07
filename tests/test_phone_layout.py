@@ -253,6 +253,8 @@ class PhonePolish(unittest.TestCase):
     def test_home_a_hero_and_rails(self):
         # Round 2 (Elias picked Home A): the up-next fills the top, the rest are sideways rails.
         self.assertIn("function upHero(up)", APP)
+        self.assertIn('<div class="uph-in" data-a="open" data-v="${esc(s.id)}">', APP)  # the text opens the show too (Elias)
+        self.assertNotIn('aria-label="Open ${esc(s.title)}">${ico("chevr")}</button>', APP)  # no › beside Play
         self.assertIn("art = s.poster || safeThumb(sea, ep) || s.banner;", APP)  # a wide banner shows a sliver in a tall hero
         self.assertIn('<div class="crail">${L.map(contStill).join("")}</div>', APP)
         self.assertIn(".home2.phone .rdy{flex-wrap:nowrap;overflow-x:auto", CSS)
@@ -286,7 +288,63 @@ class PhonePolish(unittest.TestCase):
 
     def test_rails_hide_the_previous_tile(self):
         # Elias: a snapped tile left 6 px of the one before showing; above the strip's own edge fades (.ml/.mr)
-        self.assertIn("#app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 4px,#000 16px)", CSS)
+        self.assertIn("#app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px)", CSS)
+
+    def test_episode_tile_art_stays_in_its_ring(self):
+        # Elias: hovering zoomed the art past the ring, and the progress bar ran past the
+        # rounded corners and under the ring
+        self.assertIn(".sp2 .eps.strip .ep:hover .epimg{transform:none}", CSS)
+        self.assertIn(".sp2 .eps.strip .ep .eprog{height:16px;border-radius:0 0 16px 16px;overflow:hidden", CSS)
+        self.assertIn(".sp2 .eps.strip .ep.resume .eprog,.sp2 .eps.strip .ep.sel .eprog{left:2px;right:2px;bottom:2px", CSS)
+
+
+class PhonePlayerDeck(unittest.TestCase):
+    """TODO 177 round 2: Elias picked D1 in the app's own look — one deck made like the
+    dock (Play on the timeline, labelled buttons under it), Skip as a dock-material pill,
+    one sheet with tabs, double-tap jumps, a lock."""
+
+    def test_the_deck_replaces_the_middle_buttons(self):
+        self.assertIn('<div class="pp-deck">', APP)
+        self.assertIn('<button class="pp-pb" data-a="pptoggle"', APP)
+        self.assertNotIn("pp-mid", APP)
+        self.assertNotIn("pp-big", APP)
+        for v in ('data-v="eps"', 'data-v="audio"', 'data-v="menu"', 'data-a="ppnextep"'):
+            self.assertIn(v, APP)
+        self.assertIn("#pp .pp-deck{position:absolute;z-index:2;", CSS)
+        self.assertIn("--pdock:#1c1d22", CSS)  # the dock's colour; no blur in the player (it lags phones)
+
+    def test_skip_rides_above_the_deck(self):
+        self.assertIn('<i class="dot ${seg.kind === "op" ? "op" : "ed"}"></i>', APP)
+        self.assertIn("#pp.ui .pp-skip{bottom:calc(var(--pbot) + var(--deck) + 10px)}", CSS)
+
+    def test_one_sheet_three_tabs(self):
+        self.assertIn('const PP_TABS = [["eps", "Episodes"], ["audio", "Audio"], ["menu", "Playback"]];', APP)
+        self.assertIn("function ppAudioHTML()", APP)
+        self.assertIn("safeThumb(c.sea, c.ep)", APP)  # stills, spoiler-safe
+
+    def test_gestures_and_lock(self):
+        self.assertIn("function ppTap(e)", APP)
+        self.assertIn("now - T.t < (T.run ? 700 : 300)", APP)  # two taps jump, each tap after adds 10 s
+        # Elias: two taps in the middle play/pause, and a double tap never brings the controls up
+        self.assertIn("if (!side) { PP.tap = {}; if (v) v.paused ? v.play()", APP)
+        self.assertIn("Date.now() - (PP.quiet || 0) < 1500) return;", APP)
+        self.assertIn('el.addEventListener("touchend"', APP)  # a scrolling list cancels pointer events
+        self.assertIn("#pp.locked .pp-top,#pp.locked .pp-deck,#pp.locked .pp-skip{opacity:0!important", CSS)
+
+    def test_the_sheet_follows_the_finger(self):
+        # Elias: swipe animations, above all between Episodes · Audio · Playback
+        self.assertIn('<div class="pp-pages">', APP)  # the three tabs side by side
+        self.assertIn("function ppPage(i, anim = true, f = 0)", APP)  # slides, or follows a finger part way
+        self.assertIn('el.addEventListener("touchmove"', APP)
+        self.assertIn('g.axis = g.sheet ? (ax > ay ? "x" : g.dy > 0 && g.top ? "down" : "scroll")', APP)
+        self.assertIn("#pp .pp-panel.out{transform:translateY(100%)!important", CSS)  # closing slides away
+        self.assertIn("#pp .pp-ind{position:absolute", CSS)  # the tab highlight moves
+
+    def test_the_dot_sits_on_top_of_the_marks(self):
+        # Elias: the opening's mark ran over the timeline's dot — the bar is drawn under the slider now
+        self.assertIn("#pp .pp-seek::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:transparent}", CSS)
+        self.assertIn("z-index:0;pointer-events:none;border-radius:2px;background:rgba(255,255,255,.18)}", CSS)
+        self.assertIn('r.parentElement.style.setProperty("--p"', APP)
 
 
 if __name__ == "__main__":
