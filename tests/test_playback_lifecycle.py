@@ -297,6 +297,23 @@ class NaturalEndTests(LifecycleBase):
         self.assertEqual(titles(False), ["Seen", "Playing", "Started", "The Twist", "Never Played"])
         self.assertEqual(titles(True), ["Seen", "Playing", "Started", None, None])
 
+    def test_phone_list_has_the_stills_spoilers_kept_back(self):
+        """The phone player's Episodes tab shows the show page's stills, online ones too
+        (Elias: the list showed no pictures); hide_spoilers keeps them back like titles."""
+        slots = [{"id": "a", "number": 1, "thumb": "/epimg/1.jpg", "watched": True, "local": True},
+                 {"id": "b", "number": 2, "thumb": "/epimg/2.jpg", "watched": False, "local": False, "online": {"id": "s2"}},
+                 {"id": "c", "number": 3, "thumb": "/epimg/3.jpg", "watched": False, "local": False, "online": {"id": "s3"}}]
+        page = {"entries": [{"id": 7, "slots": slots, "online": {"available": True}}]}
+
+        def thumbs(hide):
+            with patch.object(player, "entry_of_episode", return_value=(7, 2)), \
+                    patch.object(player.pages, "franchise_view", return_value=page), \
+                    patch.object(player.settings, "automation_enabled", return_value=hide):
+                return [x["thumb"] for x in player.episode_menu("b")]
+
+        self.assertEqual(thumbs(False), ["/epimg/1.jpg", "/epimg/2.jpg", "/epimg/3.jpg"])
+        self.assertEqual(thumbs(True), ["/epimg/1.jpg", "/epimg/2.jpg", None])
+
     def test_sleep_timer_outlives_the_episode(self):
         """Decision 53: each episode is its own mpv, so the hub keeps the time."""
         self.addCleanup(player.set_sleep, 0)

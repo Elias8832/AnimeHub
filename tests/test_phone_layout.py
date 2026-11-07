@@ -133,7 +133,7 @@ class TabSlideAndSearch(unittest.TestCase):
         self.assertIn('sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";', APP)
         for a in ("srshow:", "srclr:", "srlist:", "srgo:"):
             self.assertIn(a, APP)
-        self.assertIn('#pal .pclose:after{content:"Cancel"', CSS)
+        self.assertIn('#pal .pclose:after{content:"";display:block;width:18px', CSS)  # a round close button (round 4, Search B)
 
     def test_keyboard_does_not_push_the_page(self):
         self.assertIn("interactive-widget=resizes-content", HTML)
@@ -162,13 +162,24 @@ class BackAndSwipes(unittest.TestCase):
 
 
 class ShowPagePhone(unittest.TestCase):
-    """S2: only Play (+ ⋯) at the bottom; the page's other buttons open from
-    ⋯ as a bottom sheet; no studio line, no big stats."""
+    """S2, redone as Show C (TODO 177): Play (+ ⋯) docked at the bottom; the
+    page's other buttons are a row of icons under the title; ⋯ opens as a
+    bottom sheet with the rare actions."""
 
     def test_s2(self):
-        self.assertIn(".frpage .cta,.frpage .srcl{display:none!important}", CSS)
-        self.assertIn('for (const b of [...$$("#app .frpage .cta .grp .gb:not([data-a=frmore])")].reverse()) {', APP)
+        self.assertIn(".sp2.frpage .hero .cta{grid-column:1/-1;display:block!important", CSS)
+        self.assertIn(".sp2.frpage .hero .cta>.btn.pri{display:none}", CSS)  # Play lives in the dock
+        self.assertNotIn(".frpage .cta .grp .gb:not([data-a=frmore])", APP)  # no longer copied into ⋯
         self.assertIn("#cm{z-index:48;left:0!important;right:0;top:auto!important;bottom:0;", CSS)
+
+    def test_show_c_poster_header(self):
+        self.assertIn("const framed = isPhone() ||", APP)
+        self.assertIn(".sp2.frpage .hero .hl2{display:contents}", CSS)
+        # .hp is also the old 3 px progress bar class: the poster must not be clipped by it
+        self.assertIn(".sp2.frpage .hp{display:block;grid-column:1;grid-row:1/3;align-self:end;width:auto;height:auto;overflow:visible", CSS)
+        self.assertIn(".sp2.frpage .eps.strip{flex-direction:row", CSS)
+        self.assertIn('descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }', APP)
+        self.assertIn("body:has(.sp2.frpage) .cv-art{opacity:0!important}", CSS)
 
 
 class InstallAsApp(unittest.TestCase):
@@ -206,6 +217,189 @@ class AppIcon(unittest.TestCase):
 
     def test_default_icon_is_the_orange_one(self):
         self.assertEqual((WEB / "icon.svg").read_bytes(), (WEB / "icons" / "orange.svg").read_bytes())
+
+
+class PhonePolish(unittest.TestCase):
+    """TODO 177 (Elias picked mockup A): one glass dock, the Library's sort
+    line and row sheet, and the small phone fixes."""
+
+    def test_search_sits_inside_the_pill(self):
+        self.assertIn('<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">', APP)
+        self.assertIn("#tabbar{display:flex;position:fixed;left:12px;right:12px", CSS)
+
+    def test_dock_shrinks_on_scroll_and_resets_on_navigation(self):
+        self.assertIn("function dockScroll()", APP)
+        self.assertIn("artDim(); dockScroll(); }", APP)
+        self.assertIn('document.body.classList.remove("tb-min");', APP)
+        self.assertIn("body.tb-min{--dock:46px}", CSS)
+
+    def test_play_row_and_remote_dock_on_the_tabs(self):
+        self.assertIn("bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom))", CSS)
+        self.assertIn("body.rmt-on #tabbar .tb,body.has-pbar #tabbar .tb{border-radius:0 0 26px 26px", CSS)
+
+    def test_library_sort_line_and_row_sheet(self):
+        self.assertIn('<div class="lsort"><label class="srt">', APP)
+        self.assertIn('data-a="fltopen">${ico("filter")}Filter', APP)
+        self.assertIn('<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>', APP)
+        self.assertIn(".fsheet .filters{gap:0;padding-top:12px;flex-wrap:nowrap}", CSS)  # a tall sheet wrapped into columns
+        self.assertIn('if (k === "group" || isPhone()) return render();', APP)
+
+    def test_small_fixes(self):
+        self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top
+        self.assertIn(".match.mc .guess.none{display:block", CSS)
+        self.assertIn(".rview .rrb .seg{display:flex;flex-wrap:wrap", CSS)  # remote choices wrap, not run off the edge
+        self.assertIn("#pal .plist{-webkit-mask:linear-gradient", CSS)
+
+    def test_home_a_hero_and_rails(self):
+        # Round 2 (Elias picked Home A): the up-next fills the top, the rest are sideways rails.
+        self.assertIn("function upHero(up)", APP)
+        self.assertIn('<div class="uph-in" data-a="open" data-v="${esc(s.id)}">', APP)  # the text opens the show too (Elias)
+        self.assertNotIn('aria-label="Open ${esc(s.title)}">${ico("chevr")}</button>', APP)  # no › beside Play
+        self.assertIn("art = s.poster || safeThumb(sea, ep) || s.banner;", APP)  # a wide banner shows a sliver in a tall hero
+        self.assertIn('<div class="crail">${L.map(contStill).join("")}</div>', APP)
+        self.assertIn(".home2.phone .rdy{flex-wrap:nowrap;overflow-x:auto", CSS)
+        self.assertIn("function Home() {\n  if (isPhone()) return HomePhone();", APP)  # the PC Home is untouched
+
+    def test_sideways_rails_do_not_switch_pages(self):
+        # Elias: swiping the show page's episodes went back / to another tab.
+        self.assertIn('.looks, .rdy, .agenda, .crail")', APP)
+        self.assertIn('!(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")))', APP)
+
+    def test_show_page_round_fixes(self):
+        self.assertIn('f?.favourite && !isPhone() ? "Remove from favourites" : "Favourite"', APP)
+        self.assertIn(".sp2.frpage .about:not(.tagsopen) dd.tags .tg:nth-child(n+7){display:none}", CSS)
+        self.assertIn(".sp2.frpage .castrow .ot .pw{width:84px;margin-top:0", CSS)  # supporting faces sat lower
+        self.assertIn(".sp2.frpage .eps-head .tord{display:none}", CSS)  # the Sub/Dub switch was cut off
+        # Elias: thick gaps between episode tiles — the rows' 40 px for ⋯ stayed; ⋯ itself sat off screen
+        self.assertIn(".sp2.frpage .eps.strip .ep{display:block;flex:none;width:228px;padding-right:0;", CSS)
+        self.assertIn(".sp2.frpage .eps.strip .ep .dots{left:auto;right:-6px;top:calc(228px * 9 / 16 + 4px)", CSS)
+        self.assertIn(".sp2.frpage .hero .grp [data-a=frmore]{display:none}", CSS)  # one ⋯ only: the dock's (Elias)
+
+    def test_top_corners_are_bare_icons(self):
+        # Elias picked B: no circle, a white icon with a soft shadow; back is a chevron on phones
+        self.assertIn("#nav .setb,:root[data-bar] #nav .setb{width:44px;height:44px;margin:0 -10px 0 0;padding:0;gap:0;border-radius:50%;background:none!important", CSS)
+        self.assertIn('${ico(isPhone() ? "chevl" : "back")}${backLabel()}', APP)
+
+    def test_home_hero_meets_a_plain_background(self):
+        # Elias: scrolling Home showed an edge under the hero — the blurred art and the
+        # accent glow behind the page were lighter than the colour the hero fades to
+        self.assertIn("body:has(.home2.has-uph) #canvas>i:not(.cv-grain){opacity:0!important}", CSS)
+        self.assertIn("body:has(.home2.has-uph) #canvas{background:var(--bg)}", CSS)
+
+    def test_rails_hide_the_previous_tile(self):
+        # Elias: a snapped tile left 6 px of the one before showing; above the strip's own edge fades (.ml/.mr)
+        self.assertIn("#app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px)", CSS)
+
+    def test_episode_tile_art_stays_in_its_ring(self):
+        # Elias: hovering zoomed the art past the ring, and the progress bar ran past the
+        # rounded corners and under the ring
+        self.assertIn(".sp2 .eps.strip .ep:hover .epimg{transform:none}", CSS)
+        self.assertIn(".sp2 .eps.strip .ep .eprog{height:16px;border-radius:0 0 16px 16px;overflow:hidden", CSS)
+        self.assertIn(".sp2 .eps.strip .ep.resume .eprog,.sp2 .eps.strip .ep.sel .eprog{left:2px;right:2px;bottom:2px", CSS)
+
+
+class PhonePlayerDeck(unittest.TestCase):
+    """TODO 177 round 2: Elias picked D1 in the app's own look — one deck made like the
+    dock (Play on the timeline, labelled buttons under it), Skip as a dock-material pill,
+    one sheet with tabs, double-tap jumps, a lock."""
+
+    def test_the_deck_replaces_the_middle_buttons(self):
+        self.assertIn('<div class="pp-deck">', APP)
+        self.assertIn('<button class="pp-pb" data-a="pptoggle"', APP)
+        self.assertNotIn("pp-mid", APP)
+        self.assertNotIn("pp-big", APP)
+        for v in ('data-v="eps"', 'data-v="audio"', 'data-v="menu"', 'data-a="ppnextep"'):
+            self.assertIn(v, APP)
+        self.assertIn("#pp .pp-deck{position:absolute;z-index:2;", CSS)
+        self.assertIn("--pdock:#1c1d22", CSS)  # the dock's colour; no blur in the player (it lags phones)
+
+    def test_skip_rides_above_the_deck(self):
+        self.assertIn('<i class="dot ${seg.kind === "op" ? "op" : "ed"}"></i>', APP)
+        self.assertIn("#pp.ui .pp-skip{bottom:calc(var(--pbot) + var(--deck) + 10px)}", CSS)
+
+    def test_one_sheet_three_tabs(self):
+        self.assertIn('const PP_TABS = [["eps", "Episodes"], ["audio", "Audio"], ["menu", "Playback"]];', APP)
+        self.assertIn("function ppAudioHTML()", APP)
+        self.assertIn("safeThumb(c.sea, c.ep)", APP)  # stills, spoiler-safe
+
+    def test_gestures_and_lock(self):
+        self.assertIn("function ppTap(e)", APP)
+        self.assertIn("now - T.t < (T.run ? 700 : 300)", APP)  # two taps jump, each tap after adds 10 s
+        # Elias: two taps in the middle play/pause, and a double tap never brings the controls up
+        self.assertIn("if (!side) { PP.tap = {}; if (v) v.paused ? v.play()", APP)
+        self.assertIn("Date.now() - (PP.quiet || 0) < 1500) return;", APP)
+        self.assertIn('el.addEventListener("touchend"', APP)  # a scrolling list cancels pointer events
+        self.assertIn("#pp.locked .pp-top,#pp.locked .pp-deck,#pp.locked .pp-skip{opacity:0!important", CSS)
+
+    def test_the_sheet_follows_the_finger(self):
+        # Elias: swipe animations, above all between Episodes · Audio · Playback
+        self.assertIn('<div class="pp-pages">', APP)  # the three tabs side by side
+        self.assertIn("function ppPage(i, anim = true, f = 0)", APP)  # slides, or follows a finger part way
+        self.assertIn('el.addEventListener("touchmove"', APP)
+        self.assertIn('g.axis = g.sheet ? (ax > ay ? "x" : g.dy > 0 && g.top ? "down" : "scroll")', APP)
+        self.assertIn("#pp .pp-panel.out{transform:translateY(100%)!important", CSS)  # closing slides away
+        self.assertIn("#pp .pp-ind{position:absolute", CSS)  # the tab highlight moves
+
+    def test_the_dot_sits_on_top_of_the_marks(self):
+        # Elias: the opening's mark ran over the timeline's dot — the bar is drawn under the slider now
+        self.assertIn("#pp .pp-seek::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:transparent}", CSS)
+        self.assertIn("z-index:0;pointer-events:none;border-radius:2px;background:rgba(255,255,255,.18)}", CSS)
+        self.assertIn('r.parentElement.style.setProperty("--p"', APP)
+
+
+
+class PhoneRound3(unittest.TestCase):
+    """TODO 177 round 3: Elias picked Calendar A (agenda), Journal A (tabs), Settings B (inline rows)."""
+
+    def test_calendar_is_an_agenda_on_phones(self):
+        self.assertIn("if (isPhone() && aniMode()) return CalPhone();", APP)
+        self.assertIn('<div class="agstrip">', APP)
+        self.assertIn('data-a="agjump"', APP)
+        self.assertIn("agjump: (v) =>", APP)
+        self.assertIn(".agday{scroll-margin-top:76px}", CSS)
+
+    def test_the_tablet_timeline_is_not_squeezed_by_the_progress_bar(self):
+        # the download bar's .tline (6 px tall) hid the calendar's airing list
+        self.assertIn("span.tline{flex:1;height:6px;", CSS)
+        self.assertNotIn("\n.tline{flex:1;height:6px;", CSS)
+
+    def test_journal_has_history_and_stats_tabs_on_phones(self):
+        self.assertIn('jTab: lsGet("jTab", "history")', APP)
+        self.assertIn('data-a="jtab"', APP)
+        self.assertIn('<div class="jchips">', APP)
+        self.assertIn("jtab: (v) =>", APP)
+
+    def test_journal_tabs_follow_a_sideways_finger(self):
+        self.assertIn("function jPaint(p, live)", APP)
+        self.assertIn('<div class="jpages"><div class="jtrack">', APP)
+        self.assertIn("jp: !!t.closest(\".jr2.phone .jpages\")", APP)  # the page swipe yields while the tabs can move
+        self.assertIn(".jr2.phone:not(.jmove) .jpane:not(.on){height:0;overflow:hidden}", CSS)
+
+    def test_settings_rows_put_the_choice_beside_the_name(self):
+        self.assertIn(".set2:not(.phone) .srow>div:first-child{display:contents}", CSS)
+        self.assertIn(".set2:not(.phone) .srow{flex-direction:row!important;flex-wrap:wrap;", CSS)
+
+
+
+class PhoneRound4(unittest.TestCase):
+    """TODO 177 round 4: Elias picked Search B (field at the thumb, tidied) and Remote B (big controls on the art)."""
+
+    def test_search_library_hits_are_wide_cards(self):
+        self.assertIn('"srwide", `<span class="tx"><b>${hl(s.title, qq)}</b>', APP)
+        self.assertIn("sec(`On AniList <small>${remote.length}</small>`)", APP)
+        self.assertIn('.pal2.touch .mi.srwide:before{content:"";display:block;position:absolute;inset:0;width:auto;', CSS)  # beats the PC list's 3 px selection bar
+
+    def test_search_field_is_a_dock_pill(self):
+        self.assertIn("#pal .pin{height:62px;padding:0 9px 0 18px;gap:12px;border-radius:26px;background:rgba(28,29,34,.96)", CSS)
+        self.assertNotIn('content:"Cancel"', CSS)
+
+    def test_remote_has_art_big_controls_and_rows(self):
+        self.assertIn('<div class="rart" style="background-image:', APP)
+        self.assertIn('data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>−10</button>', APP)
+        self.assertIn("rmtrow: (v) =>", APP)
+        self.assertIn("S.rmtRow]);", APP)  # opening a row redraws the remote
+        self.assertNotIn("rsleep", APP)
+        self.assertIn(".sp2.rv .eps.strip{flex-direction:row", CSS.replace(".sp2.frpage .eps.strip,", ""))
 
 
 if __name__ == "__main__":
