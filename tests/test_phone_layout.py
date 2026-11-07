@@ -258,6 +258,36 @@ class PhonePolish(unittest.TestCase):
         self.assertIn(".home2.phone .rdy{flex-wrap:nowrap;overflow-x:auto", CSS)
         self.assertIn("function Home() {\n  if (isPhone()) return HomePhone();", APP)  # the PC Home is untouched
 
+    def test_sideways_rails_do_not_switch_pages(self):
+        # Elias: swiping the show page's episodes went back / to another tab.
+        self.assertIn('.looks, .rdy, .agenda, .crail")', APP)
+        self.assertIn('!(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")))', APP)
+
+    def test_show_page_round_fixes(self):
+        self.assertIn('f?.favourite && !isPhone() ? "Remove from favourites" : "Favourite"', APP)
+        self.assertIn(".sp2.frpage .about:not(.tagsopen) dd.tags .tg:nth-child(n+7){display:none}", CSS)
+        self.assertIn(".sp2.frpage .castrow .ot .pw{width:84px;margin-top:0", CSS)  # supporting faces sat lower
+        self.assertIn(".sp2.frpage .eps-head .tord{display:none}", CSS)  # the Sub/Dub switch was cut off
+        # Elias: thick gaps between episode tiles — the rows' 40 px for ⋯ stayed; ⋯ itself sat off screen
+        self.assertIn(".sp2.frpage .eps.strip .ep{display:block;flex:none;width:228px;padding-right:0;", CSS)
+        self.assertIn(".sp2.frpage .eps.strip .ep .dots{left:auto;right:-6px;top:calc(228px * 9 / 16 + 4px)", CSS)
+        self.assertIn(".sp2.frpage .hero .grp [data-a=frmore]{display:none}", CSS)  # one ⋯ only: the dock's (Elias)
+
+    def test_top_corners_are_bare_icons(self):
+        # Elias picked B: no circle, a white icon with a soft shadow; back is a chevron on phones
+        self.assertIn("#nav .setb,:root[data-bar] #nav .setb{width:44px;height:44px;margin:0 -10px 0 0;padding:0;gap:0;border-radius:50%;background:none!important", CSS)
+        self.assertIn('${ico(isPhone() ? "chevl" : "back")}${backLabel()}', APP)
+
+    def test_home_hero_meets_a_plain_background(self):
+        # Elias: scrolling Home showed an edge under the hero — the blurred art and the
+        # accent glow behind the page were lighter than the colour the hero fades to
+        self.assertIn("body:has(.home2.has-uph) #canvas>i:not(.cv-grain){opacity:0!important}", CSS)
+        self.assertIn("body:has(.home2.has-uph) #canvas{background:var(--bg)}", CSS)
+
+    def test_rails_hide_the_previous_tile(self):
+        # Elias: a snapped tile left 6 px of the one before showing; above the strip's own edge fades (.ml/.mr)
+        self.assertIn("#app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 4px,#000 16px)", CSS)
+
 
 if __name__ == "__main__":
     unittest.main()

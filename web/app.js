@@ -1471,7 +1471,7 @@ function frWhen(at) { const s = at - Date.now() / 1000; return s > 0 ? `in ${fmt
    title, your entry as a row of numbers, actions with their keys, then the
    season tabs and the episode strip. Rare actions sit behind ⋯. */
 const kb = (k) => `<kbd class="kb">${k}</kbd>`;
-const backBtn = () => `<button class="backbtn" data-a="back">${ico("back")}${backLabel()}</button>`;
+const backBtn = () => `<button class="backbtn" data-a="back">${ico(isPhone() ? "chevl" : "back")}${backLabel()}</button>`; // phones: a bare chevron (TODO 177, Elias picked B)
 function Fran() {
   const fr = S.fr, p = fr.page;
   if (!p || (!p.entries.length && p.building)) return `<div class="sp2 frpage">${backBtn()}<p class="empty" style="padding-top:120px">${fr.err ? esc(fr.err) : '<i class="spin"></i> Loading…'}</p></div>`;
@@ -1524,7 +1524,7 @@ function Fran() {
     <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
     ${e.overview ? `<p class="desc" data-a="descx">${esc(e.overview)}</p>` : ""}
     <div class="stats2" id="entrystats"></div>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}<span class="lbl">More</span></button></span></div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
   <div class="eps-head"><div class="tabs2">${tabs || `<h2>${esc(byOrder && e.label !== title ? e.label : movie ? "Movie" : "Episodes")}</h2>`}</div><span class="srcl">${esc(srcLine)}</span>${byOrder ? `<button class="link-btn tord" data-a="frorder">watch order ${ico("chevd")}</button>` : ""}<div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
@@ -1560,7 +1560,8 @@ function aboutRows(mid) {
   const shown = x.tags.filter((t) => !hide || !t.spoiler), held = x.tags.length - shown.length;
   const tags = shown.map((t) => `<span class="tg${t.spoiler ? " tspl" : ""}"${t.spoiler ? ' title="Spoiler tag"' : ""}>${esc(t.name)}</span>`).join(" ")
     + (held ? ` <span class="tg"><button class="tspb" data-a="tagspoil" data-v="${mid}">${held} spoiler tag${held === 1 ? "" : "s"}</button></span>` : "");
-  return (x.genres.length ? `<dt>genres</dt><dd>${esc(x.genres.join(" · "))}</dd>` : "") + (x.tags.length ? `<dt>tags</dt><dd class="tags">${tags}</dd>` : "");
+  const more = shown.length > 6 ? `<dd class="tgm"><button class="tgmore" data-a="tagsmore">+${shown.length - 6} more</button></dd>` : ""; // phones show six (TODO 177)
+  return (x.genres.length ? `<dt>genres</dt><dd>${esc(x.genres.join(" · "))}</dd>` : "") + (x.tags.length ? `<dt>tags</dt><dd class="tags">${tags}</dd>${more}` : "");
 }
 /* Characters (TODO 172, round 5): the watch order's own tiles (Elias) —
    the same poster, name and small grey line, main characters big and
@@ -1794,7 +1795,7 @@ function entryStats(f, pending) {
    off the list → Add to Planning; on it → Edit and ♥. */
 function entryActs(f, pending) {
   if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>${isPhone() ? "Planning" : "Add to Planning"}</span></button>`;
-  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite ? "Remove from favourites" : "Favourite"}</span></button>`;
+  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite && !isPhone() ? "Remove from favourites" : "Favourite"}</span></button>`;
 }
 /* Episode ticks are this PC's own (TODO 166): when AniList is further
    along (watched elsewhere), the line under the bar offers to mark those
@@ -2249,7 +2250,7 @@ function Sett() {
   if (isPhone() && !S.setOpen) return settingsList(tabs, s);
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
   let n = 1; // the side list's entrance order
-  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span></div></div>
+  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("chevl")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span></div></div>
   <div class="setg"><nav class="snav">${isPhone() ? "" : setSearch()}${setHeads(tabs).map(([g, ts]) => `<h4 style="--i:${n++}">${g}</h4>${ts.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" style="--i:${n++}" data-a="settab" data-v="${k}">${l}</button>`).join("")}`).join("")}</nav>
   <div class="settings scol" data-sec="${find ? "find" : tab}">${find ? setResults(s, tabs) : setSections(s)[tab]}</div></div></div>`;
 }
@@ -5350,6 +5351,7 @@ const A = {
   },
   castlang: (v) => { S.castLang = v; const e = frEntry(); if (e) aboutPaint(e.id); },
   tagspoil: (v) => { (S.tagsOpen ||= {})[v] = true; aboutPaint(+v); },
+  tagsmore: (v, t) => { t.closest(".about")?.classList.add("tagsopen"); t.closest(".tgm")?.setAttribute("hidden", ""); },
   descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }, // phones: the summary opens in place
   frorder: () => $("#app .frpage .hsec.ford")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }),
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
@@ -5884,11 +5886,12 @@ document.addEventListener("touchstart", (e) => {
   pull = null;
   if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
   const t = e.target, L = PULL.find((p) => t.closest?.(p.sel) && (!p.when || p.when()));
-  /* Sideways swipes leave real sideways scrollers alone; the phone's
-     episode list is vertical (it only keeps the PC strip's class). */
+  /* Sideways swipes leave real sideways scrollers alone: the show page's
+     episode row and Home's rails scroll (TODO 177); only an unmatched
+     folder's episode list is still vertical on a phone. */
   const x = e.touches[0].clientX, y = e.touches[0].clientY;
-  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda")
-    && !(t.closest(".strip") && !(isPhone() && t.closest(".eps")));
+  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda, .crail")
+    && !(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")));
   if (L) {
     const el = t.closest(L.sel), sc = L.scroller(el);
     if ((sc && sc.scrollTop > 2) || t.closest(NO_PULL)) return;

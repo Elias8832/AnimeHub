@@ -2699,7 +2699,7 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .hero .grp{display:flex;width:100%;height:auto;padding:0;gap:0;background:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;overflow:visible}
   .sp2.frpage .hero .grp>*,.sp2.frpage .hero #entryacts>*{flex:1 1 0}
   .sp2.frpage .hero #entryacts{display:contents}
-  .sp2.frpage .hero .gsep{display:none}
+  .sp2.frpage .hero .gsep,.sp2.frpage .hero .grp [data-a=frmore]{display:none} /* ⋯ lives in the dock (Elias) */
   .sp2.frpage .hero .gb{flex-direction:column;gap:6px;height:auto;min-width:0;padding:8px 2px;border-radius:14px;font:600 11.5px var(--ui);color:var(--ink-2);white-space:normal;text-align:center;line-height:1.2}
   .sp2.frpage .hero .gb .ico{width:21px;height:21px;color:var(--ink)}
   .sp2.frpage .hero .gb:active{background:rgba(255,255,255,.07)}
@@ -2713,7 +2713,10 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .eps.strip{flex-direction:row;gap:10px;overflow-x:auto;overflow-y:hidden;margin:0 -16px;padding:2px 16px 6px;scroll-padding:0 16px;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-mask:none;mask:none}
   .sp2.frpage .eps.strip::-webkit-scrollbar{display:none}
   .sp2.frpage .eps.strip:before{display:none}
-  .sp2.frpage .eps.strip .ep{display:block;flex:none;width:228px;scroll-snap-align:start}
+  .sp2.frpage .eps.strip .ep{display:block;flex:none;width:228px;padding-right:0;scroll-snap-align:start}
+  .sp2.frpage .eps.strip .ep .et{padding-right:30px}
+  /* ⋯ beside the episode's name (the rows kept it at the screen's right edge) */
+  .sp2.frpage .eps.strip .ep .dots{left:auto;right:-6px;top:calc(228px * 9 / 16 + 4px);margin-top:0;width:36px;height:36px}
   .sp2.frpage .eps.strip .ep .epa{width:100%}
   .sp2.frpage .eps.strip .ep .et{margin:8px 0 0}
   body.has-pbar .sp2.frpage{padding-bottom:200px}
@@ -2732,6 +2735,20 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .castrow .ot b{font-size:12px;justify-content:center}
   .sp2.frpage .castrow .ot small{font-size:10px}
   .sp2.frpage .castrow .ot.apart{margin-left:0}
+  .sp2.frpage .castrow{align-items:flex-start;gap:12px}
+  .sp2.frpage .castrow .ot .pw{width:84px;margin-top:0;border-radius:50%;box-shadow:var(--edge)}
+  .sp2.frpage .castrow .ot b{display:block;margin-top:8px;line-height:1.25}
+  /* the episode row's heading: one line, the Sub/Dub switch always in view */
+  .sp2.frpage .eps-head{overflow:visible;-webkit-mask:none;mask:none}
+  .sp2.frpage .eps-head .tord{display:none}
+  .sp2.frpage .eps-head .tabs2{flex:1;min-width:0}
+  .sp2.frpage .eps-head .tabs2 h2{overflow:hidden;text-overflow:ellipsis}
+  .sp2.frpage .eps-head .ctl{margin-left:auto}
+  /* favourite: the heart fills, no box */
+  .sp2.frpage .hero .gb.fav.on{background:none;box-shadow:none}
+  /* tags: the first few, the rest behind "more" */
+  .sp2.frpage .about:not(.tagsopen) dd.tags .tg:nth-child(n+7){display:none}
+  .sp2.frpage .about .tgmore{padding:6px 11px;border-radius:999px;background:none;box-shadow:inset 0 0 0 1px var(--line);font:600 12.5px var(--ui);color:var(--ink-2)}
 }
 @media (max-width:700px){
   /* the show page's art goes soft behind the poster header, so the title and summary read on bright art (Show C) */
@@ -2772,4 +2789,31 @@ body.pp-open #modal{z-index:70}
   .home2.phone .rdy::-webkit-scrollbar{display:none}
   .home2.phone .rdy .rc{flex:none;width:112px;scroll-snap-align:start}
   .home2.phone .rdy .rc .pw .poster{width:112px}
+}
+.about dd.tgm{display:none}
+@media (max-width:700px){
+  .sp2.frpage .about dd.tgm{display:block;padding:0;background:none}
+  .sp2.frpage .about dd.tgm[hidden]{display:none}
+}
+@media (max-width:700px){
+  /* The top corners: bare icons with a soft shadow, no circle (TODO 177, Elias picked B) */
+  #nav .setb,:root[data-bar] #nav .setb{width:44px;height:44px;margin:0 -10px 0 0;padding:0;gap:0;border-radius:50%;background:none!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;color:#fff}
+  #nav .setb .ico,:root[data-bar] #nav .setb .ico{width:24px;height:24px;color:#fff;stroke-width:2.1;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 10px rgba(0,0,0,.35))}
+  #nav .setb .sl,#nav .setb .sk,#nav .setb kbd{display:none!important}
+  #nav .setb.on .ico{color:var(--accent)}
+  #nav .setb:active{background:rgba(255,255,255,.08)!important}
+  .sp2 .backbtn:not([data-a=rmtclose]),.set2 .sback{width:44px;height:44px;margin-left:-10px!important;background:none!important;box-shadow:none!important;color:#fff}
+  .sp2 .backbtn:not([data-a=rmtclose]) .ico,.set2 .sback .ico{width:26px;height:26px;stroke-width:2.2;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 10px rgba(0,0,0,.35))}
+  .sp2 .backbtn:not([data-a=rmtclose]):active,.set2 .sback:active{background:rgba(255,255,255,.08)!important}
+}
+@media (max-width:700px){
+  /* Sideways rows snap a tile to the page's 16 px edge; tiles sit 10 px apart, so
+     6 px of the one before peeked in. The row fades out over that edge instead (Elias). */
+  #app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 4px,#000 16px);mask:linear-gradient(90deg,transparent 0,transparent 4px,#000 16px)}
+}
+@media (max-width:700px){
+  /* Home's hero is the art: the blurred art behind the page made a lighter band the
+     hero's fade didn't meet, an edge under Play while scrolling (Elias). Plain dark here. */
+  body:has(.home2.has-uph) #canvas>i:not(.cv-grain){opacity:0!important}
+  body:has(.home2.has-uph) #canvas{background:var(--bg)} /* and the accent glow at the top */
 }
