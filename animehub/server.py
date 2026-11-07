@@ -530,6 +530,15 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/hls.light.min.js":
             # hls.js (Apache-2.0, web/vendor), for phones that can't play HLS themselves.
             self.send_file(WEB / "vendor" / "hls.light.min.js", "text/javascript; charset=utf-8", cache=True)
+        elif route == "/api/phone/episodes":
+            # The phone player's Episodes list: the same list as mpv's (player.episode_menu).
+            ep = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+            try:
+                eps = player.episode_menu(ep) if ep else []
+            except Exception as e:
+                util.log("phone episodes: %s" % e)
+                eps = []
+            self.send_json({"episodes": eps})
         elif route == "/api/phone/skips":
             q = parse_qs(urlparse(self.path).query)
             try:
@@ -734,10 +743,17 @@ class Handler(BaseHTTPRequestHandler):
                         self._bad("'aniskip' must be a boolean")
                         return
                     player.answer_aniskip(body["id"], aniskip_ok)
+                at, switch = body.get("at"), body.get("switch", False)  # additive: a Sub/Dub switch
+                if at is not None and (isinstance(at, bool) or not isinstance(at, (int, float)) or at < 0):
+                    self._bad("'at' must be a number ≥ 0")
+                    return
+                if not isinstance(switch, bool):
+                    self._bad("'switch' must be a boolean")
+                    return
                 if body["id"].startswith("stream:"):
-                    r = phoneplay.start_online(body["id"], mode, from_start=start)
+                    r = phoneplay.start_online(body["id"], mode, from_start=start, at=at, switch=switch)
                 else:
-                    r = phoneplay.start(body["id"], body.get("version", 0), from_start=start)
+                    r = phoneplay.start(body["id"], body.get("version", 0), from_start=start, at=at)
                 self.send_json(r, 404 if r.get("error") else 200)
         elif route == "/api/phone/progress":
             ep, pos, dur = body.get("id"), body.get("position"), body.get("duration")

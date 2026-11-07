@@ -75,7 +75,15 @@ def _begin(ep_id, version, show, label):
                         started=time.time(), seen=time.time(), pc=pc, percent=0)
 
 
-def start(ep_id, version=0, from_start=False):
+def _start_at(ep_id, from_start, at):
+    """Where the phone's player starts: `at` (a Sub/Dub switch picks up
+    where it was), else the resume rule."""
+    if isinstance(at, (int, float)) and not isinstance(at, bool) and at >= 0:
+        return float(at)
+    return player.resume_seconds(ep_id, from_start)
+
+
+def start(ep_id, version=0, from_start=False, at=None):
     """The phone is about to play a file: what its player needs."""
     hit = file_of(ep_id, version)
     if not hit:
@@ -85,7 +93,10 @@ def start(ep_id, version=0, from_start=False):
     _begin(ep_id, version, s["title"], label)
     return {"ok": True, "id": ep_id, "src": f"/api/phone/video?id={_q(ep_id)}&v={int(version or 0)}",
             "type": mimetypes.guess_type(path.name)[0] or "video/mp4", "hls": False, "subs": [],
-            "start": player.resume_seconds(ep_id, from_start), "show": s["title"], "label": label}
+            "start": _start_at(ep_id, from_start, at), "show": s["title"], "label": label,
+            # Sub/Dub (Decision 70's rules): each version's audio, the player switches between them.
+            "versions": [player.file_mode(f) for f in (ep.get("files") or [])],
+            "audio": player.audio_choice(ep_id, {"version": version})}
 
 
 def _label(s, ep, ep_id):
@@ -129,10 +140,11 @@ def report(ep_id, position, duration, ended=False, stop=False):
                 nxt = None
             if nxt and nxt.get("id"):
                 out["next"] = {k: nxt.get(k) for k in ("id", "source", "label", "show")}
-                if nxt["source"] == "local":
-                    s2, ep2 = library.episode_by_id(nxt["id"])
-                    if ep2:
-                        out["next"].update(show=s2["title"], label=_label(s2, ep2, nxt["id"]))
+                # The card's words, the same for a file and an online episode
+                # (the franchise page's label already holds the show's name).
+                s2, ep2 = library.episode_by_id(nxt["id"])
+                if ep2:
+                    out["next"].update(show=s2["title"], label=_label(s2, ep2, nxt["id"]))
     return out
 
 
@@ -288,9 +300,11 @@ def _run_capture(link, token, mode):
         shutil.rmtree(folder, ignore_errors=True)
 
 
-def start_online(ep_id, mode=None, from_start=False):
+def start_online(ep_id, mode=None, from_start=False, at=None, switch=False):
     """The phone plays an online episode: ani-cli finds it (up to 90 s),
-    then the phone's player gets the relay's address."""
+    then the phone's player gets the relay's address. `switch`: the
+    player's Sub/Dub pick: no falling back to the sub, and the pick only
+    becomes the show's Sub/Dub once it was found (Decision 70)."""
     mid = streaming.stream_media_id(ep_id)
     token = ep_id.split(":", 2)[2] if mid else ""
     if not mid or not anicli.STREAM_EP_RE.match(token):
@@ -299,9 +313,10 @@ def start_online(ep_id, mode=None, from_start=False):
         link = streaming.stream_autolink(mid)
     except anicli.AniCliError as e:
         return {"error": str(e)}
-    if mode in anicli.STREAM_MODES and mode != link["mode"]:
-        streaming.stream_set_mode(mid, mode)
-        link["mode"] = mode
+    want = mode if mode in anicli.STREAM_MODES else None
+    if want and want != link["mode"] and not switch:
+        streaming.stream_set_mode(mid, want)
+        link["mode"] = want
     if token not in link["episodes"] and time.time() - link["episodes_ts"] > 60:
         try:
             streaming.stream_refresh(mid)
@@ -309,17 +324,24 @@ def start_online(ep_id, mode=None, from_start=False):
         except anicli.AniCliError:
             pass
     code = f"E{token}"
+    play_mode = want or link["mode"]
     if token not in link["episodes"]:
         return {"error": f"{code} isn't out yet."}
     s, ep = library.episode_by_id(ep_id)
     if not ep:
         return {"error": "unknown episode"}
     label = _label(s, ep, ep_id)
-    got, msg = _run_capture(link, token, link["mode"])
+    got, msg = _run_capture(link, token, play_mode)
     note = None
-    if not got and link["mode"] == "dub" and "no sources found for dub" in (msg or "").lower():
+    nodub = not got and play_mode == "dub" and "no sources found for dub" in (msg or "").lower()
+    if nodub and switch:
+        return {"error": f"{code} has no English dub yet."}
+    if nodub:
         got, msg = _run_capture(link, token, "sub")
+        play_mode = "sub"
         note = f"{code} isn't dubbed yet — playing it subbed."
+    if got and switch and play_mode != link["mode"]:
+        streaming.stream_set_mode(mid, play_mode)  # the pick sticks, as on the PC
     if not got:
         util.log("phone stream %s failed: %s" % (ep_id, msg))
         return {"error": streaming.friendly_stream_error(msg, code)}
@@ -337,7 +359,8 @@ def start_online(ep_id, mode=None, from_start=False):
     _begin(ep_id, 0, s["title"], label)
     out = {"ok": True, "id": ep_id, "src": relay_url(tok, got["url"]), "hls": _looks_hls(got["url"]),
            "subs": [f"/api/phone/sub/{tok}/{i}" for i in range(len(got["subs"]))],
-           "start": player.resume_seconds(ep_id, from_start), "show": s["title"], "label": label}
+           "start": _start_at(ep_id, from_start, at), "show": s["title"], "label": label,
+           "audio": {"current": play_mode, "options": list(anicli.STREAM_MODES)}}
     if note:
         out["note"] = note
     return out

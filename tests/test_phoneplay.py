@@ -370,3 +370,47 @@ class OnlineStart(unittest.TestCase):
 
     def test_not_out_yet(self):
         self.assertEqual(phoneplay.start_online("stream:900:3"), {"error": "E3 isn't out yet."})
+
+
+class PlayerMenu(unittest.TestCase):
+    """What the phone player's menu needs from the hub (Elias, 2026-11-07)."""
+
+    def setUp(self):
+        self.show, self.eps = episodes()
+        self.addCleanup(phoneplay._session.clear)
+
+    def test_a_switch_starts_where_it_was(self):
+        r = phoneplay.start(self.eps[0]["id"], at=42.5)
+        self.assertEqual(r["start"], 42.5)
+        self.assertEqual(r["versions"], ["sub"])
+        self.assertIsNone(r["audio"])  # one version: nothing to switch to
+
+    def test_episodes_list_is_mpvs(self):
+        with patch.object(player, "episode_menu", return_value=[{"id": "x", "number": 1}]) as menu:
+            hub = system.http_server_class()(("127.0.0.1", 0), server.Handler)
+            threading.Thread(target=hub.serve_forever, daemon=True).start()
+            self.addCleanup(hub.server_close)
+            self.addCleanup(hub.shutdown)
+            c = http.client.HTTPConnection("127.0.0.1", hub.server_address[1], timeout=5)
+            c.request("GET", "/api/phone/episodes?id=abc", headers={"Host": f"127.0.0.1:{config.PORT}"})
+            self.assertEqual(json.loads(c.getresponse().read()), {"episodes": [{"id": "x", "number": 1}]})
+            c.request("POST", "/api/phone/play", body=json.dumps({"id": "abc", "at": -1}),
+                      headers={"Host": f"127.0.0.1:{config.PORT}", "Content-Type": "application/json"})
+            self.assertEqual(c.getresponse().status, 400)
+            c.close()
+        menu.assert_called_once_with("abc")
+
+
+class OnlineSwitch(OnlineStart):
+    def test_the_dub_is_found_and_sticks(self):
+        with patch.object(streaming, "stream_set_mode") as setmode:
+            r = phoneplay.start_online("stream:900:2", "dub", at=95.0, switch=True)
+        self.assertEqual((r["start"], r["audio"]["current"]), (95.0, "dub"))
+        self.assertTrue(r["src"].endswith(phoneplay._q("#dub")))
+        setmode.assert_called_once_with(900, "dub")
+
+    def test_no_dub_says_so_and_changes_nothing(self):
+        with patch.dict(os.environ, {"HUB_TEST_NODUB": "1"}), patch.object(streaming, "stream_set_mode") as setmode:
+            r = phoneplay.start_online("stream:900:2", "dub", at=95.0, switch=True)
+        self.assertEqual(r, {"error": "E2 has no English dub yet."})
+        setmode.assert_not_called()

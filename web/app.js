@@ -330,6 +330,7 @@ async function api(path, body) {
 }
 /* The bottom popup. kind "busy" stays with a spinner until toastDone or the next popup. */
 function toast(m, kind) {
+  if (document.body.classList.contains("pp-open") && typeof ppNote === "function") ppNote(m, kind); // full screen hides the page's toast
   const t = $("#toast"), k = kind || (/could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m) ? "err" : "ok");
   t.dataset.k = k; t.classList.remove("act");
   t.innerHTML = `<span class="ti">${k === "busy" ? '<i class="tsp"></i>' : ico(k === "err" ? "close" : "check")}</span><span class="tm"></span>`;
@@ -4349,7 +4350,7 @@ function accentHex(show) {
    elsewhere (Tailscale). A PC through Tailscale is not one (Elias, 2026-11-07). */
 const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && !matchMedia("(any-pointer:fine)").matches);
 const playWhere = () => { const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; };
-const PP = { id: null, ended: false, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
+const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
 function WhereDlg() {
   return `<h2 id="dt">Play where?</h2>
   <p class="sub">Episodes can play on this phone, online ones too (they come through the PC). Change it any time in Settings → Player.</p>
@@ -4365,22 +4366,27 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
   ppTeardown();
   const online = id.startsWith("stream:"), ctx = findEpContext(id);
   const what = ctx ? `${ctx.s.title} · ${epCode(ctx.sea, ctx.ep)}` : "the episode";
-  Object.assign(PP, { id, version, ended: false, segs: [], skipped: new Set(), next: null, closing: false, hls: null, triedHls: false });
+  PP.eps = null; // the list's ticks and "playing now" change with every episode
+  Object.assign(PP, { id, version, ended: false, segs: [], skipped: new Set(), next: null, closing: false, hls: null, triedHls: false, subDelay: 0 });
   clearInterval(PP.cd); clearInterval(PP.tick);
   let el = $("#pp");
   if (!el) { el = document.createElement("div"); el.id = "pp"; document.body.appendChild(el); }
   /* The next episode reuses the player: the phone let this one play with sound. */
   let v = ppVideo();
   if (!v) {
-    el.innerHTML = `<video playsinline preload="auto" controls controlslist="nofullscreen nodownload noremoteplayback" disablepictureinpicture crossorigin="anonymous"></video>
+    el.innerHTML = `<video playsinline preload="auto" disablepictureinpicture disableremoteplayback crossorigin="anonymous"></video>
     <div class="pp-wait"><i class="pp-spin"></i><span></span></div>
-    <div class="pp-top"><button class="ib" data-a="ppclose" aria-label="Close the player">${ico("back")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="ib" data-a="ppfull" aria-label="Fullscreen">${ico("tv")}</button></div>
-    <button class="pp-skip btn pri" data-a="ppskip" hidden></button><div class="pp-end" hidden></div>`;
+    <div class="pp-top"><button class="ib" data-a="ppclose" aria-label="Close the player">${ico("back")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="ib" data-a="ppeps" aria-label="Episodes">${ico("list")}</button><button class="ib" data-a="ppmenu" aria-label="Player settings">${ico("sliders")}</button>${ppCanFull() ? `<button class="ib" data-a="ppfull" aria-label="Fullscreen">${ico("tv")}</button>` : ""}</div>
+    <div class="pp-mid"><button class="pp-jump" data-a="ppjump" data-v="-10" aria-label="Back 10 seconds">${ico("rew")}</button><button class="pp-big" data-a="pptoggle" aria-label="Play or pause">${ico("pause")}</button><button class="pp-jump" data-a="ppjump" data-v="10" aria-label="Forward 10 seconds">${ico("fwd")}</button></div>
+    <div class="pp-bot"><span class="pp-time mono">0:00</span><span class="pp-track"><span class="pp-marks" aria-hidden="true"></span><input class="pp-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Position"></span><span class="pp-dur mono">0:00</span><button class="ib pp-cc" data-a="ppcc" aria-label="Subtitles" hidden>CC</button></div>
+    <button class="pp-skip btn pri" data-a="ppskip" hidden></button><div class="pp-end" hidden></div><div class="pp-panel" hidden></div><div class="pp-note" role="status"></div>`;
     v = ppVideo();
+    ppWireControls(el);
   } else {
     v.pause(); v.querySelectorAll("track").forEach((t) => t.remove()); v.removeAttribute("src"); v.load();
-    el.querySelector(".pp-skip").hidden = true; el.querySelector(".pp-end").hidden = true;
+    el.querySelector(".pp-skip").hidden = true; el.querySelector(".pp-end").hidden = true; ppPanel(null);
   }
+  PP.seeking = false; ppPaintTime(); ppPaintPlay();
   el.querySelector(".pp-wait span").textContent = online ? `Finding ${what} online…` : `Loading ${what}…`;
   el.querySelector(".pp-t b").textContent = ctx?.s.title || ""; el.querySelector(".pp-t span").textContent = ctx ? epCode(ctx.sea, ctx.ep) : "";
   el.classList.add("on", "ui", "wait");
@@ -4396,15 +4402,32 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
   if (PP.id !== id || ppVideo() !== v) return; // closed or replaced meanwhile
   if (r.error) { toast(r.error, "err"); return ppClose(false, true); }
   if (r.note) toast(r.note);
+  ppLoad(id, version, r);
+}
+/* Put what the hub answered into the player: a new episode, or the same one
+   in the other language (Sub/Dub) at the spot it was paused. */
+async function ppLoad(id, version, r) {
+  const el = $("#pp"), v = ppVideo(), online = id.startsWith("stream:");
+  if (!el || !v) return;
+  PP.ac?.abort();
+  ppTeardown();
+  if (v.currentSrc) { v.pause(); v.querySelectorAll("track").forEach((t) => t.remove()); v.removeAttribute("src"); v.load(); }
+  Object.assign(PP, { id, version, r, segs: [], skipped: new Set(), triedHls: false });
+  ppMarks(); ppPanel(null);
+  el.classList.add("wait");
   el.querySelector(".pp-t b").textContent = r.show; el.querySelector(".pp-t span").textContent = r.label;
+  const ac = PP.ac = new AbortController(), on = (ev, fn, o) => v.addEventListener(ev, fn, { signal: ac.signal, ...o });
   on("loadedmetadata", () => {
     el.classList.remove("wait");
     if (r.start && r.start < v.duration - 3) v.currentTime = r.start;
-    api(`/api/phone/skips?id=${encodeURIComponent(id)}&d=${v.duration}&v=${version}`).then((x) => { if (PP.id === id) PP.segs = x.segments || []; }).catch(() => {});
+    v.defaultPlaybackRate = v.playbackRate = ppSpeed();
+    api(`/api/phone/skips?id=${encodeURIComponent(id)}&d=${v.duration}&v=${version}`).then((x) => { if (PP.id === id) { PP.segs = x.segments || []; ppMarks(); } }).catch(() => {});
   }, { once: true });
-  on("timeupdate", ppSkipCheck);
-  on("pause", () => { if (!v.ended && !PP.closing) ppReport({}); ppShowBar(); });
-  on("play", () => ppShowBar());
+  on("timeupdate", () => { ppSkipCheck(); ppPaintTime(); });
+  on("durationchange", () => { ppPaintTime(); ppMarks(); });
+  on("pause", () => { if (!v.ended && !PP.closing) ppReport({}); ppPaintPlay(); ppShowBar(); });
+  on("play", () => { ppPaintPlay(); ppShowBar(); });
+  on("playing", () => { ppPaintPlay(); ppShowBar(); }); // really started: the controls' 3 s count from here
   on("ended", () => { if (!PP.ended) ppReport({ ended: true }); });
   on("error", () => {
     if (PP.id !== id || PP.closing) return;
@@ -4412,10 +4435,14 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
     el.classList.remove("wait");
     toast(online ? "This phone couldn't play the episode." : "This phone can't play this file.", "err");
   });
-  el.onclick = (e) => { if (e.target === v) ppShowBar(); };
   for (const [i, src] of (r.subs || []).entries()) v.insertAdjacentHTML("beforeend", `<track kind="subtitles" srclang="en" label="${i ? "English " + (i + 1) : "English"}" src="${esc(src)}"${i ? "" : " default"}>`);
+  const tr = v.querySelector("track");
+  if (tr) tr.addEventListener("load", () => ppSubDelay(0), { signal: ac.signal });
+  const cc = el.querySelector(".pp-cc"); cc.hidden = !(r.subs || []).length; cc.classList.add("on");
+  el.classList.toggle("fill", !!lsGet("ppFill", false));
   await ppSource(v, r, false);
   v.play().catch(() => ppShowBar());
+  clearInterval(PP.tick);
   PP.tick = setInterval(() => { const x = ppVideo(); if (x && !x.paused) ppReport({}); }, 5000);
 }
 /* An online episode often comes as HLS (a playlist of short pieces):
@@ -4438,13 +4465,134 @@ async function ppSource(v, r, forceHls) {
   v.src = r.src;
 }
 function ppTeardown() { if (PP.hls) { PP.hls.destroy(); PP.hls = null; } }
+/* --- what mpv's panels offer, on the phone (Elias, 2026-11-07) --- */
+const ppSpeed = () => { const x = +lsGet("ppSpeed", 1); return [0.75, 1, 1.25, 1.5, 2].includes(x) ? x : 1; };
+/* A short note inside the player (the page's toast can't show in full screen). */
+function ppNote(m, kind) {
+  const n = $("#pp .pp-note"); if (!n) return;
+  n.textContent = m; n.dataset.k = kind || ""; n.classList.add("on");
+  clearTimeout(ppNote.t);
+  if (kind !== "busy") ppNote.t = setTimeout(() => n.classList.remove("on"), 3200);
+}
+const ppNoteDone = () => { const n = $("#pp .pp-note"); if (n && n.dataset.k === "busy") n.classList.remove("on"); };
+/* Opening and ending on the timeline, in their own colours. */
+function ppMarks() {
+  const box = $("#pp .pp-marks"), v = ppVideo(); if (!box) return;
+  const d = v && isFinite(v.duration) ? v.duration : 0;
+  box.innerHTML = d ? PP.segs.map((x) => `<i class="${x.kind}" style="left:${(x.start / d * 100).toFixed(3)}%;width:${(Math.max(0, x.end - x.start) / d * 100).toFixed(3)}%"></i>`).join("") : "";
+}
+/* Subtitle timing: every line moves by the same amount (+ = later). */
+function ppSubDelay(delta) {
+  PP.subDelay = Math.round(((PP.subDelay || 0) + delta) * 100) / 100;
+  for (const t of ppVideo()?.textTracks || []) for (const c of t.cues || []) {
+    if (c._o == null) { c._o = c.startTime; c._e = c.endTime; }
+    c.startTime = Math.max(0, c._o + PP.subDelay); c.endTime = Math.max(0, c._e + PP.subDelay);
+  }
+}
+function ppSleep(v) {
+  clearTimeout(PP.sleepT); PP.sleep = v;
+  if (typeof v === "number") { PP.sleepUntil = Date.now() + v * 60000; PP.sleepT = setTimeout(() => { PP.sleep = null; ppVideo()?.pause(); ppNote("Sleep timer: paused"); ppPanel(PP.panel); }, v * 60000); }
+}
+const ppRow = (label, act, opts, cur) => `<div class="pp-row"><span>${label}</span><span class="seg">${opts.map(([k, l]) => `<button class="${String(cur) === String(k) ? "on" : ""}" aria-pressed="${String(cur) === String(k)}" data-a="${act}" data-v="${k}">${l}</button>`).join("")}</span></div>`;
+function ppMenuHTML() {
+  const r = PP.r || {}, a = r.audio, subs = (r.subs || []).length, tr = ppVideo()?.textTracks[0];
+  const left = typeof PP.sleep === "number" ? Math.max(1, Math.round((PP.sleepUntil - Date.now()) / 60000)) : 0;
+  return `<h3>Playback</h3>${ppRow("Speed", "ppspeed", [[0.75, "0.75×"], [1, "1×"], [1.25, "1.25×"], [1.5, "1.5×"], [2, "2×"]], ppSpeed())}
+    ${ppRow(left ? `Sleep · ${left} min left` : "Sleep", "ppsleep", [["", "Off"], [15, "15m"], [30, "30m"], [60, "60m"], ["end", "This ep"]], PP.sleep ? PP.sleep : "")}
+    ${ppRow("Fill screen", "ppfill", [[0, "Off"], [1, "On"]], lsGet("ppFill", false) ? 1 : 0)}
+    ${a ? `<h3>Audio</h3>${ppRow(a.current === "dub" ? "English dub" : "Japanese · subtitles", "ppaudio", [["sub", "Sub"], ["dub", "Dub"]], a.current)}` : ""}
+    ${subs ? `<h3>Subtitles</h3>${ppRow("Show", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Timing</span><span class="pp-step"><button class="btn" data-a="ppsubd" data-v="-0.25" aria-label="Earlier">−</button><b class="mono">${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button class="btn" data-a="ppsubd" data-v="0.25" aria-label="Later">+</button></span></div>` : ""}
+    <button class="btn pp-finish" data-a="ppfinish">${ico("next")}Finish episode</button>`;
+}
+function ppEpsHTML() {
+  const eps = PP.eps;
+  if (!eps) return `<h3>Episodes</h3><p class="sub">Loading…</p>`;
+  if (!eps.length) return `<h3>Episodes</h3><p class="sub">No episode list for this one.</p>`;
+  return `<h3>Episodes</h3><div class="pp-eps">${eps.map((x) => `<button class="pp-ep${x.id === PP.id ? " cur" : ""}${x.watched ? " seen" : ""}" data-a="ppep" data-v="${esc(x.id)}"><b class="mono">E${esc(String(x.number))}</b><span>${esc(x.title || (x.id === PP.id ? "Playing now" : ""))}</span>${x.online ? '<small class="mono">online</small>' : ""}${x.watched ? ico("check") : ""}</button>`).join("")}</div>`;
+}
+function ppPanel(kind) {
+  const p = $("#pp .pp-panel"); if (!p) return;
+  PP.panel = kind || null;
+  p.hidden = !kind;
+  if (!kind) return;
+  p.innerHTML = kind === "eps" ? ppEpsHTML() : ppMenuHTML();
+  ppShowBar();
+  if (kind === "eps" && !PP.eps) {
+    const id = PP.id;
+    api(`/api/phone/episodes?id=${encodeURIComponent(id)}`).then((x) => { if (PP.id === id) { PP.eps = x.episodes || []; if (PP.panel === "eps") ppPanel("eps"); } }).catch(() => { PP.eps = []; });
+  }
+  if (kind === "eps") requestAnimationFrame(() => p.querySelector(".pp-ep.cur")?.scrollIntoView({ block: "center" }));
+}
+/* Another episode from inside the player: a file at once, an online one
+   through the same VPN question as any Play (shown above the player). */
+function ppGo(id, version = 0) {
+  if (!id.startsWith("stream:")) return phonePlay(id, version);
+  if (document.fullscreenElement && S.data?.vpn?.known && !vpnOn() && S.settings?.vpn_warn !== false) document.exitFullscreen().catch(() => {});
+  play(id, 0, undefined, undefined, false, undefined, "phone");
+}
+/* Sub/Dub (Decision 70 on the phone): pause at once, find the other
+   language, carry on 5 s back; nothing found = it plays on as it was. */
+async function ppSwitch(want) {
+  const v = ppVideo(), r = PP.r, id = PP.id;
+  if (!v || !r?.audio || r.audio.current === want || PP.switching) return;
+  const at = Math.max(0, (v.currentTime || 0) - 5), was = !v.paused;
+  const body = id.startsWith("stream:") ? { id, mode: want, at, switch: true } : { id, version: (r.versions || []).indexOf(want), at };
+  if (body.version < 0) return;
+  PP.switching = true; v.pause();
+  toast(want === "dub" ? "Loading the English dub…" : "Loading the Japanese audio…", "busy");
+  const nr = await api("/api/phone/play", body).catch(() => ({ error: "Could not reach the hub." }));
+  PP.switching = false;
+  if (PP.id !== id) return;
+  if (nr.error) { toast(nr.error, "err"); if (was) v.play().catch(() => {}); return; }
+  toastDone(); ppNoteDone();
+  ppLoad(id, body.version || 0, nr);
+}
+/* The player's own controls (not the browser's): the top bar, the middle
+   buttons and the timeline show and hide together (Elias, 2026-11-07). A tap
+   on the picture shows or hides them; while it plays they also go 3 s after
+   the last touch, while paused they stay until tapped away. */
 function ppShowBar() {
   const el = $("#pp"); if (!el) return;
   el.classList.add("ui");
   clearTimeout(PP.hideT);
-  PP.hideT = setTimeout(() => { const v = ppVideo(); if (v && !v.paused) el.classList.remove("ui"); }, 3000);
+  PP.hideT = setTimeout(() => { const v = ppVideo(); if (v && !v.paused && !PP.seeking && !PP.panel) el.classList.remove("ui"); }, 3000);
 }
+const ppClock = (t) => { t = Math.max(0, Math.floor(t || 0)); const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, x = String(t % 60).padStart(2, "0"); return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`; };
+function ppPaintTime() {
+  const v = ppVideo(), el = $("#pp"); if (!v || !el) return;
+  const d = isFinite(v.duration) ? v.duration : 0, t = PP.seeking ? PP.seekTo : v.currentTime;
+  el.querySelector(".pp-time").textContent = ppClock(t);
+  el.querySelector(".pp-dur").textContent = ppClock(d);
+  const r = el.querySelector(".pp-seek");
+  if (!PP.seeking) r.value = d ? Math.round(t / d * 1000) : 0;
+  r.style.setProperty("--p", (d ? t / d * 100 : 0) + "%");
+}
+function ppPaintPlay() {
+  const v = ppVideo(), b = $("#pp .pp-big"); if (!v || !b) return;
+  b.innerHTML = ico(v.paused ? "play" : "pause");
+}
+function ppWireControls(el) {
+  const r = el.querySelector(".pp-seek");
+  r.addEventListener("input", () => { const v = ppVideo(); PP.seeking = true; PP.seekTo = (r.value / 1000) * (v?.duration || 0); ppPaintTime(); ppShowBar(); });
+  r.addEventListener("change", () => { const v = ppVideo(); PP.seeking = false; if (v && isFinite(v.duration)) v.currentTime = PP.seekTo; ppPaintTime(); ppShowBar(); });
+  if (el.dataset.wired) return;
+  el.dataset.wired = "1";
+  /* Any touch keeps the controls up; a tap on the picture itself toggles them. */
+  el.addEventListener("pointerdown", () => { if (el.classList.contains("ui")) ppShowBar(); }, true);
+  el.addEventListener("click", (e) => {
+    if (e.target.closest("button, input, .pp-end") && !PP.panel) return;
+    if (e.target.closest(".pp-panel")) return;
+    if (PP.panel) { if (!e.target.closest(".pp-panel")) ppPanel(null); return; } // a tap beside an open menu closes it
+    /* Paused too (Elias, 2026-11-07): a paused picture can be looked at without the controls. */
+    if (el.classList.contains("ui")) { clearTimeout(PP.hideT); el.classList.remove("ui"); } else ppShowBar();
+  });
+}
+/* An iPhone can only put the video alone in full screen (Apple's own player),
+   which would leave Skip, Up next and Back behind: there the player just
+   fills the page, and turning the phone sideways does the rest (Elias, 2026-11-07). */
+const ppCanFull = () => typeof document.documentElement.requestFullscreen === "function";
 function ppFull(auto) {
+  if (!ppCanFull()) return;
   const el = $("#pp");
   if (!el) return;
   if (document.fullscreenElement) { if (!auto) document.exitFullscreen().catch(() => {}); return; }
@@ -4481,6 +4629,7 @@ function ppEnd(next) {
   const box = $("#pp .pp-end");
   if (!box) return;
   PP.next = next || null;
+  if (PP.sleep === "end") { ppSleep(null); box.hidden = false; box.innerHTML = `<b>Sleep timer: stopped after this episode</b><div class="actions"><button class="btn pri" data-a="ppclose">Close</button></div>`; return; }
   if (!next) { box.hidden = false; box.innerHTML = `<b>That was the last episode</b><div class="actions"><button class="btn pri" data-a="ppclose">Close</button></div>`; return; }
   const what = `${esc(next.show || "")} · ${esc(next.label || "")}`;
   let n = 5;
@@ -4495,7 +4644,7 @@ function ppClose(fromBack, quiet) {
   const v = ppVideo();
   if (!quiet && PP.id && v && !PP.ended) ppReport({ stop: true });
   PP.closing = true;
-  PP.ac?.abort();
+  PP.ac?.abort(); ppSleep(null); PP.panel = null;
   clearInterval(PP.tick); clearInterval(PP.cd);
   ppTeardown();
   if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
@@ -4845,15 +4994,24 @@ const A = {
   playwhere: (v) => { lsSet("playWhere", v || null); render(true); },
   ppclose: () => ppClose(false),
   ppfull: () => ppFull(false),
+  ppmenu: () => ppPanel(PP.panel === "menu" ? null : "menu"),
+  ppeps: () => ppPanel(PP.panel === "eps" ? null : "eps"),
+  ppspeed: (val) => { lsSet("ppSpeed", +val); const v = ppVideo(); if (v) v.defaultPlaybackRate = v.playbackRate = +val; ppPanel("menu"); },
+  ppsleep: (val) => { ppSleep(val === "" ? null : val === "end" ? "end" : +val); ppPanel("menu"); if (val) ppNote(val === "end" ? "Stops after this episode" : `Pauses in ${val} minutes`); },
+  ppfill: (val) => { lsSet("ppFill", val === "1"); $("#pp")?.classList.toggle("fill", val === "1"); ppPanel("menu"); },
+  ppaudio: (val) => { ppPanel(null); ppSwitch(val); },
+  ppsubs: (val) => { const tr = ppVideo()?.textTracks[0]; if (tr) tr.mode = val === "1" ? "showing" : "hidden"; $("#pp .pp-cc")?.classList.toggle("on", val === "1"); ppPanel("menu"); },
+  ppsubd: (val) => { ppSubDelay(+val); ppPanel("menu"); },
+  ppfinish: () => { ppPanel(null); const v = ppVideo(); if (v && !PP.ended) { v.pause(); ppReport({ ended: true }); } },
+  ppep: (val) => { ppPanel(null); if (val !== PP.id) ppGo(val, 0); },
+  pptoggle: () => { const v = ppVideo(); if (v) v.paused ? v.play().catch(() => {}) : v.pause(); ppShowBar(); },
+  ppjump: (val) => { const v = ppVideo(); if (v && isFinite(v.duration)) v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + +val)); ppShowBar(); },
+  ppcc: (val, t) => { const tr = ppVideo()?.textTracks[0]; if (!tr) return; const on = tr.mode !== "showing"; tr.mode = on ? "showing" : "hidden"; t.classList.toggle("on", on); ppShowBar(); },
   ppskip: (v, t) => ppDoSkip(PP.segs.find((x) => String(x.start) === t.dataset.s)),
   ppstay: () => { clearInterval(PP.cd); const b = $("#pp .pp-end"); if (b) b.innerHTML = `<b>Stopped</b><div class="actions"><button class="btn pri" data-a="ppclose">Close</button></div>`; },
   ppnext: () => {
     clearInterval(PP.cd); const n = PP.next;
-    if (!n?.id) return;
-    if (n.source !== "online") return phonePlay(n.id, PP.version);
-    /* Online: the same VPN question as any Play; it shows above the player. */
-    if (document.fullscreenElement && S.data?.vpn?.known && !vpnOn() && S.settings?.vpn_warn !== false) document.exitFullscreen().catch(() => {});
-    play(n.id, 0, undefined, undefined, false, undefined, "phone");
+    if (n?.id) ppGo(n.id, n.source === "online" ? 0 : PP.version);
   },
   skpgo: () => { const go = S.modal?.go; closeModal(); go?.(true); },
   skpno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
