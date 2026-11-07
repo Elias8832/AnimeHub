@@ -383,20 +383,23 @@ def _accent_key(ep_id):
 
 def episode_menu(ep_id):
     """The Episodes button's list: what can play in this episode's season,
-    oldest first. [{"id", "number", "title", "watched", "online"}]."""
+    oldest first. [{"id", "number", "title", "watched", "online", "thumb"}]
+    ("thumb": the show page's still, kept back like the title under hide_spoilers)."""
     at = entry_of_episode(ep_id)
     if at:
         page = pages.franchise_view(at[0], background=False)
         e = next((x for x in page["entries"] if x["id"] == at[0]), None)
         if e:
             hide = settings.automation_enabled("hide_spoilers")
+            def keep(x):
+                return not (hide and x["id"] != ep_id and _unseen(x))
             return [{"id": x["id"], "number": x["number"], "watched": bool(x.get("watched")),
-                     "title": None if hide and x["id"] != ep_id and _unseen(x) else x.get("title"),
-                     "online": not x["local"]}
+                     "title": x.get("title") if keep(x) else None,
+                     "online": not x["local"], "thumb": x.get("thumb") if keep(x) else None}
                     for x in e["slots"] if x["id"] and (x["local"] or (x["online"] and e["online"]["available"]))]
     s, ep = library.episode_by_id(ep_id)
     sea = next((x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"])), None) if ep else None
-    return [{"id": x["id"], "number": x["number"], "title": None, "watched": False, "online": False}
+    return [{"id": x["id"], "number": x["number"], "title": None, "watched": False, "online": False, "thumb": None}
             for x in sorted(sea["episodes"], key=lambda x: x["number"])] if sea else []
 
 

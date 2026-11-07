@@ -718,14 +718,17 @@ class ShowPageRedo(unittest.TestCase):
         return json.loads(out.stdout)
 
     def test_actions_follow_the_entry(self):
-        off = self.run_fn("entryActs", 'entryActs({ status: null }, false)')
+        pc, phone = "const isPhone = () => false;", "const isPhone = () => true;"
+        off = self.run_fn("entryActs", 'entryActs({ status: null }, false)', pc)
         self.assertIn('data-a="eadd"', off)
+        self.assertIn("Add to Planning", off)
         self.assertNotIn('data-a="edit"', off)
-        on = self.run_fn("entryActs", 'entryActs({ status: "CURRENT", favourite: true }, false)')
+        self.assertIn("<span>Planning</span>", self.run_fn("entryActs", 'entryActs({ status: null }, false)', phone))  # the phone's row of short words (TODO 177)
+        on = self.run_fn("entryActs", 'entryActs({ status: "CURRENT", favourite: true }, false)', pc)
         self.assertIn('data-a="edit"', on)
         self.assertIn('class="gb ic fav on"', on)
-        self.assertIn('<span class="lbl">', on)  # the phone sheet's copy names the heart
-        self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)"))  # before the read: Edit + ♥
+        self.assertIn('<span class="lbl">', on)  # the phone's row names the heart
+        self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)", pc))  # before the read: Edit + ♥
 
     def stats(self, f, fe):
         pre = ("const frEntry = () => (" + json.dumps(fe) + "); const showById = () => null; const epTotal = () => 0; const epWatched = () => 0;"

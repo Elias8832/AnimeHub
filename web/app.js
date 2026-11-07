@@ -14,7 +14,7 @@ const S = {
   lib: (({ year, score, average, genres, air, ...l }) => ({ tab: null, src: "all", fmt: "all", sort: "updated", group: "all", ...l,
          air: air === "FINISHED_AIRING" ? "FINISHED" : air || "all", genres: Array.isArray(genres) ? genres : [],
          year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all", average: Array.isArray(average) ? average : "all" }))(lsGet("hubLib", {})),
-  histRange: lsGet("histRange", "7d"), histMax: 120,
+  histRange: lsGet("histRange", "7d"), histMax: 120, jTab: lsGet("jTab", "history"),
   match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, opener: null,
   slink: {}, dl: [], loadingEp: null, frDown: {},
 };
@@ -60,8 +60,13 @@ const ICONS = {
   chevd: ['<path d="m6 9 6 6 6-6"/>'],
   home: ['<path d="M4 11 12 4l8 7v8.5a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>'],
   grid: ['<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'],
+  filter: ['<path d="M4 6.5h16M7 12h10M10 17.5h4"/>'],
+  sort: ['<path d="M7.5 4.5v15m-3.5-3.5 3.5 3.5 3.5-3.5M16.5 19.5v-15m-3.5 3.5 3.5-3.5 3.5 3.5"/>'],
   sliders: ['<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'],
   cal: ['<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4m7-4v4"/>'],
+  cc: ['<rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="M7.5 13h3M13.5 13h3M7.5 10h9"/>'],
+  speed: ['<path d="M4.5 17.5a8.5 8.5 0 1 1 15 0"/><path d="m12 13 3.5-4"/>'],
+  lock: ['<rect x="5.5" y="10.5" width="13" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
 /* Lucide icons (ISC licence, web/icons/LICENSE-lucide.txt), the set T3 Code's
@@ -1061,12 +1066,18 @@ function Lib() {
       ${m.unclear.length ? `<p class="intro">Episode numbers to check: these file names don't say which episode they are, so they're numbered in file order. Fix any that are wrong, then save. Your files aren't renamed.</p><div class="mgrid">${m.unclear.map(numUI).join("")}</div>` : ""}`;
   } else {
     const rail = (railNow = isRail());
-    const filters = (m.cold || isUn) ? "" : `<div class="filters">${lhead}
+    /* Phones (TODO 177): the sheet lists the filters as rows, like the PC's side
+       list; sort sits on the line above the grid. */
+    const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
+    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
+      <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
-    const fltb = filters ? `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>` : "";
+    const nf = [!srcLocked() && S.lib.src !== "all", S.lib.fmt !== "all", S.lib.air !== "all", ...["year", "score", "average"].map((k) => Array.isArray(S.lib[k])), S.lib.group !== "all"].filter(Boolean).length;
+    const fltb = !filters ? "" : ph ? `<div class="lsort"><label class="srt">${ico("sort")}<select data-a="filt" data-k="sort" aria-label="Sort">${[["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]].map(([v, l]) => `<option value="${v}" ${v === S.lib.sort ? "selected" : ""}>${l}</option>`).join("")}</select></label><span class="fill"></span>
+      <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
   const solo = (isPl || isMatch || isUn || m.cold) && lhead ? `<div class="lsolo">${lhead}</div>` : "";
@@ -1463,7 +1474,7 @@ function frWhen(at) { const s = at - Date.now() / 1000; return s > 0 ? `in ${fmt
    title, your entry as a row of numbers, actions with their keys, then the
    season tabs and the episode strip. Rare actions sit behind ⋯. */
 const kb = (k) => `<kbd class="kb">${k}</kbd>`;
-const backBtn = () => `<button class="backbtn" data-a="back">${ico("back")}${backLabel()}</button>`;
+const backBtn = () => `<button class="backbtn" data-a="back">${ico(isPhone() ? "chevl" : "back")}${backLabel()}</button>`; // phones: a bare chevron (TODO 177, Elias picked B)
 function Fran() {
   const fr = S.fr, p = fr.page;
   if (!p || (!p.entries.length && p.building)) return `<div class="sp2 frpage">${backBtn()}<p class="empty" style="padding-top:120px">${fr.err ? esc(fr.err) : '<i class="spin"></i> Loading…'}</p></div>`;
@@ -1504,16 +1515,17 @@ function Fran() {
   const note = e.slots.length ? (!e.slots.some((x) => x.local) && !ready ? '<p class="sub eps-note">Install ani-cli to watch these online.</p>'
       : ready && !e.online.available && e.slots.some((x) => !x.local) ? `<p class="sub eps-note">Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button></p>` : "")
     : `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : e.status === "NOT_YET_RELEASED" ? `Not out yet${airing ? " — " + esc(airing) : ""}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
-  const framed = !(e.banner || p.banner) || lookGet("art") !== "full";
+  const framed = isPhone() || !(e.banner || p.banner) || lookGet("art") !== "full"; // phones: poster beside the title (TODO 177, Show C)
   const title = e.title || p.title;
-  const dlBtn = missing.length ? `<button class="gb" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}<span>${esc(dlLabel)}</span>${vpnTag}</button>` : "";
-  const bulkBtn = seen.length ? `<button class="gb" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}<span>${allW ? (movie ? "Unwatch" : "Unwatch all") : movie ? "Mark watched" : "Mark all watched"}</span></button>` : "";
+  const ph = isPhone(); // phones show these as a row of icons with short words (TODO 177)
+  const dlBtn = missing.length ? `<button class="gb" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}<span>${esc(ph ? "Download" : dlLabel)}</span>${vpnTag}</button>` : "";
+  const bulkBtn = seen.length ? `<button class="gb" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}<span>${allW ? (movie || ph ? "Unwatch" : "Unwatch all") : movie ? "Mark watched" : ph ? "All watched" : "Mark all watched"}</span></button>` : "";
   return `<div class="sp2 frpage">${backBtn()}
   <div class="fold">
   <div class="hero${framed ? " framed" : ""}"><div class="hl2">
     <div class="meta">${e.format_label ? `<span class="fmt">${esc(e.format_label)}</span>` : ""}<span>${esc(facts.join(" · "))}</span>${e.id ? `<span class="sep">·</span><a class="alk" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}" title="Open on AniList">AniList${e.score ? " " + e.score : ""}</a>` : ""}<span class="live-t" id="airline">${esc(airing)}</span>${playing}</div>
     <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
-    ${e.overview ? `<p class="desc">${esc(e.overview)}</p>` : ""}
+    ${e.overview ? `<p class="desc" data-a="descx">${esc(e.overview)}</p>` : ""}
     <div class="stats2" id="entrystats"></div>
     <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
@@ -1551,7 +1563,8 @@ function aboutRows(mid) {
   const shown = x.tags.filter((t) => !hide || !t.spoiler), held = x.tags.length - shown.length;
   const tags = shown.map((t) => `<span class="tg${t.spoiler ? " tspl" : ""}"${t.spoiler ? ' title="Spoiler tag"' : ""}>${esc(t.name)}</span>`).join(" ")
     + (held ? ` <span class="tg"><button class="tspb" data-a="tagspoil" data-v="${mid}">${held} spoiler tag${held === 1 ? "" : "s"}</button></span>` : "");
-  return (x.genres.length ? `<dt>genres</dt><dd>${esc(x.genres.join(" · "))}</dd>` : "") + (x.tags.length ? `<dt>tags</dt><dd class="tags">${tags}</dd>` : "");
+  const more = shown.length > 6 ? `<dd class="tgm"><button class="tgmore" data-a="tagsmore">+${shown.length - 6} more</button></dd>` : ""; // phones show six (TODO 177)
+  return (x.genres.length ? `<dt>genres</dt><dd>${esc(x.genres.join(" · "))}</dd>` : "") + (x.tags.length ? `<dt>tags</dt><dd class="tags">${tags}</dd>${more}` : "");
 }
 /* Characters (TODO 172, round 5): the watch order's own tiles (Elias) —
    the same poster, name and small grey line, main characters big and
@@ -1616,17 +1629,9 @@ function frMore(x0, y0) {
     ${folders.map((l) => `<button class="mi" data-a="pinopen" data-s="${esc(l.show_id)}" data-k="${esc(l.season)}" data-l="${esc(l.folder + " · " + l.season_label)}">${ico("tv")}Wrong season? <small>${esc(l.season_label)}</small></button>`).join("")}
     ${ready && e.online.linked ? `<button class="mi" data-a="srcfix">${ico("search")}Wrong online episodes?</button>` : ""}
     <a class="mi" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}">${ico("ext")}Open on AniList</a>`;
-  /* Phones (S2): the page shows only Play; its other buttons (download,
-     mark all watched, edit entry) open from here, first. */
-  if (isPhone()) {
-    const cap = m.querySelector(".cap");
-    for (const b of [...$$("#app .frpage .cta .grp .gb:not([data-a=frmore])")].reverse()) {
-      const c = b.cloneNode(true);
-      c.className = "mi"; c.querySelectorAll(".kb").forEach((k) => k.remove());
-      cap.after(c);
-    }
-    m.insertAdjacentHTML("afterbegin", grab);
-  }
+  /* Phones: a sheet with a grab bar. Download, mark all watched and the
+     entry buttons sit in the row under the title (TODO 177, Show C). */
+  if (isPhone()) m.insertAdjacentHTML("afterbegin", grab);
   m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
   const z = zoomGet() / 100;
   m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:${Math.min(x0 / z, innerWidth / z - 270)}px;top:${Math.min(y0 / z, innerHeight / z - 280)}px`;
@@ -1792,8 +1797,8 @@ function entryStats(f, pending) {
 /* The actions that depend on your entry, inside the page's action pill:
    off the list → Add to Planning; on it → Edit and ♥. */
 function entryActs(f, pending) {
-  if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>Add to Planning</span></button>`;
-  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite ? "Remove from favourites" : "Favourite"}</span></button>`;
+  if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>${isPhone() ? "Planning" : "Add to Planning"}</span></button>`;
+  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite && !isPhone() ? "Remove from favourites" : "Favourite"}</span></button>`;
 }
 /* Episode ticks are this PC's own (TODO 166): when AniList is further
    along (watched elsewhere), the line under the bar offers to mark those
@@ -2104,6 +2109,20 @@ function Hist() {
   const heat = `<div class="jcard"><div class="sh"><b>${esc(now.toLocaleDateString(undefined, { month: "long" }))}</b><span>episodes per day</span></div><div class="heat">${["M", "T", "W", "T", "F", "S", "S"].map((x) => `<span class="h">${x}</span>`).join("")}${"<i class=\"pad\"></i>".repeat(lead)}${Array.from({ length: dim }, (_, i) => `<i class="${lvl(perDay[i + 1])}${i + 1 === now.getDate() ? " today" : ""}" title="${i + 1}: ${perDay[i + 1] || 0}"></i>`).join("")}</div>
     <div class="legend">less <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i> more</div></div>`;
   const st = Stats(true); // all time, in the same two columns (no gaps: each column stacks on its own)
+  /* Phones (TODO 177, Elias picked "Tabs"): the numbers as one sideways row, the
+     range's chart, then History or Stats: two short pages, not one long scroll. */
+  if (isPhone()) {
+    const tab = S.jTab === "stats" ? "stats" : "history";
+    const chips = [[`${T.hours.toLocaleString()}<small>h</small>`, "watched"], [T.eps.toLocaleString(), "episodes"], [T.done, "completed"], [T.mean, "mean score"], [`${cur}<small>day${cur === 1 ? "" : "s"}</small>`, `streak · <em>best ${best}</em>`]]
+      .map(([v, k], i) => `<div class="n" style="--i:${i}"><b class="v">${v}</b><span class="k">${k}</span></div>`).join("");
+    const hist = `<div class="jcard tl"><p class="jnote">Played on this PC</p><div class="tlg">${out || `<p class="empty">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"} on this PC.</p>`}</div>
+      ${hev.length > S.histMax ? `<div class="more"><button class="btn sm" data-a="histmore">Show earlier (${hev.length - S.histMax} left)</button></div>` : ""}</div>`;
+    const at = tab === "stats" ? 1 : 0;
+    return `<div class="jr2 phone" style="--p:${at}">${head}<div class="jchips">${chips}</div>
+      <div class="jcard jweek"><div class="sh"><b>${esc(rl[0].toUpperCase() + rl.slice(1))}</b><span>${eps} episode${eps === 1 ? "" : "s"}</span></div>${jBars(bars, "days")}</div>
+      <div class="jtabs"><span class="seg" role="tablist"><i class="jind"></i>${[["history", "History"], ["stats", "Stats"]].map(([k, l]) => `<button role="tab" class="${k === tab ? "on" : ""}" aria-selected="${k === tab}" data-a="jtab" data-v="${k}">${l}</button>`).join("")}</span></div>
+      <div class="jpages"><div class="jtrack"><div class="jpane${at ? "" : " on"}" data-k="history">${hist}</div><div class="jpane${at ? " on" : ""}" data-k="stats">${most + genres + heat + st.main + st.side}</div></div></div></div>`;
+  }
   return `<div class="jr2">${head}
     ${band}
     <div class="jcols"><div class="jmain"><div class="jcard tl"><div class="sh"><b>History</b><span>on this PC</span></div><div class="tlg">${out || `<p class="empty">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"}.</p>`}</div>
@@ -2111,6 +2130,43 @@ function Hist() {
       ${st.main}</div>
       <div class="jside">${most}${genres}${heat}${st.side}</div></div></div>`;
 }
+
+/* The phone Journal's two tabs slide, and follow a sideways finger (Elias):
+   p runs from 0 (History) to 1 (Stats). The tab not shown folds to no height,
+   so the page is as long as the tab you see. */
+function jPaint(p, live) {
+  const r = $("#app .jr2.phone"); if (!r) return;
+  r.style.setProperty("--p", p);
+  r.classList.add("jmove"); r.classList.toggle("jdrag", !!live);
+  r.querySelectorAll(".jtabs button").forEach((b, i) => { const on = Math.round(p) === i; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
+  clearTimeout(jPaint.t);
+  if (!live) jPaint.t = setTimeout(() => { r.classList.remove("jmove"); r.querySelectorAll(".jpane").forEach((x, i) => x.classList.toggle("on", i === Math.round(p))); }, 360);
+}
+/* Past the end (History → right, Stats → left) the swipe is the page's: on to Library or Calendar. */
+let jg = null;
+document.addEventListener("touchstart", (e) => {
+  const t = e.touches[0];
+  jg = e.touches.length === 1 && e.target.closest?.("#app .jr2.phone .jpages") ? { x: t.clientX, y: t.clientY, t: Date.now(), at: S.jTab === "stats" ? 1 : 0, axis: null, dx: 0, f: 0 } : null;
+}, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  const g = jg, t = e.touches[0]; if (!g || !t) return;
+  g.dx = t.clientX - g.x; const dy = t.clientY - g.y;
+  if (!g.axis) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(g.dx)) { jg = null; return; }
+    if (!(Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(dy) * 1.5)) return;
+    if ((g.at === 0 && g.dx > 0) || (g.at === 1 && g.dx < 0)) { jg = null; return; }
+    g.axis = "x"; g.x0 = t.clientX;
+  }
+  e.preventDefault();
+  g.f = Math.max(0, Math.min(1, g.at - (t.clientX - g.x0) / innerWidth));
+  jPaint(g.f, true);
+}, { passive: false });
+document.addEventListener("touchend", () => {
+  const g = jg; jg = null;
+  if (!g?.axis) return;
+  const go = Math.abs(g.f - g.at) > 0.22 || (Date.now() - g.t < 250 && Math.abs(g.dx) > 40);
+  A.jtab((go ? 1 - g.at : g.at) ? "stats" : "history");
+}, { passive: true });
 
 /* ---------- stats ---------- */
 function statsEntries() {
@@ -2248,7 +2304,7 @@ function Sett() {
   if (isPhone() && !S.setOpen) return settingsList(tabs, s);
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
   let n = 1; // the side list's entrance order
-  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("back")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span></div></div>
+  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("chevl")}Settings</button>` : ""}<div class="hello"><h1 class="hd">${isPhone() ? esc((tabs.find(([k]) => k === tab) || [0, "Settings"])[1]) : "Settings"}</h1><div class="sum"><span>saves on its own</span></div></div>
   <div class="setg"><nav class="snav">${isPhone() ? "" : setSearch()}${setHeads(tabs).map(([g, ts]) => `<h4 style="--i:${n++}">${g}</h4>${ts.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" style="--i:${n++}" data-a="settab" data-v="${k}">${l}</button>`).join("")}`).join("")}</nav>
   <div class="settings scol" data-sec="${find ? "find" : tab}">${find ? setResults(s, tabs) : setSections(s)[tab]}</div></div></div>`;
 }
@@ -2915,8 +2971,9 @@ function paintTabbar() {
   if (!el) return;
   if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
-  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}</div>
-    <button class="sq" data-a="sropen" aria-label="Search">${ico("search")}</button>`;
+  /* Phone polish (TODO 177, Elias picked A): one glass dock, search inside the
+     pill so it sits centred; the remote strip and the show's Play row dock on top. */
+  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">${ico("search")}<span>Search</span></button></div>`;
   /* The highlight glides to the open tab (One UI 9); none on Settings. */
   let on = null;
   for (const b of el.querySelectorAll(".tb button")) { const y = b.dataset.v === cur; b.classList.toggle("on", y); b.setAttribute("aria-selected", y); if (y) on = b; }
@@ -2925,6 +2982,18 @@ function paintTabbar() {
   ind.style.opacity = on ? "1" : "0";
   if (on) { ind.style.width = on.offsetWidth + "px"; ind.style.transform = `translateX(${on.offsetLeft}px)`; }
 }
+/* The dock shrinks while you scroll down and comes back on the way up (iOS 26). */
+let dockY = 0;
+function dockScroll() {
+  if (!isPhone()) return;
+  const y = scrollY, d = y - dockY, b = document.body;
+  if (y < 80) b.classList.remove("tb-min");
+  else if (d > 6) b.classList.add("tb-min");
+  else if (d < -6) b.classList.remove("tb-min");
+  if (Math.abs(d) > 6 || y < 80) dockY = y;
+}
+/* The highlight follows the tab's new width once the dock has changed size. */
+document.getElementById("tabbar")?.addEventListener("transitionend", (e) => { if (e.target.matches?.("#tabbar .tb button") && e.propertyName === "height") paintTabbar(); });
 /* Airing entries on your lists, soonest first (Home and the week share it). */
 function airingList() {
   return aniMode() ? S.data.spine.entries.filter((e) => e.airing === "RELEASING" && e.next_episode && inProg(e.status))
@@ -2944,15 +3013,23 @@ function watchRow({ s, t }) {
   return `<div class="prow" data-a="open" data-v="${esc(s.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : "next"} · ${seen}/${sea.episodes.length}</small></span>
     <button class="btn ic" data-a="play" data-v="${esc(t.ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></div>`;
 }
-function upPhone(up) {
-  const s = up.s, ep = up.ep, sea = up.sea, art = s.banner || safeThumb(sea, ep) || s.poster;
+/* Home A (TODO 177, Elias picked it): the up-next as an edge-to-edge hero,
+   what else you're watching as a rail of episode stills. */
+function upHero(up) {
+  const s = up.s, ep = up.ep, sea = up.sea, art = s.poster || safeThumb(sea, ep) || s.banner; // a tall hero: the poster fits it, a wide banner would show a sliver
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="upp"><button class="upa2" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
-    <div class="upb"><div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
-    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
-    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
-    <button class="btn pri big wide" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div>`;
+  return `<div class="uph"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
+    <div class="uph-in" data-a="open" data-v="${esc(s.id)}"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
+    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
+    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}</div>` : ""}
+    <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div></div>`; // the whole card opens the show; Play plays (Elias)
+}
+function contStill({ s, t }) {
+  const ep = t.ep, sea = t.sea, art = safeThumb(sea, ep) || s.banner || s.poster;
+  const pct = t.kind === "resume" && ep.duration ? Math.min(100, Math.round((ep.position / ep.duration) * 100)) : 0;
+  return `<div class="ccard" data-a="open" data-v="${esc(s.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"><em>${esc(epCode(sea, ep))}</em>${pct ? `<i style="width:${pct}%"></i>` : ""}<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></span>
+    <b>${esc(s.title)}</b><small>${t.kind === "resume" ? esc(fmtLeft(ep.duration, ep.position)) + " left" : esc(epCode(sea, ep)) + " next"}</small></div>`;
 }
 function HomePhone() {
   const d = S.data, up = nextUpInfo(), L = keepWatching(up && up.s.id), airing = airingList(), now = Date.now();
@@ -2960,8 +3037,8 @@ function HomePhone() {
   const touched = new Set((d.history || []).map((e) => e.show_id));
   const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
   const sum = [L.length + (up ? 1 : 0) ? `<span><b>${L.length + (up ? 1 : 0)}</b> in progress</span>` : "", airing.length ? `<span><b>${airing.length}</b> airing</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
-  let body = up ? upPhone(up) : "";
-  if (L.length) body += `<section class="psec"><div class="sh"><h2>Also watching</h2><span class="mut">${L.length}</span></div>${L.map(watchRow).join("")}</section>`;
+  let body = up ? upHero(up) : "";
+  if (L.length) body += `<section class="psec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span></div><div class="crail">${L.map(contStill).join("")}</div></section>`;
   if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
   const recs = recsFor();
   body += plHomeHTML(); // pinned playlists (Decision 64)
@@ -2969,7 +3046,7 @@ function HomePhone() {
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
     `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
   if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
-  return `<div class="home2 phone"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${body}</div>`;
+  return `<div class="home2 phone${up ? " has-uph" : ""}">${up ? "" : `<div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>`}${body}</div>`;
 }
 /* Tablet portrait: what you're watching and the week side by side. */
 function homePair(L, airing) {
@@ -3232,8 +3309,37 @@ function CalDesk() {
     <div class="sum airsum">${sum}</div>
     ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
 }
+/* Phones (TODO 177, Elias picked "Agenda"): the next seven days as a strip
+   (a dot: something airs; tap one to jump to it), then day by day what airs
+   in the next four weeks, from AniList's schedule, with time and countdown. */
+function CalPhone() {
+  const now = Date.now(), today = new Date(now), tk = airKey(today);
+  const c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: tk, scope: "all", mode: lsGet("airMode", "month") });
+  if (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3)) loadSched();
+  const days = calEvents(), day = (i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+  const end = airKey(day(28)), wk = airKey(day(7));
+  const keys = [...days.keys()].filter((k) => k >= tk && k < end).sort();
+  if (!keys.length) { const later = [...days.keys()].filter((k) => k >= end).sort()[0]; if (later) keys.push(later); }
+  const week = keys.filter((k) => k < wk).flatMap((k) => days.get(k)).filter((x) => !x.start).length;
+  const strip = Array.from({ length: 7 }, (_, i) => { const d = day(i), k = airKey(d), n = (days.get(k) || []).length;
+    return `<button class="agd${i ? "" : " is-today"}${n ? " has" : ""}" style="--i:${i}" data-a="agjump" data-v="${k}" aria-label="${esc(d.toDateString())}: ${n} episode${n === 1 ? "" : "s"}"><span>${DAYS[(d.getDay() + 6) % 7].slice(0, 2)}</span><b>${d.getDate()}</b><i></i></button>`; }).join("");
+  const name = (k) => { const d = new Date(`${k}T00:00:00`), n = Math.round((d - new Date(`${tk}T00:00:00`)) / 864e5);
+    return [n === 0 ? "Today" : n === 1 ? "Tomorrow" : n < 7 ? d.toLocaleDateString(undefined, { weekday: "long" }) : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }),
+      n < 7 ? d.toLocaleDateString(undefined, n < 2 ? { weekday: "short", day: "numeric", month: "short" } : { day: "numeric", month: "short" }) : ""]; };
+  const row = (x, i) => { const sec = (x.t - now) / 1000, t = airTag(x), seen = airSeen(x);
+    const when = x.start ? (sec > 0 ? "in " + fmtIn(sec) : "today") : sec > 0 ? "in " + fmtIn(sec) : seen ? "seen" : "out";
+    return `<button class="agr${seen ? " is-seen" : ""}" style="--i:${Math.min(i, 10)}" data-a="entry" data-v="${esc(x.e.id)}"><i class="agp"${airStyle(x)}></i><span class="agx"><b>${esc(x.e.title)}</b><small>${x.start ? "Starts" : `Episode ${esc(x.ep)}${x.e.episodes ? " of " + x.e.episodes : ""} · ${airTime(x)}`}</small>${t ? `<u class="${t === "Finale" ? "is-end" : ""}">${t}</u>` : ""}</span><span class="agc${sec > 0 ? "" : " is-out"}">${esc(when)}</span></button>`; };
+  let n = 0;
+  const list = keys.map((k) => { const [a, b] = name(k);
+    return `<section class="agday" id="ag-${k}"><div class="dh"><b>${esc(a)}</b>${b ? `<span>${esc(b)}</span>` : ""}</div>${days.get(k).map((x) => row(x, n++)).join("")}</section>`; }).join("");
+  const scope = ["all", "watching"].map((v) => `<button class="${c.scope === v ? "on" : ""}" aria-pressed="${c.scope === v}" data-a="airscope" data-v="${v}">${v === "all" ? "All lists" : "Watching"}</button>`).join("");
+  return `<div class="wk2 agw"><div class="hello"><h1 class="hd">Calendar</h1><div class="sum"><span><b>${week}</b> episode${week === 1 ? "" : "s"} this week</span>${S.sched?.state === "loading" ? '<span class="mut"><i class="spin"></i> getting the schedule</span>' : ""}</div>
+    <span class="seg" role="group" aria-label="Which shows">${scope}</span></div>
+    <div class="agstrip">${strip}</div>${list || `<p class="empty">Nothing airs in the next four weeks${c.scope === "watching" ? " on Watching" : ""}.</p>`}</div>`;
+}
 function Week() {
   if (!isPhone() && mq("(min-width:1001px)") && aniMode()) return CalDesk();
+  if (isPhone() && aniMode()) return CalPhone();
   const now = Date.now(), list = airingList();
   const head = `<div class="hello"><h1 class="hd">Calendar</h1><div class="sum">${list.length ? `<span><b>${list.length}</b> airing on your lists</span>` : "<span>nothing airing on your lists</span>"}</div></div>`;
   /* Logged out: one clear way in, not two lines that contradict each other. */
@@ -3285,7 +3391,7 @@ function paintPortals() {
     if (b) html += `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
   }
   const flt = isPhone() && S.view === "library" && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
-  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet">${flt.outerHTML.replace('<div class="filters">', '<div class="filters">' + grab + '<b class="fsh">Sort & filter</b>')}</div>`;
+  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet">${flt.outerHTML.replace('<div class="filters">', '<div class="filters">' + grab + '<b class="fsh">Filter</b>')}</div>`;
   else document.body.classList.remove("flt-open");
   if (el._html !== html) { el._html = html; el.innerHTML = html; }
   document.body.classList.toggle("has-pbar", html.includes('class="pbar"'));
@@ -3334,9 +3440,10 @@ function srHTMLTouch() {
     const local = srLocal(ql, 6);
     const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
     const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, k })).filter((y) => !have.has(y.x.id)).sort((a, b) => a.r - b.r).slice(0, 9);
-    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s);
-      return mi(`data-a="open" data-v="${esc(s.id)}"`, "srrow", `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>${ico("chevr")}`); }).join("");
-    if (remote.length) h += sec("On AniList") + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+    /* Your own shows as wide cards on their banner (TODO 177, Elias picked B): they're what you're most likely after. */
+    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s), art = s.banner || s.poster;
+      return mi(`data-a="open" data-v="${esc(s.id)}"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}`, "srwide", `<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>`); }).join("");
+    if (remote.length) h += sec(`On AniList <small>${remote.length}</small>`) + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
       return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
     const sets = srSets(ql, 4);
     if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
@@ -3447,7 +3554,7 @@ function paintRemote() {
   }
   const ctx = findEpContext(now.episode_id), s = ctx?.s, l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
   const hasNext = !!now.next && (now.next.source === "local" || now.next.source === "online");
-  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster]);
+  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, S.rmtRow]);
   if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
     rmtSig = sig;
     document.body.classList.add("rmt-on");
@@ -3457,24 +3564,29 @@ function paintRemote() {
     const thumb = s?.poster ? `<img alt="" src="${esc(s.poster)}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
     const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
     const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
-    const opts = [
-      tr.audio.length > 1 ? `<div class="ropt"><span class="rk">audio</span>${seg("audio", tr.audio.map((t, i) => [t.id, trackName(t, i), t.selected]), "Audio")}</div>` : "",
-      tr.sub.length ? `<div class="ropt"><span class="rk">subtitles</span>${seg("sub", [["no", "Off", !subOn], ...tr.sub.map((t, i) => [t.id, trackName(t, i), t.selected])], "Subtitles")}</div>` : "",
-      subOn ? `<div class="ropt"><span class="rk">subtitle timing · this episode</span><div class="rstep"><button class="btn ic" data-a="rmtdelay" data-v="-0.1" aria-label="Subtitles 0.1 s earlier">${ico("minus")}</button><b>${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s</b><button class="btn ic" data-a="rmtdelay" data-v="0.1" aria-label="Subtitles 0.1 s later">${ico("plus")}</button>${delay ? '<button class="btn" data-a="rmtdelay" data-v="0">Reset</button>' : `<span class="rk">${"earlier ← → later"}</span>`}</div></div>` : "",
-      typeof l.speed === "number" ? `<div class="ropt"><span class="rk">speed</span>${seg("speed", SPEEDS.map((v) => [v, v + "×", Math.abs(v - speed) < 0.01]), "Speed")}</div>` : "",
-      typeof l.volume === "number" ? `<div class="ropt"><span class="rk">volume</span><label class="rvol">${ico("vol")}<input class="rrange" type="range" min="0" max="130" step="5" value="${Math.round(l.volume)}" data-a="rmtvol" aria-label="Volume"><span>${Math.round(l.volume)}%</span></label></div>` : "",
+    /* The remote (TODO 177, Elias picked B): the show's art fills the top, big −10 · Play · +10
+       under the timeline, the choices as rows that open in place, episodes as a sideways row. */
+    const name = (l2, none) => { const i = l2.findIndex((t) => t.selected); return i < 0 ? none : trackName(l2[i], i); };
+    const row = (k, label, val, body) => `<div class="rrow${S.rmtRow === k ? " on" : ""}"><button class="rrh" data-a="rmtrow" data-v="${k}" aria-expanded="${S.rmtRow === k}"><span>${label}</span><em>${esc(val)}</em>${ico("chevr")}</button>${S.rmtRow === k ? `<div class="rrb">${body}</div>` : ""}</div>`;
+    const rows = [
+      tr.audio.length > 1 ? row("audio", "Audio", name(tr.audio, ""), seg("audio", tr.audio.map((t, i) => [t.id, trackName(t, i), t.selected]), "Audio")) : "",
+      tr.sub.length ? row("sub", "Subtitles", subOn ? name(tr.sub, "Off") : "Off", seg("sub", [["no", "Off", !subOn], ...tr.sub.map((t, i) => [t.id, trackName(t, i), t.selected])], "Subtitles")) : "",
+      subOn ? row("delay", "Subtitle timing", `${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s`, `<div class="rstep"><button class="btn ic" data-a="rmtdelay" data-v="-0.1" aria-label="Subtitles 0.1 s earlier">${ico("minus")}</button><b>${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)} s</b><button class="btn ic" data-a="rmtdelay" data-v="0.1" aria-label="Subtitles 0.1 s later">${ico("plus")}</button>${delay ? '<button class="btn" data-a="rmtdelay" data-v="0">Reset</button>' : '<span class="rk">this episode</span>'}</div>`) : "",
+      typeof l.speed === "number" ? row("speed", "Speed", speed + "×", seg("speed", SPEEDS.map((v) => [v, v + "×", Math.abs(v - speed) < 0.01]), "Speed")) : "",
+      typeof l.volume === "number" ? `<div class="rrow"><div class="rrh rvolrow"><span>Volume</span><label class="rvol"><input class="rrange" type="range" min="0" max="130" step="5" value="${Math.round(l.volume)}" data-a="rmtvol" aria-label="Volume"><span>${Math.round(l.volume)}%</span></label></div></div>` : "",
+      `<div class="rrow"><div class="rrh"><span>Stop after this episode<small>${l.stop_after ? `mpv closes when ${esc(epNo)} ends` : "else the next one starts by itself"}</small></span><button class="switch" role="switch" aria-checked="${!!l.stop_after}" aria-label="Stop after this episode" data-a="rmtsleep"></button></div></div>`,
     ].join("");
     const segBand = (l.segments || []).filter(() => l.duration).map((x) => `<i class="rsegb" style="left:${(x.start / l.duration) * 100}%;width:${((x.end - x.start) / l.duration) * 100}%"></i>`).join("");
-    const view = `<div class="sp2 rv">
-        ${grab}<div class="rtop"><button class="backbtn" data-a="rmtclose">${ico("chevd")}Close</button><span class="rpc"><i class="led"></i>${now.loading ? "starting on the PC…" : "playing on the PC"}</span></div>
-        <div class="rhero"><div class="meta"><i class="mdot"></i><span>${esc(now.label)}${ctx?.ep && (ctx.ep.duration || ctx.ep.length) ? ` · ${minsOf(ctx.ep.duration || ctx.ep.length)} min` : ""}</span></div>
-          <h1>${esc(s?.title || now.show)}</h1>${ctx ? `<p class="eptitle">${esc(epTitle(s, ctx.sea, ctx.ep) || "Episode " + ctx.ep.number)}</p>` : ""}</div>
+    const art = s?.poster || s?.banner;
+    const view = `<div class="sp2 rv">${art ? `<div class="rart" style="background-image:${esc(cssUrl(art))}"></div>` : ""}
+        ${grab}<div class="rtop"><button class="backbtn" data-a="rmtclose" aria-label="Close">${ico("chevd")}<span>Close</span></button><span class="rpc"><i class="led"></i>${now.loading ? "starting on the PC…" : "playing on the PC"}</span></div>
+        <div class="rhero"><h1>${esc(s?.title || now.show)}</h1><p class="eptitle">${esc([epNo, ctx ? epTitle(s, ctx.sea, ctx.ep) || "Episode " + ctx.ep.number : "", ctx?.ep && (ctx.ep.duration || ctx.ep.length) ? minsOf(ctx.ep.duration || ctx.ep.length) + " min" : ""].filter(Boolean).join(" · "))}</p></div>
         <div class="rseek"><div class="rtrack">${segBand}<input class="rrange" type="range" min="0" max="${Math.max(1, Math.round(l.duration || 0))}" step="1" value="${Math.round(livePos())}" data-a="rmtseek" aria-label="Position" ${l.duration && !now.loading ? "" : "disabled"}></div>
           <div class="rtimes"><span class="rcur">${tclock(livePos())}</span><span class="rmid"></span><span class="rleft">-${tclock((l.duration || 0) - livePos())}</span></div></div>
-        <div class="rskip">${skip("big")}</div>
-        <div class="cta rctl"><button class="btn big ic" data-a="rmt" data-v="stop" aria-label="Stop">${ico("stop")}</button><button class="btn big ic" data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>${ico("rew")}</button>${pp("big rpp")}<button class="btn big ic" data-a="rmt" data-v="fwd" aria-label="Forward 10 seconds" ${busy}>${ico("fwd")}</button><button class="btn big ic" data-a="rmt" data-v="next" aria-label="Next episode" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}</button></div>
-        ${opts ? `<div class="ropts">${opts}</div>` : ""}
-        <div class="rsleep"><div><b>Stop after this episode</b><p>${l.stop_after ? `mpv closes when ${esc(epNo)} ends. No auto-play.` : "Otherwise the next episode starts by itself."}</p></div><button class="switch" role="switch" aria-checked="${!!l.stop_after}" aria-label="Stop after this episode" data-a="rmtsleep"></button></div>
+        <div class="rctl"><button class="btn ic rj" data-a="rmt" data-v="back" aria-label="Back 10 seconds" ${busy}>−10</button>${pp("rpp")}<button class="btn ic rj" data-a="rmt" data-v="fwd" aria-label="Forward 10 seconds" ${busy}>+10</button></div>
+        <div class="rskip">${skip("rsk")}</div>
+        <div class="rmore"><button class="btn" data-a="rmt" data-v="stop">${ico("stop")}Stop</button><button class="btn" data-a="rmt" data-v="next" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}Next episode</button></div>
+        <div class="rlist">${rows}</div>
         ${rmtEpisodes(ctx, now.episode_id)}
       </div>`;
     const barIn = `${thumb}<div class="rt"><b>${esc(s?.title || now.show)}</b><span><i class="led"></i>${now.loading ? "starting on the PC…" : esc(epNo)}<span class="rbt"></span></span></div>${skip("rbskip")}${pp("rp")}<i class="rprog"><i></i></i>`;
@@ -3491,7 +3603,7 @@ function paintRemote() {
       vw.innerHTML = view;
       for (const x of vw.querySelectorAll("[data-bg]")) { if (x.dataset.bg) { x.style.backgroundImage = cssUrl(x.dataset.bg); x.style.backgroundPosition = x.dataset.bp || "50% 50%"; } }
       const st = vw.querySelector(".eps.strip");
-      if (st) st.scrollLeft = fresh || sl == null ? Math.max(0, Number(st.dataset.at) * 234 - 40) : sl;
+      if (st) st.scrollLeft = fresh || sl == null ? Math.max(0, (st.querySelector(".ep.resume")?.offsetLeft || 0) - 16) : sl;
     }
     if (fk) [...el.querySelectorAll("[data-a]")].find((x) => x.dataset.a === fk[0] && x.dataset.v === fk[1] && x.dataset.k === fk[2])?.focus({ preventScroll: true });
     document.body.classList.toggle("rmt-open", !!S.rmtOpen);
@@ -4173,10 +4285,10 @@ function nav(view, fn) {
   if (TAB_AT[from] != null) tabScroll[from] = scrollY;
   dip(() => {
     const prev = S.view;
-    S.navIn = true; S.view = view; clearSearch(); fIdx = -1;
+    S.navIn = true; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
     if (view === "library") S.fadeNext = true;
     if (fn) fn(prev);
-    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); pushNav();
+    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); dockY = scrollY; pushNav();
   });
   tabSlide(from, view);
 }
@@ -4439,16 +4551,22 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
   if (!v) {
     el.innerHTML = `<video playsinline preload="auto" disablepictureinpicture disableremoteplayback crossorigin="anonymous"></video>
     <div class="pp-wait"><i class="pp-spin"></i><span></span></div>
-    <div class="pp-top"><button class="ib" data-a="ppclose" aria-label="Close the player">${ico("back")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="ib" data-a="ppeps" aria-label="Episodes">${ico("list")}</button><button class="ib" data-a="ppmenu" aria-label="Player settings">${ico("sliders")}</button>${ppCanFull() ? `<button class="ib" data-a="ppfull" aria-label="Fullscreen">${ico("tv")}</button>` : ""}</div>
-    <div class="pp-mid"><button class="pp-jump" data-a="ppjump" data-v="-10" aria-label="Back 10 seconds">${ico("rew")}</button><button class="pp-big" data-a="pptoggle" aria-label="Play or pause">${ico("pause")}</button><button class="pp-jump" data-a="ppjump" data-v="10" aria-label="Forward 10 seconds">${ico("fwd")}</button></div>
-    <div class="pp-bot"><span class="pp-time mono">0:00</span><span class="pp-track"><span class="pp-marks" aria-hidden="true"></span><input class="pp-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Position"></span><span class="pp-dur mono">0:00</span><button class="ib pp-cc" data-a="ppcc" aria-label="Subtitles" hidden>CC</button></div>
-    <button class="pp-skip btn pri" data-a="ppskip" hidden></button><div class="pp-end" hidden></div><div class="pp-panel" hidden></div><div class="pp-note" role="status"></div>`;
+    <div class="pp-tap" aria-hidden="true"><b class="l"></b><b class="c"></b><b class="r"></b></div>
+    <div class="pp-top"><button class="pp-ic" data-a="ppclose" aria-label="Close the player">${ico("chevl")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="pp-ic" data-a="pplock" aria-label="Lock the controls">${ico("lock")}</button></div>
+    <button class="pp-unlock" data-a="pplock">${ico("lock")}<span>Tap to unlock</span></button>
+    <button class="pp-skip" data-a="ppskip" hidden></button>
+    <div class="pp-deck">
+      <div class="pp-bot"><button class="pp-pb" data-a="pptoggle" aria-label="Play or pause">${ico("pause")}</button><span class="pp-time mono">0:00</span><span class="pp-track"><span class="pp-marks" aria-hidden="true"></span><input class="pp-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Position"></span><span class="pp-dur mono">0:00</span></div>
+      <div class="pp-tabs"><button data-a="pptab" data-v="eps">${ico("list")}<span>Episodes</span></button><button data-a="pptab" data-v="audio">${ico("cc")}<span class="lw">Audio &amp; subtitles</span><span class="sw">Audio &amp; subs</span></button><button data-a="pptab" data-v="menu">${ico("speed")}<span class="pp-spd">Speed 1×</span></button><button class="pp-nx" data-a="ppnextep">${ico("next")}<span class="lw">Next episode</span><span class="sw">Next ep</span></button></div>
+    </div>
+    <div class="pp-end" hidden></div><div class="pp-panel" hidden></div><div class="pp-note" role="status"></div>`;
     v = ppVideo();
     ppWireControls(el);
   } else {
     v.pause(); v.querySelectorAll("track").forEach((t) => t.remove()); v.removeAttribute("src"); v.load();
     el.querySelector(".pp-skip").hidden = true; el.querySelector(".pp-end").hidden = true; ppPanel(null);
   }
+  PP.locked = false; el.classList.remove("locked", "unl");
   PP.seeking = false; ppPaintTime(); ppPaintPlay();
   el.querySelector(".pp-wait span").textContent = online ? `Finding ${what} online…` : `Loading ${what}…`;
   el.querySelector(".pp-t b").textContent = ctx?.s.title || ""; el.querySelector(".pp-t span").textContent = ctx ? epCode(ctx.sea, ctx.ep) : "";
@@ -4501,7 +4619,7 @@ async function ppLoad(id, version, r) {
   for (const [i, src] of (r.subs || []).entries()) v.insertAdjacentHTML("beforeend", `<track kind="subtitles" srclang="en" label="${i ? "English " + (i + 1) : "English"}" src="${esc(src)}"${i ? "" : " default"}>`);
   const tr = v.querySelector("track");
   if (tr) tr.addEventListener("load", () => ppSubDelay(0), { signal: ac.signal });
-  const cc = el.querySelector(".pp-cc"); cc.hidden = !(r.subs || []).length; cc.classList.add("on");
+  ppPaintSpeed(); ppEpsLoad().then(ppPaintNext);
   el.classList.toggle("fill", !!lsGet("ppFill", false));
   await ppSource(v, r, false);
   v.play().catch(() => ppShowBar());
@@ -4557,37 +4675,100 @@ function ppSleep(v) {
   if (typeof v === "number") { PP.sleepUntil = Date.now() + v * 60000; PP.sleepT = setTimeout(() => { PP.sleep = null; ppVideo()?.pause(); ppNote("Sleep timer: paused"); ppPanel(PP.panel); }, v * 60000); }
 }
 const ppRow = (label, act, opts, cur) => `<div class="pp-row"><span>${label}</span><span class="seg">${opts.map(([k, l]) => `<button class="${String(cur) === String(k) ? "on" : ""}" aria-pressed="${String(cur) === String(k)}" data-a="${act}" data-v="${k}">${l}</button>`).join("")}</span></div>`;
+/* Playback tab: speed, sleep, picture, Finish. */
 function ppMenuHTML() {
-  const r = PP.r || {}, a = r.audio, subs = (r.subs || []).length, tr = ppVideo()?.textTracks[0];
   const left = typeof PP.sleep === "number" ? Math.max(1, Math.round((PP.sleepUntil - Date.now()) / 60000)) : 0;
-  return `<h3>Playback</h3>${ppRow("Speed", "ppspeed", [[0.75, "0.75×"], [1, "1×"], [1.25, "1.25×"], [1.5, "1.5×"], [2, "2×"]], ppSpeed())}
+  return `${ppRow("Speed", "ppspeed", [[0.75, "0.75×"], [1, "1×"], [1.25, "1.25×"], [1.5, "1.5×"], [2, "2×"]], ppSpeed())}
     ${ppRow(left ? `Sleep · ${left} min left` : "Sleep", "ppsleep", [["", "Off"], [15, "15m"], [30, "30m"], [60, "60m"], ["end", "This ep"]], PP.sleep ? PP.sleep : "")}
     ${ppRow("Fill screen", "ppfill", [[0, "Off"], [1, "On"]], lsGet("ppFill", false) ? 1 : 0)}
-    ${a ? `<h3>Audio</h3>${ppRow(a.current === "dub" ? "English dub" : "Japanese · subtitles", "ppaudio", [["sub", "Sub"], ["dub", "Dub"]], a.current)}` : ""}
-    ${subs ? `<h3>Subtitles</h3>${ppRow("Show", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Timing</span><span class="pp-step"><button class="btn" data-a="ppsubd" data-v="-0.25" aria-label="Earlier">−</button><b class="mono">${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button class="btn" data-a="ppsubd" data-v="0.25" aria-label="Later">+</button></span></div>` : ""}
+    ${ppCanFull() ? ppRow("Full screen", "ppfull", [[0, "Off"], [1, "On"]], document.fullscreenElement ? 1 : 0) : ""}
     <button class="btn pp-finish" data-a="ppfinish">${ico("next")}Finish episode</button>`;
 }
+/* Audio tab: Sub/Dub, subtitles on/off and their timing. */
+function ppAudioHTML() {
+  const r = PP.r || {}, a = r.audio, subs = (r.subs || []).length, tr = ppVideo()?.textTracks[0];
+  if (!a && !subs) return `<p class="sub">This episode has one language and no separate subtitles.</p>`;
+  return `${a ? ppRow("Language", "ppaudio", [["sub", "Sub"], ["dub", "Dub"]], a.current) : ""}
+    ${subs ? `${ppRow("Subtitles", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Subtitle timing</span><span class="pp-step seg"><button data-a="ppsubd" data-v="-0.25" aria-label="Earlier">${ico("minus")}</button><b class="mono">${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button data-a="ppsubd" data-v="0.25" aria-label="Later">${ico("plus")}</button></span></div>` : ""}
+    ${a ? `<p class="sub">Switching goes back 5 s.</p>` : ""}`;
+}
+/* Episodes tab: stills like the show page's, from the library the page already has. */
 function ppEpsHTML() {
   const eps = PP.eps;
-  if (!eps) return `<h3>Episodes</h3><p class="sub">Loading…</p>`;
-  if (!eps.length) return `<h3>Episodes</h3><p class="sub">No episode list for this one.</p>`;
-  return `<h3>Episodes</h3><div class="pp-eps">${eps.map((x) => `<button class="pp-ep${x.id === PP.id ? " cur" : ""}${x.watched ? " seen" : ""}" data-a="ppep" data-v="${esc(x.id)}"><b class="mono">E${esc(String(x.number))}</b><span>${esc(x.title || (x.id === PP.id ? "Playing now" : ""))}</span>${x.online ? '<small class="mono">online</small>' : ""}${x.watched ? ico("check") : ""}</button>`).join("")}</div>`;
+  if (!eps) return `<p class="sub">Loading…</p>`;
+  if (!eps.length) return `<p class="sub">No episode list for this one.</p>`;
+  return `<div class="pp-eps">${eps.map((x) => {
+    const c = findEpContext(x.id), art = x.thumb || (c ? safeThumb(c.sea, c.ep) : null), cur = x.id === PP.id; // the hub's still (online ones too), else the library's
+    const p = c?.ep?.duration ? Math.min(100, Math.round((c.ep.position || 0) / c.ep.duration * 100)) : 0;
+    const what = cur ? "Playing now" : x.watched ? "Watched" : x.online ? "Online" : p > 1 ? `${p}% watched` : "";
+    return `<button class="pp-ep${cur ? " cur" : ""}${x.watched ? " seen" : ""}" data-a="ppep" data-v="${esc(x.id)}"><span class="pp-th"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}><i class="mono">E${esc(String(x.number))}</i>${p > 1 && !x.watched ? `<em style="width:${p}%"></em>` : ""}</span><span class="pp-et"><b>${esc(x.title || `Episode ${x.number}`)}</b><small class="mono">${what}</small></span>${x.watched ? ico("check") : ""}</button>`;
+  }).join("")}</div>`;
 }
-function ppPanel(kind) {
-  const p = $("#pp .pp-panel"); if (!p) return;
+const PP_TABS = [["eps", "Episodes"], ["audio", "Audio"], ["menu", "Playback"]];
+/* One sheet with three tabs, opened from the deck's buttons or a swipe up. The
+   three tabs sit side by side and slide; a finger can drag them sideways and the
+   sheet itself down (TODO 177). */
+function ppPanel(kind, o = {}) {
+  const p = $("#pp .pp-panel"), el = $("#pp"); if (!p) return;
+  const was = PP.panel;
   PP.panel = kind || null;
-  p.hidden = !kind;
-  if (!kind) return;
-  p.innerHTML = kind === "eps" ? ppEpsHTML() : ppMenuHTML();
-  ppShowBar();
-  if (kind === "eps" && !PP.eps) {
-    const id = PP.id;
-    api(`/api/phone/episodes?id=${encodeURIComponent(id)}`).then((x) => { if (PP.id === id) { PP.eps = x.episodes || []; if (PP.panel === "eps") ppPanel("eps"); } }).catch(() => { PP.eps = []; });
+  clearTimeout(PP.sheetT);
+  el.classList.toggle("sheet", !!kind);
+  if (!kind) {
+    if (p.hidden || !was) { p.hidden = true; return; }
+    p.style.transition = ""; p.classList.add("out"); p.style.transform = "";
+    PP.sheetT = setTimeout(() => { p.hidden = true; p.classList.remove("out"); p.innerHTML = ""; }, 260);
+    return;
   }
-  if (kind === "eps") requestAnimationFrame(() => p.querySelector(".pp-ep.cur")?.scrollIntoView({ block: "center" }));
+  const idx = PP_TABS.findIndex(([k]) => k === kind);
+  const fresh = p.hidden || !p.querySelector(".pp-pages");
+  p.classList.remove("out");
+  if (fresh) {
+    p.innerHTML = `<i class="pp-grab"></i><div class="pp-sh"><span class="seg" role="tablist"><i class="pp-ind"></i>${PP_TABS.map(([k, l]) => `<button role="tab" data-a="pptab" data-v="${k}">${l}</button>`).join("")}</span></div><div class="pp-pages">${PP_TABS.map(([k]) => `<div class="pp-body" data-k="${k}"></div>`).join("")}</div>`;
+    p.hidden = false;
+    p.classList.toggle("enter", !o.drag);
+    if (!o.drag) setTimeout(() => p.classList.remove("enter"), 400);
+  }
+  for (const pane of p.querySelectorAll(".pp-body")) {
+    const k = pane.dataset.k, top = pane.scrollTop;
+    pane.innerHTML = k === "eps" ? ppEpsHTML() : k === "audio" ? ppAudioHTML() : ppMenuHTML();
+    pane.scrollTop = top;
+  }
+  ppPage(idx, !fresh && was !== kind);
+  ppShowBar();
+  if (!PP.eps) ppEpsLoad().then(() => { if (PP.panel) ppPanel(PP.panel); });
+  if (kind === "eps" && (fresh || was !== "eps")) ppEpsCenter();
 }
-/* Another episode from inside the player: a file at once, an online one
-   through the same VPN question as any Play (shown above the player). */
+/* Show tab i: the row of tabs slides (animated unless told not to), the highlight moves to its button.
+   `f` (-1..1) is a finger part of the way to the next or previous tab. */
+function ppPage(i, anim = true, f = 0) {
+  const p = $("#pp .pp-panel"); if (!p) return;
+  const pages = p.querySelector(".pp-pages"), btns = [...p.querySelectorAll(".pp-sh button")], ind = p.querySelector(".pp-ind");
+  pages.style.transition = anim ? "" : "none";
+  pages.style.transform = `translateX(${(-i - f) * 100}%)`;
+  const bi = Math.max(0, Math.min(btns.length - 1, f > 0 ? i + 1 : f < 0 ? i - 1 : i)), t = Math.abs(f), near = t > 0.5 ? bi : i;
+  btns.forEach((x, j) => { x.classList.toggle("on", j === near); x.setAttribute("aria-selected", j === i); });
+  const a = btns[i], b = btns[bi];
+  if (!a || !ind) return;
+  ind.style.transition = anim ? "" : "none";
+  ind.style.transform = `translateX(${a.offsetLeft + (b.offsetLeft - a.offsetLeft) * t}px)`;
+  ind.style.width = `${a.offsetWidth + (b.offsetWidth - a.offsetWidth) * t}px`;
+}
+function ppEpsCenter() {
+  requestAnimationFrame(() => {
+    const pane = $('#pp .pp-body[data-k="eps"]'), c = pane?.querySelector(".pp-ep.cur");
+    if (c) pane.scrollTop = Math.max(0, c.offsetTop - (pane.clientHeight - c.offsetHeight) / 2);
+  });
+}
+/* The season's list, once per episode (the hub's, the same as mpv's). */
+function ppEpsLoad() {
+  const id = PP.id;
+  if (PP.eps) return Promise.resolve(PP.eps);
+  return api(`/api/phone/episodes?id=${encodeURIComponent(id)}`).then((x) => { if (PP.id === id) PP.eps = x.episodes || []; return PP.eps; }).catch(() => { if (PP.id === id) PP.eps = []; return PP.eps; });
+}
+const ppNextEp = () => { const eps = PP.eps || [], i = eps.findIndex((x) => x.id === PP.id); return i >= 0 ? eps[i + 1] || null : null; };
+function ppPaintNext() { const b = $("#pp .pp-nx"); if (b) b.disabled = !!PP.eps && !ppNextEp(); }
+function ppPaintSpeed() { const b = $("#pp .pp-spd"); if (b) b.textContent = `Speed ${ppSpeed()}×`; }
 function ppGo(id, version = 0) {
   if (!id.startsWith("stream:")) return phonePlay(id, version);
   if (document.fullscreenElement && S.data?.vpn?.known && !vpnOn() && S.settings?.vpn_warn !== false) document.exitFullscreen().catch(() => {});
@@ -4616,6 +4797,7 @@ async function ppSwitch(want) {
    the last touch, while paused they stay until tapped away. */
 function ppShowBar() {
   const el = $("#pp"); if (!el) return;
+  if (!el.classList.contains("ui") && Date.now() - (PP.quiet || 0) < 1500) return; // a double tap's own pause/play
   el.classList.add("ui");
   clearTimeout(PP.hideT);
   PP.hideT = setTimeout(() => { const v = ppVideo(); if (v && !v.paused && !PP.seeking && !PP.panel) el.classList.remove("ui"); }, 3000);
@@ -4628,10 +4810,10 @@ function ppPaintTime() {
   el.querySelector(".pp-dur").textContent = ppClock(d);
   const r = el.querySelector(".pp-seek");
   if (!PP.seeking) r.value = d ? Math.round(t / d * 1000) : 0;
-  r.style.setProperty("--p", (d ? t / d * 100 : 0) + "%");
+  r.parentElement.style.setProperty("--p", (d ? t / d * 100 : 0) + "%"); // the bar under the slider (.pp-marks)
 }
 function ppPaintPlay() {
-  const v = ppVideo(), b = $("#pp .pp-big"); if (!v || !b) return;
+  const v = ppVideo(), b = $("#pp .pp-pb"); if (!v || !b) return;
   b.innerHTML = ico(v.paused ? "play" : "pause");
 }
 function ppWireControls(el) {
@@ -4640,15 +4822,95 @@ function ppWireControls(el) {
   r.addEventListener("change", () => { const v = ppVideo(); PP.seeking = false; if (v && isFinite(v.duration)) v.currentTime = PP.seekTo; ppPaintTime(); ppShowBar(); });
   if (el.dataset.wired) return;
   el.dataset.wired = "1";
-  /* Any touch keeps the controls up; a tap on the picture itself toggles them. */
+  /* Any touch keeps the controls up. */
   el.addEventListener("pointerdown", () => { if (el.classList.contains("ui")) ppShowBar(); }, true);
+  /* Swipes, following the finger (touch events: a list scrolling under it cancels pointer events):
+     up on the picture pulls the sheet up; on the sheet, sideways moves between its tabs and down
+     (from its top, or a list already at its top) pulls it away. */
+  el.addEventListener("touchstart", (e) => {
+    const t = e.touches[0], sheet = e.target.closest(".pp-panel"), pane = e.target.closest(".pp-body");
+    PP.g = e.touches.length > 1 || PP.locked || (!sheet && (PP.panel || e.target.closest(".pp-deck, .pp-top, input"))) ? null
+      : { x: t.clientX, y: t.clientY, t: Date.now(), sheet: !!sheet, top: !pane || pane.scrollTop <= 0, axis: null, dx: 0, dy: 0 };
+  }, { capture: true, passive: true });
+  el.addEventListener("touchmove", (e) => {
+    const g = PP.g, t = e.touches[0]; if (!g || !t) return;
+    g.dx = t.clientX - g.x; g.dy = t.clientY - g.y;
+    const ax = Math.abs(g.dx), ay = Math.abs(g.dy);
+    if (!g.axis) {
+      if (ax < 10 && ay < 10) return;
+      g.axis = g.sheet ? (ax > ay ? "x" : g.dy > 0 && g.top ? "down" : "scroll") : (g.dy < 0 && ay > ax ? "up" : "none");
+      if (g.axis === "up") ppPanel("eps", { drag: true });
+    }
+    const p = $("#pp .pp-panel"); if (!p) return;
+    if (g.axis === "x") {
+      const i = PP_TABS.findIndex(([k]) => k === PP.panel), w = p.clientWidth || 1;
+      let f = -g.dx / w;
+      if ((i === 0 && f < 0) || (i === PP_TABS.length - 1 && f > 0)) f /= 3; // the ends give a little, then stop
+      ppPage(i, false, Math.max(-1, Math.min(1, f)));
+    } else if (g.axis === "down" || g.axis === "up") {
+      const h = p.offsetHeight || 1;
+      const y = g.axis === "down" ? Math.max(0, g.dy) : Math.max(0, h + g.dy);
+      p.style.transition = "none"; p.style.transform = `translateY(${y}px)`;
+      el.style.setProperty("--dim", String(Math.max(0, 1 - y / h)));
+    }
+  }, { capture: true, passive: true });
+  el.addEventListener("touchend", () => {
+    const g = PP.g; PP.g = null;
+    if (!g || !g.axis || g.axis === "scroll" || g.axis === "none") return;
+    PP.swiped = Date.now();
+    const p = $("#pp .pp-panel"), fast = Date.now() - g.t < 250;
+    el.style.removeProperty("--dim");
+    if (!p) return;
+    if (g.axis === "x") {
+      const i = PP_TABS.findIndex(([k]) => k === PP.panel), w = p.clientWidth || 1;
+      const go = g.dx < -w * 0.22 || (fast && g.dx < -40) ? 1 : g.dx > w * 0.22 || (fast && g.dx > 40) ? -1 : 0;
+      const n = Math.max(0, Math.min(PP_TABS.length - 1, i + go));
+      return n === i ? ppPage(i) : ppPanel(PP_TABS[n][0]);
+    }
+    const h = p.offsetHeight || 1, y = g.axis === "down" ? g.dy : h + g.dy;
+    p.style.transition = ""; p.style.transform = "";
+    // pulled down: closes past a third or on a flick; pulled up: stays open past 40 % or on a flick
+    const shut = g.axis === "down" ? y > h * 0.3 || (fast && g.dy > 40) : y > h * 0.6 && !(fast && g.dy < -40);
+    if (shut) ppPanel(null);
+  }, { capture: true, passive: true });
   el.addEventListener("click", (e) => {
-    if (e.target.closest("button, input, .pp-end") && !PP.panel) return;
-    if (e.target.closest(".pp-panel")) return;
-    if (PP.panel) { if (!e.target.closest(".pp-panel")) ppPanel(null); return; } // a tap beside an open menu closes it
-    /* Paused too (Elias, 2026-11-07): a paused picture can be looked at without the controls. */
-    if (el.classList.contains("ui")) { clearTimeout(PP.hideT); el.classList.remove("ui"); } else ppShowBar();
+    if (Date.now() - (PP.swiped || 0) < 400) return;
+    if (PP.locked) { if (!e.target.closest(".pp-unlock")) ppUnlockHint(); return; }
+    if (e.target.closest("button, input, .pp-end, .pp-panel, .pp-deck, .pp-top")) return;
+    if (PP.panel) return ppPanel(null); // a tap beside the sheet closes it
+    ppTap(e);
   });
+}
+/* A tap on the picture shows or hides the controls (after a short wait, in case a
+   second tap follows). Two quick taps: in the middle play or pause, on the left or
+   right third jump 10 s, each tap soon after adds 10 more. Double taps never bring
+   the controls up (Elias, TODO 177). */
+function ppTap(e) {
+  const el = $("#pp"), v = ppVideo(), w = el.clientWidth, now = Date.now(), T = PP.tap || {};
+  const side = e.clientX < w * 0.36 ? -1 : e.clientX > w * 0.64 ? 1 : 0;
+  const again = T.t && side === T.side && now - T.t < (T.run ? 700 : 300) && (!T.run || side);
+  clearTimeout(T.timer);
+  if (again) {
+    PP.quiet = now;
+    if (!side) { PP.tap = {}; if (v) v.paused ? v.play().catch(() => {}) : v.pause(); return ppRipple(0, v && !v.paused ? "pause" : "play"); }
+    Object.assign(T, { t: now, n: T.run ? T.n + 1 : 1, run: true });
+    if (v && isFinite(v.duration)) v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + side * 10));
+    return ppRipple(side, T.n * 10);
+  }
+  const flip = () => { if (el.classList.contains("ui")) { clearTimeout(PP.hideT); el.classList.remove("ui"); } else ppShowBar(); };
+  PP.tap = { side, t: now, run: false, n: 0, timer: setTimeout(flip, 300) };
+}
+function ppRipple(side, what) {
+  const b = $(`#pp .pp-tap .${side < 0 ? "l" : side > 0 ? "r" : "c"}`); if (!b) return;
+  b.innerHTML = side ? `${ico(side < 0 ? "rew" : "fwd")}<span class="mono">${side < 0 ? "−" : "+"}${what} s</span>` : `<i>${ico(what)}</i>`;
+  b.classList.remove("on"); void b.offsetWidth; b.classList.add("on");
+  clearTimeout(b._t); b._t = setTimeout(() => b.classList.remove("on"), 650);
+}
+/* Locked: nothing on screen reacts, so a pocket or a sleepy hand can't pause it. */
+function ppUnlockHint() {
+  const el = $("#pp"); if (!el) return;
+  el.classList.add("unl"); clearTimeout(PP.unlT);
+  PP.unlT = setTimeout(() => el.classList.remove("unl"), 2500);
 }
 /* An iPhone can only put the video alone in full screen (Apple's own player),
    which would leave Skip, Up next and Back behind: there the player just
@@ -4668,7 +4930,7 @@ function ppSkipCheck() {
   const t = v.currentTime, seg = PP.segs.find((x) => t >= x.start - 1 && t < x.end - 1);
   if (seg && seg.auto && !PP.skipped.has(seg.start)) { PP.skipped.add(seg.start); return ppDoSkip(seg); }
   b.hidden = !seg || seg.auto;
-  if (seg) { b.textContent = seg.kind === "op" ? "Skip opening" : seg.finish ? "Next episode" : "Skip ending"; b.dataset.s = seg.start; }
+  if (seg && b.dataset.s !== String(seg.start)) { b.innerHTML = `<i class="dot ${seg.kind === "op" ? "op" : "ed"}"></i>${seg.kind === "op" ? "Skip opening" : seg.finish ? "Next episode" : "Skip ending"}${ico("arrowr")}`; b.dataset.s = seg.start; }
 }
 function ppDoSkip(seg) {
   const v = ppVideo();
@@ -4800,11 +5062,20 @@ const A = {
   airtoday: () => { const d = new Date(); Object.assign(S.airCal, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) }); render(true); },
   airday: (v) => { S.airCal.sel = v; render(true); },
   airscope: (v) => { S.airCal.scope = v; render(true); },
+  /* The phone's day strip: to that day, or the next one something airs. */
+  agjump: (v) => {
+    const days = [...document.querySelectorAll("#app .agday")], el = days.find((x) => x.id.slice(3) >= v);
+    if (!el) return toast("Nothing airs from that day on");
+    if (el.id.slice(3) !== v) toast("Nothing airs that day");
+    el.scrollIntoView({ behavior: mq("(prefers-reduced-motion:reduce)") ? "auto" : "smooth", block: "start" });
+  },
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   fpick: (v, t) => {
     const k = t.dataset.k, d = t.closest(".fdrop");
-    S.lib[k] = v; saveLib(); paintWall(); syncFilters();
+    S.lib[k] = v; saveLib();
+    if (k === "group" || isPhone()) return render(); // phones: the sheet and the Filter count follow
+    paintWall(); syncFilters();
     for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
   },
@@ -4842,6 +5113,13 @@ const A = {
   },
   tab: (v) => { S.lib.tab = v; saveLib(); S.fadeNext = true; render(); },
   filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") return render(); paintWall(); syncFilters(); },
+  jtab: (v) => {
+    const was = S.jTab; S.jTab = v; lsSet("jTab", v);
+    if (!$("#app .jr2.phone .jpages")) return render(true);
+    jPaint(v === "stats" ? 1 : 0);
+    const tb = $("#app .jr2.phone .jtabs"); // switched while far down: back to the tabs, the other tab starts at its top
+    if (was !== v && tb && tb.getBoundingClientRect().top < 0) scrollTo({ top: scrollY + tb.getBoundingClientRect().top - 70, behavior: "smooth" });
+  },
   hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(); },
   histmore: () => { S.histMax += 200; render(); },
   play: (v) => play(v), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
@@ -5063,20 +5341,25 @@ const A = {
   wherego: (v) => { lsSet("playWhere", v); const go = S.modal?.go; closeModal(); go?.(v); },
   playwhere: (v) => { lsSet("playWhere", v || null); render(true); },
   ppclose: () => ppClose(false),
-  ppfull: () => ppFull(false),
-  ppmenu: () => ppPanel(PP.panel === "menu" ? null : "menu"),
-  ppeps: () => ppPanel(PP.panel === "eps" ? null : "eps"),
-  ppspeed: (val) => { lsSet("ppSpeed", +val); const v = ppVideo(); if (v) v.defaultPlaybackRate = v.playbackRate = +val; ppPanel("menu"); },
+  ppfull: () => { ppFull(false); setTimeout(() => { if (PP.panel === "menu") ppPanel("menu"); }, 400); },
+  pptab: (val, t) => ppPanel(PP.panel === val && !t.closest(".pp-sh") ? null : val), // the deck's button again closes; a tab in the sheet only switches
+  pplock: () => {
+    const el = $("#pp"); if (!el) return;
+    PP.locked = !PP.locked; ppPanel(null);
+    el.classList.toggle("locked", PP.locked); el.classList.remove("unl");
+    if (PP.locked) { el.classList.remove("ui"); ppUnlockHint(); } else ppShowBar();
+  },
+  ppnextep: async () => { await ppEpsLoad(); const n = ppNextEp(); if (n) ppGo(n.id, n.online ? 0 : PP.version); else { ppPaintNext(); ppNote("That was the last episode"); } },
+  ppspeed: (val) => { lsSet("ppSpeed", +val); const v = ppVideo(); if (v) v.defaultPlaybackRate = v.playbackRate = +val; ppPaintSpeed(); ppPanel("menu"); },
   ppsleep: (val) => { ppSleep(val === "" ? null : val === "end" ? "end" : +val); ppPanel("menu"); if (val) ppNote(val === "end" ? "Stops after this episode" : `Pauses in ${val} minutes`); },
   ppfill: (val) => { lsSet("ppFill", val === "1"); $("#pp")?.classList.toggle("fill", val === "1"); ppPanel("menu"); },
   ppaudio: (val) => { ppPanel(null); ppSwitch(val); },
-  ppsubs: (val) => { const tr = ppVideo()?.textTracks[0]; if (tr) tr.mode = val === "1" ? "showing" : "hidden"; $("#pp .pp-cc")?.classList.toggle("on", val === "1"); ppPanel("menu"); },
-  ppsubd: (val) => { ppSubDelay(+val); ppPanel("menu"); },
+  ppsubs: (val) => { const tr = ppVideo()?.textTracks[0]; if (tr) tr.mode = val === "1" ? "showing" : "hidden"; ppPanel("audio"); },
+  ppsubd: (val) => { ppSubDelay(+val); ppPanel("audio"); },
   ppfinish: () => { ppPanel(null); const v = ppVideo(); if (v && !PP.ended) { v.pause(); ppReport({ ended: true }); } },
   ppep: (val) => { ppPanel(null); if (val !== PP.id) ppGo(val, 0); },
   pptoggle: () => { const v = ppVideo(); if (v) v.paused ? v.play().catch(() => {}) : v.pause(); ppShowBar(); },
   ppjump: (val) => { const v = ppVideo(); if (v && isFinite(v.duration)) v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + +val)); ppShowBar(); },
-  ppcc: (val, t) => { const tr = ppVideo()?.textTracks[0]; if (!tr) return; const on = tr.mode !== "showing"; tr.mode = on ? "showing" : "hidden"; t.classList.toggle("on", on); ppShowBar(); },
   ppskip: (v, t) => ppDoSkip(PP.segs.find((x) => String(x.start) === t.dataset.s)),
   ppstay: () => { clearInterval(PP.cd); const b = $("#pp .pp-end"); if (b) b.innerHTML = `<b>Stopped</b><div class="actions"><button class="btn pri" data-a="ppclose">Close</button></div>`; },
   ppnext: () => {
@@ -5159,13 +5442,14 @@ const A = {
     }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
   },
   sidetab: (v) => { S.sideTab = v; paintSide(); },
-  fltopen: () => { document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); paintPortals(); },
+  fltopen: () => { document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); render(); },
   fltclose: () => { document.body.classList.remove("flt-open"); paintPortals(); ovClosed("flt"); },
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
   rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },
   rmtclose: () => { S.rmtOpen = false; paintRemote(); paintCanvas(); ovClosed("rmt"); },
+  rmtrow: (v) => { S.rmtRow = S.rmtRow === v ? null : v; paintRemote(); },
   rmtsleep: () => remoteSend("stop_after", !S.live?.stop_after),
   rmtdelay: (v) => remoteSend("sub_delay", Number(v) === 0 ? 0 : Math.round(((S.live?.sub_delay || 0) + Number(v)) * 10) / 10),
   rmt: (v) => v === "back" ? remoteSend("seek", -10) : v === "fwd" ? remoteSend("seek", 10) : remoteSend(v),
@@ -5326,6 +5610,8 @@ const A = {
   },
   castlang: (v) => { S.castLang = v; const e = frEntry(); if (e) aboutPaint(e.id); },
   tagspoil: (v) => { (S.tagsOpen ||= {})[v] = true; aboutPaint(+v); },
+  tagsmore: (v, t) => { t.closest(".about")?.classList.add("tagsopen"); t.closest(".tgm")?.setAttribute("hidden", ""); },
+  descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }, // phones: the summary opens in place
   frorder: () => $("#app .frpage .hsec.ford")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }),
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
@@ -5673,7 +5959,7 @@ function paintTop() {
   if (!el) { el = document.createElement("button"); el.id = "totop"; el.dataset.a = "totop"; el.setAttribute("aria-label", "Back to top"); el.innerHTML = ico("up"); document.body.append(el); }
   el.classList.toggle("on", S.view === "library" && scrollY > 500);
 }
-addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); }, { passive: true });
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); dockScroll(); }, { passive: true });
 /* The show page's art fades into the dark as you scroll (Decision 67): --sd
    on the wash layer alone, once per frame. */
 function artDim() {
@@ -5859,11 +6145,12 @@ document.addEventListener("touchstart", (e) => {
   pull = null;
   if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
   const t = e.target, L = PULL.find((p) => t.closest?.(p.sel) && (!p.when || p.when()));
-  /* Sideways swipes leave real sideways scrollers alone; the phone's
-     episode list is vertical (it only keeps the PC strip's class). */
+  /* Sideways swipes leave real sideways scrollers alone: the show page's
+     episode row and Home's rails scroll (TODO 177); only an unmatched
+     folder's episode list is still vertical on a phone. */
   const x = e.touches[0].clientX, y = e.touches[0].clientY;
-  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda")
-    && !(t.closest(".strip") && !(isPhone() && t.closest(".eps")));
+  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda, .crail")
+    && !(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")));
   if (L) {
     const el = t.closest(L.sel), sc = L.scroller(el);
     if ((sc && sc.scrollTop > 2) || t.closest(NO_PULL)) return;
@@ -5871,7 +6158,7 @@ document.addEventListener("touchstart", (e) => {
   } else if (t.closest?.(".rbar") && !t.closest("button")) pull = { kind: "rbar", y };
   else if (isPhone() && inApp && x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture
     const ptrOK = scrollY <= 0 && ["home", "library", "history", "stats", "week"].includes(S.view) && !ptrBusy;
-    if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK };
+    if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK, jp: !!t.closest(".jr2.phone .jpages") };
     else if (["show", "fr", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
   }
 }, { passive: true });
@@ -5901,6 +6188,7 @@ document.addEventListener("touchmove", (e) => {
     if (!p.side) {
       if (p.ptrOK && dy > 10 && dy > Math.abs(dx) && scrollY <= 0) { p.kind = "ptr"; p.y0 = y; e.preventDefault(); return; }
       if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pull = null; return; }
+      if (p.jp && Math.abs(dx) > 12 && (S.jTab === "stats") === dx > 0) { pull = null; return; } // the Journal's tabs take it
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
       else return;
     }
