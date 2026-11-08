@@ -17,21 +17,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The Windows suite is slow (about 7 min in one job), so it runs in 4
-  # parallel jobs, split by weight. The zip builds alongside.
+  # The Windows suite is slow (about 7 min in one job), so it runs in
+  # parallel: the real mpv tests in their own job (the only one that needs
+  # mpv and FFmpeg, about a minute to install), the rest in 4 jobs split by
+  # weight. The zip builds alongside.
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: ["real", 0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install mpv and FFmpeg
+        if: matrix.shard == 'real'
         run: |
           Invoke-RestMethod -Uri https://get.scoop.sh -OutFile "$env:RUNNER_TEMP\scoop.ps1"
           & "$env:RUNNER_TEMP\scoop.ps1" -RunAsAdmin
@@ -45,12 +48,16 @@ jobs:
         env:
           ANIME_HUB_REAL_TOOLS: "1"
         run: |
+          if [ "${{ matrix.shard }}" = real ]; then
+            python -m unittest --durations 10 tests.test_real_tools
+            exit
+          fi
           files=$(python - ${{ matrix.shard }} <<'EOF'
           # Spread the files so each job gets about the same work: a file
           # weighs its test count, plus extra for the few with slow tests.
           import pathlib, sys
-          slow = {"test_web": 40, "test_real_tools": 50, "test_mapping": 25}
-          files = sorted(pathlib.Path("tests").glob("test_*.py"))
+          slow = {"test_web": 40, "test_mapping": 25}
+          files = [f for f in sorted(pathlib.Path("tests").glob("test_*.py")) if f.stem != "test_real_tools"]
           weight = {f.stem: f.read_text("utf-8").count("def test_") + slow.get(f.stem, 0) for f in files}
           jobs = [[0, []] for _ in range(4)]
           for name in sorted(weight, key=lambda n: (-weight[n], n)):
