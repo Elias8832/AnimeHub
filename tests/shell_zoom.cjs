@@ -44,7 +44,7 @@ test("a dropdown opens right under its chip at every zoom", () => {
     assert.equal(p.left, 100);
     assert.equal(p.top, 242, "6 page pixels under the chip");
     assert.equal(p.bottom, null);
-    assert.equal(p.width, 170, "minimum width is in page pixels too");
+    assert.equal(p.width, 112, "as wide as its chip, in page pixels too");
   }
 });
 
