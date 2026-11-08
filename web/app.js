@@ -260,7 +260,7 @@ function zoomStep(cur, dir) { return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur +
 /* Where a dropdown opens under its chip. Rects and the window size are real
    pixels; the list's style is in page pixels, which <html>'s zoom scales up. */
 function ddPlace(box, z, vw, vh) {
-  const width = Math.max(box.width / z, 170), left = Math.max(10, Math.min(box.left / z, vw / z - width - 10));
+  const width = box.width / z, left = Math.max(10, Math.min(box.left / z, vw / z - width - 10));
   const below = vh - box.bottom - 12, up = below < 220 * z && box.top > below;
   return { width, left, top: up ? null : box.bottom / z + 6, bottom: up ? (vh - box.top) / z + 6 : null };
 }
@@ -1474,7 +1474,7 @@ function frWhen(at) { const s = at - Date.now() / 1000; return s > 0 ? `in ${fmt
    title, your entry as a row of numbers, actions with their keys, then the
    season tabs and the episode strip. Rare actions sit behind ⋯. */
 const kb = (k) => `<kbd class="kb">${k}</kbd>`;
-const backBtn = () => `<button class="backbtn" data-a="back">${ico(isPhone() ? "chevl" : "back")}${backLabel()}</button>`; // phones: a bare chevron (TODO 177, Elias picked B)
+const backBtn = () => `<button class="backbtn" data-a="back">${ico("chevl")}${backLabel()}</button>`; // desktop: the action bar's glass pill (Elias picked H); phones: a bare chevron (TODO 177, Elias picked B)
 function Fran() {
   const fr = S.fr, p = fr.page;
   if (!p || (!p.entries.length && p.building)) return `<div class="sp2 frpage">${backBtn()}<p class="empty" style="padding-top:120px">${fr.err ? esc(fr.err) : '<i class="spin"></i> Loading…'}</p></div>`;

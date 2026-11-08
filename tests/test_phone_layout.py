@@ -278,7 +278,14 @@ class PhonePolish(unittest.TestCase):
     def test_top_corners_are_bare_icons(self):
         # Elias picked B: no circle, a white icon with a soft shadow; back is a chevron on phones
         self.assertIn("#nav .setb,:root[data-bar] #nav .setb{width:44px;height:44px;margin:0 -10px 0 0;padding:0;gap:0;border-radius:50%;background:none!important", CSS)
-        self.assertIn('${ico(isPhone() ? "chevl" : "back")}${backLabel()}', APP)
+        self.assertIn('<button class="backbtn" data-a="back">${ico("chevl")}${backLabel()}', APP)
+
+    def test_desktop_back_is_the_action_bar_pill(self):
+        # Elias picked H: the Download bar's glass pill, its height and font, no esc chip
+        self.assertIn(".sp2 .backbtn{display:flex;width:fit-content;align-items:center;gap:8px;height:42px;padding:0 18px 0 12px;border-radius:999px;font:600 14.5px var(--ui);color:var(--ink);background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px);margin:18px 0 -16px!important", CSS)
+        self.assertNotIn(".backbtn:hover .ico{transform:translateX", CSS)  # Elias: the arrow's hover slide looked odd
+        self.assertIn(".sp2 .backbtn:hover::before{background:rgba(255,255,255,.1)}", CSS)
+        self.assertIn(".sp2 .backbtn::before{content:\"\";position:absolute;inset:4px;", CSS)  # the wash sits inside the glass, like a button in the action bar  # Elias: the Download button's hover (its .1 white wash)
 
     def test_home_hero_meets_a_plain_background(self):
         # Elias: scrolling Home showed an edge under the hero — the blurred art and the
