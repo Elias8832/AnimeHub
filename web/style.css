@@ -643,10 +643,6 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .sp2 .gb .ico{width:17px;height:17px}
 .sp2 .gb.ic{padding:0;width:38px}
 .sp2 .gb .lbl{display:none}
-.sp2 .gb.fav .ico{transition:color .2s,transform .3s var(--spring)}
-.sp2 .gb.fav:hover .ico{transform:scale(1.12)}
-.sp2 .gb.fav.on .ico{color:#ff8fa3;fill:currentColor}
-.sp2 .gb.fav.pop1 .ico{animation:heartPop .55s var(--spring)}
 .sp2 .gb .v{font:500 11px var(--mono)}.sp2 .gb .v.ok{color:var(--ink-2)}.sp2 .gb .v.warn{color:var(--accent)}
 .sp2 .grp .gsep{width:1px;height:20px;margin:0 3px;background:rgba(255,255,255,.14)}
 .sp2 .grp .gsep:first-child{display:none}
@@ -2739,7 +2735,6 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .hero .gb .ico{width:21px;height:21px;color:var(--ink)}
   .sp2.frpage .hero .gb:active{background:rgba(255,255,255,.07)}
   .sp2.frpage .hero .gb .lbl{display:block;position:static;width:auto;height:auto;clip:auto;margin:0;overflow:visible;white-space:normal}
-  .sp2.frpage .hero .gb.fav.on .ico{color:var(--bad);fill:var(--bad)}
   .sp2.frpage .hero .gb .v,.sp2.frpage .hero .gb .kb{display:none}
   .sp2.frpage .mline{display:none}
   .sp2.frpage .hsec .arr{display:none}
@@ -2779,8 +2774,6 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .eps-head .tabs2{flex:1;min-width:0}
   .sp2.frpage .eps-head .tabs2 h2{overflow:hidden;text-overflow:ellipsis}
   .sp2.frpage .eps-head .ctl{margin-left:auto}
-  /* favourite: the heart fills, no box */
-  .sp2.frpage .hero .gb.fav.on{background:none;box-shadow:none}
   /* tags: the first few, the rest behind "more" */
   .sp2.frpage .about:not(.tagsopen) dd.tags .tg:nth-child(n+7){display:none}
   .sp2.frpage .about .tgmore{padding:6px 11px;border-radius:999px;background:none;box-shadow:inset 0 0 0 1px var(--line);font:600 12.5px var(--ui);color:var(--ink-2)}

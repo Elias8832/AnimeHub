@@ -1795,10 +1795,10 @@ function entryStats(f, pending) {
     ${total > 1 ? `<div class="tbar">${bar}<span>${got}/${total}</span></div>` : ""}${aheadLine(f, pending, fe)}`;
 }
 /* The actions that depend on your entry, inside the page's action pill:
-   off the list → Add to Planning; on it → Edit and ♥. */
+   off the list → Add to Planning; on it → Edit (♥ lives in the editor). */
 function entryActs(f, pending) {
   if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>${isPhone() ? "Planning" : "Add to Planning"}</span></button>`;
-  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite && !isPhone() ? "Remove from favourites" : "Favourite"}</span></button>`;
+  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button>`;
 }
 /* Episode ticks are this PC's own (TODO 166): when AniList is further
    along (watched elsewhere), the line under the bar offers to mark those
@@ -1895,7 +1895,7 @@ function entryPatch(patch, fav, delay = 0) {
   const prev = ent.f;
   ent.f = { ...prev, ...(patch || {}), ...(fav !== undefined ? { favourite: fav } : {}) };
   entryPaint(ent.f, false, prev);
-  if (fav !== undefined) for (const h of $$("#entrybox .heart, #entryacts .fav")) { h.classList.add("pop1"); if (fav) burstAt(h); }
+  if (fav !== undefined) for (const h of $$("#entrybox .heart")) { h.classList.add("pop1"); if (fav) burstAt(h); }
   const p = entryPend && entryPend.mid === ent.mid ? entryPend : { mid: ent.mid, patch: {}, fav: undefined };
   Object.assign(p.patch, patch || {});
   if (fav !== undefined) p.fav = fav;
