@@ -726,7 +726,6 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .sp2 .ot b i{margin-right:6px;font:500 12px var(--mono);font-style:normal;color:var(--mute)}
 .sp2 .ot.on small{color:var(--accent)}
 .sp2 .frother .link-btn{font:500 12px var(--mono)}
-.sp2 .eps-head .tord{padding:0;gap:2px;font:400 12px var(--mono);color:var(--mute)}.sp2 .eps-head .tord:hover{color:var(--ink)}.sp2 .eps-head .tord .ico{width:13px;height:13px}
 .frpage>.eps-head,.frpage .hsec.ford{scroll-margin-top:84px}
 .sp2 .eps-head.frother{justify-content:flex-start;flex-wrap:wrap;gap:4px 14px}.sp2 .frother .link-btn{white-space:nowrap}
 .sp2 .eps:not(.strip){display:flex;flex-wrap:wrap;gap:14px} /* other files: tiles side by side like the strip, not spread over wide grid cells */.sp2 .frother .link-btn{margin:0}
@@ -734,10 +733,19 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 /* Text over the art: bright art (Frieren's grey sketch) washed the small grey
    text out. A soft dark halo keeps it readable on any art, and the art itself
    stays as bright as it was. */
-.sp2 .meta,.sp2 .desc,.sp2 .mline,.sp2 .tbar span,.sp2 .ahead,.sp2 .et,.sp2 .rels button:not(.on),.sp2 .eps-head h2,.sp2 .srcl,.sp2 .tord,
+.sp2 .meta,.sp2 .desc,.sp2 .mline,.sp2 .tbar span,.sp2 .ahead,.sp2 .et,.sp2 .rels button:not(.on),.sp2 .eps-head h2,.sp2 .srcl,
 .sp2 .frother h3,.sp2 .frother .link-btn,.sp2 .frother-h,.sp2 .hsec .sh,.sp2 .ot b,.sp2 .ot small,.sp2 .eps-note{text-shadow:0 1px 2px rgba(0,0,0,.7),0 0 14px rgba(0,0,0,.6)}
-.sp2 .et small,.sp2 .ot small,.sp2 .ahead,.sp2 .srcl,.sp2 .tord{color:#a4a4aa}
+.sp2 .et small,.sp2 .ot small,.sp2 .ahead,.sp2 .srcl{color:#a4a4aa}
 .sp2 .eps-head .ctl{margin-left:auto}
+/* The season dropdown (mockup A): the heading is what shows; the real select lies invisible over it */
+.sp2 .eps-head .frpick{margin:-4px -8px;max-width:calc(100% + 16px)}
+.frpick{position:relative;display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 8px;border-radius:10px;transition:background .15s}
+.frpick>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frpick .ico{flex:none;width:15px;height:15px;color:var(--ink-2);transition:transform .2s var(--ease)}
+.frpick select{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;padding:0;cursor:pointer;border-radius:inherit}
+.frpick:hover,.frpick.ddon,.frpick:has(select:focus-visible){background:rgba(255,255,255,.08)}
+.frpick.ddon .ico{transform:rotate(180deg)}
+.frpick:has(select:focus-visible){box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 70%,transparent)}
 /* About: the whole summary and the plain facts (Decision 67) */
 .sp2 .about{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr);gap:clamp(32px,5vw,80px);margin-top:64px}
 .sp2 .about .sh{display:flex;margin-bottom:14px}.sp2 .about h2{font:600 18px var(--ui);letter-spacing:-.01em}
@@ -1518,14 +1526,15 @@ body.srch #pal{display:grid}
 /* Dropdown list (replaces the browser's own for mouse clicks) */
 /* The drop-down list (Library polish round 4, Elias: "overhaul the pop up"): a quiet caption, roomy rows, a check on the picked one. */
 #ddm{position:fixed;z-index:80;display:none;flex-direction:column;gap:1px;min-width:190px;max-height:340px;overflow-y:auto;padding:6px;border-radius:18px;background:rgba(20,21,25,.94);box-shadow:0 24px 60px -12px rgba(0,0,0,.75),0 2px 8px rgba(0,0,0,.3),var(--edge);backdrop-filter:blur(30px) saturate(1.3);scrollbar-width:thin}
-#ddm.open{display:flex;animation:ddIn .2s var(--ease) both}
+#ddm.open{display:flex;overscroll-behavior:contain;animation:ddIn .2s var(--ease) both}
 @keyframes ddIn{from{opacity:0;transform:translateY(-4px) scale(.96)}}
 #ddm .ddcap{padding:8px 12px 6px;font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
-#ddm button{display:flex;align-items:center;gap:14px;height:38px;padding:0 12px;border-radius:12px;font:500 14px var(--ui);color:var(--ink-2);text-align:left;white-space:nowrap;transition:background .15s,color .15s}
+#ddm button{flex:none;display:flex;align-items:center;gap:14px;height:38px;padding:0 12px;border-radius:12px;font:500 14px var(--ui);color:var(--ink-2);text-align:left;white-space:nowrap;transition:background .15s,color .15s}
 #ddm button:hover,#ddm button:focus-visible{background:rgba(255,255,255,.07);color:var(--ink);outline:0}
 #ddm button.on{color:var(--ink);font-weight:600}
 #ddm button .ico{margin-left:auto;width:16px;height:16px;stroke-width:2.4;color:var(--accent-hi)}
 #ddm button:disabled{opacity:.4}
+#ddm button .r{margin-left:auto;padding-left:10px;font:400 11px var(--mono);color:var(--mute)}
 /* Episode menu (mockup "4 · downloads + episode menu") */
 #cm{width:270px;min-width:0;padding:8px;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.55),var(--edge)}
 #cm .cap{padding:8px 12px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2099,7 +2108,6 @@ body.has-side #app{padding-left:340px}
   .frpage .eps-head{flex-direction:row;flex-wrap:nowrap;align-items:center;gap:8px;margin:22px -16px 8px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
   .frpage .eps-head::-webkit-scrollbar{display:none}
   .frpage .eps-head h2{white-space:nowrap}
-  .frpage .eps-head .tord{flex:none;white-space:nowrap}
   .frpage .tabs2{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:2px;flex:none}
   /* Round 2 (TODO 140): no logo over the art, back lines up with settings,
      one action per job (AniList sits in ⋯). */
@@ -2775,7 +2783,6 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .castrow .ot b{display:block;margin-top:8px;line-height:1.25}
   /* the episode row's heading: one line, the Sub/Dub switch always in view */
   .sp2.frpage .eps-head{overflow:visible;-webkit-mask:none;mask:none}
-  .sp2.frpage .eps-head .tord{display:none}
   .sp2.frpage .eps-head .tabs2{flex:1;min-width:0}
   .sp2.frpage .eps-head .tabs2 h2{overflow:hidden;text-overflow:ellipsis}
   .sp2.frpage .eps-head .ctl{margin-left:auto}
