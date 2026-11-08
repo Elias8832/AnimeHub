@@ -101,7 +101,7 @@ class Frontend(unittest.TestCase):
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 + 90000} }}, {now});"), "E5 in 1d 1h")
         self.assertEqual(run_js(f"return airText({{ number: 5, in_seconds: 600 }}, {now});"), "E5 in 10 min")
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 - 5} }}, {now});"), "E5 is out")
-        self.assertIn('sec > 0 ? "in " + fmtIn(sec) : "out now"', APP)  # Home → This week (Decision 38)
+        self.assertIn('t - now > 0 ? pre + fmtIn((t - now) / 1000) : "out now"', APP)  # Home → This week (TODO 178; tests/home_hero.cjs)
 
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
@@ -232,7 +232,7 @@ class WeekSection(unittest.TestCase):
         self.assertIn("@container (max-width:58px){.airt em{", css)  # no cut "Premiere" on small posters
 
     def test_week_page_is_reachable_from_home(self):
-        self.assertIn('data-a="go" data-v="week">Calendar', APP)
+        self.assertIn('data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}', APP)
 
     def test_calendar_is_a_tab_everywhere(self):
         """Easy to miss behind a Home link, so it sits in both tab bars."""
@@ -792,7 +792,7 @@ class TabEntrances(unittest.TestCase):
         block = CSS[CSS.index("/* Home · Library · Settings build in"):CSS.index("/* ───", CSS.index("/* Home · Library · Settings build in"))]
         # hover zooms and fixed children need no transform left after the entrance
         self.assertNotIn(" both}", block.replace(".settings.scol{animation:soft .25s var(--ease) both}", ""))
-        for part in (".upn .upa{animation:artIn", ":is(.hc,.ag,.rec,.rc)", ".snav>*", ".scol.setin>.group>"):
+        for part in (".upn .upa{animation:artIn", ":is(.hc,.twb,.twr,.rec,.rc)", ".snav>*", ".scol.setin>.group>"):
             self.assertIn(part, block)
 
     def test_settings_section_builds_in_once(self):
