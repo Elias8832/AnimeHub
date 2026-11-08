@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   # The Windows suite is slow (about 7 min in one job), so it runs in 4
-  # parallel jobs: each takes every 4th test file. The zip builds alongside.
+  # parallel jobs, split by weight. The zip builds alongside.
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -45,7 +45,21 @@ jobs:
         env:
           ANIME_HUB_REAL_TOOLS: "1"
         run: |
-          files=$(ls tests/test_*.py | sort | awk -v n=4 -v k=${{ matrix.shard }} 'NR % n == k' | sed -e 's|/|.|' -e 's|\.py$||')
+          files=$(python - ${{ matrix.shard }} <<'EOF'
+          # Spread the files so each job gets about the same work: a file
+          # weighs its test count, plus extra for the few with slow tests.
+          import pathlib, sys
+          slow = {"test_web": 40, "test_real_tools": 50, "test_mapping": 25}
+          files = sorted(pathlib.Path("tests").glob("test_*.py"))
+          weight = {f.stem: f.read_text("utf-8").count("def test_") + slow.get(f.stem, 0) for f in files}
+          jobs = [[0, []] for _ in range(4)]
+          for name in sorted(weight, key=lambda n: (-weight[n], n)):
+              job = min(jobs, key=lambda j: j[0])
+              job[0] += weight[name]
+              job[1].append("tests." + name)
+          print(" ".join(jobs[int(sys.argv[1])][1]))
+          EOF
+          )
           echo "$files"
           python -m unittest --durations 10 $files
 

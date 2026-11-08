@@ -30,6 +30,9 @@ def main_labels(page):
 
 
 class Entries(unittest.TestCase):
+    def setUp(self):
+        support.use_library(support.case("apothecary"))  # the page looks up saved banners
+
     def test_main_seasons_and_extras(self):
         page = page_of(161645)
         self.assertEqual(page["title"], "The Apothecary Diaries")
