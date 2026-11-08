@@ -170,17 +170,6 @@ def _save_records(rec):
     system.replace(tmp, path)
 
 
-def banner_age(path):
-    """Seconds since AniList's banner was saved (its kept original counts
-    for an upscaled one); infinite when there is none."""
-    for p in (original_of(path), path):
-        try:
-            return time.time() - p.stat().st_mtime
-        except OSError:
-            continue
-    return float("inf")
-
-
 def _dims(path):
     try:
         with open(path, "rb") as f:
@@ -312,6 +301,16 @@ def art_payload():
     return {"stamp": art["stamp"], "changed": dict(art["changed"]), "working": working}
 _worker = {"thread": None}
 _run_lock = threading.Lock()  # one Upscayl run; switching off waits for it
+
+
+def replaced(path):
+    """AniList's new picture replaced this banner (TODO 179): an earlier
+    failed try no longer stops it from being upscaled, and an open page
+    swaps it in place."""
+    path = Path(path)
+    with _lock:
+        _skipped.discard(path)
+    _changed(path)
 
 
 def queue_banner(path):
