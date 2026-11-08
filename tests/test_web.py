@@ -749,9 +749,8 @@ class ShowPageRedo(unittest.TestCase):
         self.assertIn("<span>Planning</span>", self.run_fn("entryActs", 'entryActs({ status: null }, false)', phone))  # the phone's row of short words (TODO 177)
         on = self.run_fn("entryActs", 'entryActs({ status: "CURRENT", favourite: true }, false)', pc)
         self.assertIn('data-a="edit"', on)
-        self.assertIn('class="gb ic fav on"', on)
-        self.assertIn('<span class="lbl">', on)  # the phone's row names the heart
-        self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)", pc))  # before the read: Edit + ♥
+        self.assertNotIn('data-a="efav"', on)  # Elias 2026-11-08: no heart on the page; it lives in the editor
+        self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)", pc))  # before the read: Edit
 
     def stats(self, f, fe):
         pre = ("const frEntry = () => (" + json.dumps(fe) + "); const showById = () => null; const epTotal = () => 0; const epWatched = () => 0;"
