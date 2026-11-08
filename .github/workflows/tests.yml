@@ -68,7 +68,7 @@ jobs:
           EOF
           )
           echo "$files"
-          python -m unittest --durations 10 $files
+          python -m unittest --durations 0 $files
 
   windows-zip:
     runs-on: windows-latest
