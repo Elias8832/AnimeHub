@@ -312,12 +312,13 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn('head("On this PC")', APP)
         self.assertIn('data-a="rescan" title="Look for new files and fetch missing metadata">', APP)
         self.assertIn('${fdrop("year", cap("year"), frng("year"', APP)
-        # the filters sit in the side list on a PC, the 8 biggest genres first
+        # the filters sit in the side list on a PC; genres open in place like them (Elias, 2026-11-08)
         self.assertIn('${rail ? "" : filterCtl()}', APP)
         self.assertIn('head("Filter") + `<div class="lflt"', APP)
-        self.assertIn('const TOP = 8, show = S.genOpen', APP)
-        # a genre picked in one tray shows as picked in the other
-        self.assertIn('for (const b of $$(`.gchip[data-v="${CSS.escape(v)}"]`))', APP)
+        self.assertIn('return fdrop("genres", "Genres", `<div class="fchips lgen"', APP)
+        # a genre picked in one place shows as picked in the other, and the row says how many
+        self.assertIn('for (const b of $$(`[data-a=genre][data-v="${CSS.escape(v)}"]`))', APP)
+        self.assertIn('gd.querySelector(".fdb b").textContent = genLabel();', APP)
         block = CSS[CSS.index("/* ───────── Library side list"):]
         self.assertIn("@media (min-width:1001px) and (not (pointer:coarse)){", block)
         # show/sort stay lit while their list is open, not by the focus a closing click leaves (Elias, 2026-11-07)
