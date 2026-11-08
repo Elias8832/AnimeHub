@@ -17,9 +17,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The Windows suite is slow (about 7 min in one job), so it runs in 4
+  # parallel jobs: each takes every 4th test file. The zip builds alongside.
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -35,9 +41,22 @@ jobs:
           "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH
           "$env:USERPROFILE\scoop\apps\mpv\current" >> $env:GITHUB_PATH
       - name: Tests
+        shell: bash
         env:
           ANIME_HUB_REAL_TOOLS: "1"
-        run: python -m unittest --durations 20
+        run: |
+          files=$(ls tests/test_*.py | sort | awk -v n=4 -v k=${{ matrix.shard }} 'NR % n == k' | sed -e 's|/|.|' -e 's|\.py$||')
+          echo "$files"
+          python -m unittest --durations 10 $files
+
+  windows-zip:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
       - name: Build the zip
         run: powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1
       - name: Check the zip
