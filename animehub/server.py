@@ -1199,6 +1199,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self.send_json(streaming.stream_link_set(body["media_id"], body["query"], title,
                                                    body.get("index") or 1, mode, display))
+            elif route == "/api/stream/refresh":
+                if self._fields(body, ints=("media_id",)):
+                    self.send_json(streaming.stream_refresh(body["media_id"]))
             elif route == "/api/stream/mode":
                 if not self._fields(body, strings=("mode",), ints=("media_id",)):
                     return

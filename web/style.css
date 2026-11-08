@@ -671,6 +671,14 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .sp2 .eps.strip.ml.mr{-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 88%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 88%,transparent)}
 .sp2 .eps.strip.ml:not(.mr){-webkit-mask:linear-gradient(90deg,transparent,#000 6%);mask:linear-gradient(90deg,transparent,#000 6%)}
 .sp2 .eps-note{margin:6px 0 0}
+/* the "Check now" tile ending the row (TODO 183): an empty slot like the Calendar's empty day */
+.sp2 .ep.held .epa{background:rgba(255,255,255,.025);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);border-radius:14px}
+.sp2 .ep.held .heldin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:rgba(255,255,255,.2);transition:color .2s}
+.sp2 .ep.held .heldin svg{width:24px;height:24px;stroke-width:1.6}
+.sp2 .ep.held .heldin b{font-size:15px;font-weight:600;color:rgba(255,255,255,.75)}
+.sp2 .ep.held .heldin small{font:500 12px var(--mono);color:rgba(255,255,255,.35);transition:color .2s}
+.sp2 .ep.held:hover .heldin,.sp2 .ep.held:focus-visible .heldin{color:rgba(255,255,255,.55)}
+.sp2 .ep.held:hover .heldin small,.sp2 .ep.held:focus-visible .heldin small{color:var(--ink);text-decoration:underline}
 /* episode tile: art card + title below */
 .sp2 .ep{flex:none;width:clamp(232px,calc((100vw - 88px - 4 * 16px) / 4.6),360px);aspect-ratio:auto;background:none;border-radius:0;box-shadow:none;overflow:visible;outline:0;scroll-snap-align:start;transition:transform .3s var(--ease)}
 .sp2 .ep:before,.sp2 .ep:after{display:none}

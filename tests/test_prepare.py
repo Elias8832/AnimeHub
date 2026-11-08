@@ -95,6 +95,33 @@ class SiteRule(unittest.TestCase):
         refresh.assert_not_called()
 
 
+class HeldBack(unittest.TestCase):
+    """TODO 183: an old list behind AniList, with no VPN to look, is said
+    on the page (vpn_held) instead of staying quietly behind."""
+    AIRING = {"status": "RELEASING", "nextAiringEpisode": {"episode": 6}}
+
+    def held(self, ok=False, age=7 * 3600, eps=("1", "2", "3"), m=None):
+        link = {"episodes_ts": time.time() - age, "episodes": list(eps)}
+        with mock.patch.object(settings, "site_ok", return_value=ok), \
+                mock.patch.object(anicli, "anicli_path", return_value="/x/ani-cli"):
+            return pages.vpn_held(m or self.AIRING, link)
+
+    def test_old_list_behind_anilist_without_vpn(self):
+        self.assertTrue(self.held())
+
+    def test_vpn_on_refreshes_by_itself(self):
+        self.assertFalse(self.held(ok=True))
+
+    def test_fresh_or_complete_lists_say_nothing(self):
+        self.assertFalse(self.held(age=60))
+        self.assertFalse(self.held(eps=("1", "2", "3", "4", "5")))
+        self.assertFalse(self.held(m={"status": "FINISHED", "episodes": 3}))
+
+    def test_no_link_says_nothing(self):
+        with mock.patch.object(settings, "site_ok", return_value=False):
+            self.assertFalse(pages.vpn_held(self.AIRING, None))
+
+
 class Prepared(unittest.TestCase):
     """The real wait script, on a stand-in ani-cli and a stand-in mpv."""
 
