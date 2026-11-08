@@ -351,5 +351,61 @@ class EntryRouteTests(unittest.TestCase):
         self.assertEqual(code, 400)
 
 
+class ListCacheFollowsSavesTests(unittest.TestCase):
+    """A status saved in the app shows on Home at once: the cached lists the
+    spine reads take the confirmed state instead of waiting for the 5-15 min
+    list refresh (found live 2026-11-09: Watching, but no airing card)."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.cache = Path(self.directory.name) / "anilist_cache.json"
+        self.patches = [patch.object(config, "DB", Path(self.directory.name) / "hub.db"),
+                        patch.object(config, "ANILIST_CACHE", self.cache)]
+        for p in self.patches:
+            p.start()
+        database.init_db()
+        self.cache.write_text(json.dumps({
+            "user": {"name": "X"}, "score_format": "POINT_10_DECIMAL", "favourites": [],
+            "entries": [{"id": 195516, "status": "PLANNING", "progress": 0, "score": 0,
+                         "score100": 0, "repeat": 0, "started_at": None,
+                         "completed_at": None, "airing": "RELEASING"}],
+            "_ts": 1234}), encoding="utf-8")
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+        self.directory.cleanup()
+
+    def state(self, **entry):
+        return {"media_id": 195516, "is_favourite": True, "score_format": "POINT_10_DECIMAL",
+                "entry": {"status": "CURRENT", "score": 8.5, "progress": 2, "repeat": 0,
+                          "started_at": "2026-11-09", "completed_at": None, **entry}}
+
+    def test_saved_status_lands_in_the_cached_lists(self):
+        with patch.object(anilist, "anilist_mutation", return_value={"SaveMediaListEntry": {"id": 1}}), \
+             patch.object(anilist, "anilist_entry_state", return_value=self.state()):
+            anilist.anilist_entry_save(195516, {"status": "CURRENT"})
+        cached = json.loads(self.cache.read_text(encoding="utf-8"))
+        row = cached["entries"][0]
+        self.assertEqual((row["status"], row["progress"], row["started_at"]), ("CURRENT", 2, "2026-11-09"))
+        self.assertEqual((row["score100"], row["score"]), (85, 8))  # the list's score is POINT_10
+        self.assertEqual(cached["favourites"], [195516])
+        self.assertEqual(cached["_ts"], 1234)  # still the list's own age
+
+    def test_failed_save_leaves_the_cache_alone(self):
+        before = self.cache.read_text(encoding="utf-8")
+        with patch.object(anilist, "anilist_mutation", return_value=None):
+            anilist.anilist_entry_save(195516, {"status": "CURRENT"})
+        self.assertEqual(self.cache.read_text(encoding="utf-8"), before)
+
+    def test_entry_missing_from_the_lists_refetches_them(self):
+        st = self.state()
+        st["media_id"] = 1
+        with patch.object(anilist, "_list_refetch") as refetch, \
+             patch.object(anilist.threading, "Thread", side_effect=lambda target, daemon: type("T", (), {"start": lambda s: target()})()):
+            anilist.list_cache_apply(1, st)
+        refetch.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

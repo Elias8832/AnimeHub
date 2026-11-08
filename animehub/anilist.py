@@ -190,6 +190,49 @@ def entry_state_from_lists(media_id):
                       "completed_at": e.get("completed_at")}}
 
 
+_list_cache_lock = threading.Lock()
+
+
+def list_cache_apply(media_id, state):
+    """Fold a confirmed save into the cached lists, so the spine (Home's
+    airing section, the library's status filters) shows it on the next
+    /api/library instead of after the 5-15 min list refresh. `state` is an
+    entry-state answer. An entry the cached lists don't hold yet (just
+    added) can't be built from it: the whole list is refetched instead."""
+    ent = (state or {}).get("entry") if isinstance(state, dict) else None
+    if not ent or not ent.get("status"):
+        return
+    with _list_cache_lock:
+        cached = anilist_cache_stale()
+        if not cached:
+            return
+        row = next((x for x in cached.get("entries") or [] if x.get("id") == media_id), None)
+        if row is None:
+            threading.Thread(target=_list_refetch, daemon=True).start()
+            return
+        row["status"] = ent["status"]
+        for k in ("progress", "repeat", "started_at", "completed_at"):
+            if k in ent:
+                row[k] = ent[k] if ent[k] is not None or k.endswith("_at") else 0
+        fmt = state.get("score_format") or cached.get("score_format") or "POINT_10"
+        if ent.get("score") is not None and fmt in _SCORE_MAX:
+            row["score100"] = round(float(ent["score"]) * 100.0 / _SCORE_MAX[fmt])
+            row["score"] = round(row["score100"] / 10.0)  # the list query reads POINT_10
+        if state.get("is_favourite") is not None:
+            favs = [i for i in cached.get("favourites") or [] if i != media_id]
+            cached["favourites"] = favs + [media_id] if state["is_favourite"] else favs
+        tmp = config.ANILIST_CACHE.with_suffix(".patch.tmp")
+        tmp.write_text(json.dumps(cached), encoding="utf-8")  # keeps _ts: the list's own age
+        system.replace(tmp, config.ANILIST_CACHE)
+
+
+def _list_refetch():
+    try:
+        anilist_user_data(force=True)
+    except Exception as e:
+        util.log("AniList lists not refreshed after a save: %s" % e)
+
+
 def anilist_entry_state(media_id):
     """Live AniList release state for the editing surface (TODO 9): the
     user's list entry, score in THEIR scoring format, favourite flag, plus
@@ -384,9 +427,11 @@ def anilist_entry_save(media_id, patch):
         return {"error": "AniList rejected the update"}
     _cache_del("entry-state:v1:%d" % media_id)
     try:
-        return anilist_entry_state(media_id)
+        fresh = anilist_entry_state(media_id)
     except AniListAuthError as e:
         return {"error": e.reason}
+    list_cache_apply(media_id, fresh)
+    return fresh
 
 
 def anilist_favourite_set(media_id, want):
@@ -426,6 +471,7 @@ def anilist_favourite_set(media_id, want):
         database.cache_put("entry-state:v1:%d" % media_id, fresh)
     if fresh and fresh["is_favourite"] != bool(want):
         return {"error": "AniList did not confirm the change"}
+    list_cache_apply(media_id, fresh)
     return fresh
 
 
@@ -885,7 +931,8 @@ def anilist_user_data(force=False):
     }
     # Atomic: request threads read this file concurrently, and a torn read
     # would briefly flip the spine into local mode.
-    tmp = config.ANILIST_CACHE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(out | {"_ts": time.time()}), encoding="utf-8")
-    system.replace(tmp, config.ANILIST_CACHE)
+    with _list_cache_lock:  # list_cache_apply must not write an older copy over this one
+        tmp = config.ANILIST_CACHE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(out | {"_ts": time.time()}), encoding="utf-8")
+        system.replace(tmp, config.ANILIST_CACHE)
     return out
