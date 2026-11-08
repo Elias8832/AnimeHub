@@ -374,6 +374,17 @@ def drop_premature_links(force=False):
 _freshening = set()
 
 
+def vpn_held(m, link):
+    """The online episode list is old, AniList says more episodes are out
+    than it holds, and the VPN rule keeps the hub from asking (Decision 49:
+    nothing reaches the site before a click): the page says so and offers a
+    Check now click instead of staying quietly behind (TODO 183)."""
+    if not link or settings.site_ok() or not anicli.anicli_path():
+        return False
+    stale = time.time() - link["episodes_ts"] > anicli.STREAM_EPISODES_TTL
+    return stale and streaming.release_aired(m) > len(link["episodes"])
+
+
 def stream_freshen_async(media_id):
     """Ask ani-cli again for an entry's online episodes once its list is
     stale (airing entries gain episodes), in the background."""
@@ -441,5 +452,6 @@ def franchise_view(mid, background=True, peek=False):
         threading.Thread(target=mapping.refresh_entry_art, kwargs={"ids": {mid}}, daemon=True).start()
     failed = _build_failed.get(mid) if building and not entries and mid not in _building else None
     return dict(page, id=fid, selected=mid, building=building or mid in _building,
+                vpn_held=[mid] if sel and vpn_held(sel, links.get(mid)) else [],
                 resolving=sorted(i for i in ids if i in streaming._resolving or i in _freshening), stream_ready=online_ok,
                 unavailable=failed[1] if failed else None)

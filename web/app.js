@@ -1586,6 +1586,13 @@ function Fran() {
   const vpn = S.data?.vpn, vpnTag = !vpn?.known ? "" : vpn.active ? '<span class="v ok">vpn ✓</span>' : '<span class="v warn">no vpn</span>';
   const dlLabel = movie ? "Download" : missing.length === e.slots.length ? "Download all" : `Download ${span(missing.map((x) => x.number))}`;
   const resolving = p.resolving.includes(e.id);
+  /* The list is behind AniList and no VPN lets the hub look by itself
+     (TODO 183): say so, and let a click look (the play click's VPN ask). */
+  const held = (p.vpn_held || []).includes(e.id) && !resolving;
+  const busy = S.checkBusy === e.id;
+  const heldTile = held ? `<div class="ep held" tabindex="0" data-a="frcheck" title="Load them now (asks about the VPN first)">
+    <div class="epa"><span class="heldin">${busy ? '<i class="spin"></i>' : SHIELD_OFF}<b>${busy ? "Loading…" : "More episodes are out"}</b><small>${busy ? "" : "Load them now"}</small></span></div>
+    <div class="et"><b>Not loaded — no VPN is on</b><small>they load once a VPN is on</small></div></div>` : "";
   const note = e.slots.length ? (!e.slots.some((x) => x.local) && !ready ? '<p class="sub eps-note">Install ani-cli to watch these online.</p>'
       : ready && !e.online.available && e.slots.some((x) => !x.local) ? `<p class="sub eps-note">Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button></p>` : "")
     : `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : upcoming ? `Not out yet — ${esc(airing || (starts ? "starts " + starts : "no release date known yet"))}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
@@ -1605,7 +1612,7 @@ function Fran() {
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
   <div class="eps-head"><div class="tabs2">${tabs || (byOrder ? frPick(p, e) : `<h2>${esc(movie ? "Movie" : "Episodes")}</h2>`)}</div><span class="srcl">${esc(srcLine)}</span><div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
-  ${e.slots.length ? `<div class="eps strip">${e.slots.map((x, i) => slotTile(p, e, x, tg && tg.x.id, i)).join("")}</div>` : ""}${note}
+  ${e.slots.length ? `<div class="eps strip">${e.slots.map((x, i) => slotTile(p, e, x, tg && tg.x.id, i)).join("")}${heldTile}</div>` : ""}${note}
   </div>
   ${frOrder(p, e)}
   ${p.other_local.length ? `<h2 class="frother-h">Other files</h2>${otherLocal(p, e)}` : ""}
@@ -2955,6 +2962,8 @@ function SkpDlg() {
   <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
   <div class="actions three"><span class="note2 mono">switch this off in Settings → Skipping</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skpBtns("skpgo", "skpno")}</div>`;
 }
+/* A shield with a line through it: no VPN (the "More episodes are out" tile, TODO 183). */
+const SHIELD_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.7 14a7 7 0 0 0 .3-2V6l-8-3-3.2 1.2"/><path d="M4.7 4.7 4 5v6c0 6 8 10 8 10a20 20 0 0 0 5.4-4.6"/><path d="m2 2 20 20"/></svg>';
 const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/><path d="M12 8v4M12 15.5v.01"/></svg>';
 const vpnWait = () => `<div class="warn2"><span class="wi">${SHIELD}</span><div><b>No VPN is on</b><span>Turn it on and this starts by itself.</span><div class="watching"><i class="spin"></i>watching for a VPN…</div></div></div>`;
 function VpnDlg() {
@@ -4526,6 +4535,8 @@ async function pollNow() {
       if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();
       else if (vpnMoved && now.vpn.active && S.modal?.t === "vpn") A.vpngo();
       else if (vpnMoved && now.vpn.active && S.modal?.t === "skp") A.skpgo();
+      /* A show page waiting on one ("More episodes are out", TODO 183) asks again: the hub now loads them. */
+      else if (vpnMoved && now.vpn.active && S.view === "fr" && S.fr && (S.fr.page?.vpn_held || []).includes(S.fr.eid)) frLoad(S.fr.eid);
     }
     if (now.notice && now.notice.ts !== lastNotice) { lastNotice = now.notice.ts; toast(now.notice.msg); }
     loadToast(now);
@@ -5389,6 +5400,16 @@ const A = {
     const cap = f.media?.episodes;
     if (k === "progress" && cap) n = Math.min(n, cap);
     entryPatch({ [k === "progress" ? "progress" : "repeat"]: n }, undefined, 450);
+  },
+  frcheck: () => {
+    const e = frEntry();
+    if (!e || S.checkBusy) return;
+    vpnGate(() => {
+      S.checkBusy = e.id; pagePatch();
+      api("/api/stream/refresh", { media_id: e.id }).then((r) => {
+        toast(r.error || (r.added ? `${r.added} new ${r.added === 1 ? "episode" : "episodes"}` : "No new episodes online yet"));
+      }).catch(() => toast("Could not check — is the hub running?")).finally(() => { S.checkBusy = null; frLoad(e.id); });
+    });
   },
   smode: (v) => {
     const e = frEntry();
