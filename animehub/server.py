@@ -101,6 +101,25 @@ document.getElementById("f").onsubmit = (ev) => {
 };
 </script></body></html>"""
 
+# The page's own scripts carry "?v=auto" in web/index.html; the hub swaps it
+# for a short code made from each file's content (Decision 72), so a changed
+# file is always fetched fresh and nobody bumps a number by hand (two threads
+# bumping the same line kept clashing on merge).
+ASSET_STAMP = re.compile(r"/(app\.js|style\.css)\?v=auto")
+
+
+def index_html():
+    page = system.read_bytes(WEB / "index.html").decode("utf-8")
+
+    def stamp(m):
+        try:
+            code = hashlib.sha1(system.read_bytes(WEB / m.group(1))).hexdigest()[:10]
+        except OSError:
+            return m.group(0)
+        return f"/{m.group(1)}?v={code}"
+    return ASSET_STAMP.sub(stamp, page).encode("utf-8")
+
+
 MANIFEST = {"id": "/", "name": "Anime Hub", "short_name": "Anime Hub", "start_url": "/", "scope": "/", "display": "standalone",
             "background_color": "#101114", "theme_color": "#101114",
             "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
@@ -571,7 +590,12 @@ class Handler(BaseHTTPRequestHandler):
         elif route in ("/icon-180.png", "/icon-192.png", "/icon-512.png"):
             self.send_file(WEB / route.lstrip("/"), "image/png", cache=True)
         elif route in ("/", "/index.html"):
-            self.send_file(WEB / "index.html", "text/html; charset=utf-8")
+            try:
+                body = index_html()
+            except OSError:
+                self.send_error(404)
+                return
+            self.send_file_body(body, "text/html; charset=utf-8")
         elif route == "/style.css":
             self.send_file(WEB / "style.css", "text/css")
         elif route == "/app.js":
