@@ -2463,7 +2463,9 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lnav>button .n{margin-left:auto;font:400 11px var(--mono);color:var(--mute)}.lnav>button.on .n{color:var(--ink-2)}
   .lnav .att{width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px rgb(var(--warn-rgb)/.7)}
   .lnav .lrescan{font-weight:500;color:var(--mute)}.lrescan .ico{width:15px;height:15px}.lrescan.busy .ico{animation:spin .8s linear infinite}
-  .lgen{display:flex;flex-wrap:wrap;gap:6px;padding:2px 6px 0 10px}
+  .lflt .fopt .gn{margin-left:auto;font:400 11px var(--mono);color:var(--mute)}.lflt .fopt .gn+.ico{flex:none;width:0;margin-left:0;opacity:0;transform:scale(.6);transition:width .22s var(--ease),margin .22s var(--ease),opacity .18s,transform .22s var(--ease)}.lflt .fopt.on .gn+.ico{width:14px;margin-left:2px;opacity:1;transform:none} /* same size and spot as the other filters' ticks; the glyph's own side room is the gap, so the count steps 16px, not 22 */
+  @media (prefers-reduced-motion:reduce){.lflt .fopt .gn+.ico{transition:none}} /* the count sits flush right; it steps aside only for a picked genre's tick (Elias) */
+  .lflt .fopt.on .gn{color:var(--ink-2)}
   .lmain{min-width:0;padding-top:34px}
   .lh{display:flex;align-items:baseline;gap:10px;margin:0 8px 0 0;font:650 22px var(--ui);letter-spacing:-.01em;white-space:nowrap}
   .lh .n{font:400 12px var(--mono);color:var(--mute)}
@@ -2500,7 +2502,6 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lflt .fopt .ico{margin-left:auto;width:14px;height:14px;stroke-width:2.4;color:var(--accent-hi);opacity:0}
   .lflt .fopt.on .ico{opacity:1}
   .lflt .fdrop.locked .fdb{cursor:default}.lflt .fdrop.locked .fdb .ico{display:none}
-  .lgen .lmore{color:var(--mute);background:none}.lgen .lmore:hover{color:var(--ink)}
   .lnav .sum span:nth-of-type(1),.lnav .sum span:nth-of-type(3){display:none} /* the shows count is on All, the folders on Needs a look */
   .fdrop{display:block;position:relative}
   .fdb{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 14px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px);font:400 11px var(--mono);color:var(--mute);transition:background .2s}

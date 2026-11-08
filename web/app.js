@@ -1169,18 +1169,21 @@ function libRail(m, sum) {
   const gen = !m.cold && lists.some((t) => t.k === S.lib.tab) ? railGenres(m) : "";
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? "AniList lists" : "Lists") + lists.map(it).join("") : ""}
-    ${gen ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}</div>` + head("Genres") + gen : ""}
+    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
 }
+/* Genres open in place like the other filters (Elias, 2026-11-08: "there are
+   just too many genres"); pick several, the row says how many. */
+const genLabel = () => { const g = S.lib.genres; return !g.length ? "any" : g.length === 1 ? g[0] : `${g.length} picked`; };
 function railGenres(m) {
   const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
   const all = [...counts, ...S.lib.genres.filter((g) => !have.has(g)).map((g) => [g, 0])];
-  const TOP = 8, show = S.genOpen ? all : all.filter(([g], i) => i < TOP || S.lib.genres.includes(g)), rest = all.length - show.length;
-  return `<div class="lgen" role="group" aria-label="Genres">${show.map(([g, c]) => {
+  if (!all.length) return "";
+  return fdrop("genres", "Genres", `<div class="fchips lgen" role="group" aria-label="Genres">${all.map(([g, c]) => {
     const on = S.lib.genres.includes(g);
-    return `<button class="gchip${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}">${esc(g)}<span class="n">${c}</span></button>`;
-  }).join("")}${rest > 0 ? `<button class="gchip lmore" data-a="gmore">${rest} more</button>` : S.genOpen && all.length > TOP ? '<button class="gchip lmore" data-a="gmore">Fewer</button>' : ""}</div>`;
+    return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}"><span>${esc(g)}</span><span class="gn">${c}</span>${ico("check")}</button>`;
+  }).join("")}</div>`, genLabel(), S.lib.genres.length > 0);
 }
 function genreTray(m) {
   const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
@@ -5158,7 +5161,9 @@ const A = {
   genre: (v, t) => {
     const on = !S.lib.genres.includes(v);
     S.lib.genres = on ? [...S.lib.genres, v] : S.lib.genres.filter((g) => g !== v);
-    for (const b of $$(`.gchip[data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    for (const b of $$(`[data-a=genre][data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    const gd = $('.fdrop[data-k="genres"]');
+    if (gd) { gd.classList.toggle("set", S.lib.genres.length > 0); gd.querySelector(".fdb b").textContent = genLabel(); }
     saveLib(); paintWall(); syncFilters();
   },
   go: (v, t) => {
