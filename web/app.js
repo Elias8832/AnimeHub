@@ -262,7 +262,10 @@ function zoomStep(cur, dir) { return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur +
 function ddPlace(box, z, vw, vh) {
   const width = Math.max(box.width / z, 170), left = Math.max(10, Math.min(box.left / z, vw / z - width - 10));
   const below = vh - box.bottom - 12, up = below < 220 * z && box.top > below;
-  return { width, left, top: up ? null : box.bottom / z + 6, bottom: up ? (vh - box.top) / z + 6 : null };
+  /* The list never runs under the top bar or off the bottom: a long one (15
+     seasons) scrolls inside instead. */
+  const room = up ? box.top - 76 * z : below - 40 * z;
+  return { width, left, top: up ? null : box.bottom / z + 6, bottom: up ? (vh - box.top) / z + 6 : null, maxHeight: Math.max(120, Math.min(340, room / z)) };
 }
 /* A season tab's count (TODO 7): how many episodes the entry has — its
    AniList total, else the aired ones, else what the page lists — never
@@ -1530,7 +1533,7 @@ function Fran() {
     <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
-  <div class="eps-head"><div class="tabs2">${tabs || `<h2>${esc(byOrder && e.label !== title ? e.label : movie ? "Movie" : "Episodes")}</h2>`}</div><span class="srcl">${esc(srcLine)}</span>${byOrder ? `<button class="link-btn tord" data-a="frorder">watch order ${ico("chevd")}</button>` : ""}<div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
+  <div class="eps-head"><div class="tabs2">${tabs || (byOrder ? frPick(p, e) : `<h2>${esc(movie ? "Movie" : "Episodes")}</h2>`)}</div><span class="srcl">${esc(srcLine)}</span><div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
   ${e.slots.length ? `<div class="eps strip">${e.slots.map((x, i) => slotTile(p, e, x, tg && tg.x.id, i)).join("")}</div>` : ""}${note}
   </div>
   ${frOrder(p, e)}
@@ -1597,6 +1600,17 @@ function loadAbout(mid) {
     aboutMemo[mid] = r;
     aboutPaint(mid);
   }).catch(() => {});
+}
+/* The episode row's heading is a dropdown of the page's entries, in watch
+   order (Elias, 2026-11-08, mockup A): it stays a plain heading that lights
+   up on hover. The real <select> (Decision 38) lies invisible over it, so the
+   heading keeps its own width and font; the list shows each entry's count. */
+function frPick(p, e) {
+  const at = new Map((p.order || []).map((x, i) => [x.id, i]));
+  const rows = [...p.entries].sort((a, b) => (at.get(a.id) ?? 1e9) - (at.get(b.id) ?? 1e9));
+  const opt = (x) => { const n = entryCount(x), r = n ? `${n} ep` : x.group === "main" ? "" : (x.format_label || "").toLowerCase();
+    return `<option value="${x.id}"${x.id === e.id ? " selected" : ""}${r ? ` data-r="${esc(r)}"` : ""}>${esc(x.label)}</option>`; };
+  return `<h2 class="frpick"><span aria-hidden="true">${esc(e.label)}</span>${ico("chevd")}<select data-a="frsel" aria-label="Season">${rows.map(opt).join("")}</select></h2>`;
 }
 /* Watch order (TODO 132): the main story big and numbered, everything else
    small, right after the part AniList links it to. It never guesses.
@@ -5618,7 +5632,6 @@ const A = {
   tagspoil: (v) => { (S.tagsOpen ||= {})[v] = true; aboutPaint(+v); },
   tagsmore: (v, t) => { t.closest(".about")?.classList.add("tagsopen"); t.closest(".tgm")?.setAttribute("hidden", ""); },
   descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }, // phones: the summary opens in place
-  frorder: () => $("#app .frpage .hsec.ford")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }),
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
   plgo: (v) => { S.lib.pl = +v; S.plq = ""; saveLib(); S.fadeNext = true; render(); scrollTo(0, 0); },
@@ -5743,20 +5756,33 @@ function ddClose(refocus) {
   if (!m || !ddSel) return;
   m.classList.remove("open"); m.innerHTML = "";
   ddSel.closest(".fl")?.classList.toggle("ddon", false);
+  ddSel.closest(".frpick")?.classList.remove("ddon");
   if (refocus) ddSel.focus({ preventScroll: true });
   ddSel = null;
 }
+/* Puts the open list under (or over) its select; also on every scroll, so
+   the list rides along with the page instead of closing (Elias, 2026-11-08). */
+function ddPos(sel, m, first) {
+  const box = (sel.closest(".fl") || sel).getBoundingClientRect(), z = zoomGet() / 100, p = ddPlace(box, z, innerWidth, innerHeight);
+  if (first) m.style.minWidth = p.width + "px";
+  m.style.left = p.left + "px"; m.style.maxHeight = p.maxHeight + "px";
+  m.style.top = p.top === null ? "" : p.top + "px"; m.style.bottom = p.bottom === null ? "" : p.bottom + "px";
+  const right = box.left + box.width / 2 > innerWidth / 2;
+  if (right && !first) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px"; // a chip on the right: the list hangs from its right edge
+  return { p, right };
+}
 function ddOpen(sel) {
-  const m = $("#ddm"), p = ddPlace((sel.closest(".fl") || sel).getBoundingClientRect(), zoomGet() / 100, innerWidth, innerHeight);
+  const m = $("#ddm");
   ddSel = sel;
   sel.closest(".fl")?.classList.add("ddon"); // its chip stays lit while the list is open
+  sel.closest(".frpick")?.classList.add("ddon"); // the season heading too
   const cap = (sel.closest(".fl")?.firstChild?.nodeType === 3 ? sel.closest(".fl").firstChild.textContent : "").trim();
-  m.innerHTML = (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}><span>${esc(o.textContent)}</span>${o.selected ? ico("check") : ""}</button>`).join("");
-  m.style.minWidth = p.width + "px"; m.style.left = p.left + "px";
-  m.style.top = p.top === null ? "" : p.top + "px"; m.style.bottom = p.bottom === null ? "" : p.bottom + "px";
+  m.innerHTML = (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}><span>${esc(o.textContent)}</span>${o.selected ? ico("check") : o.dataset.r ? `<small class="r">${esc(o.dataset.r)}</small>` : ""}</button>`).join("");
+  ddPos(sel, m, true);
   m.classList.remove("open"); void m.offsetWidth; m.classList.add("open");
-  const box = (sel.closest(".fl") || sel).getBoundingClientRect(), z = zoomGet() / 100, right = box.left + box.width / 2 > innerWidth / 2;
-  if (right) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px"; // a chip on the right: the list hangs from its right edge (measured once shown)
+  const { p, right } = ddPos(sel, m); // measured once shown
+  const on = m.querySelector("button.on"); // a long list opens at the current row
+  if (on && on.offsetTop + on.offsetHeight > m.clientHeight) m.scrollTop = on.offsetTop - m.clientHeight / 2 + on.offsetHeight / 2;
   m.style.transformOrigin = `${p.top === null ? "bottom" : "top"} ${right ? "right" : "left"}`;
   (m.querySelector("button.on") || m.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true });
 }
@@ -5793,7 +5819,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (t.tagName === "SELECT" && !t.disabled && (e.key === "Enter" || e.key === " " || (e.altKey && e.key === "ArrowDown"))) { e.preventDefault(); ddOpen(t); }
 }, true);
-addEventListener("scroll", (e) => { if (ddSel && !e.target.closest?.("#ddm")) ddClose(false); }, { capture: true, passive: true });
+addEventListener("scroll", (e) => { if (ddSel && !e.target.closest?.("#ddm")) { if (ddSel.isConnected) ddPos(ddSel, $("#ddm")); else ddClose(false); } }, { capture: true, passive: true });
 addEventListener("resize", () => ddClose(false));
 /* The episode menu's keys while it is open: ↑↓ ↵ · A W D (shown on its rows) · Esc. */
 document.addEventListener("keydown", (e) => {

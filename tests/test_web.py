@@ -335,7 +335,7 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills
         # the drop-down list: a caption, a check on the picked one, hung from a right-hand chip's right edge
         self.assertIn('`<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>`', APP)
-        self.assertIn('if (right) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px";', APP)
+        self.assertIn('if (right && !first) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px";', APP)
         self.assertIn(".fdrop,.fpanel{display:contents}", block)  # the phone sheet shows the sliders themselves
 
 
@@ -690,9 +690,31 @@ class ShowPagePolish(unittest.TestCase):
         the watch order picks, tabs only when it can't reach every entry."""
         body = self.fran()
         self.assertIn("p.entries.every((x) => ordIds.has(x.id))", body)
-        self.assertIn('data-a="frorder"', body)
+        self.assertNotIn('data-a="frorder"', body)  # the season dropdown replaced the "watch order" link
         self.assertIn('$("#app .frpage > .eps-head")?.scrollIntoView(', APP)
         self.assertNotIn("${kb(", body[body.index('<div class="cta">'):])  # no key hints on the buttons
+
+    def test_season_heading_is_a_dropdown(self):
+        """Decision 66 (2026-11-08): the episode row's heading opens a list of
+        every entry in watch order; the real select lies invisible over it."""
+        body = self.fran()
+        self.assertIn("byOrder ? frPick(p, e)", body)
+        a = APP.index("function frPick(")
+        pick = APP[a:APP.index("\n}\n", a)]
+        self.assertIn('<select data-a="frsel" aria-label="Season">', pick)
+        self.assertIn('<span aria-hidden="true">${esc(e.label)}</span>', pick)
+        self.assertIn("(at.get(a.id) ?? 1e9) - (at.get(b.id) ?? 1e9)", pick)  # watch order first
+        self.assertIn('o.dataset.r ? `<small class="r">', APP)  # the count on the right of the app's own list
+        self.assertIn(".frpick select{position:absolute;inset:0;width:100%;height:100%;opacity:0", CSS)
+        self.assertNotIn(".frpick select option", CSS)  # an option's own font made Chrome cut the name ("Seas…")
+
+    def test_dropdown_rides_along_and_fits(self):
+        """Elias (2026-11-08): the list closed on scroll, and Attack on Titan's
+        15 entries squashed the rows and ran off the screen."""
+        self.assertIn("if (ddSel.isConnected) ddPos(ddSel, $(\"#ddm\")); else ddClose(false);", APP)
+        self.assertIn("maxHeight: Math.max(120, Math.min(340, room / z))", APP)
+        self.assertIn("#ddm button{flex:none;", CSS)  # rows keep their height; the list scrolls
+        self.assertIn("#ddm.open{display:flex;overscroll-behavior:contain;", CSS)
 
     def test_season_tabs_stay_one_row(self):
         self.assertIn(".sp2 .rels{flex-wrap:nowrap;max-width:100%;overflow-x:auto", CSS)
