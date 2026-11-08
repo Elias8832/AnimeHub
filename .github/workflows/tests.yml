@@ -37,7 +37,7 @@ jobs:
       - name: Tests
         env:
           ANIME_HUB_REAL_TOOLS: "1"
-        run: python -m unittest
+        run: python -m unittest --durations 20
       - name: Build the zip
         run: powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1
       - name: Check the zip
