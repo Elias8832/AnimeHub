@@ -1532,6 +1532,16 @@ function otherLocal(p, e) {
       return slotTile(p, { ...e, slots: [], format: null, poster: p.poster }, { id: ep.id, number: ep.number, title: d ? `${d} ${ep.number}` : null, thumb: null,
       local: { id: ep.id, files: ep.files }, online: null, watched: ep.watched, position: ep.position, duration: ep.duration, length: ep.length, last_played: ep.last_played }, null, i); }).join("")}</div>`; }).join("");
 }
+/* When an upcoming show starts, only as exact as AniList knows it: a day,
+   a month, a season or a year. "" when nothing is known. */
+function startLabel(e) {
+  const d = e.start_date || {}, y = d.year || e.year;
+  if (!y) return "";
+  if (d.month && d.day) return new Date(y, d.month - 1, d.day).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+  if (d.month) return new Date(y, d.month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const SEA = { WINTER: "Winter", SPRING: "Spring", SUMMER: "Summer", FALL: "Fall" };
+  return SEA[e.season] ? `${SEA[e.season]} ${y}` : String(y);
+}
 function frWhen(at) { const s = at - Date.now() / 1000; return s > 0 ? `in ${fmtIn(s)}` : "now"; }
 /* The show page (Decision 38): the show's art is the canvas behind it;
    title, your entry as a row of numbers, actions with their keys, then the
@@ -1553,6 +1563,7 @@ function Fran() {
   const facts = [p.title && p.title !== e.title ? p.title : "", e.year, count, !movie && e.duration ? `${e.duration} min` : "",
     MEDIA_STATUS[e.status] && e.status !== "FINISHED" ? MEDIA_STATUS[e.status].toLowerCase() : ""].filter(Boolean);
   const airing = e.next_airing?.at ? `E${e.next_airing.episode} airs ${frWhen(e.next_airing.at)}` : "";
+  const upcoming = e.status === "NOT_YET_RELEASED", starts = upcoming ? startLabel(e) : "";
   const nowId = S.data.now?.episode_id;
   const playing = nowId && e.slots.some((x) => slotIds(x).includes(nowId)) ? `<span class="playing"><i class="led"></i>${S.data.now.loading ? "loading" : "playing"} · ${esc(S.data.now.label)}</span>` : "";
   const main = p.entries.filter((x) => x.group === "main"), extra = p.entries.filter((x) => x.group === "extra");
@@ -1577,7 +1588,7 @@ function Fran() {
   const resolving = p.resolving.includes(e.id);
   const note = e.slots.length ? (!e.slots.some((x) => x.local) && !ready ? '<p class="sub eps-note">Install ani-cli to watch these online.</p>'
       : ready && !e.online.available && e.slots.some((x) => !x.local) ? `<p class="sub eps-note">Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button></p>` : "")
-    : `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : e.status === "NOT_YET_RELEASED" ? `Not out yet${airing ? " — " + esc(airing) : ""}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
+    : `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : upcoming ? `Not out yet — ${esc(airing || (starts ? "starts " + starts : "no release date known yet"))}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
   const framed = isPhone() || !(e.banner || p.banner) || lookGet("art") !== "full"; // phones: poster beside the title (TODO 177, Show C)
   const title = e.title || p.title;
   const ph = isPhone(); // phones show these as a row of icons with short words (TODO 177)
@@ -1608,6 +1619,7 @@ function frAbout(e) {
   const rows = [["format", [e.format_label, e.episodes ? `${e.episodes} episode${e.episodes === 1 ? "" : "s"}` : "", e.duration ? `${e.duration} min${e.episodes > 1 ? " each" : ""}` : ""].filter(Boolean).join(" · ")],
     ["year", e.year ? String(e.year) : ""], ["status", MEDIA_STATUS[e.status] || ""], ["score", e.score ? `${e.score}% on AniList` : ""]].filter(([, v]) => v);
   const nx = e.next_airing?.at && e.next_airing.at * 1000 > Date.now() ? e.next_airing : null;
+  if (e.status === "NOT_YET_RELEASED" && !nx) rows.splice(2, 0, ["release", startLabel(e) || "no date known yet"]);
   if (nx) rows.splice(3, 0, ["next episode", `E${nx.episode} · ${new Date(nx.at * 1000).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`]);
   const x = aboutMemo[e.id];
   if (!e.overview && !rows.length && !x) return "";

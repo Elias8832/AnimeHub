@@ -86,7 +86,8 @@ def _entry_facts(m):
             "aired": streaming.release_aired(m) if m.get("status") else 0,
             "next_airing": {"episode": nxt.get("episode"), "at": nxt.get("airingAt")} if nxt else None,
             "year": (m.get("startDate") or {}).get("year") or m.get("seasonYear"),
-            "season": m.get("season"), "score": m.get("averageScore"),
+            "season": m.get("season"), "start_date": m.get("startDate"),  # additive: {year,month,day}, parts may be null
+            "score": m.get("averageScore"),
             "duration": m.get("duration"), "overview": anilist.strip_html(m.get("description")),
             "poster": (m.get("coverImage") or {}).get("extraLarge"),
             "banner": (_local_banner(m["id"]) if m.get("bannerImage") else None) or m.get("bannerImage"),

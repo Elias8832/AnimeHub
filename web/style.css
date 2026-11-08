@@ -606,6 +606,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .hero.framed{grid-template-columns:minmax(0,1fr) 280px}
 .sp2 .hl2{min-width:0}
 .sp2 .mline,.sp2 .ahead{max-width:640px}.sp2 .tbar{max-width:440px}
+.sp2 .hp{width:auto;height:auto;overflow:visible;background:none;border-radius:0} /* the poster's box, not the .hp progress bar */
 .sp2 .hp .poster{width:280px;border-radius:22px;box-shadow:0 30px 70px rgba(0,0,0,.5),var(--edge);font-size:18px}
 .sp2 .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font:500 13.5px var(--ui);color:var(--ink-2);margin:0}
 .sp2 .meta .fmt{height:20px;padding:0 6px;border-radius:5px;border:1px solid rgba(255,255,255,.34);font:650 10.5px var(--ui);letter-spacing:.05em;text-transform:uppercase;display:inline-flex;align-items:center;color:var(--ink)}
