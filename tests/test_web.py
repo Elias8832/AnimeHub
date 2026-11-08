@@ -128,7 +128,7 @@ class Frontend(unittest.TestCase):
         self.assertLess(HTML.index("dataset.motion"), HTML.index("style.css"))
         self.assertIn(":root[data-motion=off] *", CSS)
         self.assertIn(":root[data-art=off] .cv-blur", CSS)
-        self.assertIn('data-a="look" data-k="accent"', APP)
+        self.assertIn('pick("Accent colour", "look", "accent"', APP)  # ‹ value ›, saved by A.look (Decision 73)
 
     def test_accent_from_anilist_colour(self):
         # Privacy browsers block reading colours from images, so AniList's colour comes first.
@@ -355,7 +355,7 @@ class SearchPalette(unittest.TestCase):
     """TODO 60 step 6: one search for library, AniList, settings (switch
     right there) and commands; Settings show one section at a time."""
     def test_palette(self):
-        self.assertIn('["VPN in the status line", "online", "vpn status icon", "vpn_icon"]', APP)
+        self.assertIn('["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"]', APP)
         self.assertIn('data-a="srsw" data-v="${key}"', APP)
         self.assertIn('if (S.menu === "sr") srPreview(', APP)
         # the palette opens centred with its own line; the top bar only holds the button
@@ -364,19 +364,53 @@ class SearchPalette(unittest.TestCase):
         self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
         self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
         self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone);', APP)
-        self.assertIn('<nav class="snav">${isPhone() ? "" : setSearch()}${setHeads(tabs).map(', APP)
+        self.assertIn('<nav class="snav" aria-label="Settings sections">${isPhone() ? "" : setSearch()}${tabs.map(', APP)
         self.assertIn("r.classList.add(\"flash\")", APP)
 
 
 class SettingsLayout(unittest.TestCase):
-    """Decision 61: sections sorted by what you're after, a find box on top."""
+    """Decision 61, re-sorted in 73: ten plain sections, a find box on top."""
     def test_every_setting_points_at_a_section_that_exists(self):
-        tabs = set(re.findall(r'\["(\w+)", "[^"]+", "(?:Watching|Your hub|This PC)"\]', APP))
-        self.assertEqual(tabs, {"player", "skipping", "subs", "online", "appearance", "library", "anilist", "phone", "data"})
+        tabs = set(re.findall(r'\["(\w+)", "[^"]+", "(?:Watching|Your hub|Accounts|This PC)"\]', APP))
+        self.assertEqual(tabs, {"player", "subs", "skipping", "online", "appearance", "library", "privacy", "anilist", "phone", "data"})
         index = APP[APP.index("const SETTINGS_INDEX = ["):APP.index("const SET_TABS")]
         used = set(re.findall(r'\["[^"]+", "(\w+)", "', index))
         self.assertTrue(used)
         self.assertEqual(used - tabs, set())
+
+    def test_a_value_steps_both_ways_and_opens_a_list(self):
+        # Decision 73: ‹ value › — the arrows wrap around, the middle is a <select> (the app's own list).
+        code = APP[APP.index("function pick(label"):APP.index("const onoff = ")]
+        esc = re.search(r"const esc = .*", APP).group(0)
+        js = esc + "\nconst ico = (n) => n;\n" + code + '\nconsole.log(pick("Motion", "look", "motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]], "full"));'
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=20).stdout
+        self.assertIn('data-a="look" data-k="motion" data-v="off" aria-label="Motion: previous"', out)
+        self.assertIn('data-a="look" data-k="motion" data-v="calm" aria-label="Motion: next"', out)
+        self.assertIn('<select class="pkv" data-a="look" data-k="motion" aria-label="Motion">', out)
+        self.assertIn('<option value="full" selected>Full</option>', out)
+        # an On/Off value saves through the same switch path as before
+        self.assertIn('advset: (v, t) => { if (S.settings) setToggle(t.dataset.k, v === "on"); }', APP)
+        # the list hangs under the whole ‹ value ›
+        self.assertIn('(sel.closest(".fl") || sel.closest(".pk") || sel).getBoundingClientRect()', APP)
+
+    def test_folder_picker_finds_as_you_type(self):
+        # Decision 73: the Settings picker narrows its folders as you type and says how many it shows.
+        code = APP[APP.index("const dirName = "):APP.index("function dirRows(p)")]
+        js = code + '\nconst p = { dirs: [{ name: "Blue Box" }, { name: "Attack on Titan" }, { name: "Perfect Blue" }], q: " blue " };'
+        js += '\nconsole.log(JSON.stringify([dirShown(p).map((d) => d.name), dirCount(p), dirCount({ dirs: p.dirs }), dirName("/mnt/Storage/Anime/"), dirName("C:\\\\Anime\\\\Shows")]));'
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=20).stdout
+        self.assertEqual(json.loads(out), [["Blue Box", "Perfect Blue"], "2 of 3 folders", "3 folders", "Anime", "Shows"])
+        self.assertIn('if (ctx !== "tour") return DirPickBig(ctx, p);', APP)  # the tour keeps its small picker
+        for key in ('e.key === "Escape"', 'e.key === "ArrowDown"', 'e.key === "Enter" && inQ', 'e.key === "Backspace" && (!inQ || !t.value)'):
+            self.assertIn(key, APP)
+
+    def test_every_indexed_setting_is_a_real_row(self):
+        # The find box and the command line point at rows by name: a renamed row must be renamed here too.
+        index = APP[APP.index("const SETTINGS_INDEX = ["):APP.index("const SET_TABS")]
+        rest = APP.replace(index, "")
+        for name in re.findall(r'\["([^"]+)", "\w+", "', index):
+            self.assertTrue(f'"{name}"' in rest or f">{name}<" in rest, name)  # a row's name, a group heading or a button
+        self.assertNotIn("Sync ratings", APP)  # a row for something not built yet
 
     def test_no_notice_names_an_old_section(self):
         for old in ("Settings → Playback", "/ Playback", "Settings → mpv", "Data &amp; setup", "Data & setup"):

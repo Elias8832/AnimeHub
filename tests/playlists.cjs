@@ -162,15 +162,18 @@ test("an open playlist's header is one slim bar: name, count, add box, buttons; 
   assert.doesNotMatch(html, /plstack|plcover/);
 });
 
-test("Settings: four ways to open a stack, each with its own open preview, the chosen one marked", () => {
+test("Settings: four ways to open a stack, a ‹ value › to pick one, the chosen one shown open", () => {
   const block = source.slice(source.indexOf("const PL_FANS = "), source.indexOf("/* A segmented control for one Appearance preference. */"));
+  const row_ = source.slice(source.indexOf("const srow = "), source.indexOf("const onoff = "));
   const ctx = vm.createContext({ S: { data: { spine: { entries: [{ title: "F", banner: "f.jpg" }] } } }, lookGet: () => "cascade",
-    esc: (x) => String(x), poster: (t, u) => `<img alt="${t}" src="${u}">` });
-  vm.runInContext(block + ";this.row = plFanRow();", ctx);
+    esc: (x) => String(x), ico: (n) => `<svg data-i="${n}"></svg>`, poster: (t, u) => `<img alt="${t}" src="${u}">` });
+  vm.runInContext(row_ + block + ";this.row = plFanRow();", ctx);
   const row = ctx.row;
-  assert.equal((row.match(/data-k="fan"/g) || []).length, 4);
-  for (const m of ["fan", "wide", "cascade", "peek"]) assert.match(row, new RegExp(`class="plpv" data-fan="${m}"`));
-  assert.match(row, /class="choice lkcard on" role="radio" aria-checked="true" data-a="look" data-k="fan" data-v="cascade"/);
+  assert.equal((row.match(/data-k="fan"/g) || []).length, 3); // ‹, the list, ›
+  for (const m of ["fan", "wide", "cascade", "peek"]) assert.match(row, new RegExp(`<option value="${m}"`));
+  assert.match(row, /<option value="cascade" selected>Cascade<\/option>/);
+  assert.match(row, /data-a="look" data-k="fan" data-v="cascade"|data-a="look" data-k="fan" data-v="peek"/);
+  assert.match(row, /class="plpv" data-fan="cascade"/); // the picture shows the chosen one
   assert.match(row, /src="f.jpg"/);
   assert.match(source, /fan: \["fan", "wide", "cascade", "peek"\]/);
 });

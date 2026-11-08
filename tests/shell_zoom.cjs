@@ -76,8 +76,9 @@ test("shell mode suppresses browser zoom but never drives the setting", () => {
   // suppression stays: ctrl+wheel and the zoom keys are prevented in shell mode
   assert.match(source, /wheel", \(e\) => \{ if \(e\.ctrlKey\) e\.preventDefault\(\); \}/);
   assert.match(source, /"\+-=0"\.includes\(e\.key\)/, "zoom keys swallowed, dead");
-  // the Settings row is compact (no Reset button inside it)
-  const row = source.match(/<span class="zrow">.*?<\/span>/s);
-  assert.ok(row, "zrow markup exists");
+  // the Settings row is one ‹ value › (Decision 73), no Reset button
+  const row = source.match(/srow\("Zoom", [^\n]*/);
+  assert.ok(row, "zoom row exists");
+  assert.match(row[0], /pick\("Zoom", "zoompick"/);
   assert.ok(!row[0].includes("zoomreset"), "no reset in the row");
 });

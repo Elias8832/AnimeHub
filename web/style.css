@@ -1368,18 +1368,16 @@ body.srch #pal{display:grid}
 .set2 .hd{font:700 clamp(48px,6vw,72px)/.9 var(--display);text-transform:uppercase;margin:0}
 .set2 .sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding-bottom:8px;font:400 12px var(--mono);color:var(--mute)}
 .set2 .sep{width:3px;height:3px;border-radius:50%;background:var(--mute);display:inline-block}
-.setg{display:grid;grid-template-columns:220px minmax(0,1fr);gap:36px;align-items:start}
-.snav{display:flex;flex-direction:column;gap:4px;position:sticky;top:90px}
-.snav button{height:40px;padding:0 16px;border-radius:999px;text-align:left;font:600 14px var(--ui);color:var(--ink-2)}
-.snav button:hover{color:var(--ink)}
+/* Settings (Decision 73): a plain side list like GNOME's, rows like Sifu's menus */
+.setg{display:grid;grid-template-columns:236px minmax(0,1fr);gap:64px;align-items:start;margin-top:28px}
+.setmain{min-width:0;max-width:860px}
+.snav{display:flex;flex-direction:column;gap:2px;position:sticky;top:90px}
+.snav button{display:flex;align-items:center;gap:14px;height:42px;padding:0 14px;border-radius:12px;text-align:left;font:500 15px var(--ui);color:var(--ink-2);transition:background .18s,color .18s}
+.snav button .ico{width:18px;height:18px;flex:none;opacity:.7;transition:opacity .18s,color .18s}
+.snav button:hover{color:var(--ink);background:rgba(255,255,255,.04)}
 .snav button.on{background:var(--pick);color:var(--ink)}
-.snav h4{margin:16px 0 4px;padding:0 16px;font:500 11px var(--mono);color:var(--mute)}.snav h4:first-child{margin-top:0}
-.snav .slsearch{height:38px;margin:0 0 14px;padding:0 14px}.slsearch input{font-size:13px!important}
-.set2 .lkrow{flex-direction:column;align-items:stretch;gap:12px}
-.set2 .lkrow .ctl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%;max-width:640px}
-.set2 .lkcard{display:block;border:0;border-radius:18px;background:rgba(255,255,255,.04);box-shadow:var(--edge);transition:background .2s,box-shadow .2s}
-.set2 .lkcard.on{background:color-mix(in srgb,var(--accent) 10%,transparent);box-shadow:inset 0 0 0 1.5px var(--accent)}
-.set2 .lkcard>b,.set2 .lkcard>span{display:block}
+.snav button.on .ico{opacity:1;color:var(--accent)}
+.snav .slsearch{height:40px;margin:0 0 12px;padding:0 14px;border-radius:12px}.slsearch input{font-size:13px!important}
 .slsearch input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;background:none!important;box-shadow:none!important;backdrop-filter:none;color:var(--ink);font:400 14px var(--ui)}
 .slsearch input::placeholder{color:var(--mute)}.slsearch input::-webkit-search-cancel-button{display:none}
 .slsearch:focus-within{box-shadow:var(--edge),0 0 0 2px var(--accent)}
@@ -1390,16 +1388,123 @@ body.srch #pal{display:grid}
 .set2 .group>.sub,.set2 .adv2>.sub{margin:0 0 14px;font-size:14px;line-height:1.45;max-width:640px}
 .setnone{padding:40px 0;text-align:center;color:var(--mute)}
 .set2 .settings{max-width:none;margin:0;animation:rise .4s var(--ease) both}
-.set2 .group{border-radius:26px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(24px);padding:10px 26px 12px;margin:0 0 16px;border:0}
-.set2 .group>h3{font:700 24px/1 var(--display);text-transform:uppercase;margin:16px 0 8px;padding:0;border:0}
+.set2 .group{margin:0 0 38px;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+.set2 .group>h3{font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 4px;padding:0;border:0}
 .set2 .group>h3::before{display:none}
-.set2 .srow{border-top:1px solid rgba(255,255,255,.07)}
-.set2 .group>h3+.srow{border-top:0}
 .set2 .srow.flash{animation:rowflash 1.8s ease}
 @keyframes rowflash{0%,35%{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:0 0 0 10px color-mix(in srgb,var(--accent) 16%,transparent);border-radius:14px}}
 .set2 .adv2.dis{opacity:.55}
 .keys.big{grid-template-columns:1fr auto;max-width:520px;padding:12px 0 22px;font-size:14px;white-space:normal}
-.set2 .srow{border-bottom:0}
+.set2 .srow{border:0}
+.sline{display:none}
+/* A value: ‹ [the app's own list] › */
+.pk{display:inline-grid;grid-template-columns:34px minmax(0,1fr) 34px;align-items:center;width:250px;flex:none}
+.pka{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:var(--mute);transition:color .15s,background .15s,transform .15s var(--spring)}
+.pka .ico{width:17px;height:17px}
+.pka:hover:not(:disabled){color:var(--accent);background:rgba(255,255,255,.06)}
+.pka:active:not(:disabled){transform:scale(.86)}
+.pkm{display:flex;align-items:center;justify-content:center;gap:9px;min-width:0}
+.pk select.pkv{min-width:0;max-width:100%;height:34px;padding:0 10px;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:500 15.5px var(--ui);color:var(--ink);text-align:center;text-align-last:center;text-overflow:ellipsis}
+.pk select.pkv:hover:not(:disabled){background-color:rgba(255,255,255,.06)}
+.pkfont.title select.pkv{font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:.01em}
+.pkdot{display:inline-block;width:14px;height:14px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+#ddm .pkdot{margin-right:10px}
+#ddm.pkdd button{justify-content:center;position:relative;padding-left:34px;padding-right:34px;font-size:15px}
+#ddm.pkdd button .ico{position:absolute;right:12px}
+#ddm.ttl button span{font-size:19px;font-weight:700;text-transform:uppercase}
+.pk.off{opacity:.4}
+.pk.pkdo{display:flex;justify-content:center;align-items:center;gap:6px;width:auto;min-width:250px}
+/* Every button in Settings is quiet text with a › (Elias: the pills looked bad);
+   the one that matters most wears the accent */
+.set2 .btn{gap:8px;height:34px;padding:0 12px;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:500 15.5px var(--ui);color:var(--ink)}
+.set2 .btn::after{content:"›";margin-left:-2px;font-size:18px;line-height:1;color:var(--mute);transition:transform .2s var(--ease),color .2s}
+.set2 .btn:has(.ico)::after{content:none}
+.set2 .btn .ico{width:16px;height:16px;color:var(--mute)}
+.set2 .btn:hover:not(:disabled),.set2 .btn.pri:hover:not(:disabled){background:rgba(255,255,255,.06);box-shadow:none}
+.set2 .btn:hover:not(:disabled)::after{color:var(--accent);transform:translateX(2px)}
+.set2 .btn.pri{background:none;color:var(--accent-hi);font-weight:600}
+.set2 .btn.sm{height:34px;font-size:15.5px}
+/* A state, not a choice: plain text with its dot */
+.set2 .pkdo .chip{padding:0;background:none;box-shadow:none;backdrop-filter:none;border:0;font:500 15.5px var(--ui);color:var(--ink-2)}
+.set2 .pkdo .chip.warn{color:var(--warn)}
+/* A folder field is a line to write on, like the rows' line; it lights up when you type */
+.set2 .path{align-items:center;gap:14px;width:100%;max-width:640px}
+.set2 .path input{field-sizing:content;flex:none;width:auto;min-width:10ch;max-width:100%;text-overflow:ellipsis;height:36px;padding:0 2px;border-radius:0;background:none;box-shadow:inset 0 -1px 0 rgba(255,255,255,.18);backdrop-filter:none;font:400 15.5px var(--ui);color:var(--ink);transition:box-shadow .2s}
+.set2 .path input:hover:not(:disabled){background:none;box-shadow:inset 0 -1px 0 rgba(255,255,255,.32)}
+.set2 .path input:focus-visible{box-shadow:inset 0 -2px 0 var(--accent)}
+.set2 .path input::placeholder{color:var(--mute)}
+/* Paths are quiet text, not boxes */
+/* The folder picker in Settings (Elias: "redo this thing", "can't tell it from the settings",
+   "really give it a good polish"): a sunken panel of its own, places on the left like a file
+   manager, where you are in the title font, a find box, folders that slide the way you went */
+.dpl{display:none}
+.set2 .dirpick{margin:10px 0 16px;padding:0;border:0}
+.set2 .dirpick.big .dp-well{display:grid;grid-template-columns:184px minmax(0,1fr);padding:0;border:0;border-radius:20px;overflow:hidden;background:rgba(0,0,0,.34);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 14px 34px -22px rgba(0,0,0,.9),0 24px 60px -40px rgba(0,0,0,.9)}
+.dp-side{display:flex;flex-direction:column;gap:2px;padding:16px 10px;border-right:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025)}
+.dp-side h5{margin:0 10px 8px;font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.dp-side button{display:flex;align-items:center;gap:11px;min-width:0;height:36px;padding:0 10px;border-radius:10px;font:500 14px var(--ui);color:var(--ink-2);text-align:left;transition:background .15s,color .15s}
+.dp-side button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-side button .ico{width:16px;height:16px;flex:none;color:var(--mute);transition:color .15s}
+.dp-side button:hover{background:rgba(255,255,255,.05);color:var(--ink)}
+.dp-side button.on{background:rgba(255,255,255,.08);color:var(--ink)}.dp-side button.on .ico{color:var(--accent)}
+.dp-main{display:flex;flex-direction:column;min-width:0;padding:14px 16px 12px 18px}
+.dp-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.07)}
+.set2 .dirpick.big .btn.dp-up{width:36px;height:36px;padding:0;border-radius:50%;margin:0}
+.set2 .dirpick.big .btn.dp-up .ico{width:18px;height:18px;color:var(--ink-2)}
+.dp-where{min-width:0}
+.set2 .dirpick.big .dp-crumbs{display:flex;font-size:12.5px;line-height:1.2;margin-left:-6px}
+.set2 .dirpick.big .dp-crumbs button,.set2 .dirpick.big .dp-crumbs b{padding:2px 5px;font-weight:400;color:var(--mute)}
+.set2 .dirpick.big .dp-crumbs button:hover{color:var(--ink)}
+.dp-here{display:block;margin-top:4px;font:700 28px/1 var(--display);text-transform:uppercase;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dp-q{display:flex;align-items:center;gap:8px;width:210px;height:36px;padding:0 12px;border-radius:12px;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);transition:box-shadow .2s,background .2s}
+.dp-q .ico{width:15px;height:15px;flex:none;color:var(--mute)}
+.dp-q input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;background:none!important;box-shadow:none!important;backdrop-filter:none;font:400 14px var(--ui);color:var(--ink);outline:0}
+.dp-q input::-webkit-search-cancel-button{display:none}
+.dp-q:focus-within{background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 60%,transparent)}
+.set2 .dirpick.big .dp-list{gap:1px;padding:8px 0;height:300px}
+.set2 .dirpick.big .dp-dir{display:flex;gap:12px;padding:9px 12px;margin:0 -6px;border-radius:11px;background:none;font:400 15px var(--ui);color:var(--ink-2);transition:background .15s,color .15s}
+.set2 .dirpick.big .dp-dir .ico{width:17px;height:17px;flex:none;color:color-mix(in srgb,var(--accent) 75%,var(--ink));transition:transform .2s var(--spring)}
+.set2 .dirpick.big .dp-dir::after{content:"›";margin-left:auto;font-size:18px;line-height:1;color:transparent;transition:transform .2s var(--ease),color .15s}
+.set2 .dirpick.big .dp-dir:is(:hover,:focus-visible){color:var(--ink);background:rgba(255,255,255,.065);outline:0}
+.set2 .dirpick.big .dp-dir:focus-visible{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 55%,transparent)}
+.set2 .dirpick.big .dp-dir:is(:hover,:focus-visible) .ico{transform:scale(1.08)}
+.set2 .dirpick.big .dp-dir:is(:hover,:focus-visible)::after{color:var(--accent);transform:translateX(3px)}
+.dp-dir mark{background:none;color:var(--accent-hi);font-weight:600}
+.dp-tag{margin-left:10px;padding:1px 8px;border-radius:99px;font:500 11px var(--mono);font-style:normal;color:var(--accent-hi);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.dp-sk{display:block;height:14px;margin:13px 12px 13px 41px;border-radius:7px;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.1),rgba(255,255,255,.04)) 0 0/250% 100%;animation:shimmer 1.3s linear infinite}
+.set2 .dirpick.big .dp-empty{display:flex;flex-direction:column;align-items:center;gap:10px;margin:auto;padding:40px 0;color:var(--mute);font-size:14px}
+.set2 .dirpick.big .dp-empty .ico{width:28px;height:28px;color:var(--mute)}
+.dp-list.fwd>.dp-dir{animation:dpFwd .32s var(--ease) backwards;animation-delay:calc(var(--i)*14ms)}
+.dp-list.back>.dp-dir{animation:dpBack .32s var(--ease) backwards;animation-delay:calc(var(--i)*14ms)}
+@keyframes dpFwd{from{opacity:0;transform:translateX(18px)}}
+@keyframes dpBack{from{opacity:0;transform:translateX(-18px)}}
+.set2 .dirpick.big .dp-foot{gap:6px;padding:12px 0 0;border-top:1px solid rgba(255,255,255,.07)}
+.set2 .dirpick.big .dp-note{padding-left:0;font:400 12.5px var(--mono);color:var(--mute)}
+.set2 .dirpick.big .dp-foot.ask .dp-note{font:400 14px/1.5 var(--ui);color:var(--ink-2)}
+@media (max-width:900px){.set2 .dirpick.big .dp-well{grid-template-columns:minmax(0,1fr)}.dp-side{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid rgba(255,255,255,.07);padding:10px}.dp-side h5{display:none}.dp-q{width:150px}}
+.set2 .srow code{padding:0;border-radius:0;background:none;font:400 12.5px/1.5 var(--mono);color:var(--mute);word-break:break-all}
+.pkdo .who{display:inline-flex;align-items:center;gap:8px;font-weight:500}
+.pkprev{display:none}
+.pkprev.choice:before{display:none} /* the old cards' tick circle */
+.set2 .pkprev.choice{padding:0;border:0;background:none;box-shadow:none}
+.pkprev .plpv{width:200px;height:auto;padding:30px 0 6px;margin:0;background:none;overflow:visible} /* just the stack, no box around it */
+@media (min-width:701px){
+  .set2 .srow{display:grid;grid-template-columns:auto minmax(28px,1fr) auto;column-gap:20px;row-gap:3px;align-items:center;padding:11px 0;margin:0;background:none}
+  .set2 .srow>div:first-child{display:contents}
+  .set2 .srow>div:first-child>b{grid-column:1;grid-row:1;font:400 17px/1.3 var(--ui);color:var(--ink-2);transition:color .18s}
+  .set2 .srow>div:first-child>p{grid-column:1/3;grid-row:2;margin:0;max-width:560px;font-size:13.5px;line-height:1.45;color:var(--mute)}
+  .set2 .srow>.sline{display:block;grid-column:2;grid-row:1;height:1px;background:rgba(255,255,255,.1);transition:background .25s}
+  .set2 .srow>.ctl{grid-column:3;grid-row:1/3;align-self:start;justify-content:flex-end;flex-wrap:nowrap;gap:14px;min-height:27px;margin-top:-4px}
+  .set2 .srow:has(>.ctl:empty)>.sline{display:none}
+  .set2 .srow:is(:hover,:focus-within)>div:first-child>b{color:var(--ink)}
+  .set2 .srow:is(:hover,:focus-within)>.sline{background:color-mix(in srgb,var(--accent) 70%,transparent)}
+  .set2 .srow:is(:hover,:focus-within) .pka:not(:disabled){color:var(--accent)}
+  .set2 .srow.wide>.ctl{grid-column:1/-1;grid-row:3;justify-content:flex-start;margin:8px 0 0}
+  .set2 .srow.wide>.sline{grid-column:2/-1}
+  .set2 .srow.prev>.pkprev{display:block;grid-column:1/3;grid-row:3;width:max-content;max-width:300px;margin:12px 0 4px;padding:0;border-radius:14px;overflow:hidden;pointer-events:none;background:none;box-shadow:none}
+  .set2 .group>.sub{margin:0 0 8px;font-size:13.5px;color:var(--mute);max-width:600px}
+  .set2 .setmain>.hello{margin:0 0 30px}
+}
 
 /* ───────── Pop-ups (Decision 38, TODO 60 step 7) ───────── */
 .dialog .cap{display:block;padding:0;font:500 11px var(--mono);color:var(--mute);margin-bottom:8px}
