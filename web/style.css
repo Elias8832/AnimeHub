@@ -944,7 +944,13 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .twt{min-width:0}.twt b{display:block;font:600 14.5px var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .twt small{display:block;font:400 11px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.twt em{font-style:normal;color:var(--accent-hi)}
 .twin{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font:500 11px var(--mono);color:var(--ink-2);white-space:nowrap}.twin em{font-style:normal;color:var(--accent-hi)}
-.twl.few{justify-content:center}.twl.few .twr{padding:14px 12px;grid-template-columns:64px 48px minmax(0,1fr) auto}.twl.few .twp{width:48px;height:66px}.twl.few .twt b{font-size:16px}
+.twl.few{padding:0;gap:20px;background:none;backdrop-filter:none;box-shadow:none}
+.twb.side{flex:1;min-height:0}.twb.side h3{font-size:clamp(26px,2.4vw,34px)}
+.twl.few .twb.side+.twb.side,.twl.few .twb.side:has(+.twb.side){min-height:108px}
+.twl.few .twb.side:has(+.twb.side) .twc,.twl.few .twb.side+.twb.side .twc{padding:18px 24px}
+.twl.few .twb.side:has(+.twb.side) :is(.sub,.cta),.twl.few .twb.side+.twb.side :is(.sub,.cta){display:none}
+.twl.few .twb.side:has(+.twb.side) h3,.twl.few .twb.side+.twb.side h3{font-size:24px;-webkit-line-clamp:1}
+.twl.few .twb.side:has(+.twb.side) .twcd,.twl.few .twb.side+.twb.side .twcd{top:16px;right:20px}.twl.few .twb.side:has(+.twb.side) .twcd b,.twl.few .twb.side+.twb.side .twcd b{font-size:28px}
 /* ready to start */
 .rdy{display:flex;gap:18px;flex-wrap:wrap}
 .rc{width:132px;text-align:left;transition:transform .3s var(--ease)}

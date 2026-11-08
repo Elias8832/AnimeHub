@@ -150,18 +150,30 @@ test("This week: no Play when the missing episode isn't on disk or online yet", 
   const e = { id: 7, title: "Blue Box Season 2", progress: 4, next_episode: { number: 6, at: now / 1000 + 6 * 86400 } };
   const html = app.weekHTML([e], now);
   assert.doesNotMatch(html, /data-a="play"/);
-  assert.match(html, /Open show/);
+  assert.doesNotMatch(html, /Open show/); // the card opens the show; no extra button
 });
 
-test("This week: the soonest show leads when you're caught up, the rest are rows", () => {
+test("This week: the soonest show leads when you're caught up, one or two more get the same banner", () => {
   const now = Date.UTC(2026, 10, 8, 18);
   const app = homepage({ shows: [], continue: [], history: [] });
   const mk = (id, title, days) => ({ id, title, progress: 5, next_episode: { number: 6, at: now / 1000 + days * 86400 } });
   const html = app.weekHTML([mk(1, "Later", 5), mk(2, "Soon", 1), mk(3, "Middle", 3)], now);
   assert.match(html, /<h3>Soon<\/h3>/);
   assert.doesNotMatch(html, /behind/);
-  assert.ok(html.indexOf("<b>Middle</b>") < html.indexOf("<b>Later</b>")); // rows in air order
+  assert.ok(html.indexOf("<h3>Middle</h3>") < html.indexOf("<h3>Later</h3>")); // in air order
+  assert.equal((html.match(/class="twb side"/g) || []).length, 2); // the same look as the lead, not a near-empty list
+  assert.doesNotMatch(html, /class="twr"/);
   assert.doesNotMatch(html, /more in the Calendar/); // everything fits: the header just says Calendar
+});
+
+test("This week: three or more beside the lead are rows", () => {
+  const now = Date.UTC(2026, 10, 8, 18);
+  const app = homepage({ shows: [], continue: [], history: [] });
+  const mk = (id, title, days) => ({ id, title, progress: 5, next_episode: { number: 6, at: now / 1000 + days * 86400 } });
+  const html = app.weekHTML([mk(1, "Later", 5), mk(2, "Soon", 1), mk(3, "Middle", 3), mk(4, "Last", 6)], now);
+  assert.match(html, /<h3>Soon<\/h3>/);
+  assert.ok(html.indexOf("<b>Middle</b>") < html.indexOf("<b>Later</b>")); // rows in air order
+  assert.doesNotMatch(html, /twb side/);
 });
 
 test("homepage renders the new hero, excludes its duplicate tile, and targets its buttons", () => {
