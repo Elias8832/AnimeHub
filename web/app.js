@@ -421,20 +421,76 @@ function contCard({ s, t }, k) {
     <span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="${esc(KIND_WORD[t.kind])}">${ico("play")}</span></div>
     <h3>${esc(s.title)}</h3><small>${esc(meta)}</small></div>`;
 }
-/* This week: the next airings on your lists, in order, as cards; a Mon–Sun ruler marks the days. */
+/* This week (polish 2026-11-08, Elias picked B): the airing that matters most
+   as a wide banner (an episode out that you haven't seen, with Play, else the
+   next one with a live countdown), the rest as a day · time · title list.
+   Only what AniList states: air times from the schedule or the list's next
+   episode, "behind" from aired minus your progress. */
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const dayStart = (t) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+function airDay(t, now) {
+  const n = Math.round((dayStart(t) - dayStart(now)) / 864e5), d = new Date(t);
+  return n === 0 ? "today" : n === 1 ? "tomorrow" : n === -1 ? "yesterday" : `${DAYS[(d.getDay() + 6) % 7]} ${d.getDate()}`;
+}
+const hhmm = (t) => new Date(t).toTimeString().slice(0, 5);
+/* One airing show: its newest aired episode (with time when known), the next one, how far behind you are. */
+function airState(e, now) {
+  const ne = e.next_episode || {}, at = ne.at ? ne.at * 1000 : ne.in_seconds != null ? now + ne.in_seconds * 1000 : null;
+  const sched = (S.sched?.items || []).filter((x) => x.id === e.id && x.at && x.ep).map((x) => ({ ep: x.ep, t: x.at * 1000 }));
+  let last = null, next = null;
+  for (const x of sched) {
+    if (x.t <= now) { if (!last || x.ep > last.ep) last = x; } else if (!next || x.t < next.t) next = x;
+  }
+  if (ne.number && at != null) {
+    if (at <= now) { if (!last || ne.number > last.ep) last = { ep: ne.number, t: at }; }
+    else if (!next || at < next.t) next = { ep: ne.number, t: at };
+  }
+  const aired = last ? last.ep : next ? next.ep - 1 : 0;
+  const behind = typeof e.progress === "number" ? Math.max(0, aired - e.progress) : 0;
+  if (!last && aired > 0) last = { ep: aired, t: null }; // out, time not stated
+  return { e, last, next, behind };
+}
+/* The first unwatched episode you can play: on disk first, then online. */
+function airPlayEp(e, n) {
+  for (const id of [e.local_show_id, e.stream_show_id]) {
+    const s = id && showById(id);
+    if (!s) continue;
+    const mine = s.seasons.filter((sea) => sea.media_id && sea.media_id === (e.media_id ?? e.id));
+    for (const sea of mine.length ? mine : s.seasons) { const ep = sea.episodes.find((x) => x.number === n); if (ep) return ep; }
+  }
+  return null;
+}
+const cdText = (t, now = Date.now(), pre = "") => (t - now > 0 ? pre + fmtIn((t - now) / 1000) : "out now");
 function weekHTML(list, now = Date.now()) {
-  const at = (e) => e.next_episode?.at ? e.next_episode.at * 1000 : now + (airsIn(e.next_episode, now) || 0) * 1000;
-  const soon = list.filter((e) => at(e) > now - 3600e3).slice(0, 3); // the next three, however far off (Blue Box's next was 8 days away)
-  if (!soon.length) return "";
-  const today = new Date(now), dow = (today.getDay() + 6) % 7, monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow).getTime();
-  const has = new Set(list.map((e) => Math.floor((at(e) - monday) / 864e5)).filter((d) => d >= 0 && d < 7));
-  const when = (t) => { const d = new Date(t), same = d.toDateString() === today.toDateString(), tm = d.toTimeString().slice(0, 5);
-    return [same ? "Today" : DAYS[(d.getDay() + 6) % 7] + (t - now > 6 * 864e5 ? " " + d.getDate() : ""), tm]; };
-  return `<section class="hsec"><div class="sh"><h2>${at(soon[0]) < now + 7 * 864e5 ? "This week" : "Coming up"}</h2><span class="mut">airing on your lists</span><button class="link-btn" data-a="go" data-v="week">Calendar${ico("arrowr")}</button><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
-    <div class="agenda">${soon.map((e, k) => { const t = at(e), [d, tm] = when(t), sec = (t - now) / 1000;
-      return `<button class="ag${d === "Today" ? " today" : ""}" style="--i:${k}" data-a="entry" data-v="${esc(e.id)}">${e.poster ? `<i class="agb" style="background-image:${esc(cssUrl(e.poster))}"></i><i class="agp" style="background-image:${esc(cssUrl(e.poster))}"></i>` : ""}
-        <span class="agt"><span class="when">${d} <small>${tm}</small></span><b>${esc(e.title)}</b><span class="m">episode ${esc(e.next_episode?.number ?? "")}</span></span><span class="cdn">${sec > 0 ? "in " + fmtIn(sec) : "out now"}</span></button>`; }).join("")}</div></section>`;
+  const all = list.map((e) => airState(e, now)).filter((x) => x.behind || x.next);
+  if (!all.length) return "";
+  const out = all.filter((x) => x.behind).sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
+  const lead = out[0] || [...all].sort((a, b) => a.next.t - b.next.t)[0];
+  const rest = all.filter((x) => x !== lead).sort((a, b) => (a.next?.t ?? Infinity) - (b.next?.t ?? Infinity));
+  const soon = lead.behind || (lead.next && lead.next.t < now + 7 * 864e5);
+  const e = lead.e, art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster, ofN = e.episodes ? ` of ${e.episodes}` : "";
+  let eye, sub, cta = "";
+  if (lead.behind) {
+    const n = e.progress + 1, ep = airPlayEp(e, n), fresh = lead.last.t && now - lead.last.t < 7 * 864e5;
+    eye = `<span class="twnew">${fresh ? "new episode" : "catch up"}</span>${lead.last.t ? `<span>${lead.behind > 1 ? `episode ${esc(lead.last.ep)} ` : ""}out ${esc(airDay(lead.last.t, now))} ${hhmm(lead.last.t)}</span>` : `<span>episode ${esc(lead.last.ep)} is out</span>`}<span>you're ${lead.behind} behind</span>`;
+    sub = `Episode ${n}${ofN}`;
+    cta = ep ? `<button class="btn pri" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>Play episode ${n}</span></button>`
+      : `<button class="btn" data-a="entry" data-v="${esc(e.id)}">Open show</button>`;
+  } else {
+    eye = `<span>next episode</span>`;
+    sub = `Episode ${lead.next.ep}${ofN}`;
+  }
+  const cd = lead.next ? `<div class="twcd"><b data-cd="${lead.next.t}">${esc(cdText(lead.next.t, now))}</b><small>${lead.behind ? `episode ${esc(lead.next.ep)} · ` : ""}${esc(airDay(lead.next.t, now))} · ${hhmm(lead.next.t)}</small></div>` : "";
+  const banner = `<div class="twb" data-a="entry" data-v="${esc(e.id)}" style="--h:${hueOf(e.title)}">${art ? `<i class="twa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${cd}
+    <div class="twc"><div class="eye">${eye}</div><h3>${esc(e.title)}</h3><div class="sub">${esc(sub)}</div>${cta ? `<div class="cta">${cta}</div>` : ""}</div></div>`;
+  const MAX = 5, shown = rest.slice(0, MAX);
+  const row = (x, k) => { const t = x.next?.t, today = t && dayStart(t) === dayStart(now);
+    return `<button class="twr" style="--i:${k + 1}" data-a="entry" data-v="${esc(x.e.id)}"><span class="twd${today ? " is-today" : ""}">${t ? esc(airDay(t, now)) : "out"}</span>${poster(x.e.title, x.e.poster, { c: "twp" })}
+      <span class="twt"><b>${esc(x.e.title)}</b><small>${t ? `episode ${esc(x.next.ep)} · ${hhmm(t)}` : `episode ${esc(x.last.ep)}`}</small></span><span class="twin">${t ? `<span data-cd="${t}" data-pre="in ">${esc(cdText(t, now, "in "))}</span>` : ""}${x.behind ? `<em>${x.behind} behind</em>` : ""}</span></button>`; };
+  const more = rest.length - shown.length;
+  const side = shown.length ? `<div class="twl${shown.length <= 2 ? " few" : ""}">${shown.map(row).join("")}</div>` : "";
+  return `<section class="hsec tw"><div class="sh"><h2>${soon ? "This week" : "Coming up"}</h2><span class="mut">airing on Watching</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}${ico("arrowr")}</button></div>
+    <div class="twg${side ? "" : " solo"}">${banner}${side}</div></section>`;
 }
 function Home() {
   if (isPhone()) return HomePhone();
@@ -450,6 +506,7 @@ function Home() {
   if (isTabletP()) body += homePair(L, airing);
   else {
     if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
+    if (airing.length && typeof loadSched === "function" && (!S.sched || (S.sched.at && Date.now() - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out
     body += weekHTML(airing);
   }
   const recs = recsFor();
@@ -3209,12 +3266,15 @@ document.addEventListener("keydown", (e) => {
    every episode AniList has scheduled for what's on your lists. */
 const monthName = (d) => d.toLocaleDateString(undefined, { month: "long" });
 const airKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/* Countdowns on Home tick while you look (the week page re-renders itself). */
+setInterval(() => { const now = Date.now(); for (const el of document.querySelectorAll("#app [data-cd]")) el.textContent = cdText(+el.dataset.cd, now, el.dataset.pre || ""); }, 30e3);
 function loadSched() {
   if (S.schedBusy) return;
   S.schedBusy = true;
   api("/api/schedule").then((r) => {
     S.schedBusy = false; S.sched = { at: r.state === "loading" ? 0 : Date.now(), state: r.state, items: r.items || [] };
     if (S.view === "week") render(true);
+    else if (S.view === "home" && !isPhone() && !isTabletP()) { const el = $("#app .hsec.tw"); if (el) el.outerHTML = weekHTML(airingList()); }
     if (r.state === "loading") setTimeout(() => S.view === "week" && loadSched(), 2500);
   }).catch(() => { S.schedBusy = false; });
 }
@@ -5979,7 +6039,7 @@ function paintPtitle(t) {
 }
 
 /* keyboard: / search · Esc back · j/k/h/l or arrows move focus · Enter opens */
-const focusables = () => $$("#app .hc, #app .ag, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
+const focusables = () => $$("#app .hc, #app .twb, #app .twr, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
 function applyFocus() {
   const els = focusables();
   if (fIdx >= 0 && els[fIdx]) { els.forEach((e, i) => e.classList.toggle("focused", i === fIdx)); els[fIdx].scrollIntoView({ block: "nearest" }); } else fIdx = -1;
