@@ -191,19 +191,6 @@ class Worker(unittest.TestCase):
         upscale.restore_originals()
         self.assertGreater(upscale.art["changed"][banner.name], first)
 
-    def test_banner_age_follows_the_kept_original(self):
-        """Stored links keep a banner younger than 30 days instead of
-        fetching AniList's again (which undid the upscale every time)."""
-        banner = self.posters / "a.banner.jpg"
-        self.assertEqual(upscale.banner_age(banner), float("inf"))
-        banner.write_bytes(real(7600, 1600))
-        upscale.original_of(banner).write_bytes(real(1900, 400))
-        old = time.time() - 40 * 86400
-        os.utime(upscale.original_of(banner), (old, old))
-        self.assertGreater(upscale.banner_age(banner), 39 * 86400)
-        upscale.original_of(banner).unlink()
-        self.assertLess(upscale.banner_age(banner), 60)
-
     def test_an_old_upscale_without_its_original_is_left_alone(self):
         (self.posters / "a.banner.jpg").write_bytes(real(7600, 1600))
         self.assertFalse(upscale.needs_upscale(self.posters / "a.banner.jpg"))

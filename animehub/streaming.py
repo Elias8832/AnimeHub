@@ -96,18 +96,13 @@ def _release_display(m, fallback_title, art):
     cover = (m.get("coverImage") or {}).get("extraLarge")
     if art:
         name = f"stream-{m['id']}"
-        poster = f"/img/{name}.jpg" if metadata.download(cover, config.POSTERS / f"{name}.jpg") else cover
-        # A banner saved in the last 30 days stays: links are stored again
-        # often, and each fresh copy undid its upscale (Settings → Sharper
-        # banners) and had it redone.
+        poster = f"/img/{name}.jpg" if metadata.save_art(cover, config.POSTERS / f"{name}.jpg") else cover
+        # Links are stored again often: save_art fetches only when AniList's
+        # link changed, so an upscaled banner (Settings → Sharper banners)
+        # is not undone and redone each time (TODO 179).
         bpath = config.POSTERS / f"{name}.banner.jpg"
-        if m.get("bannerImage") and upscale.banner_age(bpath) < 30 * 86400:
-            banner = f"/img/{name}.banner.jpg"
-        else:
-            banner = (f"/img/{name}.banner.jpg" if metadata.download(m.get("bannerImage"), bpath)
-                      else m.get("bannerImage"))
-        if banner and banner.startswith("/img/"):
-            upscale.queue_banner(bpath)
+        banner = (f"/img/{name}.banner.jpg" if metadata.save_art(m.get("bannerImage"), bpath)
+                  else m.get("bannerImage"))
         eps_art = metadata.media_episode_art(m)
     else:
         poster, banner = cover, m.get("bannerImage")

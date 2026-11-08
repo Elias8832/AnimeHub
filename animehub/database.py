@@ -323,10 +323,17 @@ def migration_25(c):
         c.execute("ALTER TABLE playlists ADD COLUMN icon TEXT")
 
 
+def migration_26(c):
+    """Where each saved poster and banner came from (TODO 179): AniList
+    swaps art under a new link, so the link tells when to fetch again."""
+    c.execute("CREATE TABLE IF NOT EXISTS art_sources(file TEXT PRIMARY KEY, url TEXT NOT NULL)")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
-              migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25]
+              migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
+              migration_26]
 
 
 def snapshot_before(target_version):

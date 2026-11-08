@@ -305,21 +305,26 @@ def sequel_id(media_id):
     return None
 
 
-def download(url, dest):
+def _fetch_image(url):
+    """The picture behind `url`, or None. Only real images (jpg/png/gif/
+    webp): a poisoned or spoofed source must never be able to drop
+    arbitrary bytes into POSTERS."""
     if not url:
-        return False
-    dest = Path(dest)
-    temporary = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.tmp")
+        return None
     try:
         req = Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) anime-hub/1.0"})
         with urlopen(req, timeout=30) as r:
             body = r.read()
-        if not body:
-            return False
-        # Only accept real images (jpg/png/gif/webp) — a poisoned or spoofed
-        # source must never be able to drop arbitrary bytes into POSTERS.
-        if body[:3] != b"\xff\xd8\xff" and body[:4] not in (b"\x89PNG", b"GIF8", b"RIFF"):
-            return False
+    except Exception:
+        return None
+    if not body or (body[:3] != b"\xff\xd8\xff" and body[:4] not in (b"\x89PNG", b"GIF8", b"RIFF")):
+        return None
+    return body
+
+
+def _write_image(dest, body):
+    temporary = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.tmp")
+    try:
         temporary.write_bytes(body)
         system.replace(temporary, dest)
         return True
@@ -327,6 +332,97 @@ def download(url, dest):
         return False
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def download(url, dest):
+    body = _fetch_image(url)
+    return bool(body) and _write_image(Path(dest), body)
+
+
+def _art_source(name, url=None):
+    with database.db() as c:
+        if url is None:
+            row = c.execute("SELECT url FROM art_sources WHERE file=?", (name,)).fetchone()
+            return row[0] if row else None
+        c.execute("INSERT INTO art_sources(file,url) VALUES(?,?) ON CONFLICT(file) DO UPDATE SET url=excluded.url",
+                  (name, url))
+    return url
+
+
+def save_art(url, dest):
+    """Keep `dest` on AniList's current picture (TODO 179). AniList gives a
+    replaced banner or cover a new link, so the link it came from is
+    remembered: the same link costs nothing, a new one fetches the picture
+    again. A banner fetched again with the same picture keeps its upscale
+    (Settings → Sharper banners); a new one drops the old original and is
+    upscaled afresh. True when `dest` holds a picture afterwards."""
+    dest = Path(dest)
+    if not url:
+        return False
+    if dest.is_file() and _art_source(dest.name) == url:
+        return True
+    body = _fetch_image(url)
+    if not body:
+        return dest.is_file()  # AniList unreachable: the saved picture stays
+    banner = dest.name.endswith(".banner.jpg")
+    orig = upscale.original_of(dest) if banner else None
+    held = orig if orig and orig.is_file() else dest
+    try:
+        same = held.is_file() and held.read_bytes() == body
+    except OSError:
+        same = False
+    if not same:
+        if not _write_image(dest, body):
+            return dest.is_file()
+        if orig:
+            try:  # Windows: a picture being served can't be removed yet
+                orig.unlink(missing_ok=True)
+            except OSError:
+                pass
+            upscale.replaced(dest)
+    _art_source(dest.name, url)
+    if banner:
+        upscale.queue_banner(dest)
+    return True
+
+
+ART_QUERY = ("query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){"
+             "id bannerImage coverImage{extraLarge}}}}")
+
+
+def refresh_art():
+    """Matched shows and linked releases check their poster and banner
+    against AniList (TODO 179): one request per 50 entries, and a picture
+    is fetched again only when AniList's link for it changed."""
+    with database.db() as c:
+        shows = c.execute("SELECT show_id, anilist_id, banner FROM shows_meta WHERE anilist_id IS NOT NULL").fetchall()
+        links = c.execute("SELECT media_id, meta FROM stream_links").fetchall()
+    wanted = {}
+    for show_id, aid, banner in shows:
+        wanted.setdefault(aid, []).append(("show", show_id, banner))
+    for mid, meta in links:
+        try:
+            meta = json.loads(meta or "{}")
+        except ValueError:
+            continue
+        if (meta.get("poster") or "").startswith("/img/"):  # art=True: saved here
+            wanted.setdefault(mid, []).append(("link", mid, meta))
+    ids = sorted(wanted)
+    for i in range(0, len(ids), 50):
+        data = anilist.anilist_request({"query": ART_QUERY, "variables": {"ids": ids[i:i + 50]}})
+        for m in ((data.get("data") or {}).get("Page") or {}).get("media") or []:
+            for kind, key, held in wanted.get(m.get("id"), ()):
+                name = str(key) if kind == "show" else f"stream-{key}"
+                save_art((m.get("coverImage") or {}).get("extraLarge"), config.POSTERS / f"{name}.jpg")
+                bname = f"{name}.banner.jpg"
+                if not save_art(m.get("bannerImage"), config.POSTERS / bname):
+                    continue
+                with database.db() as c:  # AniList added a banner the show had none of
+                    if kind == "show" and not held:
+                        c.execute("UPDATE shows_meta SET banner=? WHERE show_id=?", (f"/img/{bname}", key))
+                    elif kind == "link" and held.get("banner") != f"/img/{bname}":
+                        held["banner"] = f"/img/{bname}"
+                        c.execute("UPDATE stream_links SET meta=? WHERE media_id=?", (json.dumps(held), key))
 
 
 def search_candidates(show, season):
@@ -448,13 +544,11 @@ def store_show_meta(show, m):
     year = (m.get("startDate") or {}).get("year")
     poster_name = f"{show['id']}.jpg"
     banner_name = f"{show['id']}.banner.jpg"
-    poster = f"/img/{poster_name}" if download((m.get("coverImage") or {}).get("extraLarge"), config.POSTERS / poster_name) else None
-    banner = f"/img/{banner_name}" if download(m.get("bannerImage"), config.POSTERS / banner_name) else None
-    if banner:
-        # Opt-in (Settings → Appearance, config 'upscale_banners'): a
-        # background worker, one banner at a time, so the metadata queue
-        # keeps moving instead of waiting ~13 s per banner on Upscayl.
-        upscale.queue_banner(config.POSTERS / banner_name)
+    poster = f"/img/{poster_name}" if save_art((m.get("coverImage") or {}).get("extraLarge"), config.POSTERS / poster_name) else None
+    # save_art queues the banner for the opt-in upscaler (Settings →
+    # Appearance, config 'upscale_banners'): a background worker, one banner
+    # at a time, so the metadata queue keeps moving.
+    banner = f"/img/{banner_name}" if save_art(m.get("bannerImage"), config.POSTERS / banner_name) else None
     seps = m.get("streamingEpisodes") or []
     eps_meta = [anilist.strip_html(e["title"]).split(" - ", 1)[-1] for e in seps] if seps else None
     thumbs = media_episode_art(m)["thumbs"]
@@ -593,6 +687,11 @@ def refresh_meta():
             mapping.refresh_entry_art(scan)
         except Exception as e:
             util.log("episode art failed: %s" % e)
+        _meta_status["phase"] = "posters and banners"
+        try:
+            refresh_art()
+        except Exception as e:
+            util.log("art check failed: %s" % e)
     finally:
         _meta_status["running"] = False
         _meta_status["pending"] = 0
