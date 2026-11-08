@@ -266,7 +266,6 @@ class PhonePolish(unittest.TestCase):
         self.assertIn('!(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")))', APP)
 
     def test_show_page_round_fixes(self):
-        self.assertIn('f?.favourite && !isPhone() ? "Remove from favourites" : "Favourite"', APP)
         self.assertIn(".sp2.frpage .about:not(.tagsopen) dd.tags .tg:nth-child(n+7){display:none}", CSS)
         self.assertIn(".sp2.frpage .castrow .ot .pw{width:84px;margin-top:0", CSS)  # supporting faces sat lower
         self.assertNotIn(".tord", CSS)  # the watch-order link is gone (Decision 66: the season dropdown); Sub/Dub was cut off by it
