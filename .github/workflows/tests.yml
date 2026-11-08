@@ -20,7 +20,7 @@ jobs:
   # The Windows suite is slow (about 7 min in one job), so it runs in
   # parallel: the real mpv tests in their own job (the only one that needs
   # mpv and FFmpeg, about a minute to install), the rest in 4 jobs split by
-  # weight. The zip builds alongside.
+  # time (.github/split_tests.py). The zip builds alongside.
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -52,23 +52,9 @@ jobs:
             python -m unittest --durations 10 tests.test_real_tools
             exit
           fi
-          files=$(python - ${{ matrix.shard }} <<'EOF'
-          # Spread the files so each job gets about the same work: a file
-          # weighs its test count, plus extra for the few with slow tests.
-          import pathlib, sys
-          slow = {"test_web": 40, "test_mapping": 25}
-          files = [f for f in sorted(pathlib.Path("tests").glob("test_*.py")) if f.stem != "test_real_tools"]
-          weight = {f.stem: f.read_text("utf-8").count("def test_") + slow.get(f.stem, 0) for f in files}
-          jobs = [[0, []] for _ in range(4)]
-          for name in sorted(weight, key=lambda n: (-weight[n], n)):
-              job = min(jobs, key=lambda j: j[0])
-              job[0] += weight[name]
-              job[1].append("tests." + name)
-          print(" ".join(jobs[int(sys.argv[1])][1]))
-          EOF
-          )
+          files=$(python .github/split_tests.py ${{ matrix.shard }} 4)
           echo "$files"
-          python -m unittest --durations 0 $files
+          python -m unittest --durations 10 $files
 
   windows-zip:
     runs-on: windows-latest

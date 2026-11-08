@@ -100,6 +100,7 @@ class Worker(unittest.TestCase):
             setattr(config, name, value)
         self.addCleanup(upscale.status.update, state="idle", done=0, left=0)
         self.addCleanup(upscale._skipped.clear)
+        self.addCleanup(upscale.art.update, stamp=0, changed={})  # /api/now would report it to later tests
         self.found = patch.object(upscale, "find_upscayl", return_value=self.tool)
         self.found.start()
         self.addCleanup(self.found.stop)
