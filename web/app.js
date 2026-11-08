@@ -5095,6 +5095,12 @@ const A = {
     }
     if (v === "settings") { S.setOpen = false; setClear(); }
     const same = v === S.view || (v === "history" && S.view === "stats");
+    /* Library again, while on it: back to All shows (and to the top). */
+    if (v === "library" && same && S.lib.tab !== "ALL") {
+      S.lib.tab = "ALL"; saveLib(); S.fadeNext = true; render();
+      scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
+      return;
+    }
     /* The bottom bar (phones): the open tab again scrolls to the top; another
        tab comes back where you left it, with a light tap. */
     if (t?.closest?.("#tabbar")) {
