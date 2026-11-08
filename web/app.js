@@ -464,6 +464,23 @@ function airPlayEp(e, n) {
   return null;
 }
 const cdText = (t, now = Date.now(), pre = "") => (t - now > 0 ? pre + fmtIn((t - now) / 1000) : "out now");
+/* One airing show as a wide card with its art: what's out (with Play) or what's next, and a live countdown. */
+function twBanner(lead, now, k = 0) {
+  const e = lead.e, art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster, ofN = e.episodes ? ` of ${e.episodes}` : "";
+  let eye, sub, cta = "";
+  if (lead.behind) {
+    const n = e.progress + 1, ep = airPlayEp(e, n), fresh = lead.last.t && now - lead.last.t < 7 * 864e5;
+    eye = `<span class="twnew">${fresh ? "new episode" : "catch up"}</span>${lead.last.t ? `<span>${lead.behind > 1 ? `episode ${esc(lead.last.ep)} ` : ""}out ${esc(airDay(lead.last.t, now))} ${hhmm(lead.last.t)}</span>` : `<span>episode ${esc(lead.last.ep)} is out</span>`}<span>you're ${lead.behind} behind</span>`;
+    sub = `Episode ${n}${ofN}`;
+    cta = ep ? `<button class="btn pri" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>Play episode ${n}</span></button>` : ""; // nothing to play: the card itself opens the show (Elias)
+  } else {
+    eye = `<span>next episode</span>`;
+    sub = `Episode ${lead.next.ep}${ofN}`;
+  }
+  const cd = lead.next ? `<div class="twcd"><b data-cd="${lead.next.t}">${esc(cdText(lead.next.t, now))}</b><small>${lead.behind ? `episode ${esc(lead.next.ep)} · ` : ""}${esc(airDay(lead.next.t, now))} · ${hhmm(lead.next.t)}</small></div>` : "";
+  return `<div class="twb${k ? " side" : ""}" data-a="entry" data-v="${esc(e.id)}" style="--i:${k};--h:${hueOf(e.title)}">${art ? `<i class="twa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${cd}
+    <div class="twc"><div class="eye">${eye}</div><h3>${esc(e.title)}</h3><div class="sub">${esc(sub)}</div>${cta ? `<div class="cta">${cta}</div>` : ""}</div></div>`;
+}
 function weekHTML(list, now = Date.now()) {
   const all = list.map((e) => airState(e, now)).filter((x) => x.behind || x.next);
   if (!all.length) return "";
@@ -471,27 +488,13 @@ function weekHTML(list, now = Date.now()) {
   const lead = out[0] || [...all].sort((a, b) => a.next.t - b.next.t)[0];
   const rest = all.filter((x) => x !== lead).sort((a, b) => (a.next?.t ?? Infinity) - (b.next?.t ?? Infinity));
   const soon = lead.behind || (lead.next && lead.next.t < now + 7 * 864e5);
-  const e = lead.e, art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster, ofN = e.episodes ? ` of ${e.episodes}` : "";
-  let eye, sub, cta = "";
-  if (lead.behind) {
-    const n = e.progress + 1, ep = airPlayEp(e, n), fresh = lead.last.t && now - lead.last.t < 7 * 864e5;
-    eye = `<span class="twnew">${fresh ? "new episode" : "catch up"}</span>${lead.last.t ? `<span>${lead.behind > 1 ? `episode ${esc(lead.last.ep)} ` : ""}out ${esc(airDay(lead.last.t, now))} ${hhmm(lead.last.t)}</span>` : `<span>episode ${esc(lead.last.ep)} is out</span>`}<span>you're ${lead.behind} behind</span>`;
-    sub = `Episode ${n}${ofN}`;
-    cta = ep ? `<button class="btn pri" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>Play episode ${n}</span></button>`
-      : `<button class="btn" data-a="entry" data-v="${esc(e.id)}">Open show</button>`;
-  } else {
-    eye = `<span>next episode</span>`;
-    sub = `Episode ${lead.next.ep}${ofN}`;
-  }
-  const cd = lead.next ? `<div class="twcd"><b data-cd="${lead.next.t}">${esc(cdText(lead.next.t, now))}</b><small>${lead.behind ? `episode ${esc(lead.next.ep)} · ` : ""}${esc(airDay(lead.next.t, now))} · ${hhmm(lead.next.t)}</small></div>` : "";
-  const banner = `<div class="twb" data-a="entry" data-v="${esc(e.id)}" style="--h:${hueOf(e.title)}">${art ? `<i class="twa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${cd}
-    <div class="twc"><div class="eye">${eye}</div><h3>${esc(e.title)}</h3><div class="sub">${esc(sub)}</div>${cta ? `<div class="cta">${cta}</div>` : ""}</div></div>`;
+  const banner = twBanner(lead, now);
   const MAX = 5, shown = rest.slice(0, MAX);
   const row = (x, k) => { const t = x.next?.t, today = t && dayStart(t) === dayStart(now);
     return `<button class="twr" style="--i:${k + 1}" data-a="entry" data-v="${esc(x.e.id)}"><span class="twd${today ? " is-today" : ""}">${t ? esc(airDay(t, now)) : "out"}</span>${poster(x.e.title, x.e.poster, { c: "twp" })}
       <span class="twt"><b>${esc(x.e.title)}</b><small>${t ? `episode ${esc(x.next.ep)} · ${hhmm(t)}` : `episode ${esc(x.last.ep)}`}</small></span><span class="twin">${t ? `<span data-cd="${t}" data-pre="in ">${esc(cdText(t, now, "in "))}</span>` : ""}${x.behind ? `<em>${x.behind} behind</em>` : ""}</span></button>`; };
   const more = rest.length - shown.length;
-  const side = shown.length ? `<div class="twl${shown.length <= 2 ? " few" : ""}">${shown.map(row).join("")}</div>` : "";
+  const side = !shown.length ? "" : shown.length <= 2 ? `<div class="twl few">${shown.map((x, k) => twBanner(x, now, k + 1)).join("")}</div>` : `<div class="twl">${shown.map(row).join("")}</div>`;
   return `<section class="hsec tw"><div class="sh"><h2>${soon ? "This week" : "Coming up"}</h2><span class="mut">airing on Watching</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}${ico("arrowr")}</button></div>
     <div class="twg${side ? "" : " solo"}">${banner}${side}</div></section>`;
 }
