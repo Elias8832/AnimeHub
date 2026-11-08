@@ -17,9 +17,10 @@ def _completion_event(media_id, title):
         c.execute("INSERT INTO completion_events(media_id,count,seen,ts,title)"
                   " VALUES(?,?,0,?,?)", (media_id, count, util.utc_stamp(), title))
     with _completion_lock:
-        _load_pending()
-        _completion_pending.append({"media_id": media_id, "count": count,
-                                    "title": title})
+        _load_pending()  # on the run's first event, this already reads the row just written
+        if not any(e["media_id"] == media_id and e["count"] == count for e in _completion_pending):
+            _completion_pending.append({"media_id": media_id, "count": count,
+                                        "title": title})
 
 
 def _load_pending():

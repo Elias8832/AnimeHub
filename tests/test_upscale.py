@@ -88,6 +88,7 @@ class Tool(unittest.TestCase):
 
 class Worker(unittest.TestCase):
     def setUp(self):
+        support.use_library(support.case("aot"))  # settings live in the database
         self.tmp = Path(tempfile.mkdtemp(dir=support.TMP))
         script = self.tmp / "fake.py"
         script.write_text(FAKE)
@@ -99,6 +100,7 @@ class Worker(unittest.TestCase):
             setattr(config, name, value)
         self.addCleanup(upscale.status.update, state="idle", done=0, left=0)
         self.addCleanup(upscale._skipped.clear)
+        self.addCleanup(upscale.art.update, stamp=0, changed={})  # /api/now would report it to later tests
         self.found = patch.object(upscale, "find_upscayl", return_value=self.tool)
         self.found.start()
         self.addCleanup(self.found.stop)
