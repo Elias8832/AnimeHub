@@ -262,7 +262,10 @@ function zoomStep(cur, dir) { return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur +
 function ddPlace(box, z, vw, vh) {
   const width = box.width / z, left = Math.max(10, Math.min(box.left / z, vw / z - width - 10));
   const below = vh - box.bottom - 12, up = below < 220 * z && box.top > below;
-  return { width, left, top: up ? null : box.bottom / z + 6, bottom: up ? (vh - box.top) / z + 6 : null };
+  /* The list never runs under the top bar or off the bottom: a long one (15
+     seasons) scrolls inside instead. */
+  const room = up ? box.top - 76 * z : below - 40 * z;
+  return { width, left, top: up ? null : box.bottom / z + 6, bottom: up ? (vh - box.top) / z + 6 : null, maxHeight: Math.max(120, Math.min(340, room / z)) };
 }
 /* A season tab's count (TODO 7): how many episodes the entry has — its
    AniList total, else the aired ones, else what the page lists — never
@@ -421,20 +424,76 @@ function contCard({ s, t }, k) {
     <span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="${esc(KIND_WORD[t.kind])}">${ico("play")}</span></div>
     <h3>${esc(s.title)}</h3><small>${esc(meta)}</small></div>`;
 }
-/* This week: the next airings on your lists, in order, as cards; a Mon–Sun ruler marks the days. */
+/* This week (polish 2026-11-08, Elias picked B): the airing that matters most
+   as a wide banner (an episode out that you haven't seen, with Play, else the
+   next one with a live countdown), the rest as a day · time · title list.
+   Only what AniList states: air times from the schedule or the list's next
+   episode, "behind" from aired minus your progress. */
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const dayStart = (t) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+function airDay(t, now) {
+  const n = Math.round((dayStart(t) - dayStart(now)) / 864e5), d = new Date(t);
+  return n === 0 ? "today" : n === 1 ? "tomorrow" : n === -1 ? "yesterday" : `${DAYS[(d.getDay() + 6) % 7]} ${d.getDate()}`;
+}
+const hhmm = (t) => new Date(t).toTimeString().slice(0, 5);
+/* One airing show: its newest aired episode (with time when known), the next one, how far behind you are. */
+function airState(e, now) {
+  const ne = e.next_episode || {}, at = ne.at ? ne.at * 1000 : ne.in_seconds != null ? now + ne.in_seconds * 1000 : null;
+  const sched = (S.sched?.items || []).filter((x) => x.id === e.id && x.at && x.ep).map((x) => ({ ep: x.ep, t: x.at * 1000 }));
+  let last = null, next = null;
+  for (const x of sched) {
+    if (x.t <= now) { if (!last || x.ep > last.ep) last = x; } else if (!next || x.t < next.t) next = x;
+  }
+  if (ne.number && at != null) {
+    if (at <= now) { if (!last || ne.number > last.ep) last = { ep: ne.number, t: at }; }
+    else if (!next || at < next.t) next = { ep: ne.number, t: at };
+  }
+  const aired = last ? last.ep : next ? next.ep - 1 : 0;
+  const behind = typeof e.progress === "number" ? Math.max(0, aired - e.progress) : 0;
+  if (!last && aired > 0) last = { ep: aired, t: null }; // out, time not stated
+  return { e, last, next, behind };
+}
+/* The first unwatched episode you can play: on disk first, then online. */
+function airPlayEp(e, n) {
+  for (const id of [e.local_show_id, e.stream_show_id]) {
+    const s = id && showById(id);
+    if (!s) continue;
+    const mine = s.seasons.filter((sea) => sea.media_id && sea.media_id === (e.media_id ?? e.id));
+    for (const sea of mine.length ? mine : s.seasons) { const ep = sea.episodes.find((x) => x.number === n); if (ep) return ep; }
+  }
+  return null;
+}
+const cdText = (t, now = Date.now(), pre = "") => (t - now > 0 ? pre + fmtIn((t - now) / 1000) : "out now");
 function weekHTML(list, now = Date.now()) {
-  const at = (e) => e.next_episode?.at ? e.next_episode.at * 1000 : now + (airsIn(e.next_episode, now) || 0) * 1000;
-  const soon = list.filter((e) => at(e) > now - 3600e3).slice(0, 3); // the next three, however far off (Blue Box's next was 8 days away)
-  if (!soon.length) return "";
-  const today = new Date(now), dow = (today.getDay() + 6) % 7, monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow).getTime();
-  const has = new Set(list.map((e) => Math.floor((at(e) - monday) / 864e5)).filter((d) => d >= 0 && d < 7));
-  const when = (t) => { const d = new Date(t), same = d.toDateString() === today.toDateString(), tm = d.toTimeString().slice(0, 5);
-    return [same ? "Today" : DAYS[(d.getDay() + 6) % 7] + (t - now > 6 * 864e5 ? " " + d.getDate() : ""), tm]; };
-  return `<section class="hsec"><div class="sh"><h2>${at(soon[0]) < now + 7 * 864e5 ? "This week" : "Coming up"}</h2><span class="mut">airing on your lists</span><button class="link-btn" data-a="go" data-v="week">Calendar${ico("arrowr")}</button><span class="ruler">${DAYS.map((d, i) => `<span class="${i === dow ? "today" : ""}">${i === dow ? "today" : d}<i class="${has.has(i) ? "has" : ""}"></i></span>`).join("")}</span></div>
-    <div class="agenda">${soon.map((e, k) => { const t = at(e), [d, tm] = when(t), sec = (t - now) / 1000;
-      return `<button class="ag${d === "Today" ? " today" : ""}" style="--i:${k}" data-a="entry" data-v="${esc(e.id)}">${e.poster ? `<i class="agb" style="background-image:${esc(cssUrl(e.poster))}"></i><i class="agp" style="background-image:${esc(cssUrl(e.poster))}"></i>` : ""}
-        <span class="agt"><span class="when">${d} <small>${tm}</small></span><b>${esc(e.title)}</b><span class="m">episode ${esc(e.next_episode?.number ?? "")}</span></span><span class="cdn">${sec > 0 ? "in " + fmtIn(sec) : "out now"}</span></button>`; }).join("")}</div></section>`;
+  const all = list.map((e) => airState(e, now)).filter((x) => x.behind || x.next);
+  if (!all.length) return "";
+  const out = all.filter((x) => x.behind).sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
+  const lead = out[0] || [...all].sort((a, b) => a.next.t - b.next.t)[0];
+  const rest = all.filter((x) => x !== lead).sort((a, b) => (a.next?.t ?? Infinity) - (b.next?.t ?? Infinity));
+  const soon = lead.behind || (lead.next && lead.next.t < now + 7 * 864e5);
+  const e = lead.e, art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster, ofN = e.episodes ? ` of ${e.episodes}` : "";
+  let eye, sub, cta = "";
+  if (lead.behind) {
+    const n = e.progress + 1, ep = airPlayEp(e, n), fresh = lead.last.t && now - lead.last.t < 7 * 864e5;
+    eye = `<span class="twnew">${fresh ? "new episode" : "catch up"}</span>${lead.last.t ? `<span>${lead.behind > 1 ? `episode ${esc(lead.last.ep)} ` : ""}out ${esc(airDay(lead.last.t, now))} ${hhmm(lead.last.t)}</span>` : `<span>episode ${esc(lead.last.ep)} is out</span>`}<span>you're ${lead.behind} behind</span>`;
+    sub = `Episode ${n}${ofN}`;
+    cta = ep ? `<button class="btn pri" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>Play episode ${n}</span></button>`
+      : `<button class="btn" data-a="entry" data-v="${esc(e.id)}">Open show</button>`;
+  } else {
+    eye = `<span>next episode</span>`;
+    sub = `Episode ${lead.next.ep}${ofN}`;
+  }
+  const cd = lead.next ? `<div class="twcd"><b data-cd="${lead.next.t}">${esc(cdText(lead.next.t, now))}</b><small>${lead.behind ? `episode ${esc(lead.next.ep)} · ` : ""}${esc(airDay(lead.next.t, now))} · ${hhmm(lead.next.t)}</small></div>` : "";
+  const banner = `<div class="twb" data-a="entry" data-v="${esc(e.id)}" style="--h:${hueOf(e.title)}">${art ? `<i class="twa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${cd}
+    <div class="twc"><div class="eye">${eye}</div><h3>${esc(e.title)}</h3><div class="sub">${esc(sub)}</div>${cta ? `<div class="cta">${cta}</div>` : ""}</div></div>`;
+  const MAX = 5, shown = rest.slice(0, MAX);
+  const row = (x, k) => { const t = x.next?.t, today = t && dayStart(t) === dayStart(now);
+    return `<button class="twr" style="--i:${k + 1}" data-a="entry" data-v="${esc(x.e.id)}"><span class="twd${today ? " is-today" : ""}">${t ? esc(airDay(t, now)) : "out"}</span>${poster(x.e.title, x.e.poster, { c: "twp" })}
+      <span class="twt"><b>${esc(x.e.title)}</b><small>${t ? `episode ${esc(x.next.ep)} · ${hhmm(t)}` : `episode ${esc(x.last.ep)}`}</small></span><span class="twin">${t ? `<span data-cd="${t}" data-pre="in ">${esc(cdText(t, now, "in "))}</span>` : ""}${x.behind ? `<em>${x.behind} behind</em>` : ""}</span></button>`; };
+  const more = rest.length - shown.length;
+  const side = shown.length ? `<div class="twl${shown.length <= 2 ? " few" : ""}">${shown.map(row).join("")}</div>` : "";
+  return `<section class="hsec tw"><div class="sh"><h2>${soon ? "This week" : "Coming up"}</h2><span class="mut">airing on Watching</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}${ico("arrowr")}</button></div>
+    <div class="twg${side ? "" : " solo"}">${banner}${side}</div></section>`;
 }
 function Home() {
   if (isPhone()) return HomePhone();
@@ -450,6 +509,7 @@ function Home() {
   if (isTabletP()) body += homePair(L, airing);
   else {
     if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
+    if (airing.length && typeof loadSched === "function" && (!S.sched || (S.sched.at && Date.now() - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out
     body += weekHTML(airing);
   }
   const recs = recsFor();
@@ -1109,18 +1169,21 @@ function libRail(m, sum) {
   const gen = !m.cold && lists.some((t) => t.k === S.lib.tab) ? railGenres(m) : "";
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? "AniList lists" : "Lists") + lists.map(it).join("") : ""}
-    ${gen ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}</div>` + head("Genres") + gen : ""}
+    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
 }
+/* Genres open in place like the other filters (Elias, 2026-11-08: "there are
+   just too many genres"); pick several, the row says how many. */
+const genLabel = () => { const g = S.lib.genres; return !g.length ? "any" : g.length === 1 ? g[0] : `${g.length} picked`; };
 function railGenres(m) {
   const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
   const all = [...counts, ...S.lib.genres.filter((g) => !have.has(g)).map((g) => [g, 0])];
-  const TOP = 8, show = S.genOpen ? all : all.filter(([g], i) => i < TOP || S.lib.genres.includes(g)), rest = all.length - show.length;
-  return `<div class="lgen" role="group" aria-label="Genres">${show.map(([g, c]) => {
+  if (!all.length) return "";
+  return fdrop("genres", "Genres", `<div class="fchips lgen" role="group" aria-label="Genres">${all.map(([g, c]) => {
     const on = S.lib.genres.includes(g);
-    return `<button class="gchip${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}">${esc(g)}<span class="n">${c}</span></button>`;
-  }).join("")}${rest > 0 ? `<button class="gchip lmore" data-a="gmore">${rest} more</button>` : S.genOpen && all.length > TOP ? '<button class="gchip lmore" data-a="gmore">Fewer</button>' : ""}</div>`;
+    return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="genre" data-v="${esc(g)}"><span>${esc(g)}</span><span class="gn">${c}</span>${ico("check")}</button>`;
+  }).join("")}</div>`, genLabel(), S.lib.genres.length > 0);
 }
 function genreTray(m) {
   const counts = genreCounts(m), have = new Set(counts.map(([g]) => g));
@@ -1530,7 +1593,7 @@ function Fran() {
     <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
-  <div class="eps-head"><div class="tabs2">${tabs || `<h2>${esc(byOrder && e.label !== title ? e.label : movie ? "Movie" : "Episodes")}</h2>`}</div><span class="srcl">${esc(srcLine)}</span>${byOrder ? `<button class="link-btn tord" data-a="frorder">watch order ${ico("chevd")}</button>` : ""}<div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
+  <div class="eps-head"><div class="tabs2">${tabs || (byOrder ? frPick(p, e) : `<h2>${esc(movie ? "Movie" : "Episodes")}</h2>`)}</div><span class="srcl">${esc(srcLine)}</span><div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
   ${e.slots.length ? `<div class="eps strip">${e.slots.map((x, i) => slotTile(p, e, x, tg && tg.x.id, i)).join("")}</div>` : ""}${note}
   </div>
   ${frOrder(p, e)}
@@ -1597,6 +1660,17 @@ function loadAbout(mid) {
     aboutMemo[mid] = r;
     aboutPaint(mid);
   }).catch(() => {});
+}
+/* The episode row's heading is a dropdown of the page's entries, in watch
+   order (Elias, 2026-11-08, mockup A): it stays a plain heading that lights
+   up on hover. The real <select> (Decision 38) lies invisible over it, so the
+   heading keeps its own width and font; the list shows each entry's count. */
+function frPick(p, e) {
+  const at = new Map((p.order || []).map((x, i) => [x.id, i]));
+  const rows = [...p.entries].sort((a, b) => (at.get(a.id) ?? 1e9) - (at.get(b.id) ?? 1e9));
+  const opt = (x) => { const n = entryCount(x), r = n ? `${n} ep` : x.group === "main" ? "" : (x.format_label || "").toLowerCase();
+    return `<option value="${x.id}"${x.id === e.id ? " selected" : ""}${r ? ` data-r="${esc(r)}"` : ""}>${esc(x.label)}</option>`; };
+  return `<h2 class="frpick"><span aria-hidden="true">${esc(e.label)}</span>${ico("chevd")}<select data-a="frsel" aria-label="Season">${rows.map(opt).join("")}</select></h2>`;
 }
 /* Watch order (TODO 132): the main story big and numbered, everything else
    small, right after the part AniList links it to. It never guesses.
@@ -1795,10 +1869,10 @@ function entryStats(f, pending) {
     ${total > 1 ? `<div class="tbar">${bar}<span>${got}/${total}</span></div>` : ""}${aheadLine(f, pending, fe)}`;
 }
 /* The actions that depend on your entry, inside the page's action pill:
-   off the list → Add to Planning; on it → Edit and ♥. */
+   off the list → Add to Planning; on it → Edit (♥ lives in the editor). */
 function entryActs(f, pending) {
   if (f && !f.status && !pending) return `<button class="gb" data-a="eadd">${ico("plus")}<span>${isPhone() ? "Planning" : "Add to Planning"}</span></button>`;
-  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button><button class="gb ic fav${f?.favourite ? " on" : ""}" data-a="efav" aria-label="Favourite" aria-pressed="${!!f?.favourite}" title="${f?.favourite ? "A favourite" : "Favourite"}">${ico("heart")}<span class="lbl">${f?.favourite && !isPhone() ? "Remove from favourites" : "Favourite"}</span></button>`;
+  return `<button class="gb" data-a="edit">${ico("edit")}<span>Edit</span></button>`;
 }
 /* Episode ticks are this PC's own (TODO 166): when AniList is further
    along (watched elsewhere), the line under the bar offers to mark those
@@ -1895,7 +1969,7 @@ function entryPatch(patch, fav, delay = 0) {
   const prev = ent.f;
   ent.f = { ...prev, ...(patch || {}), ...(fav !== undefined ? { favourite: fav } : {}) };
   entryPaint(ent.f, false, prev);
-  if (fav !== undefined) for (const h of $$("#entrybox .heart, #entryacts .fav")) { h.classList.add("pop1"); if (fav) burstAt(h); }
+  if (fav !== undefined) for (const h of $$("#entrybox .heart")) { h.classList.add("pop1"); if (fav) burstAt(h); }
   const p = entryPend && entryPend.mid === ent.mid ? entryPend : { mid: ent.mid, patch: {}, fav: undefined };
   Object.assign(p.patch, patch || {});
   if (fav !== undefined) p.fav = fav;
@@ -3209,12 +3283,15 @@ document.addEventListener("keydown", (e) => {
    every episode AniList has scheduled for what's on your lists. */
 const monthName = (d) => d.toLocaleDateString(undefined, { month: "long" });
 const airKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/* Countdowns on Home tick while you look (the week page re-renders itself). */
+setInterval(() => { const now = Date.now(); for (const el of document.querySelectorAll("#app [data-cd]")) el.textContent = cdText(+el.dataset.cd, now, el.dataset.pre || ""); }, 30e3);
 function loadSched() {
   if (S.schedBusy) return;
   S.schedBusy = true;
   api("/api/schedule").then((r) => {
     S.schedBusy = false; S.sched = { at: r.state === "loading" ? 0 : Date.now(), state: r.state, items: r.items || [] };
     if (S.view === "week") render(true);
+    else if (S.view === "home" && !isPhone() && !isTabletP()) { const el = $("#app .hsec.tw"); if (el) el.outerHTML = weekHTML(airingList()); }
     if (r.state === "loading") setTimeout(() => S.view === "week" && loadSched(), 2500);
   }).catch(() => { S.schedBusy = false; });
 }
@@ -5084,7 +5161,9 @@ const A = {
   genre: (v, t) => {
     const on = !S.lib.genres.includes(v);
     S.lib.genres = on ? [...S.lib.genres, v] : S.lib.genres.filter((g) => g !== v);
-    for (const b of $$(`.gchip[data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    for (const b of $$(`[data-a=genre][data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    const gd = $('.fdrop[data-k="genres"]');
+    if (gd) { gd.classList.toggle("set", S.lib.genres.length > 0); gd.querySelector(".fdb b").textContent = genLabel(); }
     saveLib(); paintWall(); syncFilters();
   },
   go: (v, t) => {
@@ -5095,6 +5174,12 @@ const A = {
     }
     if (v === "settings") { S.setOpen = false; setClear(); }
     const same = v === S.view || (v === "history" && S.view === "stats");
+    /* Library again, while on it: back to All shows (and to the top). */
+    if (v === "library" && same && S.lib.tab !== "ALL") {
+      S.lib.tab = "ALL"; saveLib(); S.fadeNext = true; render();
+      scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
+      return;
+    }
     /* The bottom bar (phones): the open tab again scrolls to the top; another
        tab comes back where you left it, with a light tap. */
     if (t?.closest?.("#tabbar")) {
@@ -5612,7 +5697,6 @@ const A = {
   tagspoil: (v) => { (S.tagsOpen ||= {})[v] = true; aboutPaint(+v); },
   tagsmore: (v, t) => { t.closest(".about")?.classList.add("tagsopen"); t.closest(".tgm")?.setAttribute("hidden", ""); },
   descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }, // phones: the summary opens in place
-  frorder: () => $("#app .frpage .hsec.ford")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }),
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
   plgo: (v) => { S.lib.pl = +v; S.plq = ""; saveLib(); S.fadeNext = true; render(); scrollTo(0, 0); },
@@ -5737,20 +5821,33 @@ function ddClose(refocus) {
   if (!m || !ddSel) return;
   m.classList.remove("open"); m.innerHTML = "";
   ddSel.closest(".fl")?.classList.toggle("ddon", false);
+  ddSel.closest(".frpick")?.classList.remove("ddon");
   if (refocus) ddSel.focus({ preventScroll: true });
   ddSel = null;
 }
+/* Puts the open list under (or over) its select; also on every scroll, so
+   the list rides along with the page instead of closing (Elias, 2026-11-08). */
+function ddPos(sel, m, first) {
+  const box = (sel.closest(".fl") || sel).getBoundingClientRect(), z = zoomGet() / 100, p = ddPlace(box, z, innerWidth, innerHeight);
+  if (first) m.style.minWidth = p.width + "px";
+  m.style.left = p.left + "px"; m.style.maxHeight = p.maxHeight + "px";
+  m.style.top = p.top === null ? "" : p.top + "px"; m.style.bottom = p.bottom === null ? "" : p.bottom + "px";
+  const right = box.left + box.width / 2 > innerWidth / 2;
+  if (right && !first) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px"; // a chip on the right: the list hangs from its right edge
+  return { p, right };
+}
 function ddOpen(sel) {
-  const m = $("#ddm"), p = ddPlace((sel.closest(".fl") || sel).getBoundingClientRect(), zoomGet() / 100, innerWidth, innerHeight);
+  const m = $("#ddm");
   ddSel = sel;
   sel.closest(".fl")?.classList.add("ddon"); // its chip stays lit while the list is open
+  sel.closest(".frpick")?.classList.add("ddon"); // the season heading too
   const cap = (sel.closest(".fl")?.firstChild?.nodeType === 3 ? sel.closest(".fl").firstChild.textContent : "").trim();
-  m.innerHTML = (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}><span>${esc(o.textContent)}</span>${o.selected ? ico("check") : ""}</button>`).join("");
-  m.style.minWidth = p.width + "px"; m.style.left = p.left + "px";
-  m.style.top = p.top === null ? "" : p.top + "px"; m.style.bottom = p.bottom === null ? "" : p.bottom + "px";
+  m.innerHTML = (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}><span>${esc(o.textContent)}</span>${o.selected ? ico("check") : o.dataset.r ? `<small class="r">${esc(o.dataset.r)}</small>` : ""}</button>`).join("");
+  ddPos(sel, m, true);
   m.classList.remove("open"); void m.offsetWidth; m.classList.add("open");
-  const box = (sel.closest(".fl") || sel).getBoundingClientRect(), z = zoomGet() / 100, right = box.left + box.width / 2 > innerWidth / 2;
-  if (right) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px"; // a chip on the right: the list hangs from its right edge (measured once shown)
+  const { p, right } = ddPos(sel, m); // measured once shown
+  const on = m.querySelector("button.on"); // a long list opens at the current row
+  if (on && on.offsetTop + on.offsetHeight > m.clientHeight) m.scrollTop = on.offsetTop - m.clientHeight / 2 + on.offsetHeight / 2;
   m.style.transformOrigin = `${p.top === null ? "bottom" : "top"} ${right ? "right" : "left"}`;
   (m.querySelector("button.on") || m.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true });
 }
@@ -5787,7 +5884,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (t.tagName === "SELECT" && !t.disabled && (e.key === "Enter" || e.key === " " || (e.altKey && e.key === "ArrowDown"))) { e.preventDefault(); ddOpen(t); }
 }, true);
-addEventListener("scroll", (e) => { if (ddSel && !e.target.closest?.("#ddm")) ddClose(false); }, { capture: true, passive: true });
+addEventListener("scroll", (e) => { if (ddSel && !e.target.closest?.("#ddm")) { if (ddSel.isConnected) ddPos(ddSel, $("#ddm")); else ddClose(false); } }, { capture: true, passive: true });
 addEventListener("resize", () => ddClose(false));
 /* The episode menu's keys while it is open: ↑↓ ↵ · A W D (shown on its rows) · Esc. */
 document.addEventListener("keydown", (e) => {
@@ -5979,7 +6076,7 @@ function paintPtitle(t) {
 }
 
 /* keyboard: / search · Esc back · j/k/h/l or arrows move focus · Enter opens */
-const focusables = () => $$("#app .hc, #app .ag, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
+const focusables = () => $$("#app .hc, #app .twb, #app .twr, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
 function applyFocus() {
   const els = focusables();
   if (fIdx >= 0 && els[fIdx]) { els.forEach((e, i) => e.classList.toggle("focused", i === fIdx)); els[fIdx].scrollIntoView({ block: "nearest" }); } else fIdx = -1;

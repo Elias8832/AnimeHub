@@ -129,6 +129,41 @@ test("the next airing shows even when it's past this week", () => {
   assert.match(html, /<h2>Coming up<\/h2>/);
 });
 
+test("This week leads with an episode that's out and unwatched, with Play", () => {
+  const now = Date.UTC(2026, 10, 8, 18);
+  const ep5 = { ...episode("bb5", null), number: 5 };
+  const bb = { ...show("Blue Box Season 2", [ep5]), id: "bb" };
+  const app = homepage({ shows: [bb], continue: [], history: [] });
+  const e = { id: 7, title: "Blue Box Season 2", progress: 4, episodes: 12, local_show_id: "bb", next_episode: { number: 6, at: now / 1000 + 6 * 86400 } };
+  const html = app.weekHTML([e], now);
+  assert.match(html, /you're 1 behind/);
+  assert.match(html, /data-a="play" data-v="bb5"/); // Play plays the episode you're missing
+  assert.match(html, /Play episode 5/);
+  assert.match(html, /class="twg solo"/); // nothing else airing: the banner takes the row
+  assert.match(html, /data-cd="/); // the next one counts down
+  assert.match(html, /\/img\/Blue%20Box%20Season%202\.banner\.jpg/); // the show page's saved banner, so Home and the show page match
+});
+
+test("This week: no Play when the missing episode isn't on disk or online yet", () => {
+  const now = Date.UTC(2026, 10, 8, 18);
+  const app = homepage({ shows: [], continue: [], history: [] });
+  const e = { id: 7, title: "Blue Box Season 2", progress: 4, next_episode: { number: 6, at: now / 1000 + 6 * 86400 } };
+  const html = app.weekHTML([e], now);
+  assert.doesNotMatch(html, /data-a="play"/);
+  assert.match(html, /Open show/);
+});
+
+test("This week: the soonest show leads when you're caught up, the rest are rows", () => {
+  const now = Date.UTC(2026, 10, 8, 18);
+  const app = homepage({ shows: [], continue: [], history: [] });
+  const mk = (id, title, days) => ({ id, title, progress: 5, next_episode: { number: 6, at: now / 1000 + days * 86400 } });
+  const html = app.weekHTML([mk(1, "Later", 5), mk(2, "Soon", 1), mk(3, "Middle", 3)], now);
+  assert.match(html, /<h3>Soon<\/h3>/);
+  assert.doesNotMatch(html, /behind/);
+  assert.ok(html.indexOf("<b>Middle</b>") < html.indexOf("<b>Later</b>")); // rows in air order
+  assert.doesNotMatch(html, /more in the Calendar/); // everything fits: the header just says Calendar
+});
+
 test("homepage renders the new hero, excludes its duplicate tile, and targets its buttons", () => {
   const older = episode("older", earlier);
   const preview = episode("preview", latest, false, 13.6);

@@ -101,7 +101,7 @@ class Frontend(unittest.TestCase):
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 + 90000} }}, {now});"), "E5 in 1d 1h")
         self.assertEqual(run_js(f"return airText({{ number: 5, in_seconds: 600 }}, {now});"), "E5 in 10 min")
         self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 - 5} }}, {now});"), "E5 is out")
-        self.assertIn('sec > 0 ? "in " + fmtIn(sec) : "out now"', APP)  # Home → This week (Decision 38)
+        self.assertIn('t - now > 0 ? pre + fmtIn((t - now) / 1000) : "out now"', APP)  # Home → This week (TODO 178; tests/home_hero.cjs)
 
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
@@ -232,7 +232,7 @@ class WeekSection(unittest.TestCase):
         self.assertIn("@container (max-width:58px){.airt em{", css)  # no cut "Premiere" on small posters
 
     def test_week_page_is_reachable_from_home(self):
-        self.assertIn('data-a="go" data-v="week">Calendar', APP)
+        self.assertIn('data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}', APP)
 
     def test_calendar_is_a_tab_everywhere(self):
         """Easy to miss behind a Home link, so it sits in both tab bars."""
@@ -312,12 +312,13 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn('head("On this PC")', APP)
         self.assertIn('data-a="rescan" title="Look for new files and fetch missing metadata">', APP)
         self.assertIn('${fdrop("year", cap("year"), frng("year"', APP)
-        # the filters sit in the side list on a PC, the 8 biggest genres first
+        # the filters sit in the side list on a PC; genres open in place like them (Elias, 2026-11-08)
         self.assertIn('${rail ? "" : filterCtl()}', APP)
         self.assertIn('head("Filter") + `<div class="lflt"', APP)
-        self.assertIn('const TOP = 8, show = S.genOpen', APP)
-        # a genre picked in one tray shows as picked in the other
-        self.assertIn('for (const b of $$(`.gchip[data-v="${CSS.escape(v)}"]`))', APP)
+        self.assertIn('return fdrop("genres", "Genres", `<div class="fchips lgen"', APP)
+        # a genre picked in one place shows as picked in the other, and the row says how many
+        self.assertIn('for (const b of $$(`[data-a=genre][data-v="${CSS.escape(v)}"]`))', APP)
+        self.assertIn('gd.querySelector(".fdb b").textContent = genLabel();', APP)
         block = CSS[CSS.index("/* ───────── Library side list"):]
         self.assertIn("@media (min-width:1001px) and (not (pointer:coarse)){", block)
         # show/sort stay lit while their list is open, not by the focus a closing click leaves (Elias, 2026-11-07)
@@ -335,7 +336,7 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills
         # the drop-down list: a caption, a check on the picked one, hung from a right-hand chip's right edge
         self.assertIn('`<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>`', APP)
-        self.assertIn('if (right) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px";', APP)
+        self.assertIn('if (right && !first) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px";', APP)
         self.assertIn(".fdrop,.fpanel{display:contents}", block)  # the phone sheet shows the sliders themselves
 
 
@@ -690,9 +691,31 @@ class ShowPagePolish(unittest.TestCase):
         the watch order picks, tabs only when it can't reach every entry."""
         body = self.fran()
         self.assertIn("p.entries.every((x) => ordIds.has(x.id))", body)
-        self.assertIn('data-a="frorder"', body)
+        self.assertNotIn('data-a="frorder"', body)  # the season dropdown replaced the "watch order" link
         self.assertIn('$("#app .frpage > .eps-head")?.scrollIntoView(', APP)
         self.assertNotIn("${kb(", body[body.index('<div class="cta">'):])  # no key hints on the buttons
+
+    def test_season_heading_is_a_dropdown(self):
+        """Decision 66 (2026-11-08): the episode row's heading opens a list of
+        every entry in watch order; the real select lies invisible over it."""
+        body = self.fran()
+        self.assertIn("byOrder ? frPick(p, e)", body)
+        a = APP.index("function frPick(")
+        pick = APP[a:APP.index("\n}\n", a)]
+        self.assertIn('<select data-a="frsel" aria-label="Season">', pick)
+        self.assertIn('<span aria-hidden="true">${esc(e.label)}</span>', pick)
+        self.assertIn("(at.get(a.id) ?? 1e9) - (at.get(b.id) ?? 1e9)", pick)  # watch order first
+        self.assertIn('o.dataset.r ? `<small class="r">', APP)  # the count on the right of the app's own list
+        self.assertIn(".frpick select{position:absolute;inset:0;width:100%;height:100%;opacity:0", CSS)
+        self.assertNotIn(".frpick select option", CSS)  # an option's own font made Chrome cut the name ("Seas…")
+
+    def test_dropdown_rides_along_and_fits(self):
+        """Elias (2026-11-08): the list closed on scroll, and Attack on Titan's
+        15 entries squashed the rows and ran off the screen."""
+        self.assertIn("if (ddSel.isConnected) ddPos(ddSel, $(\"#ddm\")); else ddClose(false);", APP)
+        self.assertIn("maxHeight: Math.max(120, Math.min(340, room / z))", APP)
+        self.assertIn("#ddm button{flex:none;", CSS)  # rows keep their height; the list scrolls
+        self.assertIn("#ddm.open{display:flex;overscroll-behavior:contain;", CSS)
 
     def test_season_tabs_stay_one_row(self):
         self.assertIn(".sp2 .rels{flex-wrap:nowrap;max-width:100%;overflow-x:auto", CSS)
@@ -726,9 +749,8 @@ class ShowPageRedo(unittest.TestCase):
         self.assertIn("<span>Planning</span>", self.run_fn("entryActs", 'entryActs({ status: null }, false)', phone))  # the phone's row of short words (TODO 177)
         on = self.run_fn("entryActs", 'entryActs({ status: "CURRENT", favourite: true }, false)', pc)
         self.assertIn('data-a="edit"', on)
-        self.assertIn('class="gb ic fav on"', on)
-        self.assertIn('<span class="lbl">', on)  # the phone's row names the heart
-        self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)", pc))  # before the read: Edit + ♥
+        self.assertNotIn('data-a="efav"', on)  # Elias 2026-11-08: no heart on the page; it lives in the editor
+        self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)", pc))  # before the read: Edit
 
     def stats(self, f, fe):
         pre = ("const frEntry = () => (" + json.dumps(fe) + "); const showById = () => null; const epTotal = () => 0; const epWatched = () => 0;"
@@ -770,7 +792,7 @@ class TabEntrances(unittest.TestCase):
         block = CSS[CSS.index("/* Home · Library · Settings build in"):CSS.index("/* ───", CSS.index("/* Home · Library · Settings build in"))]
         # hover zooms and fixed children need no transform left after the entrance
         self.assertNotIn(" both}", block.replace(".settings.scol{animation:soft .25s var(--ease) both}", ""))
-        for part in (".upn .upa{animation:artIn", ":is(.hc,.ag,.rec,.rc)", ".snav>*", ".scol.setin>.group>"):
+        for part in (".upn .upa{animation:artIn", ":is(.hc,.twb,.twr,.rec,.rc)", ".snav>*", ".scol.setin>.group>"):
             self.assertIn(part, block)
 
     def test_settings_section_builds_in_once(self):
