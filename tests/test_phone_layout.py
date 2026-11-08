@@ -268,7 +268,7 @@ class PhonePolish(unittest.TestCase):
     def test_show_page_round_fixes(self):
         self.assertIn(".sp2.frpage .about:not(.tagsopen) dd.tags .tg:nth-child(n+7){display:none}", CSS)
         self.assertIn(".sp2.frpage .castrow .ot .pw{width:84px;margin-top:0", CSS)  # supporting faces sat lower
-        self.assertIn(".sp2.frpage .eps-head .tord{display:none}", CSS)  # the Sub/Dub switch was cut off
+        self.assertNotIn(".tord", CSS)  # the watch-order link is gone (Decision 66: the season dropdown); Sub/Dub was cut off by it
         # Elias: thick gaps between episode tiles — the rows' 40 px for ⋯ stayed; ⋯ itself sat off screen
         self.assertIn(".sp2.frpage .eps.strip .ep{display:block;flex:none;width:228px;padding-right:0;", CSS)
         self.assertIn(".sp2.frpage .eps.strip .ep .dots{left:auto;right:-6px;top:calc(228px * 9 / 16 + 4px)", CSS)
