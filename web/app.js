@@ -1174,7 +1174,7 @@ function Lib() {
   const notes = [];
   if (note) notes.push(`<div class="note-bar">${esc(note)}${d.scan?.root === "changed" ? ' <button class="btn" data-a="adopt">Connect folder</button>' : ""}</div>`);
   else if (d.meta_running && d.meta_pending > 0) notes.push(`<div class="note-bar metanote"><i class="spin"></i><span>${esc(metaText(d))}</span></div>`);
-  if (m.cold && S.ani?.connected) notes.push(`<div class="note-bar listnote">${listNote()}</div>`);
+  const loading = m.cold && S.ani?.connected; // the lists are on their way (TODO 191: shown where they'll land)
   const isPl = S.lib.tab === "PLAYLISTS" && !m.cold, plCur = isPl ? plCurrent() : null;
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
   const files = d.shows.reduce((a, x) => a + epTotal(x), 0);
@@ -1205,8 +1205,9 @@ function Lib() {
       <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
-  const solo = (isPl || isMatch || isUn || m.cold) && lhead ? `<div class="lsolo">${lhead}</div>` : "";
-  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum)}<div class="lmain">${solo}${main}</div></div></div>`;
+  const solo = m.cold ? `<div class="lsolo"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
+    : (isPl || isMatch || isUn) && lhead ? `<div class="lsolo">${lhead}</div>` : "";
+  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${main}</div></div></div>`;
 }
 /* The filter controls; on the PC they live in the side list (Elias,
    2026-11-06: "most of them could easily be in the left panel"). */
@@ -1226,14 +1227,18 @@ let railNow; // set by Lib(); crossing the width again redraws the Library
 addEventListener("resize", () => { if (railNow !== undefined && isRail() !== railNow && S.data && S.view === "library") render(); });
 /* The side list (Elias picked mockup B, 2026-11-06; like Settings' list): the
    title, the lists with their filters and genres, your playlists, this PC's chores. */
-function libRail(m, sum) {
+function libRail(m, sum, loading) {
   let n = 0;
-  const it = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}" style="--i:${n++}" data-a="tab" data-v="${t.k}">${esc(t.l)}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
+  /* The lists just arrived: their rows rise into the placeholders' spot, once. */
+  const landed = !m.cold && Date.now() - (S.listsLanded || 0) < 4000;
+  if (landed) S.listsLanded = 0;
+  const it = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}" style="--i:${n++}"${landed && !t.side ? " data-land" : ""} data-a="tab" data-v="${t.k}">${esc(t.l)}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
   const head = (t) => `<h4 style="--i:${n++}">${t}</h4>`;
   const lists = m.tabs.filter((t) => !t.side), pl = m.tabs.filter((t) => t.k === "PLAYLISTS"), pc = m.tabs.filter((t) => t.k === "UNTRACKED" || t.k === "MATCH");
   const gen = !m.cold && lists.some((t) => t.k === S.lib.tab) ? railGenres(m) : "";
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
+    ${loading ? head(acct() + " lists") + `<div class="lghost" style="--i:${n++}" aria-hidden="true">${[58, 76, 88, 70].map((w) => `<i><b style="width:${w}px"></b><u></u></i>`).join("")}</div><div class="lload" style="--i:${n++}">${listLoad()}</div>` : ""}
     ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
@@ -4864,22 +4869,44 @@ function metaTick() {
   }).catch(() => { metaWatch = null; });
 }
 /* The lists of the account in use (Decision 75): their stamp and, while they
-   are read, how far, ride /api/now. New lists reload the page by itself; the
-   library's note shows the steps with a bar. */
-function listNote() {
+   are read, how far, ride /api/now. New lists reload the page by itself.
+   While they load, the side list holds their place (TODO 191, Elias picked
+   mockup A): placeholder rows, a quiet line with the real count, a thin bar. */
+function listLoadState() {
   const l = S.lists?.loading, name = acct();
-  if (!l) return `<span>Your ${name} lists are still loading — showing what is on disk.</span>`;
-  const step = l.step === "match" ? "Matching your shows with AniList" : `Reading your ${name} list`;
-  const pct = l.total ? Math.min(100, Math.round(((l.done || 0) * 100) / l.total)) : null;
-  return `<span>${step}${l.total ? ` · ${l.done || 0} of ${l.total}` : "…"} — showing what is on disk meanwhile.</span>
-    <i class="lbar${pct == null ? " ind" : ""}" role="progressbar" aria-label="${esc(step)}"${pct == null ? "" : ` aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"`}><b style="width:${pct ?? 35}%"></b></i>`;
+  return {
+    what: !l ? "loading" : l.step === "match" ? "matching shows" : "reading list",
+    tip: !l ? `Asking ${name} for your lists` : l.step === "match" ? `Looking up each ${name} entry on AniList, for its art and details` : `Reading your ${name} list`,
+    count: l?.total ? `${l.done || 0} / ${l.total}` : "",
+    pct: l?.total ? Math.min(100, Math.round(((l.done || 0) * 100) / l.total)) : null,
+  };
+}
+function listLoad(inline) {
+  const t = listLoadState();
+  return `<p class="ll" title="${esc(t.tip)}"><i class="dot"></i>${inline ? `<span class="lw">${acct()} lists</span>` : ""}<span class="lt">${t.what}</span><b class="lc">${t.count}</b></p>
+    <i class="lbar${t.pct == null ? " ind" : ""}" role="progressbar" aria-label="${esc(t.tip)}"${t.pct == null ? "" : ` aria-valuenow="${t.pct}" aria-valuemin="0" aria-valuemax="100"`}><b style="width:${t.pct ?? 35}%"></b></i>`;
+}
+/* Polls change the line in place, so the bar slides on instead of restarting. */
+function listLoadPatch(el) {
+  const t = listLoadState(), bar = el.querySelector(".lbar");
+  el.querySelector(".lt").textContent = t.what;
+  el.querySelector(".lc").textContent = t.count;
+  el.querySelector(".ll").title = t.tip;
+  bar.classList.toggle("ind", t.pct == null);
+  bar.setAttribute("aria-label", t.tip);
+  if (t.pct == null) bar.removeAttribute("aria-valuenow");
+  else for (const [k, v] of [["aria-valuenow", t.pct], ["aria-valuemin", 0], ["aria-valuemax", 100]]) bar.setAttribute(k, v);
+  bar.firstElementChild.style.width = (t.pct ?? 35) + "%";
 }
 function listsWatch(l) {
   const was = S.lists;
   S.lists = l || null;
-  if (l && was !== undefined && (was?.service !== l.service || (l.stamp && l.stamp !== was?.stamp))) { reload(); return; }
-  const n = $(".listnote");
-  if (n) n.innerHTML = listNote();
+  if (l && was !== undefined && (was?.service !== l.service || (l.stamp && l.stamp !== was?.stamp))) {
+    if ($(".lload")) S.listsLanded = Date.now(); // the rows that replace the placeholders rise in
+    reload();
+    return;
+  }
+  for (const n of $$(".lload")) listLoadPatch(n);
 }
 function pollSoon(ms) { if (nowTimer) clearTimeout(nowTimer); nowTimer = setTimeout(pollNow, ms); }
 async function pollNow() {

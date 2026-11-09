@@ -308,7 +308,7 @@ class LibrarySideList(unittest.TestCase):
     chores and genres sit in a side list; ranges hide behind chips; narrow
     windows and touch keep the tabs and the filter sheet."""
     def test_side_list(self):
-        self.assertIn('<div class="libg">${isPhone() ? "" : libRail(m, sum)}<div class="lmain">', APP)
+        self.assertIn('<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">', APP)
         self.assertIn('head("On this PC")', APP)
         self.assertIn('data-a="rescan" title="Look for new files and fetch missing metadata">', APP)
         self.assertIn('${fdrop("year", cap("year"), frng("year"', APP)
@@ -665,8 +665,27 @@ class DeviceMarks(unittest.TestCase):
         manual reload): /api/now's list stamp reloads the page, and the
         library's note shows the steps with a bar."""
         self.assertIn("if (!now.playing) listsWatch(now.lists);", APP)
-        self.assertIn('notes.push(`<div class="note-bar listnote">${listNote()}</div>`)', APP)
-        self.assertIn("Matching your shows with AniList", APP)
+
+    def load_state(self, loading, service="mal"):
+        fn = re.search(r"function listLoadState\(\) \{.*?\n\}\n", APP, re.S).group(0)
+        return run_js(f"S.ani = {{ service: {json.dumps(service)} }}; S.lists = {{ loading: {json.dumps(loading)} }};\n{fn}\nreturn listLoadState();")
+
+    def test_list_loading_line_shows_the_real_count(self):
+        """TODO 191 (Elias picked mockup A): while the lists load, the side
+        list holds their place with a quiet line — the real count, no guesses."""
+        t = self.load_state({"step": "match", "done": 100, "total": 200})
+        self.assertEqual((t["what"], t["count"], t["pct"]), ("matching shows", "100 / 200", 50))
+        self.assertIn("MyAnimeList", t["tip"])
+        t = self.load_state({"step": "list", "done": None, "total": None}, service="anilist")
+        self.assertEqual((t["what"], t["count"], t["pct"]), ("reading list", "", None))
+        self.assertEqual(self.load_state(None)["what"], "loading")
+
+    def test_list_loading_sits_where_the_lists_land(self):
+        """TODO 191: placeholder rows in the side list, not a box over the page."""
+        self.assertIn('<div class="lghost"', APP)
+        self.assertNotIn("note-bar listnote", APP)
+        self.assertIn("for (const n of $$(\".lload\")) listLoadPatch(n);", APP)
+        self.assertIn(".lnav>button[data-land]", CSS)
 
     def test_names_the_account_service(self):
         """Decision 75: with MyAnimeList as the account, the line names it."""
