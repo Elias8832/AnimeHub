@@ -1114,6 +1114,15 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/reconcile/dismiss":
             sync.reconcile_clear()
             self.send_json({"ok": True})
+        elif route == "/api/reconcile/start":
+            # TODO 191: Settings → Account → Compare — the connect check
+            # (Decisions 14, 48, 80) on demand; /api/reconcile then answers.
+            account = anilist.account_id()
+            if account is None:
+                self.send_json({"error": "Connect an account first."}, 400)
+            else:
+                sync.reconcile_mark_pending(account)
+                self.send_json({"ok": True})
         elif route == "/api/entry":
             # TODO 9: one editing route — AniList writes through the
             # chokepoint when connected, local curation overlay otherwise
