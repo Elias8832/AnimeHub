@@ -23,8 +23,8 @@ OUTBOX_MAX_ATTEMPTS = 8
 def outbox_enqueue(media_id, patch=None, favourite=None, verify=None):
     """`verify` ({"add": bool}) marks a progress guess queued without a
     fresh AniList list — outbox_verify settles it before it is sent."""
-    tok = anilist.load_token() or {}
-    payload = {"patch": patch or {}, "account_id": tok.get("user_id")}
+    account = anilist.account_id()
+    payload = {"patch": patch or {}, "account_id": account}
     if favourite is not None:
         payload["favourite"] = bool(favourite)
     if verify is not None:
@@ -32,7 +32,7 @@ def outbox_enqueue(media_id, patch=None, favourite=None, verify=None):
     with database.db() as c:
         c.execute("INSERT INTO outbox(media_id,payload,account_id,created)"
                   " VALUES(?,?,?,?)",
-                  (media_id, json.dumps(payload), tok.get("user_id"), util.utc_stamp()))
+                  (media_id, json.dumps(payload), account, util.utc_stamp()))
 
 
 def outbox_defer(show_id, eps, manual):
@@ -40,7 +40,7 @@ def outbox_defer(show_id, eps, manual):
     to entries yet, kept as one row per folder (media_id 0: no entry known
     yet) until progress.replay_deferred can sync them. Later marks on the
     same folder join its row."""
-    tok = anilist.load_token() or {}
+    account = anilist.account_id()
     with database.db() as c:
         for row_id, payload_s in c.execute("SELECT id, payload FROM outbox WHERE media_id=0").fetchall():
             payload = json.loads(payload_s)
@@ -51,8 +51,8 @@ def outbox_defer(show_id, eps, manual):
                 return
         c.execute("INSERT INTO outbox(media_id,payload,account_id,created) VALUES(0,?,?,?)",
                   (json.dumps({"resync": show_id, "eps": sorted(eps), "manual": bool(manual),
-                               "account_id": tok.get("user_id")}),
-                   tok.get("user_id"), util.utc_stamp()))
+                               "account_id": account}),
+                   account, util.utc_stamp()))
 
 
 def outbox_count():
@@ -98,8 +98,9 @@ def outbox_items():
     it changes and why it is still waiting. `state` is "waiting" (not tried
     yet), "retrying" (AniList unreachable or limiting) or "seasons" (marks
     waiting for the folder's season map, TODO 59)."""
+    active = anilist.account_id()
     with database.db() as c:
-        rows = c.execute("SELECT id, media_id, payload, attempts, next_try, created"
+        rows = c.execute("SELECT id, media_id, payload, attempts, next_try, created, account_id"
                          " FROM outbox ORDER BY id").fetchall()
         media = c.execute("SELECT id, data FROM media").fetchall()
         titles = dict(c.execute("SELECT media_id, title FROM stream_links WHERE title IS NOT NULL"))
@@ -114,7 +115,7 @@ def outbox_items():
         if e.get("title"):
             titles[e["id"]] = e["title"]
     out = []
-    for row_id, media_id, payload_s, attempts, next_try, created in rows:
+    for row_id, media_id, payload_s, attempts, next_try, created, account in rows:
         try:
             payload = json.loads(payload_s)
         except ValueError:
@@ -122,6 +123,10 @@ def outbox_items():
         item = {"id": row_id, "media_id": media_id or None, "created": created,
                 "state": "seasons" if "resync" in payload else "retrying" if attempts else "waiting",
                 "retry_in": max(0, int(next_try - time.time())) if attempts else 0}
+        if account is not None and str(account) != str(active):
+            # Decision 75 (additive): queued for the paused account; it
+            # goes out when that one is in use again.
+            item["state"], item["held_for"] = "account", "MyAnimeList" if _is_mal(account) else "AniList"
         if "resync" in payload:
             item["title"] = folders.get(payload["resync"]) or "A show in your library"
             item["eps"] = len(payload.get("eps") or [])
@@ -176,7 +181,7 @@ def _outbox_flush(limit):
                         " WHERE next_try <= ? ORDER BY id LIMIT ?",
                         (time.time(), limit)).fetchall()
     sent = 0
-    tok = anilist.load_token() or {}
+    account = anilist.account_id()
     remote = None  # the live list, fetched once for the pass's verify rows
     for row_id, media_id, payload_s, attempts in due:
         try:
@@ -188,7 +193,7 @@ def _outbox_flush(limit):
         # different account is skipped (held) — auth_finish discards it with
         # a warning at connect time; it is never sent across accounts.
         if payload.get("account_id") is not None and \
-                payload["account_id"] != tok.get("user_id"):
+                payload["account_id"] != account:
             continue
         if "resync" in payload:
             try:
@@ -207,7 +212,7 @@ def _outbox_flush(limit):
                 try:
                     data = anilist.anilist_cache_read() or anilist.anilist_user_data(force=True)
                 except Exception as e:
-                    outbox_fail(row_id, attempts, "AniList list unreachable: %s" % e, transient=True)
+                    outbox_fail(row_id, attempts, "list unreachable: %s" % e, transient=True)
                     break
                 remote = {e["id"]: e for e in data.get("entries", [])}
             payload["patch"] = outbox_verify(payload, remote.get(media_id))
@@ -236,25 +241,30 @@ def _outbox_flush(limit):
     return sent
 
 
+def _is_mal(account_id):
+    return str(account_id).startswith("mal:")
+
+
 def outbox_discard_other_accounts(new_account_id):
     """Decision 24: connecting a DIFFERENT account discards the held queue
     with a count (never send account A's activity to account B). Rows with
     no recorded account (defensive — unreachable via the routes) are kept
-    and flushed under whoever connects."""
+    and flushed under whoever connects. Decision 75: only the same
+    service's rows — a paused AniList (or MAL) login keeps its own."""
     with database.db() as c:
-        n = c.execute("SELECT COUNT(*) FROM outbox WHERE account_id IS NOT NULL"
-                      " AND account_id != ?", (new_account_id,)).fetchone()[0]
-        if n:
-            c.execute("DELETE FROM outbox WHERE account_id IS NOT NULL AND account_id != ?",
-                      (new_account_id,))
-    return n
+        rows = c.execute("SELECT id, account_id FROM outbox WHERE account_id IS NOT NULL").fetchall()
+        drop = [rid for rid, acc in rows
+                if _is_mal(acc) == _is_mal(new_account_id) and str(acc) != str(new_account_id)]
+        for rid in drop:
+            c.execute("DELETE FROM outbox WHERE id=?", (rid,))
+    return len(drop)
 
 
 def outbox_loop():
     """Background flush: shortly after boot, then every minute. Failures are
     invisible here by design — the chip carries the state (Decision 3)."""
     time.sleep(10)
-    seen = anilist.last_ok
+    seen = _last_ok()
     while True:
         try:
             seen = outbox_tick(seen)
@@ -263,17 +273,22 @@ def outbox_loop():
         time.sleep(60)
 
 
+def _last_ok():
+    """When AniList or MyAnimeList last answered (Decision 75)."""
+    return max(anilist.last_ok, anilist.mal.last_ok)
+
+
 def outbox_tick(seen):
     """One loop pass. `seen` is when AniList last answered as of the previous
     pass; returns the new value."""
     if outbox_count():
-        if anilist.last_ok > seen:
+        if _last_ok() > seen:
             # AniList answered something since the last pass (the list
             # refresh probes it every 5 min): back from an outage — push
             # now instead of waiting out the backoff (TODO 14).
             outbox_retry_now()
         outbox_flush()
-    return anilist.last_ok
+    return _last_ok()
 
 
 def anilist_refresh_loop():
@@ -286,7 +301,7 @@ def anilist_refresh_loop():
     time.sleep(30)
     while True:
         try:
-            if anilist.anilist_connected() and anilist.load_anilist_username():
+            if anilist.anilist_connected() and anilist.account_name():
                 anilist.anilist_user_data()
         except Exception as e:
             util.log("anilist refresh loop: %s" % e)
@@ -318,8 +333,8 @@ def reconcile_clear():
 
 
 def _reconcile_pending():
-    tok = anilist.load_token()
-    return bool(tok and tok.get("user_id")) and settings.get_setting(RECONCILE_KEY) == str(tok["user_id"])
+    account = anilist.account_id()
+    return account is not None and settings.get_setting(RECONCILE_KEY) == str(account)
 
 
 def _listed_units(remote):

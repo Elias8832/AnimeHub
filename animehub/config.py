@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,13 +26,18 @@ PLAYER_MOUSE_LUA = MPV / "player-mouse.lua"
 PLAYER_FONTS = MPV / "fonts"
 DEFAULT_PORT = 8787
 
-CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "upscale_banners",
+CONFIG_KEYS = ("library_root", "port", "data_dir", "window", "anilist_client_id", "mal_client_id", "upscale_banners",
                "remote_hosts", "library_extra", "remote_port", "keep_running", "start_at_login")
 
 # AnimeHub's public AniList OAuth client (redirect: http://localhost:8787/
 # auth/callback). Client ids are public by design — no secret involved;
 # users on a non-default port register their own and override via config.
 DEFAULT_ANILIST_CLIENT_ID = 53857
+
+# AnimeHub's public MyAnimeList app (Decision 75; type "other": no secret,
+# and the id rides in every authorize URL anyway). Its one registered
+# redirect is http://localhost:8787/auth/mal/callback.
+DEFAULT_MAL_CLIENT_ID = "e84657a8feb4042cea3acd38968e21bd"
 
 # Chromium-family browser names for app-mode window launch (Decision 26),
 # in preference order.
@@ -82,6 +88,7 @@ def read_config(path=None):
                                      numbers (Decision 42): [{"id": 2, "path": …}]
       port             int         — server port
       anilist_client_id int|None  — OAuth client id (Decision 20 implicit grant)
+      mal_client_id    str|None    — MyAnimeList app id (Decision 75)
       data_dir         Path|None   — where hub.db/cache live (default: XDG)
       window           str         — "app" | "browser" | "none" (Decision 26)
       remote_hosts     list[str]   — extra Host names the hub answers, e.g. a
@@ -99,7 +106,7 @@ def read_config(path=None):
     """
     path = Path(path).expanduser() if path else _default_config_path()
     cfg = {"library_root": None, "port": DEFAULT_PORT,
-           "data_dir": None, "window": "app", "anilist_client_id": None,
+           "data_dir": None, "window": "app", "anilist_client_id": None, "mal_client_id": None,
            "upscale_banners": False, "remote_hosts": [], "library_extra": [],
            "remote_port": None, "keep_running": False, "start_at_login": False}
     warnings = []
@@ -155,6 +162,13 @@ def read_config(path=None):
             cfg["anilist_client_id"] = cid
         else:
             warn("anilist_client_id", "a positive integer (the AniList client id)")
+
+    if raw.get("mal_client_id") not in (None, ""):
+        cid = raw["mal_client_id"]
+        if isinstance(cid, str) and re.fullmatch(r"[0-9A-Za-z]{8,64}", cid.strip()):
+            cfg["mal_client_id"] = cid.strip()
+        else:
+            warn("mal_client_id", "the MyAnimeList app's Client ID (letters and digits)")
 
     for key in ("keep_running", "start_at_login"):
         if key in raw:
@@ -229,6 +243,7 @@ def apply_config(cfg):
     # OAuth token lives with the other per-user state — outside the repo
     # (Decision 20 / READINESS A5); permissions tightened on every write.
     config.ANILIST_TOKEN_FILE = config.DATA / "anilist_token.json"
+    config.MAL_TOKEN_FILE = config.DATA / "mal_token.json"
     # Opt-in banner upscaler (see store_show_meta): default off.
     config.UPSCALE_BANNERS = bool(cfg.get("upscale_banners"))
     config.KEEP_RUNNING = bool(cfg.get("keep_running"))
@@ -239,6 +254,7 @@ def apply_config(cfg):
     # redirect is http://localhost:8787/auth/callback, so a non-default
     # port needs a config override with the user's own client id.
     config.ANILIST_CLIENT_ID = cfg.get("anilist_client_id") or DEFAULT_ANILIST_CLIENT_ID
+    config.MAL_CLIENT_ID = cfg.get("mal_client_id") or DEFAULT_MAL_CLIENT_ID
 
 
 CONFIG_PATH = config_path_from_argv()
