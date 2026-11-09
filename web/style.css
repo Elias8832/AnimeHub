@@ -1218,10 +1218,11 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
 .plform{display:flex;flex-direction:column;gap:16px;margin-top:8px}
 .plf{display:flex;flex-direction:column;gap:7px}.plf>span{font-size:13px;font-weight:600;color:var(--ink-2)}.plf small{font-weight:400;color:var(--mute)}
 .plf input,#plname{width:100%}
-.plicons{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:176px;overflow-y:auto;padding:2px}
-.plicons .pic{height:38px;border-radius:11px;display:grid;place-items:center;color:var(--accent-hi);background:var(--s2);transition:transform .15s,background .15s}
+.plicons{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:264px;overflow-y:auto;padding:2px;scrollbar-width:thin}
+.plicons .pich{grid-column:1/-1;margin:8px 2px 0;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}.plicons .pich:first-child{margin-top:0}
+.plicons .pic{height:38px;border-radius:11px;display:grid;place-items:center;color:var(--plk,var(--ink-2));background:var(--s2);transition:transform .15s,background .15s,color .25s,box-shadow .25s}
 .plicons .pic .ico{width:19px;height:19px;stroke-width:2}
-.plicons .pic:hover{transform:scale(1.08);background:var(--s3)}.plicons .pic.on{background:var(--s3);box-shadow:0 0 0 2px var(--accent)}
+.plicons .pic:hover{transform:scale(1.08);background:var(--s3)}.plicons .pic.on{background:var(--s3);box-shadow:0 0 0 2px var(--plk,var(--ink-2))}
 .plicons .pic.none{color:var(--mute)}.plicons .pic.none .ico{width:15px;height:15px}
 .plcols{display:flex;flex-wrap:wrap;gap:10px}
 .plcols .sw{width:32px;height:32px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15);transition:transform .15s}
