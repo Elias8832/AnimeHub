@@ -1,7 +1,8 @@
 """New versions of AnimeHub (Decision 58). A check asks GitHub's release
 list, on a click or once a day with the switch on, and never unasked
-(Decision 47). An AppImage can replace itself on a click; a zip or a git
-copy only gets told how. Nothing installs without that click.
+(Decision 47). An AppImage replaces itself on a click, a git copy moves
+ahead with git on a click (Decision 78); a zip only gets told how.
+Nothing installs without that click.
 
 Two channels (Decision 76): Stable is every numbered release, Unstable is
 the one rolling "unstable" release CI rebuilds after each green push to
@@ -12,6 +13,8 @@ import json
 import os
 import platform
 import re
+import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -34,8 +37,11 @@ CHANNELS = ("stable", "unstable")
 UNSTABLE = "unstable"
 # The rolling release's notes end with this line, written by CI last.
 MARK = re.compile(r"<!--\s*build (\d+) ([0-9a-f]{7,40}) (\S+)\s*-->")
+# A git copy (Decision 78): this checkout, which follows origin's master.
+REPO = Path(__file__).resolve().parent.parent
+BRANCH = "master"
 
-_job = {"state": "idle", "percent": 0, "error": None}
+_job = {"state": "idle", "percent": 0, "error": None, "note": None}
 
 
 def _build():
@@ -89,7 +95,8 @@ def pick(releases, current, how):
         return None
     n, r, asset = best
     version = r["tag_name"].lstrip("v")
-    found = {"version": version, "label": "v" + version, "channel": "stable", "published": r.get("published_at") or ""}
+    found = {"version": version, "label": "v" + version, "channel": "stable", "published": r.get("published_at") or "",
+             "tag": r["tag_name"]}
     return _offer(found, r, asset, how)
 
 
@@ -102,11 +109,12 @@ def _offer(found, r, asset, how):
     return found
 
 
-def pick_unstable(releases, current, build, how):
+def pick_unstable(releases, current, build, how, has=None):
     """The newest build for the Unstable channel: the rolling release when
     it is newer than this copy, or a numbered release made after it (a
     release can land while master has no new build yet). A build is newer
-    than a build by its number, and than a release by its time."""
+    than a build by its number, and than a release by its time. A git copy
+    passes has(commit), and a build is new when its commit isn't in it."""
     want = asset_name(how)
     own = build["number"] if build else None
     mine = next((r.get("published_at") or "" for r in releases if number(r.get("tag_name")) == number(current)), "")
@@ -119,9 +127,10 @@ def pick_unstable(releases, current, build, how):
         if want and asset is None:
             continue
         n, commit, when = int(m[1]), m[2], m[3]
-        if (n > own) if own is not None else (when > mine):
+        newer = (not has(commit)) if has else (n > own) if own is not None else (when > mine)
+        if newer:
             found = {"version": current, "label": f"Build {n}", "channel": UNSTABLE, "build": n,
-                     "commit": commit[:7], "published": when}
+                     "commit": commit[:7], "sha": commit, "published": when}
             roll = _offer(found, r, asset, how)
     stable = pick(releases, current, how)
     if stable and (not roll or stable["published"] > roll["published"]):
@@ -144,7 +153,13 @@ def stored():
     if not isinstance(found, dict) or found.get("channel", "stable") != channel():
         return None
     if found.get("build") is not None:
-        return found if BUILD is None or found["build"] > BUILD["number"] else None
+        if BUILD is not None:
+            return found if found["build"] > BUILD["number"] else None
+        # A git copy that has the commit is that build, unless it got it by
+        # the click just now: then the row stays to say "open it again".
+        with _lock:
+            just = _job["state"] == "done"
+        return None if found.get("sha") and not just and git_copy() and has_commit(found["sha"]) else found
     n = number(found.get("version"))
     return found if n and n > number(VERSION) else None
 
@@ -166,7 +181,11 @@ def check():
         return {"error": "Could not reach GitHub."}
     if not isinstance(releases, list):
         return {"error": "GitHub sent something unexpected."}
-    found = pick_unstable(releases, VERSION, BUILD, kind()) if channel() == UNSTABLE else pick(releases, VERSION, kind())
+    how = kind()
+    if channel() == UNSTABLE:
+        found = pick_unstable(releases, VERSION, BUILD, how, has_commit if BUILD is None and git_copy() else None)
+    else:
+        found = pick(releases, VERSION, how)
     settings.set_setting("update_checked", str(int(time.time())))
     settings.set_setting("update_found", json.dumps(found))
     return {"ok": True, "found": found}
@@ -197,26 +216,98 @@ def payload():
     how = kind()
     with _lock:
         job = dict(_job)
+    found = stored()
     return {"version": VERSION, "kind": how, "check": settings.automation_enabled("update_check"),
             "channel": channel(), "build": BUILD,
             "vpn_only": settings.automation_enabled("update_vpn_only"),
-            "asked": settings.get_setting("update_asked") == "1", "found": stored(), "job": job}
+            "asked": settings.get_setting("update_asked") == "1", "found": found, "job": job,
+            "installable": installable(found, how)}
+
+
+def _git(*args, timeout=15):
+    """git in this copy: (worked, what it printed)."""
+    exe = shutil.which("git")
+    if not exe:
+        return False, ""
+    try:
+        r = subprocess.run([exe, "-C", str(REPO), *args], capture_output=True, text=True, timeout=timeout,
+                           stdin=subprocess.DEVNULL, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}, **system.quiet())
+    except (OSError, subprocess.SubprocessError):
+        return False, ""
+    return r.returncode == 0, (r.stdout or r.stderr or "").strip()
+
+
+def git_copy():
+    """A copy run from a git checkout with git at hand (Decision 78)."""
+    return kind() == "git" and (REPO / ".git").exists() and shutil.which("git") is not None
+
+
+def has_commit(sha):
+    """This copy has that commit already. A commit it hasn't fetched yet
+    isn't in it, which is the usual case for a new build."""
+    return _git("merge-base", "--is-ancestor", sha, "HEAD")[0]
+
+
+def installable(found, how=None):
+    """One click can install it: an AppImage with a checked download, or a
+    git copy (a build by its commit, a release by its tag)."""
+    how = how or kind()
+    if not found:
+        return False
+    if how == "appimage":
+        return bool(found.get("download"))
+    return how == "git" and git_copy() and (found.get("build") is None or bool(found.get("sha")))
 
 
 def install():
-    """POST /api/update-install: only the AppImage, only on a click."""
+    """POST /api/update-install: an AppImage or a git copy, only on a click."""
     found = stored()
-    target = Path(os.environ.get("APPIMAGE") or "")
-    if kind() != "appimage" or not found or not found.get("download"):
+    how = kind()
+    if not installable(found, how):
         return {"error": "This copy can't update itself."}
     if vpn_missing():
         return {"error": NO_VPN}
     with _lock:
         if _job["state"] == "working":
             return {"ok": True}
-        _job.update(state="working", percent=0, error=None)
-    threading.Thread(target=_replace, args=(found, target), daemon=True).start()
+        _job.update(state="working", percent=0, error=None, note=None)
+    if how == "git":
+        threading.Thread(target=_pull, args=(found,), daemon=True).start()
+    else:
+        threading.Thread(target=_replace, args=(found, Path(os.environ.get("APPIMAGE") or "")), daemon=True).start()
     return {"ok": True}
+
+
+def _pull(found):
+    """A git copy moves ahead (Decision 78): only master, only with no
+    changes of its own, and only forward (--ff-only), so nothing of yours is
+    ever overwritten or merged. Untracked files stay as they are."""
+    error = note = None
+    ok, branch = _git("symbolic-ref", "--quiet", "--short", "HEAD")
+    ok_st, dirty = _git("status", "--porcelain", "--untracked-files=no")
+    if not ok or branch != BRANCH:
+        error = f"This copy isn't on {BRANCH}, so it can't update itself. Switch to {BRANCH} first."
+    elif not ok_st or dirty:
+        error = "This copy has changes of its own (git status shows them). Commit or undo them, then try again."
+    else:
+        old = _git("rev-parse", "HEAD")[1]
+        if found.get("sha"):
+            fetch, target = ["origin", BRANCH], found["sha"]
+        else:
+            tag = found.get("tag") or "v" + found["version"]
+            fetch, target = ["--no-tags", "origin", f"+refs/tags/{tag}:refs/tags/{tag}"], f"refs/tags/{tag}"
+        with _lock:
+            _job["percent"] = 10
+        if not _git("fetch", "--quiet", *fetch, timeout=300)[0]:
+            error = "git couldn't download the new version, so nothing changed. Check your connection and try again."
+        elif not _git("rev-parse", "--verify", "--quiet", target + "^{commit}")[0]:
+            error = "git couldn't find that version on GitHub, so nothing changed."
+        elif not _git("merge", "--ff-only", "--quiet", target + "^{commit}", timeout=120)[0]:
+            error = "This copy has commits of its own, so git can't simply move it ahead. Run git pull yourself."
+        elif not _git("diff", "--quiet", old, "HEAD", "--", "desktop")[0]:
+            note = "The window app changed too: in desktop/, run cargo build --release && ./install.sh."
+    with _lock:
+        _job.update(state="failed" if error else "done", percent=0 if error else 100, error=error, note=note)
 
 
 def _replace(found, target):
