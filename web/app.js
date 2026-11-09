@@ -378,13 +378,19 @@ function findEpContext(id) {
   return null;
 }
 
+/* Taken off Continue watching (Decision 81): only until something of the
+   show plays after that, then it's back. */
+function contHidden(s) {
+  const at = S.data?.continue_hidden?.[s.id];
+  return !!at && !s.seasons.some((sea) => sea.episodes.some((e) => (e.last_played || "") > at));
+}
 /* The hero follows the most recently touched show, period. Continue rows
    (position > 30 s) and history rows overlap — either may hold the true
    newest touch, so merge both and sort by last_played. */
 function nextUpInfo() {
   const d = S.data;
   const newest = [...(d.continue || []), ...(d.history || [])]
-    .filter((ep) => findEpContext(ep.id))
+    .filter((ep) => { const c = findEpContext(ep.id); return c && !contHidden(c.s); })
     .sort((a, b) => (b.last_played || "").localeCompare(a.last_played || ""))[0];
   if (!newest) return null;
   const ctx = findEpContext(newest.id);
@@ -573,7 +579,7 @@ function heroHTML(up) {
   const src = streamEp(ep) ? "online" : "on disk";
   const { seen, tot, html: bar } = seasonBar(s, sea);
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="--art:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
+  return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}">${art ? `<i class="upa" style="--art:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
     <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
     <div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
@@ -591,6 +597,7 @@ function keepWatching(skipId) {
   for (const x of hist) {
     if (seen.has(x.ctx.s.id)) continue;
     seen.add(x.ctx.s.id);
+    if (contHidden(x.ctx.s)) continue;
     const t = pickTarget(x.ctx.s);
     if (t && t.kind !== "rewatch") out.push({ s: x.ctx.s, t });
     if (out.length >= 8) break;
@@ -601,7 +608,7 @@ function contCard({ s, t }, k) {
   const ep = t.ep, p = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
   const art = safeThumb(t.sea, ep) || s.banner || s.poster;
   const meta = [epName(s, t.sea, ep), p > 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
-  return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}" data-a="open" data-v="${esc(s.id)}" tabindex="0">
+  return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0">
     <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:${safeThumb(t.sea, ep) ? "50% 50%" : "50% 30%"}"></span>` : ""}
     <span class="enum">${esc(epCode(t.sea, ep))}</span>${p > 1 && !ep.watched ? `<i class="eprog"><i style="width:${p}%"></i></i>` : ""}
     <span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="${esc(KIND_WORD[t.kind])}">${ico("play")}</span></div>
@@ -1123,6 +1130,24 @@ function plBoxMenu(id, x, y, home) {
   const m = $("#cm");
   m.innerHTML = `<div class="cap plcapm" style="--plc:${esc(plColor(p))}">${plIcon(p)}${esc(p.name)}</div>${cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open")}${cmRow("pledit", p.id, "edit", "Edit")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home")}<div class="sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "", "", 'data-danger="1"')}`;
   cmShow(m, x, y);
+}
+/* Right-click (long-press on touch) a show in Home's Continue watching or its
+   big card: play, open, or take it off until it plays again (Decision 81). */
+function contMenu(id, epId, x, y) {
+  const s = showById(id), ctx = epId && findEpContext(epId);
+  if (!s) return;
+  const ep = ctx?.ep, m = $("#cm");
+  m.innerHTML = `<div class="cap">${esc(s.title)}</div>${ep ? cmRow("play", ep.id, "play", `${resumable(ep) ? "Resume" : "Play"} ${esc(epCode(ctx.sea, ep))}`, "↵") : ""}${cmRow("open", s.id, "arrowr", "Open show", "O")}<div class="sep"></div>${cmRow("cwhide", s.id, "close", "Remove from Home", "R")}`;
+  cmShow(m, x, y);
+}
+async function contHide(id, hide) {
+  const r = await api("/api/continue-hide", { show_id: id, hide }).catch(() => null);
+  if (!r?.ok) { toast("Could not save — is the hub running?"); return false; }
+  const h = { ...(S.data.continue_hidden || {}) };
+  if (hide) h[id] = new Date().toISOString().slice(0, 19).replace("T", " "); else delete h[id]; // the hub's UTC stamp form
+  S.data.continue_hidden = h;
+  if (S.view === "home") render(true);
+  return true;
 }
 const PL_COLORS = [...ACCENTS, "#e5737a", "#7fd1c7"];
 /* New playlist / Edit: name, then the looks Elias picked (icon, description, colour). */
@@ -3589,7 +3614,7 @@ function airRow(e, now = Date.now()) {
 /* A show you're watching as one row: poster, title, what's next, play. */
 function watchRow({ s, t }) {
   const sea = t.sea, seen = sea.episodes.filter((x) => x.watched).length;
-  return `<div class="prow" data-a="open" data-v="${esc(s.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : "next"} · ${seen}/${sea.episodes.length}</small></span>
+  return `<div class="prow" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(t.ep.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : "next"} · ${seen}/${sea.episodes.length}</small></span>
     <button class="btn ic" data-a="play" data-v="${esc(t.ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></div>`;
 }
 /* Home A (TODO 177, Elias picked it): the up-next as an edge-to-edge hero,
@@ -3598,7 +3623,7 @@ function upHero(up) {
   const s = up.s, ep = up.ep, sea = up.sea, art = s.poster || safeThumb(sea, ep) || s.banner; // a tall hero: the poster fits it, a wide banner would show a sliver
   const { seen, tot, html: bar } = seasonBar(s, sea);
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="uph"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
+  return `<div class="uph" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
     <div class="uph-in" data-a="open" data-v="${esc(s.id)}"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
     ${tot > 1 ? `<div class="tbar">${bar}</div>` : ""}
@@ -3607,7 +3632,7 @@ function upHero(up) {
 function contStill({ s, t }) {
   const ep = t.ep, sea = t.sea, art = safeThumb(sea, ep) || s.banner || s.poster;
   const pct = t.kind === "resume" && ep.duration ? Math.min(100, Math.round((ep.position / ep.duration) * 100)) : 0;
-  return `<div class="ccard" data-a="open" data-v="${esc(s.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"><em>${esc(epCode(sea, ep))}</em>${pct ? `<i style="width:${pct}%"></i>` : ""}<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></span>
+  return `<div class="ccard" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"><em>${esc(epCode(sea, ep))}</em>${pct ? `<i style="width:${pct}%"></i>` : ""}<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></span>
     <b>${esc(s.title)}</b><small>${t.kind === "resume" ? esc(fmtLeft(ep.duration, ep.position)) + " left" : esc(epCode(sea, ep)) + " next"}</small></div>`;
 }
 function HomePhone() {
@@ -6378,6 +6403,7 @@ const A = {
     }
   },
   plflip: (v, t) => { const st = t.closest(".plstack"); if (st) plFlip(st, 1); },
+  cwhide: async (v) => { const s = showById(v); if (await contHide(v, true)) toastUndo(`${s?.title || "Show"} removed until you play it again`, () => contHide(v, false)); },
   plpin: async (v) => {
     const p = plById(v) || plCurrent();
     if (p && await plPost({ op: "edit", id: p.id, pinned: !p.pinned })) { render(true); toast(p.pinned ? "Taken off Home" : "Pinned to Home"); }
@@ -6575,6 +6601,9 @@ document.addEventListener("pointerover", (e) => { const r = e.target.closest?.("
 document.addEventListener("contextmenu", (e) => {
   const ep = e.target.closest(".ep[data-a=playep]");
   if (ep) { e.preventDefault(); openCm(ep.dataset.v, e.clientX, e.clientY); return; }
+  /* A show in Home's Continue watching or the big card (Decision 81). */
+  const cw = e.target.closest("[data-cw]");
+  if (cw) { e.preventDefault(); contMenu(cw.dataset.cw, cw.dataset.cwep, e.clientX, e.clientY); return; }
   /* A playlist box (Library or Home): its own menu (Decision 64). */
   const box = e.target.closest(".plbox[data-pl]");
   if (box) { e.preventDefault(); plBoxMenu(box.dataset.pl, e.clientX, e.clientY, box.dataset.a === "plgoto"); return; }
@@ -7056,6 +7085,8 @@ document.addEventListener("touchstart", (e) => {
     lp.fired = true;
     const ep = t.closest?.(".ep[data-a=playep]");
     if (ep && !pull?.side && !pull?.live && $("#cm").style.display !== "block") { buzz(); openCm(ep.dataset.v, x, y); }
+    const cw = !ep && t.closest?.("[data-cw]");
+    if (cw && !pull?.side && !pull?.live && $("#cm").style.display !== "block") { buzz(); contMenu(cw.dataset.cw, cw.dataset.cwep, x, y); }
   }, 480) };
 }, { passive: true, capture: true });
 document.addEventListener("touchmove", (e) => { if (lp && Math.hypot(e.touches[0].clientX - lp.x, e.touches[0].clientY - lp.y) > 10) { clearTimeout(lp.timer); lp = null; } }, { passive: true, capture: true });

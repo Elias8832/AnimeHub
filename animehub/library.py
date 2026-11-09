@@ -38,6 +38,18 @@ scan_state = {"state": "ok", "walk_errors": 0, "root": "ok",
 EXTRA_REL = re.compile(r"^@(\d+)/(.*)$", re.S)
 
 
+def hide_continue(show_id, hide=True):
+    """Take a show off Home's Continue watching until it plays again
+    (Decision 81), or put it back (Undo)."""
+    with database.db() as c:
+        if hide:
+            c.execute("INSERT INTO continue_hidden(show_id, at) VALUES(?,?)"
+                      " ON CONFLICT(show_id) DO UPDATE SET at=excluded.at", (show_id, util.utc_stamp()))
+        else:
+            c.execute("DELETE FROM continue_hidden WHERE show_id=?", (show_id,))
+    return {"ok": True}
+
+
 def roots():
     """(prefix, folder) for every library folder: the main one ("") first,
     then the extra ones ("@2/", …; Decision 42). Empty without a main one."""
@@ -716,6 +728,7 @@ def full_library():
         this_week = c.execute(
             "SELECT COUNT(*) FROM episodes WHERE watched=1 AND last_played >= datetime('now','-7 days')"
         ).fetchone()[0]
+        hidden = dict(c.execute("SELECT show_id, at FROM continue_hidden").fetchall())
     stats = {"episodes_watched": eps_watched, "minutes": minutes, "this_week": this_week}
     with player._active_lock:
         now = None
@@ -724,6 +737,9 @@ def full_library():
             now = {"episode_id": a["ep_id"], "show": a["show_title"], "label": a["label"],
                    "percent": a.get("percent") or 0, "loading": bool(a.get("loading"))}
     return {"shows": scan, "continue": continue_row[:20], "history": history,
+            # Additive (Decision 81): show id -> when it was taken off Continue
+            # watching; the UI hides it until something of it plays after that.
+            "continue_hidden": hidden,
             "hide_spoilers": settings.automation_enabled("hide_spoilers"),  # additive (Decision 57): the first paint needs it
             "vpn": settings.vpn_status(),
             # Legacy fields kept as empty lists since the streaming strip

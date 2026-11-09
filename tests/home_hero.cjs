@@ -82,7 +82,7 @@ test("missing artwork does not exclude the latest show", () => {
     continue: [], history: [recent] });
   const html = app.Home();
   assert.match(html, /<h1>No artwork<\/h1>/);
-  assert.match(html, /<div class="upn" data-a="open" data-v="[^"]*" style="--h:[^"]*"><div class="upc">/); // hue placeholder, no art layer
+  assert.match(html, /<div class="upn" data-a="open" data-v="[^"]*" style="--h:[^"]*"[^>]*><div class="upc">/); // hue placeholder, no art layer
 });
 
 test("empty activity and removed episodes do not crash the hero picker", () => {
@@ -197,4 +197,21 @@ test("selection follows timestamps rather than input order", () => {
   const app = homepage({ shows: [show("Older", [older]), show("Recent", [recent])],
     continue: [older, recent], history: [older, recent] });
   assert.equal(app.nextUpInfo().ep.id, "recent");
+});
+
+test("a show taken off Continue watching stays off until it plays again (Decision 81)", () => {
+  const older = episode("older", earlier);
+  const recent = episode("recent", latest);
+  const third = episode("third", "2026-10-14 15:00:00");
+  const data = { shows: [show("Older", [older]), show("Recent", [recent]), show("Third", [third])],
+    continue: [older, recent, third], history: [recent, older, third], continue_hidden: { Older: "2026-10-14 15:20:00" } };
+  const app = homepage(data);
+  let html = app.Home();
+  assert.doesNotMatch(html, /<h3>Older<\/h3>/); // gone from the row
+  assert.match(html, /<h3>Third<\/h3>/);
+  assert.match(html, /data-cw="Third" data-cwep="third"/); // right-click knows the show and its episode
+  data.continue_hidden = { Recent: "2026-10-14 15:20:00" }; // the newest show: the big card moves on
+  assert.equal(app.nextUpInfo().s.title, "Older");
+  recent.last_played = "2026-10-14 15:30:00"; // played again after it was taken off: back
+  assert.equal(app.nextUpInfo().s.title, "Recent");
 });

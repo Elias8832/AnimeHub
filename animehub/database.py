@@ -329,11 +329,17 @@ def migration_26(c):
     c.execute("CREATE TABLE IF NOT EXISTS art_sources(file TEXT PRIMARY KEY, url TEXT NOT NULL)")
 
 
+def migration_27(c):
+    """Shows taken off Home's Continue watching (TODO 198, Decision 81):
+    when. Playing the show again after that brings it back."""
+    c.execute("CREATE TABLE IF NOT EXISTS continue_hidden(show_id TEXT PRIMARY KEY, at TEXT NOT NULL)")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
               migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
-              migration_26]
+              migration_26, migration_27]
 
 
 def snapshot_before(target_version):
