@@ -203,6 +203,44 @@ class Asking(unittest.TestCase):
         self.assertIn("/api/update-install", remote.BLOCKED)
 
 
+class Restarting(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(update._job.update, dict(update._job))
+        self.addCleanup(update._restart.update, wanted=False)
+
+    def test_only_after_an_install_and_not_while_busy(self):
+        update._job.update(state="idle")
+        self.assertEqual(update.restart(), {"error": "Install the new version first."})
+        update._job.update(state="done")
+        self.assertEqual(update.restart("Something is playing."), {"error": "Something is playing."})
+        self.assertFalse(update.restart_wanted())
+        self.assertEqual(update.restart(), {"ok": True})
+        self.assertTrue(update.restart_wanted())
+
+    def test_what_starts_again(self):
+        argv = ["/old/hub.py", "--config", "/c.json"]
+        with mock.patch.dict(os.environ, {"APPIMAGE": "/apps/AnimeHub.AppImage"}):
+            self.assertEqual(update.restart_command(argv, "appimage"),
+                             ["/apps/AnimeHub.AppImage", "--hub", "--config", "/c.json", "--no-browser"])
+        for how in ("git", "windows"):
+            self.assertEqual(update.restart_command(argv + ["--no-browser"], how),
+                             [__import__("sys").executable, str(update.REPO / "hub.py"), "--config", "/c.json", "--no-browser"])
+
+    def test_the_page_can_tell_a_new_start(self):
+        self.assertEqual(update.payload()["started"], update.STARTED)
+
+    def test_busy_says_why(self):
+        from animehub import downloader, player, server
+        self.assertIsNone(server.restart_busy())
+        with mock.patch.dict(player._active, {"x": object()}):
+            self.assertIn("playing", server.restart_busy())
+        with mock.patch.object(downloader, "_downloads", [{"status": "running"}]):
+            self.assertIn("download", server.restart_busy())
+
+    def test_phones_cant_restart(self):
+        self.assertIn("/api/update-restart", remote.BLOCKED)
+
+
 class Replacing(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -308,6 +346,46 @@ class GitCopy(unittest.TestCase):
         self.assertIsNotNone(update.stored())  # still says "open it again"
         update._job.update(state="idle")
         self.assertIsNone(update.stored())  # after the restart, it is that build
+
+    def test_the_version_row_names_the_build_only_while_it_is_that_commit(self):
+        self.addCleanup(settings.set_setting, "update_git_build", "")
+        settings.set_setting("update_git_build", "")
+        self.assertIsNone(update.payload()["git_build"])  # never told: the commit alone
+        settings.set_setting("update_found", json.dumps(self.build(self.new)))
+        update._pull(update.stored())
+        self.assertEqual(update.payload()["git_build"], 12)  # installed that build
+        self.commit(self.copy, "hub.py", "mine")
+        self.assertIsNone(update.payload()["git_build"])  # moved off it by hand
+        git(self.copy, "reset", "-q", "--hard", self.new)
+        settings.set_setting("update_git_build", "")
+        body = json.dumps([rolling(12, "2026-11-09T10:00:00Z", commit=self.new)]).encode()
+        with mock.patch.object(update, "urlopen", return_value=Reply(body)):
+            update.check()
+        self.assertEqual(update.payload()["git_build"], 12)  # a check saw it is on the newest build
+
+    def test_a_check_asks_github_for_an_older_commits_build(self):
+        self.addCleanup(settings.set_setting, "update_git_build", "")
+        settings.set_setting("update_git_build", "")
+        head = git(self.copy, "rev-parse", "HEAD")
+        asked = []
+
+        def answer(req, timeout=None):
+            asked.append(req.full_url)
+            if req.full_url.startswith(update.RUNS):
+                return Reply(json.dumps({"workflow_runs": [{"run_number": 205, "head_sha": head}]}).encode())
+            return Reply(json.dumps([rolling(210, "2026-11-09T10:00:00Z", commit=self.new)]).encode())
+
+        with mock.patch.object(update, "urlopen", side_effect=answer):
+            update.check()
+            self.assertEqual(update.payload()["git_build"], 205)
+            update.check()  # known now: GitHub isn't asked again
+        self.assertEqual(sum(u.startswith(update.RUNS) for u in asked), 1)
+        self.assertTrue(asked[1].endswith(head))
+        settings.set_setting("update_git_build", "")
+        with mock.patch.object(update, "urlopen", side_effect=lambda req, timeout=None: Reply(
+                b'{"workflow_runs": []}' if req.full_url.startswith(update.RUNS) else b"[]")):
+            update.check()
+        self.assertIsNone(update.payload()["git_build"])  # no run for it: the commit alone
 
     def test_a_build_found_before_shas_were_kept_whole_still_works(self):
         old = {k: v for k, v in self.build(self.new).items() if k != "sha"}

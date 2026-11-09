@@ -153,7 +153,7 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 #nr .vpn.ok{color:var(--ink-2)} /* the status line's warnings speak in the show's colour (Elias); a VPN that's up is just a fact */
 #nr .ib .ico,#nr .st .ico{width:14px;height:14px}
 #nr .sync .ico{animation:spin 2.4s linear infinite}
-#nr .rgt{margin-left:auto}
+#nr .rgt{margin-left:auto}#nr .up{margin-left:auto}#nr .up+.rgt{margin-left:0}
 #nr .pop{top:auto;bottom:40px;transform-origin:bottom left}
 #nr .pop.dl{left:0;right:auto}
 #nr .rgt .pop{left:auto;right:0;transform-origin:bottom right}
@@ -391,7 +391,7 @@ aside .panel{padding:18px 20px}.note{margin-bottom:10px;color:var(--mute);font-s
 .legend{display:grid;gap:4px;font-size:14px;color:var(--mute)}.legend span{padding:3px 8px;margin:0 -8px;border-radius:8px;transition:background .2s,color .2s;cursor:default}.legend span:hover{background:var(--s2);color:var(--ink)}.legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:9px}
 .settings{max-width:860px;margin:0 auto}.group{margin-top:40px}.group h3{font-size:18px;font-weight:650;margin-bottom:4px;display:flex;align-items:center;gap:10px}.group h3:before{content:"";width:4px;height:16px;border-radius:2px;background:linear-gradient(var(--accent),var(--accent-hi))}
 .srow{display:flex;justify-content:space-between;align-items:center;gap:30px;padding:16px 12px;margin:0 -12px;border-bottom:1px solid var(--line);transition:background .2s}
-.srow:hover{background:rgba(255,255,255,.02)}.srow p{margin-top:2px;color:var(--mute);font-size:14px;max-width:480px}
+.srow:hover{background:rgba(255,255,255,.02)}.srow b .swarn{margin-left:8px;color:var(--warn);font-weight:500}.srow p{margin-top:2px;color:var(--mute);font-size:14px;max-width:480px}
 .path{display:flex;gap:8px}.path input{flex:1;min-width:220px}
 .srow:has(+ .dirpick){border-bottom-color:transparent}
 .dirpick{padding:0 0 18px;margin-top:-6px;border-bottom:1px solid var(--line)}.dialog .dirpick{margin-top:12px;padding:0;border:0}

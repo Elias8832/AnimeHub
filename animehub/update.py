@@ -16,6 +16,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -29,6 +30,8 @@ from . import VERSION, settings, system, util
 
 RELEASES = "https://api.github.com/repos/Elias8832/AnimeHub/releases?per_page=100"
 DOWNLOADS = "https://github.com/Elias8832/AnimeHub/releases/download/"
+# A commit's build number is its Tests run's number (CI's build.json stamp).
+RUNS = "https://api.github.com/repos/Elias8832/AnimeHub/actions/workflows/tests.yml/runs?event=push&branch=master&head_sha="
 EVERY = 24 * 3600
 MAX_LIST = 2_000_000
 MAX_APP = 200_000_000
@@ -49,6 +52,8 @@ TOP = "AnimeHub/"
 LEFT = ".update-"  # what an install leaves beside the app; gone at the next start
 
 _job = {"state": "idle", "percent": 0, "error": None, "note": None}
+STARTED = time.time()  # this run's start: the page knows a restart by it
+_restart = {"wanted": False}
 
 
 def _build():
@@ -195,6 +200,8 @@ def check():
     if not isinstance(releases, list):
         return {"error": "GitHub sent something unexpected."}
     how = kind()
+    if BUILD is None and git_copy():
+        _learn_build(releases)
     if channel() == UNSTABLE:
         found = pick_unstable(releases, VERSION, BUILD, how, has_commit if BUILD is None and git_copy() else None)
     else:
@@ -234,7 +241,9 @@ def payload():
             "channel": channel(), "build": BUILD,
             "vpn_only": settings.automation_enabled("update_vpn_only"),
             "asked": settings.get_setting("update_asked") == "1", "found": found, "job": job,
-            "installable": installable(found, how), "head": head() if BUILD is None else None}
+            "installable": installable(found, how), "head": head() if BUILD is None else None,
+            "git_build": git_build() if BUILD is None else None,
+            "started": STARTED}
 
 
 def _git(*args, timeout=15):
@@ -261,6 +270,47 @@ def head():
         return None
     ok, out = _git("rev-parse", "--short=7", "HEAD")
     return out if ok and out else None
+
+
+def _remember_build(n, sha):
+    settings.set_setting("update_git_build", json.dumps({"number": n, "sha": sha}))
+
+
+def _learn_build(releases):
+    """A git copy has no build stamp. Its commit's build is the newest one,
+    or else the number of the Tests run GitHub made for that commit on
+    master. Asked during a check only (same consent and VPN rule); a commit
+    with no run (a docs-only push, own commits) keeps showing its commit."""
+    ok, sha = _git("rev-parse", "HEAD")
+    if not ok or not re.fullmatch(r"[0-9a-f]{40}", sha) or git_build() is not None:
+        return
+    m = next((MARK.search(r.get("body") or "") for r in releases if r.get("tag_name") == UNSTABLE), None)
+    if m and sha == m[2]:
+        _remember_build(int(m[1]), sha)
+        return
+    try:
+        with urlopen(Request(RUNS + sha, headers={**UA, "Accept": "application/vnd.github+json"}), timeout=15) as r:
+            runs = json.loads(r.read(MAX_LIST + 1)).get("workflow_runs") or []
+    except (OSError, HTTPException, ValueError, AttributeError):
+        return
+    nums = [x["run_number"] for x in runs if isinstance(x, dict) and x.get("head_sha") == sha
+            and isinstance(x.get("run_number"), int)]
+    if nums:
+        _remember_build(min(nums), sha)
+
+
+def git_build():
+    """A git copy's build number, only while it is on the commit that build
+    was made from (an install of a build, or a check that saw it): a pull
+    by hand moves it off, and then only its commit is known."""
+    try:
+        b = json.loads(settings.get_setting("update_git_build") or "null")
+    except ValueError:
+        return None
+    if not isinstance(b, dict) or not git_copy():
+        return None
+    ok, sha = _git("rev-parse", "HEAD")
+    return b.get("number") if ok and sha and sha == b.get("sha") else None
 
 
 def has_commit(sha):
@@ -303,6 +353,35 @@ def install():
     return {"ok": True}
 
 
+def restart(busy=None):
+    """POST /api/update-restart: start the version just installed. Only
+    after an install, and not while something plays or downloads (busy says
+    what). The server stops serving, then hands over (hand_over)."""
+    with _lock:
+        if _job["state"] != "done":
+            return {"error": "Install the new version first."}
+    if busy:
+        return {"error": busy}
+    _restart["wanted"] = True
+    return {"ok": True}
+
+
+def restart_wanted():
+    return _restart["wanted"]
+
+
+def restart_command(argv, how=None):
+    """What starts this copy again, with no window of its own (the open page
+    reloads itself). An AppImage starts its new self: the hub inside the old
+    one is still the old code. The others run the hub.py that now holds the
+    new code."""
+    how = how or kind()
+    args = [a for a in argv[1:] if a != "--no-browser"] + ["--no-browser"]
+    if how == "appimage":
+        return [os.environ["APPIMAGE"], "--hub", *args]
+    return [sys.executable, str(REPO / "hub.py"), *args]
+
+
 def _pull(found):
     """A git copy moves ahead (Decision 78): only master, only with no
     changes of its own, and only forward (--ff-only), so nothing of yours is
@@ -329,8 +408,11 @@ def _pull(found):
             error = "git couldn't find that version on GitHub, so nothing changed."
         elif not _git("merge", "--ff-only", "--quiet", target + "^{commit}", timeout=120)[0]:
             error = "This copy has commits of its own, so git can't simply move it ahead. Run git pull yourself."
-        elif not _git("diff", "--quiet", old, "HEAD", "--", "desktop")[0]:
-            note = "The window app changed too: in desktop/, run cargo build --release && ./install.sh."
+        else:
+            if found.get("build") is not None:
+                _remember_build(found["build"], _git("rev-parse", "HEAD")[1])
+            if not _git("diff", "--quiet", old, "HEAD", "--", "desktop")[0]:
+                note = "The window app changed too: in desktop/, run cargo build --release && ./install.sh."
     with _lock:
         _job.update(state="failed" if error else "done", percent=0 if error else 100, error=error, note=note)
 
