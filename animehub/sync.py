@@ -123,9 +123,10 @@ def outbox_items():
         item = {"id": row_id, "media_id": media_id or None, "created": created,
                 "state": "seasons" if "resync" in payload else "retrying" if attempts else "waiting",
                 "retry_in": max(0, int(next_try - time.time())) if attempts else 0}
-        if account is not None and str(account) != str(active):
+        if account is not None and str(account) != str(active) and not _paused_for(payload):
             # Decision 75 (additive): queued for the paused account; it
-            # goes out when that one is in use again.
+            # goes out when that one is in use again. Plain edits go out
+            # to it now (Decision 83).
             item["state"], item["held_for"] = "account", "MyAnimeList" if _is_mal(account) else "AniList"
         if "resync" in payload:
             item["title"] = folders.get(payload["resync"]) or "A show in your library"
@@ -194,6 +195,9 @@ def _outbox_flush(limit):
         # a warning at connect time; it is never sent across accounts.
         if payload.get("account_id") is not None and \
                 payload["account_id"] != account:
+            other = _paused_for(payload)
+            if other:
+                sent += _flush_paused(row_id, media_id, payload, attempts, other)
             continue
         if "resync" in payload:
             try:
@@ -243,6 +247,40 @@ def _outbox_flush(limit):
 
 def _is_mal(account_id):
     return str(account_id).startswith("mal:")
+
+
+def _paused_for(payload):
+    """The paused service a row can still go to (Decision 83): a plain
+    edit (the entry editor's own pick, or one queued before a switch) for
+    that service's current login. Watch tracking that still needs the
+    lists — folder marks, unverified guesses — waits until it's in use."""
+    acc = payload.get("account_id")
+    which = "mal" if _is_mal(acc) else "anilist"
+    if "resync" in payload or payload.get("verify") or which == anilist.service():
+        return None
+    return which if str(anilist.account_id(which)) == str(acc) else None
+
+
+def _flush_paused(row_id, media_id, payload, attempts, which):
+    """Send one row to the paused service. Its trouble is its own: a
+    failure backs this row off without stopping the in-use service's rows."""
+    try:
+        with anilist.using(which):
+            if payload.get("patch"):
+                anilist.anilist_entry_save(media_id, payload["patch"])
+            if "favourite" in payload:
+                anilist.anilist_favourite_set(media_id, payload["favourite"])
+    except anilist.AniListTransientError as e:
+        outbox_fail(row_id, attempts, e, transient=True)
+        return 0
+    except anilist.AniListAuthError:
+        return 0  # dormant until that login works again (Decision 24)
+    except ValueError as e:
+        outbox_fail(row_id, attempts, e)
+        return 0
+    with database.db() as c:
+        c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
+    return 1
 
 
 def outbox_discard_other_accounts(new_account_id):
@@ -444,9 +482,12 @@ def _user_score(e, fmt):
 
 
 def outbox_pending_for(media_id):
+    """Queued rows for this entry on the account being read (the one in
+    use, or the editor's pick — Decision 83)."""
+    account = anilist.account_id()
     with database.db() as c:
-        return c.execute("SELECT COUNT(*) FROM outbox WHERE media_id=?",
-                         (media_id,)).fetchone()[0]
+        rows = c.execute("SELECT account_id FROM outbox WHERE media_id=?", (media_id,)).fetchall()
+    return sum(1 for (acc,) in rows if acc is None or str(acc) == str(account))
 
 
 def outbox_raise_progress(media_id, progress):
@@ -454,9 +495,11 @@ def outbox_raise_progress(media_id, progress):
     progress-only intent (the auto-track/bulk shape) below `progress`.
     Rows carrying anything else are the user's own edits — left alone.
     Returns True when a row was raised."""
+    account = anilist.account_id()
     with database.db() as c:
-        row = c.execute("SELECT id, payload FROM outbox WHERE media_id=?"
-                        " ORDER BY id DESC LIMIT 1", (media_id,)).fetchone()
+        row = next((r for r in c.execute("SELECT id, payload, account_id FROM outbox WHERE media_id=?"
+                                         " ORDER BY id DESC", (media_id,)).fetchall()
+                    if r[2] is None or str(r[2]) == str(account)), None)
         if not row:
             return False
         try:

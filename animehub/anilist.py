@@ -140,8 +140,20 @@ def _cache_del(key):
     database.cache_del(key)
 
 
+def _state_key(media_id):
+    """The stored panel read of the service in use (or picked, `using`):
+    each service keeps its own (Decision 83)."""
+    return ("entry-state:v1:mal:%d" if service() == "mal" else "entry-state:v1:%d") % media_id
+
+
+def _state_fits(state):
+    """A stored read belongs to the service asked for (reads stored before
+    Decision 83 shared one key; a MAL read says so)."""
+    return (isinstance(state, dict) and state.get("service") == "mal") == (service() == "mal")
+
+
 def forget_entry_state(media_id):
-    database.cache_del("entry-state:v1:%d" % media_id)
+    database.cache_del(_state_key(media_id))
 
 
 def forget_entry_states():
@@ -161,8 +173,9 @@ def anilist_entry_state_quick(media_id):
     or — first open — the entry as the cached lists have it, is served with
     "stale": True while a live read runs in the background (the page asks
     again). Nothing known (not on the cached lists) is the live read."""
-    key = "entry-state:v1:%d" % media_id
-    row = database.cache_get_ts(key)
+    row = database.cache_get_ts(_state_key(media_id))
+    if row and not _state_fits(row[0]):
+        row = None
     if row and time.time() - row[1] < ENTRY_STATE_FRESH:
         return row[0]
     known = row[0] if row else entry_state_from_lists(media_id)
@@ -173,18 +186,20 @@ def anilist_entry_state_quick(media_id):
 
 
 def entry_state_refresh_async(media_id):
-    if media_id in _entry_refreshing:
+    which = service()
+    if (which, media_id) in _entry_refreshing:
         return
-    _entry_refreshing.add(media_id)
+    _entry_refreshing.add((which, media_id))
 
     def run():
         try:
-            database.cache_del("entry-state:v1:%d" % media_id)
-            anilist_entry_state(media_id)
+            with using(which):  # the editor's pick follows into the thread
+                database.cache_del(_state_key(media_id))
+                anilist_entry_state(media_id)
         except Exception as e:
             util.log("entry %s not refreshed: %s" % (media_id, e))
         finally:
-            _entry_refreshing.discard(media_id)
+            _entry_refreshing.discard((which, media_id))
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -235,7 +250,8 @@ def list_cache_apply(media_id, state):
             return
         row = next((x for x in cached.get("entries") or [] if x.get("id") == media_id), None)
         if row is None:
-            threading.Thread(target=_list_refetch, daemon=True).start()
+            if not picked():  # a paused service's lists are read when it's in use again
+                threading.Thread(target=_list_refetch, daemon=True).start()
             return
         row["status"] = ent["status"]
         for k in ("progress", "repeat", "started_at", "completed_at"):
@@ -267,9 +283,9 @@ def anilist_entry_state(media_id):
     the read-only info Decision 10 wants (popularity, studios, airing
     countdown). Authenticated — mediaListEntry/isFavourite need the Viewer.
     Cached ~30 s so panel re-renders don't hammer the API."""
-    key = "entry-state:v1:%d" % media_id
+    key = _state_key(media_id)
     cached = database.cache_get(key, ttl=ENTRY_STATE_FRESH)
-    if cached:
+    if cached and _state_fits(cached):
         return cached
     if service() == "mal":
         # MyAnimeList is the account (Decision 75).
@@ -461,7 +477,7 @@ def anilist_entry_save(media_id, patch):
     # the flush delete rejected rows as if sent (found live 2026-10-16).
     if anilist_mutation(q, {"id": media_id}) is None:
         return {"error": "AniList rejected the update"}
-    _cache_del("entry-state:v1:%d" % media_id)
+    forget_entry_state(media_id)
     try:
         fresh = anilist_entry_state(media_id)
     except AniListAuthError as e:
@@ -480,7 +496,7 @@ def anilist_favourite_set(media_id, want):
         # MAL's API has no favourites (Decision 75): the app doesn't offer
         # the heart; a held outbox row with one is answered, not retried.
         return {"error": "MyAnimeList can't change favourites from other apps."}
-    _cache_del("entry-state:v1:%d" % media_id)  # never decide on a 30 s old flag
+    forget_entry_state(media_id)  # never decide on a 30 s old flag
     try:
         state = anilist_entry_state(media_id)
     except AniListAuthError as e:
@@ -501,14 +517,14 @@ def anilist_favourite_set(media_id, want):
         ids, more = _fav_page(toggled["anime"])
         if media_id in ids or not more:
             now = media_id in ids
-    _cache_del("entry-state:v1:%d" % media_id)
+    forget_entry_state(media_id)
     try:
         fresh = anilist_entry_state(media_id)
     except AniListAuthError as e:
         return {"error": e.reason}
     if fresh and now is not None and fresh["is_favourite"] != now:
         fresh = {**fresh, "is_favourite": now}
-        database.cache_put("entry-state:v1:%d" % media_id, fresh)
+        database.cache_put(_state_key(media_id), fresh)
     if fresh and fresh["is_favourite"] != bool(want):
         return {"error": "AniList did not confirm the change"}
     list_cache_apply(media_id, fresh)
@@ -664,9 +680,42 @@ ACCOUNT_KEY = "account_service"
 SERVICES = ("anilist", "mal")
 
 
+_use = threading.local()
+
+
+class using:
+    """`with anilist.using("mal"):` — the account functions in this thread
+    (entry read and save, favourite, the outbox's account key, the list
+    cache a save folds into) talk to `which` instead of the service in use:
+    the entry editor's own pick (Decision 83). A service without a login,
+    or None, leaves the one in use."""
+    def __init__(self, which):
+        self.which = which
+
+    def __enter__(self):
+        self.prev = getattr(_use, "which", None)
+        logged = self.which == "mal" and mal.load_token() or self.which == "anilist" and load_token()
+        _use.which = self.which if logged else None
+        return self
+
+    def __exit__(self, *exc):
+        _use.which = self.prev
+
+
+def picked():
+    """Inside `using`, a service other than the one in use (paused)."""
+    which = getattr(_use, "which", None)
+    return bool(which) and which != _in_use()
+
+
 def service():
-    """"anilist", "mal" or None: the service in use. With both logged in,
-    the pick in Settings → Account (default AniList); with one, that one."""
+    """"anilist", "mal" or None: the service in use — or, inside `using`,
+    the one picked. With both logged in, the pick in Settings → Account
+    (default AniList); with one, that one."""
+    return getattr(_use, "which", None) or _in_use()
+
+
+def _in_use():
     al, m = bool(load_token()), bool(mal.load_token())
     if al and m:
         from . import settings  # settings imports modules that import this one

@@ -2113,6 +2113,16 @@ function entryFields(res) {
            score_format: st.score_format, score_max: st.score_max, media: st };
 }
 const entryHost = () => $("#entrybox") || $("#entrystats");
+/* The editor's own pick (Decision 83): with both accounts logged in, Edit
+   reads and saves on AniList or MyAnimeList — the last one picked, kept in
+   this browser — while the library stays on "Lists from". null = the one in
+   use; the page's own line always shows that one. */
+const SVC_NAME = { anilist: "AniList", mal: "MyAnimeList" };
+const bothAccts = () => !!(S.ani?.accounts?.anilist?.user && S.ani?.accounts?.mal?.user);
+const svcPick = () => { const v = lsGet("entrySvc", null); return bothAccts() && SVC_NAME[v] ? v : S.ani?.service; };
+const entrySvc = () => { const v = S.modal?.t === "entry" ? svcPick() : null; return v && v !== S.ani?.service ? v : null; };
+const entryAcct = () => SVC_NAME[S.entry?.svc] || acct();
+const entryLoadedFor = () => (S.entry?.svc || null) === entrySvc();
 /* The editor (Edit entry, E): status pills, score 1–10 pills with ♥ beside
    (other AniList score formats keep a number field), progress + rewatches,
    started + finished. Every change saves as you go. */
@@ -2122,11 +2132,11 @@ function entryHTML(f, pending) {
   const stp = (k, v, lab, cap) => `<span class="stepper"><button aria-label="Decrease ${lab}" data-a="ebump" data-k="${k}" data-d="-1">${ico("minus")}</button><b data-k="${k}">${v}${cap ? `<small> / ${cap}</small>` : ""}</b><button aria-label="Increase ${lab}" data-a="ebump" data-k="${k}" data-d="1">${ico("plus")}</button></span>`;
   const pills = `<div class="pills" role="radiogroup" aria-label="Status">${LISTS.map(([v, l]) => `<button class="${f.status === v ? "on" : ""}" role="radio" aria-checked="${f.status === v}" data-a="eset" data-k="status" data-v="${v}">${l}</button>`).join("")}</div>`;
   /* MyAnimeList has no favourites API (Decision 75): no heart then. */
-  const heart = media.service === "mal" ? "" : `<button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
+  const heart = media.service === "mal" ? "" : `<i class="vs"></i><button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
   const cur = f.score ? Math.round(f.score) : 0;
   const score = max === 10 && (!dec || !f.score || f.score === Math.round(f.score)) // 1–10 pills (decimal 10-point too, unless a .5 is set)
-    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div><i class="vs"></i>${heart}</div>`
-    : `<div class="scrow"><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:96px"><span class="dim">/ ${max}</span><i class="vs"></i>${heart}</div>`;
+    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${heart}</div>`
+    : `<div class="scrow"><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:96px"><span class="dim">/ ${max}</span>${heart}</div>`;
   /* Discovery (Decision 9): a show off the lists says so and offers the one-click add. */
   const off = !f.status && !pending ? `<p class="note offlist">Not on your list yet. <button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></p>` : "";
   const prog = f.local ? `<b class="flat">${fe ? fe.slots.filter((x) => x.watched).length + " / " + (fe.episodes || fe.slots.length) : show ? epWatched(show) + " / " + epTotal(show) : "—"}</b>` : stp("progress", f.progress ?? 0, "progress", media.episodes || "");
@@ -2170,9 +2180,9 @@ function aheadLine(f, pending, fe) {
 }
 /* Paint the editor and/or the row from fields; steppers that changed get their bump. */
 function entryPaint(f, pending, prev) {
-  const st = $("#entrystats");
+  const page = !S.entry?.svc, st = page && $("#entrystats");
   if (st) { st.innerHTML = entryStats(f, pending); st._own = true; }
-  const acts = $("#entryacts");
+  const acts = page && $("#entryacts");
   if (acts) { acts.innerHTML = entryActs(f, pending); acts._own = true; }
   const box = $("#entrybox");
   if (!box) return;
@@ -2202,11 +2212,14 @@ function EntryDlg() {
   const fe = S.view === "fr" ? frEntry() : null, s = S.view === "show" ? showById(S.showId) : null;
   const title = fe?.title || S.fr?.page?.title || s?.title || "", art = fe?.banner || S.fr?.page?.banner || s?.banner, pst = fe?.poster || s?.poster;
   const facts = fe ? [fe.format_label, fe.year, fe.episodes ? fe.episodes + " episodes" : ""].filter(Boolean).join(" · ") : "";
-  return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
+  const on = svcPick(), sw = bothAccts() ? `<div class="seg edsvc" role="radiogroup" aria-label="Edit your entry on">${Object.entries(SVC_NAME).map(([v, l]) =>
+    `<button role="radio" class="${v === on ? "on" : ""}" aria-checked="${v === on}" data-a="esvc" data-v="${v}">${l}</button>`).join("")}</div>` : "";
+  return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${sw}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
     <div class="edt"><span class="cap">your entry</span><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
   <div class="edb"><div id="entrybox"><p class="note">Loading…</p></div></div>
-  <div class="actions"><span class="mono note2">saves as you go · if ${acct()} is offline, it waits and retries</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
+  <div class="actions"><span class="mono note2" id="edfoot">${edFoot(on)}</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
 }
+const edFoot = (v) => `saves as you go · if ${SVC_NAME[v] || acct()} is offline, it waits and retries`;
 /* The panel never sits on "Loading…" for a page it has shown before
    (TODO 61): the last answer per entry draws at once, the fresh one
    replaces it when it differs. A "stale" answer (the hub's stored read
@@ -2214,18 +2227,20 @@ function EntryDlg() {
 let entryTok = 0;
 const entryMemo = {};
 function loadEntry(mid, tries = 0) {
-  const tok = ++entryTok, box = entryHost();
-  if (S.entry?.mid !== mid || !S.entry.f) {
-    const err = S.entry?.mid === mid ? S.entry.err : null; // a fresh page keeps the countdown it had
-    S.entry = { mid, f: null, res: null, err };
-    if (entryMemo[mid]) entryDraw(entryMemo[mid]);
+  const tok = ++entryTok, box = entryHost(), svc = entrySvc(), key = svc ? mid + ":" + svc : mid;
+  if (S.entry?.mid !== mid || (S.entry.svc || null) !== svc || !S.entry.f) {
+    const same = S.entry?.mid === mid && (S.entry.svc || null) === svc;
+    const err = same ? S.entry.err : null; // a fresh page keeps the countdown it had
+    S.entry = { mid, svc, f: null, res: null, err };
+    if (entryMemo[key]) entryDraw(entryMemo[key]);
     else if (err) { err.checking = true; entryErrPaint(); }
+    else if (!same && $("#entrybox")) $("#entrybox").innerHTML = '<p class="note">Loading…</p>'; // the other service's entry
   } else if (box && !box._own && S.entry.res) entryDraw(S.entry.res); // a fresh page: same entry, new box
-  api("/api/entry?id=" + mid).then((res) => {
+  api("/api/entry?id=" + mid + (svc ? "&service=" + svc : "")).then((res) => {
     if (tok !== entryTok || !entryHost()) return;
     if (res && res.error) return entryFail(mid, res);
-    entryMemo[mid] = res;
-    if (res.stale && tries < 4) setTimeout(() => { if (tok === entryTok && S.entry?.mid === mid) loadEntry(mid, tries + 1); }, 900);
+    entryMemo[key] = res;
+    if (res.stale && tries < 4) setTimeout(() => { if (tok === entryTok && S.entry?.mid === mid && entryLoadedFor()) loadEntry(mid, tries + 1); }, 900);
     if (entryPend || entryFlight) return; // the user's edits are on screen and on their way
     if (document.activeElement?.matches?.("#entrybox input")) return; // typing: don't redraw under the cursor
     if (S.entry?.f && JSON.stringify(res) === JSON.stringify(S.entry.res)) return;
@@ -2246,7 +2261,7 @@ function entryFail(mid, res) {
   const prev = S.entry.err, tries = (prev?.tries || 0) + 1;
   const why = res.auth ? "auth" : ERR_LABEL[res.why] ? res.why : "error";
   const wait = res.retry_in || (why === "hub" ? [5, 10, 20, 30][Math.min(tries, 4) - 1] : 0);
-  S.entry.err = { why, svc: res.service || acct(), msg: res.error, tries, due: why === "auth" || !wait ? 0 : Date.now() + wait * 1000 };
+  S.entry.err = { why, svc: res.service || entryAcct(), msg: res.error, tries, due: why === "auth" || !wait ? 0 : Date.now() + wait * 1000 };
   entryErrPaint();
   clearInterval(entryErrTimer);
   if (S.entry.err.due) entryErrTimer = setInterval(entryErrTick, 1000);
@@ -2267,9 +2282,9 @@ function entryErrPaint() {
   const e = S.entry?.err;
   if (!e) return;
   const auth = e.why === "auth", when = entryErrWhen(e);
-  const conn = isMal() ? "mal" : "ani";
+  const conn = (S.entry.svc || S.ani?.service) === "mal" ? "mal" : "ani";
   const act = auth ? `<button class="lnk" data-a="${conn}">connect${ico("chevr")}</button>` : e.checking ? "" : `<button class="lnk" data-a="eretry">${ico("refresh")}try now</button>`;
-  const st = $("#entrystats");
+  const st = !S.entry.svc && $("#entrystats");
   if (st) {
     const show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
     const total = fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
@@ -2286,8 +2301,8 @@ function entryErrPaint() {
 }
 /* One write path for every edit. Favourite travels beside the patch — never
    instead of it — so a combined save (the completion popup) keeps both. */
-function entrySave(mid, patch, fav) {
-  const body = { media_id: mid };
+function entrySave(mid, patch, fav, svc) {
+  const body = { media_id: mid, ...(svc ? { service: svc } : {}) };
   if (patch && Object.keys(patch).length) body.patch = patch;
   if (fav !== undefined) body.favourite = fav;
   return api("/api/entry", body);
@@ -2303,7 +2318,8 @@ function entryPatch(patch, fav, delay = 0) {
   ent.f = { ...prev, ...(patch || {}), ...(fav !== undefined ? { favourite: fav } : {}) };
   entryPaint(ent.f, false, prev);
   if (fav !== undefined) for (const h of $$("#entrybox .heart")) { h.classList.add("pop1"); if (fav) burstAt(h); }
-  const p = entryPend && entryPend.mid === ent.mid ? entryPend : { mid: ent.mid, patch: {}, fav: undefined };
+  if (entryPend && (entryPend.mid !== ent.mid || entryPend.svc !== (ent.svc || null))) { clearTimeout(entryTimer); entryFlush(); } // the other one's edits go first
+  const p = entryPend && entryPend.mid === ent.mid && entryPend.svc === (ent.svc || null) ? entryPend : { mid: ent.mid, svc: ent.svc || null, patch: {}, fav: undefined };
   Object.assign(p.patch, patch || {});
   if (fav !== undefined) p.fav = fav;
   entryPend = p;
@@ -2314,15 +2330,16 @@ function entryFlush() {
   if (entryFlight || !entryPend) return;
   const job = entryPend, patch = job.patch;
   entryPend = null; entryFlight = true;
-  entrySave(job.mid, patch, job.fav).then((res) => {
-    const here = S.entry?.mid === job.mid;
+  const key = job.svc ? job.mid + ":" + job.svc : job.mid;
+  entrySave(job.mid, patch, job.fav, job.svc).then((res) => {
+    const here = S.entry?.mid === job.mid && (S.entry.svc || null) === job.svc;
     if (res && res.error) { toast(res.error); if (here) loadEntry(job.mid); return; }
-    toast(res && res.queued ? `Saved — will sync when ${acct()} is reachable` : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
+    toast(res && res.queued ? `Saved — will sync when ${SVC_NAME[job.svc] || acct()} is reachable` : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
     if (res && res.queued) res.patch = patch;
-    if (!res.queued) entryMemo[job.mid] = res; else delete entryMemo[job.mid];
+    if (!res.queued) entryMemo[key] = res; else delete entryMemo[key];
     if (here && !entryPend) entryDraw(res); // newer edits are still on screen: keep them
     if (patch.status || job.fav !== undefined) refreshData();
-  }).catch(() => { toast("Could not save — is the hub running?"); if (S.entry?.mid === job.mid) loadEntry(job.mid); })
+  }).catch(() => { toast("Could not save — is the hub running?"); if (S.entry?.mid === job.mid && (S.entry.svc || null) === job.svc) loadEntry(job.mid); })
     .finally(() => { entryFlight = false; if (entryPend) entryFlush(); });
 }
 
@@ -4487,7 +4504,8 @@ function paintModal(focus) {
   } else {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" || m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
-  if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
+  if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
+  else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
   else if (m.t === "entry" && S.entry?.err) entryErrPaint(); // not "Loading…" forever: the same wait as the page
   /* Touch: open at the top with nothing focused (focusing a field would
      scroll the sheet and pop the keyboard up). */
@@ -4496,7 +4514,10 @@ function paintModal(focus) {
 function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
 /* Back gesture / swipe down on a dialog: the same as tapping beside it. */
 const modalDismiss = () => (S.modal?.t === "done" ? A.dnskip() : closeModal());
-function closeModal() { S.modal = null; paintModal(); ovClosed("modal"); S.opener && S.opener.isConnected && S.opener.focus(); }
+function closeModal() {
+  S.modal = null; paintModal(); ovClosed("modal"); S.opener && S.opener.isConnected && S.opener.focus();
+  if (S.entry?.svc) loadEntry(S.entry.mid); // the editor's pick closes: the page's line is the one in use again
+}
 function confetti() {
   if (reduceMotion()) return;
   const f = $("#fx"), c = ["var(--accent)", "var(--accent-hi)", "var(--ok)", "var(--warn)", "var(--ink)"];
@@ -6089,6 +6110,15 @@ const A = {
   frmore: (v, t) => { const r = t.getBoundingClientRect(); frMore(r.left, r.bottom + 6); },
   eretry: () => { const e = S.entry?.err; if (e && !e.checking) { clearInterval(entryErrTimer); loadEntry(S.entry.mid); } },
   efav: () => { if (S.entry?.f) entryPatch(undefined, !S.entry.f.favourite); },
+  /* Edit on AniList or MyAnimeList (Decision 83): remembered for next time. */
+  esvc: (v) => {
+    if (!SVC_NAME[v] || v === svcPick()) return;
+    lsSet("entrySvc", v);
+    for (const b of $$(".edsvc button")) { b.classList.toggle("on", b.dataset.v === v); b.setAttribute("aria-checked", b.dataset.v === v); }
+    const f = $("#edfoot"); if (f) f.textContent = edFoot(v);
+    calClose();
+    if (S.entry?.mid) loadEntry(S.entry.mid);
+  },
   /* match repair */
   pick: (v, t) => { const id = t.dataset.s; mst(id).pick = +v; paintMatch(id); },
   msearch: (v) => {

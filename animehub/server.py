@@ -356,35 +356,15 @@ class Handler(BaseHTTPRequestHandler):
             if mid <= 0:
                 self._bad("'id' must be an integer")
                 return
-            if not anilist.account_present():
-                # No-AniList mode (Decision 10's local fallback, TODO 17):
-                # the editing surface renders from the curation overlay
-                # instead of demanding a connection — same fields, local
-                # store. A present-but-expired token still falls through to
-                # the live read, which raises the re-auth prompt.
-                self.send_json({"local": True,
-                                "entry": library.curation_get("aid:%d" % mid)})
+            # Additive (Decision 83): `service` reads the entry on AniList or
+            # MyAnimeList — the editor's own pick — instead of the one in use.
+            which = qs.get("service", [None])[0]
+            if which is not None and which not in anilist.SERVICES:
+                self._bad("'service' must be \"anilist\" or \"mal\"")
                 return
-            try:
-                # pending (additive): a queued outbox intent for this media
-                # drives the panel's "Waiting to sync" chip. A queued edit
-                # isn't in any stored read yet, so that panel reads live.
-                # Otherwise the panel never waits (TODO 61): a known state
-                # comes back at once, "stale" (additive) while a live read
-                # runs — the page asks again — and a live read waits at
-                # most a few seconds for an AniList slot.
-                pending = bool(sync.outbox_pending_for(mid))
-                with anilist.quick():
-                    state = anilist.anilist_entry_state(mid) if pending else anilist.anilist_entry_state_quick(mid)
-                out = {"state": state, "score_format": anilist._score_format(), "pending": pending}
-                if state and state.pop("stale", False):
-                    out["stale"] = True
-                self.send_json(out)
-            except anilist.AniListAuthError as e:
-                self.send_json({"error": e.reason, "auth": True}, 401)
-            except Exception as e:
-                # why + retry_in (additive): the page waits and asks again itself
-                self.send_json({"error": anilist.friendly_error(e), **anilist.error_hint(e)}, 502)
+            with anilist.using(which):
+                self._entry_get(mid)
+
         elif route == "/api/journal":
             # Additive (Elias, 2026-10-24): the Journal from your AniList activity.
             try:
@@ -1133,6 +1113,10 @@ class Handler(BaseHTTPRequestHandler):
             if "patch" in body and not patch and fav is None:
                 self.send_json({"error": "empty patch"})
                 return
+            which = body.get("service")
+            if which is not None and which not in anilist.SERVICES:
+                self._bad("'service' must be \"anilist\" or \"mal\"")
+                return
             ref = "aid:%d" % body["media_id"]
             if "status" in patch and patch["status"] not in anilist.ENTRY_STATUS:
                 self._bad("invalid status")
@@ -1171,71 +1155,10 @@ class Handler(BaseHTTPRequestHandler):
                 cpatch["finished_at"] = patch["completed_at"]
             if fav is not None:
                 cpatch["favourite"] = fav
-            library.curation_set(ref, cpatch)
-            fav_result = None
-            if anilist.account_present():
-                try:
-                    if patch or fav is not None:
-                        result = anilist.anilist_entry_save(body["media_id"], patch) \
-                            if patch else anilist.anilist_entry_state(body["media_id"])
-                        if fav is not None and not result.get("error"):
-                            fav_result = anilist.anilist_favourite_set(body["media_id"], fav)
-                            if fav_result and fav_result.get("error"):
-                                self.send_json({"error": fav_result["error"]})
-                                return
-                            if fav_result:
-                                result = fav_result
-                        if result and not result.get("error"):
-                            cpatch2 = {}
-                            ent = result.get("entry") or {}
-                            if ent.get("status"):
-                                cpatch2["status"] = ent["status"]
-                            if ent.get("score") is not None:
-                                cpatch2["score"] = ent["score"]
-                            if ent.get("repeat") is not None:
-                                cpatch2["rewatches"] = ent["repeat"]
-                            if ent.get("started_at"):
-                                cpatch2["started_at"] = ent["started_at"]
-                            if ent.get("completed_at"):
-                                cpatch2["finished_at"] = ent["completed_at"]
-                            if result.get("is_favourite") is not None:
-                                # favourite lives top-level on the state, not
-                                # inside entry — without this the local
-                                # overlay never records AniList favourites.
-                                cpatch2["favourite"] = bool(result["is_favourite"])
-                            library.curation_set(ref, cpatch2)
-                        self.send_json(result if result else {"error": "unknown failure"})
-                        return
-                except anilist.AniListAuthError as e:
-                    # Dormant outbox (Decision 24): the intent is kept,
-                    # held until a valid token exists again.
-                    sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav)
-                    self.send_json({"error": e.reason, "auth": True,
-                                    "queued": True}, 401)
-                    return
-                except anilist.AniListTransientError as e:
-                    # Offline / AniList down (TODO 14, Decision 3): the
-                    # local change is already committed; the intent waits.
-                    sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav)
-                    cur = library.curation_get(ref) or {}
-                    self.send_json({"queued": True, "local": True,
-                                    "entry": cur, "reason": anilist.friendly_error(e)})
-                    return
-                except ValueError as e:
-                    # AniList rejected the mutation itself (HTTP 400 with a
-                    # non-auth GraphQL error). The local change stands; the
-                    # message goes to the user (D18.4: never queue).
-                    self.send_json({"error": str(e), "local": True})
-                    return
-                except Exception as e:
-                    self.send_json({"error": anilist.friendly_error(e)}, 502)
-                    return
-            # No-AniList mode (Decision 10): the same fields store locally.
-            out = library.curation_get(ref) or {}
-            if fav is not None:
-                library.curation_set(ref, {"favourite": fav})
-                out = library.curation_get(ref)
-            self.send_json({"local": True, "entry": out})
+            # Additive (Decision 83): `service` saves to AniList or MyAnimeList —
+            # the editor's own pick — instead of the one in use.
+            with anilist.using(which):
+                self._entry_post(body, patch, fav, ref, cpatch)
         elif route == "/api/refresh":
             self.send_json({"ok": True})
             threading.Thread(target=anilist.background_work(metadata.refresh_meta), daemon=True).start()
@@ -1243,6 +1166,104 @@ class Handler(BaseHTTPRequestHandler):
             self._stream_route(route, body)
         else:
             self.send_error(404)
+
+    def _entry_post(self, body, patch, fav, ref, cpatch):
+        library.curation_set(ref, cpatch)
+        fav_result = None
+        if anilist.account_present():
+            try:
+                if patch or fav is not None:
+                    result = anilist.anilist_entry_save(body["media_id"], patch) \
+                        if patch else anilist.anilist_entry_state(body["media_id"])
+                    if fav is not None and not result.get("error"):
+                        fav_result = anilist.anilist_favourite_set(body["media_id"], fav)
+                        if fav_result and fav_result.get("error"):
+                            self.send_json({"error": fav_result["error"]})
+                            return
+                        if fav_result:
+                            result = fav_result
+                    if result and not result.get("error"):
+                        cpatch2 = {}
+                        ent = result.get("entry") or {}
+                        if ent.get("status"):
+                            cpatch2["status"] = ent["status"]
+                        if ent.get("score") is not None:
+                            cpatch2["score"] = ent["score"]
+                        if ent.get("repeat") is not None:
+                            cpatch2["rewatches"] = ent["repeat"]
+                        if ent.get("started_at"):
+                            cpatch2["started_at"] = ent["started_at"]
+                        if ent.get("completed_at"):
+                            cpatch2["finished_at"] = ent["completed_at"]
+                        if result.get("is_favourite") is not None:
+                            # favourite lives top-level on the state, not
+                            # inside entry — without this the local
+                            # overlay never records AniList favourites.
+                            cpatch2["favourite"] = bool(result["is_favourite"])
+                        library.curation_set(ref, cpatch2)
+                    self.send_json(result if result else {"error": "unknown failure"})
+                    return
+            except anilist.AniListAuthError as e:
+                # Dormant outbox (Decision 24): the intent is kept,
+                # held until a valid token exists again.
+                sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav)
+                self.send_json({"error": e.reason, "auth": True,
+                                "queued": True}, 401)
+                return
+            except anilist.AniListTransientError as e:
+                # Offline / AniList down (TODO 14, Decision 3): the
+                # local change is already committed; the intent waits.
+                sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav)
+                cur = library.curation_get(ref) or {}
+                self.send_json({"queued": True, "local": True,
+                                "entry": cur, "reason": anilist.friendly_error(e)})
+                return
+            except ValueError as e:
+                # AniList rejected the mutation itself (HTTP 400 with a
+                # non-auth GraphQL error). The local change stands; the
+                # message goes to the user (D18.4: never queue).
+                self.send_json({"error": str(e), "local": True})
+                return
+            except Exception as e:
+                self.send_json({"error": anilist.friendly_error(e)}, 502)
+                return
+        # No-AniList mode (Decision 10): the same fields store locally.
+        out = library.curation_get(ref) or {}
+        if fav is not None:
+            library.curation_set(ref, {"favourite": fav})
+            out = library.curation_get(ref)
+        self.send_json({"local": True, "entry": out})
+
+    def _entry_get(self, mid):
+        if not anilist.account_present():
+            # No-AniList mode (Decision 10's local fallback, TODO 17):
+            # the editing surface renders from the curation overlay
+            # instead of demanding a connection — same fields, local
+            # store. A present-but-expired token still falls through to
+            # the live read, which raises the re-auth prompt.
+            self.send_json({"local": True,
+                            "entry": library.curation_get("aid:%d" % mid)})
+            return
+        try:
+            # pending (additive): a queued outbox intent for this media
+            # drives the panel's "Waiting to sync" chip. A queued edit
+            # isn't in any stored read yet, so that panel reads live.
+            # Otherwise the panel never waits (TODO 61): a known state
+            # comes back at once, "stale" (additive) while a live read
+            # runs — the page asks again — and a live read waits at
+            # most a few seconds for an AniList slot.
+            pending = bool(sync.outbox_pending_for(mid))
+            with anilist.quick():
+                state = anilist.anilist_entry_state(mid) if pending else anilist.anilist_entry_state_quick(mid)
+            out = {"state": state, "score_format": anilist._score_format(), "pending": pending}
+            if state and state.pop("stale", False):
+                out["stale"] = True
+            self.send_json(out)
+        except anilist.AniListAuthError as e:
+            self.send_json({"error": e.reason, "auth": True}, 401)
+        except Exception as e:
+            # why + retry_in (additive): the page waits and asks again itself
+            self.send_json({"error": anilist.friendly_error(e), **anilist.error_hint(e)}, 502)
 
     def _stream_route(self, route, body):
         """The ani-cli bridge's routes. AniCliError is ani-cli (or the site
