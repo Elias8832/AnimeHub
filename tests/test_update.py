@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -356,6 +357,129 @@ class GitCopy(unittest.TestCase):
                 break
             time.sleep(0.02)
         pull.assert_called_once()
+
+
+def windows_zip(files):
+    """A zip like build.ps1's: one AnimeHub/ folder."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, data in files.items():
+            z.writestr(name if name.startswith("../") else "AnimeHub/" + name, data)
+    return buf.getvalue()
+
+
+def snapshot(root):
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+OLD = {"AnimeHub.exe": b"MZ old exe", "README.txt": b"readme", "python/python.exe": b"MZ python",
+       "python/python312._pth": b"python312.zip\n.\n../app\n", "app/hub.py": b"old hub",
+       "app/animehub/update.py": b"old update", "app/animehub/gone.py": b"dropped later", "app/web/app.js": b"same"}
+NEW = {**{k: v for k, v in OLD.items() if k != "app/animehub/gone.py"}, "AnimeHub.exe": b"MZ new exe",
+       "app/hub.py": b"new hub", "app/animehub/added.py": b"new module"}
+
+
+class WindowsZip(unittest.TestCase):
+    """Decision 79: a Windows zip copy swaps its files beside the running
+    app. Every way it can fail leaves the folder as it was. (The running exe
+    itself is tested on real Windows in test_real_tools.)"""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name) / "AnimeHub"
+        for name, data in OLD.items():
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_bytes(data)
+        (self.root / "my notes.txt").write_bytes(b"not ours")
+        self.before = snapshot(self.root)
+        update._job.update(state="idle", percent=0, error=None, note=None)
+        self.addCleanup(update._job.update, state="idle", percent=0, error=None, note=None)
+
+    def swap(self, files, sha=None):
+        body = windows_zip(files)
+        found = {"download": update.DOWNLOADS + "x", "sha256": sha or hashlib.sha256(body).hexdigest()}
+        with mock.patch.object(update, "urlopen", return_value=Reply(body)):
+            update._swap_zip(found, self.root)
+        return update._job
+
+    def assertUntouched(self):
+        self.assertEqual(snapshot(self.root), self.before)
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["AnimeHub.exe", "README.txt", "app", "my notes.txt", "python"])
+
+    def test_a_good_zip_swaps_in(self):
+        self.assertEqual((self.swap(NEW)["state"], update._job["error"]), ("done", None))
+        after = snapshot(self.root)
+        self.assertEqual(after, {**NEW, "my notes.txt": b"not ours"})
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["AnimeHub.exe", "README.txt", "app", "my notes.txt", "python"])
+
+    def test_tidy_takes_what_the_running_exe_left(self):
+        old = self.root / ".update-abc-old"
+        (old / "AnimeHub.exe").parent.mkdir(parents=True)
+        (old / "AnimeHub.exe").write_bytes(b"MZ")
+        kept = self.root / ".update-def-old"
+        (kept / "app").mkdir(parents=True)
+        (kept / "app" / "hub.py").write_bytes(b"a way back")
+        (self.root / ".update-abc.zip").write_bytes(b"PK")
+        with mock.patch.object(update, "ROOT", self.root), mock.patch.object(update, "REPO", self.root / "app"), \
+                mock.patch.object(update, "kind", return_value="windows"):
+            update.tidy()
+        self.assertEqual(sorted(p.name for p in self.root.glob(".update-*")), [".update-def-old"])
+
+    def test_a_wrong_checksum_changes_nothing(self):
+        self.assertEqual(self.swap(NEW, sha="0" * 64)["state"], "failed")
+        self.assertUntouched()
+
+    def test_another_python_changes_nothing(self):
+        self.assertIn("newer Python", self.swap({**NEW, "python/python313.dll": b"MZ"})["error"])
+        self.assertUntouched()
+        self.assertIn("newer Python", self.swap({**NEW, "python/python.exe": b"MZ other"})["error"])
+        self.assertUntouched()
+
+    def test_an_odd_zip_changes_nothing(self):
+        for files in ({**NEW, "../evil.txt": b"x"}, {k: v for k, v in NEW.items() if k != "AnimeHub.exe"},
+                      {**NEW, "app/../../evil.txt": b"x"}):
+            self.assertIn("didn't look right", self.swap(files)["error"])
+            self.assertUntouched()
+        with mock.patch.object(update, "urlopen", return_value=Reply(b"<html>")):
+            update._swap_zip({"download": "x", "sha256": hashlib.sha256(b"<html>").hexdigest()}, self.root)
+        self.assertEqual(update._job["state"], "failed")
+        self.assertUntouched()
+
+    def test_a_file_windows_holds_puts_everything_back(self):
+        real, calls = update._move, []
+
+        def move(src, dst):
+            calls.append(dst)
+            if len(calls) == 6:
+                raise PermissionError("in use")
+            return real(src, dst)
+        with mock.patch.object(update, "_move", move):
+            self.assertIn("wouldn't let", self.swap(NEW)["error"])
+        self.assertGreater(len(calls), 6)  # it had moved files before, and moved them back
+        self.assertUntouched()
+
+    def test_who_can(self):
+        with mock.patch.object(update, "ROOT", self.root), mock.patch.object(update, "REPO", self.root / "app"):
+            self.assertTrue(update.installable({"download": "x"}, "windows"))
+            self.assertFalse(update.installable({"download": None}, "windows"))
+            (self.root / "app" / ".git").mkdir()
+            self.assertFalse(update.installable({"download": "x"}, "windows"))  # a checkout on Windows
+        self.assertEqual(update.pick([release("v0.5", "AnimeHub-windows-x64.zip")], "0.4", "windows")["download"],
+                         f"{update.DOWNLOADS}v0.5/AnimeHub-windows-x64.zip")
+
+    def test_install_starts_the_swap(self):
+        settings.set_setting("update_found", json.dumps({"version": "99.0", "download": "x", "sha256": "y"}))
+        self.addCleanup(settings.set_setting, "update_found", "")
+        with mock.patch.object(update, "ROOT", self.root), mock.patch.object(update, "REPO", self.root / "app"), \
+                mock.patch.object(update, "kind", return_value="windows"), mock.patch.object(update, "vpn_missing", return_value=False), \
+                mock.patch.object(update, "_swap_zip") as swap:
+            self.assertEqual(update.install(), {"ok": True})
+            for _ in range(50):
+                if swap.called:
+                    break
+                time.sleep(0.02)
+        swap.assert_called_once()
 
 
 if __name__ == "__main__":

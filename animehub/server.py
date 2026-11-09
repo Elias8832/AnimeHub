@@ -1454,6 +1454,7 @@ def main():
     # Episode lengths: measure the files the scans find.
     lengths.start()
     threading.Thread(target=background.refresh, daemon=True).start()
+    update.tidy()
     threading.Thread(target=update.loop, daemon=True).start()
     # The phone remote's Wi-Fi listener, when switched on (Decision 43).
     if remote.enabled():
