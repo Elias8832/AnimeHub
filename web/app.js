@@ -2439,7 +2439,8 @@ function accountGroup(ani) {
   const row = (name, a, act, on) => srow(name, txt(a, name, on), pkdo(a.user ? who(a.user) + `<button class="btn" data-a="${act}">Manage</button>` : `<button class="btn${use ? "" : " pri"}" data-a="${act}">Connect ${name}</button>`));
   return `<div class="group"><h3>Account</h3><p class="sub">${use ? "Show info, art and airing times come from AniList either way." : "Not connected. Everything runs on what you watch on this PC."}</p>
     ${row("AniList", al, "ani", use === "anilist")}${row("MyAnimeList", ml, "mal", use === "mal")}
-    ${both ? srow("Lists from", "Your library's sections, and where watched episodes and scores go.", pick("Lists from", "acctuse", null, [["anilist", "AniList"], ["mal", "MyAnimeList"]], use)) : ""}</div>
+    ${both ? srow("Lists from", "Your library's sections, and where watched episodes and scores go.", pick("Lists from", "acctuse", null, [["anilist", "AniList"], ["mal", "MyAnimeList"]], use)) : ""}
+    ${use && ani.connected ? srow(`Compare with ${acct()}`, "The check you get when connecting, any time.", pkdo(`<button class="btn" data-a="reccheck">Compare</button>`)) : ""}</div>
   `;
 }
 /* Everything that asks before going out without a VPN, in one place (Decision 73). */
@@ -4139,22 +4140,88 @@ function Tour() {
   return `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b[T.step]}
   <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button></div>`;
 }
+/* The connect dialog (Decisions 14, 48, 75; polish TODO 191): rows like
+   Settings — the show, a line of its episodes, the value on the right.
+   @rec:start */
+/* "E6–E7, E9": episode numbers as runs. */
+function recRange(nums) {
+  const a = [...new Set(nums)].sort((x, y) => x - y), out = [];
+  for (let i = 0; i < a.length; i++) {
+    let j = i;
+    while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+    out.push(j > i ? `E${a[i]}–E${a[j]}` : `E${a[i]}`);
+    i = j;
+  }
+  return out.join(", ");
+}
+/* One tick per episode, only from what the hub sent: "n" gets marked now,
+   "w" is watched here, "x" was seen on the account but is neither a file
+   here nor online, ""
+   not seen. Long shows fold into `max` ticks; a tick shows the strongest
+   state inside it, so a single marked episode never disappears. */
+function recTicks(m, max = 60) {
+  const mark = new Set(m.numbers || []), seen = new Set(m.watched || []);
+  const top = Math.max(m.total || 0, m.remote || 0, ...mark, ...seen, 1);
+  const at = (n) => (mark.has(n) ? "n" : seen.has(n) ? "w" : n <= (m.remote || 0) ? "x" : "");
+  if (top <= max) return Array.from({ length: top }, (_, i) => at(i + 1));
+  const rank = { n: 3, w: 2, x: 1, "": 0 }, size = top / max;
+  return Array.from({ length: max }, (_, k) => {
+    let best = "";
+    for (let n = Math.floor(k * size) + 1; n <= Math.floor((k + 1) * size); n++) if (rank[at(n)] > rank[best]) best = at(n);
+    return best;
+  });
+}
+/* Seen on the account, but neither a file here nor online: the outline ticks. */
+function recGap(m) {
+  const known = new Set([...(m.numbers || []), ...(m.watched || [])]), out = [];
+  for (let n = 1; n <= (m.remote || 0); n++) if (!known.has(n)) out.push(n);
+  return out;
+}
+/* @rec:end */
 const recEps = () => (S.rec.res.marks || []).reduce((sum, m) => sum + m.episodes, 0);
+const recPoster = (mid, sid) => {
+  const e = S.data?.spine?.entries?.find((x) => x.id === mid), s = S.data?.shows?.find((x) => x.id === (sid || e?.local_show_id));
+  return e?.poster || s?.poster || null;
+};
 function Rec() {
-  const { res, pick, mark } = S.rec, n = res.conflicts.length, marks = res.marks || [], eps = recEps();
-  const facts = res.facts.map((f) => `<li>${esc(f.show)} — watch progress synced to EP ${f.local} (was ${f.remote})</li>`).join("");
-  const asks = marks.map((m) => `<li>${esc(m.show)} — ${m.episodes} episode${m.episodes === 1 ? "" : "s"}, up to E${m.remote}</li>`).join("");
-  const seg = (on, v, l) => `<button class="${on ? "on" : ""}" aria-pressed="${on}" data-a="recmark" data-v="${v}">${l}</button>`;
-  return `<h2 id="dt">${n ? `${n} difference${n === 1 ? "" : "s"} to review` : eps ? "Mark what you watched?" : acct() + " connected"}</h2>
-  ${facts ? `<p class="sub">Episodes you watched here went to ${acct()}:</p><ul class="summary">${facts}</ul>` : ""}
-  ${eps ? `<p class="sub"${facts ? ' style="margin-top:14px"' : ""}>Your ${acct()} list is ahead of this app. Mark ${eps === 1 ? "this episode" : `these ${eps} episodes`} as watched here too?</p><ul class="summary">${asks}</ul>
-    ${n ? `<div class="bulk"><span class="seg" role="group" aria-label="Mark as watched here">${seg(mark, 1, "Mark as watched")}${seg(!mark, 0, "Leave as is")}</span></div>` : ""}` : ""}
-  ${n ? `<p class="sub" style="margin-top:14px">These shows differ in list status or score — choose what to keep.</p>
-    <div class="bulk"><button class="btn" data-a="recall" data-v="anilist">${acct()} wins everywhere</button><button class="btn" data-a="recall" data-v="local">This PC wins everywhere</button></div>
-    <div class="rh"><span>Show</span><span>${acct()}</span><span>This PC</span><span>Keep</span></div>
-    ${res.conflicts.map((c) => { const k = pick[c.media_id]; return `<div class="rr"><span class="who"><span><b>${esc(c.title)}</b><small>${esc(c.diff || "")}</small></span></span><span class="v ${k === "anilist" ? "keep" : ""}">${esc(recVal(c.remote))}</span><span class="v ${k === "local" ? "keep" : ""}">${esc(recVal(c.local))}</span>
-      <span class="seg" role="group" aria-label="Keep for ${esc(c.title)}"><button class="${k === "anilist" ? "on" : ""}" aria-pressed="${k === "anilist"}" data-a="recset" data-m="${c.media_id}" data-v="anilist">${acct()}</button><button class="${k === "local" ? "on" : ""}" aria-pressed="${k === "local"}" data-a="recset" data-m="${c.media_id}" data-v="local">This PC</button></span></div>`; }).join("")}` : ""}
-  <div class="actions"><button class="btn" data-a="recclose">${eps && !n ? "Leave as is" : "Skip"}</button><button class="btn pri" data-a="recapply">${n ? `Apply ${n} choice${n === 1 ? "" : "s"}` : eps ? "Mark as watched" : "Close"}</button></div>`;
+  const { res, pick: picks, mark } = S.rec, marks = res.marks || [], facts = res.facts || [], conf = res.conflicts || [];
+  const n = conf.length, eps = recEps(), A2 = acct(), parts = [marks.length, facts.length, n].filter(Boolean).length;
+  const pl = (k, w) => `${k.toLocaleString("en")} ${w}${k === 1 ? "" : "s"}`;
+  const cap = (t, extra = "") => (parts > 1 ? `<div class="rccap"><span>${t}</span>${extra}</div>` : "");
+  const ticks = (st) => `<div class="ticks">${st.map((c) => `<i${c ? ` class="${c}"` : ""}></i>`).join("")}</div>`;
+  const row = (r, title, mid, sid, meta, mid2, val) => `<div class="rcrow" style="--r:${r}">${poster(title, recPoster(mid, sid))}<span class="rct"><b>${esc(title)}</b><small>${meta}</small></span>${mid2}<span class="rcv">${val}</span></div>`;
+  let r = 0;
+  const gap = marks.some((m) => recTicks(m).includes("x"));
+  const markRows = marks.map((m) => {
+    const one = (m.total || 0) === 1 && (m.numbers || []).length <= 1;
+    const kind = FMT[S.data?.spine?.entries?.find((x) => x.id === m.media_id)?.format] || "Movie";
+    const meta = one ? `Marks ${esc(["Movie", "Special", "Music"].includes(kind) ? kind.toLowerCase() : kind)}`
+      : m.numbers ? `Marks ${recRange(m.numbers)}${recGap(m).length ? ` · ${recRange(recGap(m))} not on this PC or online` : ""}` : `up to E${m.remote} on ${A2}`;
+    return row(r++, m.show, m.media_id, m.show_id, meta, m.numbers ? ticks(recTicks(m)) : '<i class="rcl"></i>', `<span class="mk">+${pl(m.episodes, "episode")}</span>`);
+  }).join("");
+  const factRows = facts.map((f) => {
+    const e = S.data?.spine?.entries?.find((x) => x.id === f.media_id);
+    const st = Array.from({ length: Math.min(Math.max(e?.episodes || 0, f.local), 60) }, (_, i) => (i < f.local ? "w" : ""));
+    return row(r++, f.show, f.media_id, f.show_id, `${A2} had E${f.remote}`, f.media_id && st.length ? ticks(st) : '<i class="rcl"></i>', `<span class="ok">Sent · E${f.local}</span>`);
+  }).join("");
+  const confRows = conf.map((c) => {
+    const k = picks[c.media_id], side = (w, l, v) => `<span class="${k === w ? "keep" : ""}">${l}: ${esc(recVal(v))}</span>`;
+    return row(r++, c.title, c.media_id, c.show_id, `${side("anilist", A2, c.remote)} · ${side("local", "This PC", c.local)}`, '<i class="rcl"></i>',
+      pick(`Keep for ${c.title}`, "recset", c.media_id, [["anilist", A2], ["local", "This PC"]], k));
+  }).join("");
+  const all = (v, l) => `<button class="rcall${n && conf.every((c) => picks[c.media_id] === v) ? " on" : ""}" data-a="recall" data-v="${v}">${l}</button>`;
+  const title = eps ? "Mark what you watched" : n ? "Choose what to keep" : `${A2} connected`;
+  const note = eps ? `${pl(marks.length, "show")} · ${pl(eps, "episode")}` : n ? pl(n, "show") : `${pl(facts.length, "show")} sent`;
+  const sub = eps ? `${A2} is ahead of this PC. Bright ticks get marked, faint ones are already watched here${gap ? ", outlined ones are neither on this PC nor online" : ""}.`
+    : n ? `These shows have a different status or score on ${A2} and on this PC. Pick what to keep.` : `What you watched on this PC went to ${A2}.`;
+  const sw = n && eps ? `<div class="rcrow rcsw" style="--r:${r++}"><span class="rct"><b>Mark ${eps === 1 ? "it" : `these ${eps}`} watched here</b><small>Off leaves this PC as it is.</small></span><i class="rcl"></i><span class="rcv"><button class="switch" role="switch" aria-checked="${!!mark}" aria-label="Mark watched here" data-a="recmark" data-v="${mark ? 0 : 1}"></button></span></div>` : "";
+  const acts = n
+    ? `<span class="note2 mono">${[`keeps ${pl(n, "choice")}`, mark && eps ? `marks ${pl(eps, "episode")}` : ""].filter(Boolean).join(" · ")}</span><button class="btn" data-a="recclose">Skip</button><button class="btn pri" data-a="recapply">Apply<kbd class="kb">↵</kbd></button>`
+    : eps ? `<span class="note2 mono">marks this pc only</span><button class="btn" data-a="recclose">Leave as is</button><button class="btn pri" data-a="recapply">Mark ${eps.toLocaleString("en")} watched<kbd class="kb">↵</kbd></button>`
+    : `<span class="note2"></span><button class="btn pri" data-a="recclose">Close<kbd class="kb">↵</kbd></button>`;
+  return `<h2 id="dt">${title}<small>${note}</small></h2><p class="sub">${sub}</p>
+  <div class="rcbody${n && eps && !mark ? " nomark" : ""}">${markRows ? cap(`ahead on ${A2}`) + markRows + sw : ""}${confRows ? cap("different status or score", `<span class="rcalls">all: ${all("anilist", A2)}${all("local", "This PC")}</span>`) + confRows : ""}${factRows ? cap("sent from this pc") + factRows : ""}</div>
+  <div class="actions">${acts}</div>`;
 }
 /* You finished a show (Decision 25 → 38): poster, the big title, rate it
    (1–10 pills) with ♥ beside, and what comes next in its franchise. */
@@ -4205,7 +4272,7 @@ function paintModal(focus) {
       }
     }
   } else {
-    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" || m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
   /* Touch: open at the top with nothing focused (focusing a field would
@@ -4249,9 +4316,12 @@ function maybeReconcile() {
     if (!res || !res.pending) return;
     if (!res.conflicts.length && !res.facts.length && !res.marks?.length) { api("/api/reconcile/dismiss", {}).catch(() => {}); return; }
     if (S.modal) return; // retried on the next refresh
-    S.rec = { res, mark: true, pick: Object.fromEntries(res.conflicts.map((c) => [c.media_id, "anilist"])) };
-    openModal({ t: "rec" });
+    recOpen(res);
   }).catch(() => {});
+}
+function recOpen(res) {
+  S.rec = { res, mark: true, pick: Object.fromEntries(res.conflicts.map((c) => [c.media_id, "anilist"])) };
+  openModal({ t: "rec" });
 }
 function recDone() { api("/api/reconcile/dismiss", {}).catch(() => {}); S.rec = null; closeModal(); reload(); }
 let lastCompletionKey = null;
@@ -6003,18 +6073,40 @@ const A = {
      Elias: choosing connect on page 2 skipped page 3 entirely — the old
      handoff closed the tour before the summary ever showed. */
   tourconnect: () => { api("/api/settings", { tour_done: true }).catch(() => {}); if (S.settings) S.settings.tour_done = true; closeModal(); openModal({ t: "ani" }); },
-  recset: (v, t) => { S.rec.pick[t.dataset.m] = v; paintModal(); },
+  recset: (v, t) => { S.rec.pick[t.dataset.k || t.dataset.m] = v; paintModal(); },
   recall: (v) => { for (const k of Object.keys(S.rec.pick)) S.rec.pick[k] = v; paintModal(); },
   recmark: (v) => { S.rec.mark = v === "1"; paintModal(); },
   recclose: () => recDone(),
-  recapply: () => {
+  /* Settings → Account → Compare (TODO 191): the connect check on demand. */
+  reccheck: (v, t) => {
+    if (S.rec) return;
+    t.disabled = true; t.textContent = "Comparing…";
+    const done = () => { t.disabled = false; t.textContent = "Compare"; };
+    api("/api/reconcile/start", {}).then((r) => {
+      if (!r || r.error) throw new Error(r?.error || "");
+      return api("/api/reconcile", {});
+    }).then((res) => {
+      done();
+      if (!res || res.error) return toast(res?.error || "Could not compare — try again");
+      if (!res.conflicts.length && !res.facts.length && !res.marks?.length) {
+        api("/api/reconcile/dismiss", {}).catch(() => {});
+        return toast(`This PC and ${acct()} match`);
+      }
+      recOpen(res);
+    }).catch((e) => { done(); toast(e?.message || "Could not compare — is the hub running?"); });
+  },
+  recapply: (v, t) => {
+    if (t) t.disabled = true; /* one apply, however fast the clicks */
     const list = Object.entries(S.rec.pick).map(([m, w]) => ({ media_id: Number(m), winner: w }));
     api("/api/reconcile/apply", { decisions: list, mark_watched: S.rec.mark && recEps() > 0 }).then((r) => {
-      if (r && r.error) return toast(r.error);
+      if (r && r.error) { if (t) t.disabled = false; return toast(r.error); }
       const done = [list.length ? `${r.applied ?? list.length} shows updated` : "", r.marked ? `${r.marked} episode${r.marked === 1 ? "" : "s"} marked watched` : ""].filter(Boolean).join(" · ");
       if (done) toast(done);
-      S.rec = null; S.alData = null; closeModal(); reload(); setTimeout(reload, 3000);
-    }).catch(() => toast("Could not apply — is the hub running?"));
+      /* The marked episodes light up before the dialog goes. */
+      const dlg = $(".dialog.recon"), lit = r.marked && dlg && !reduceMotion();
+      if (lit) dlg.classList.add("lit");
+      setTimeout(() => { S.rec = null; S.alData = null; closeModal(); reload(); setTimeout(reload, 3000); }, lit ? 520 : 0);
+    }).catch(() => { if (t) t.disabled = false; toast("Could not apply — is the hub running?"); });
   },
   dnscore: (v) => { $("#dn-score").value = v; dnPills(+v); },
   recopen: (v) => openFranchise(+v),
@@ -6546,7 +6638,7 @@ const PULL = [
   { sel: "#deck .deck", scroller: () => ({ scrollTop: S.deck?.i ? 3 : 0 }), close: () => closeDeck() }, // deckPager moves a transform, not a scroll
   { sel: "#pal .pbox", scroller: (el) => el.querySelector(".plist"), close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
   { sel: ".fsheet .filters", scroller: (el) => el, close: () => A.fltclose() },
-  { sel: "#modal .dialog", scroller: (el) => el, close: () => modalDismiss(), when: () => isPhone() && S.modal && S.modal.t !== "tour" },
+  { sel: "#modal .dialog", scroller: (el) => el.querySelector(".rcbody") || el, close: () => modalDismiss(), /* the connect dialog scrolls its rows, not itself */ when: () => isPhone() && S.modal && S.modal.t !== "tour" },
   { sel: "#cm", scroller: (el) => el, close: () => { cmHide(); ovClosed("cm"); }, when: () => isPhone() },
 ];
 const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srchips, .dgen, .gtray, .switch";

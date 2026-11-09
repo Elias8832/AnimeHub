@@ -418,7 +418,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .overlay.leave .dialog{animation:dOut .18s var(--ease) both}
 @keyframes dIn{from{opacity:0;transform:translateY(18px) scale(.94)}}@keyframes dOut{to{opacity:0;transform:translateY(8px) scale(.97)}}
 .dialog.swap>*{animation:rise .35s var(--ease) both}.dialog.swap>*:nth-child(2){animation-delay:.04s}.dialog.swap>*:nth-child(3){animation-delay:.08s}.dialog.swap>*:nth-child(n+4){animation-delay:.12s}
-.dialog.rec{width:min(900px,94vw)}.dialog h2{font-size:26px;letter-spacing:-.025em;font-weight:700;margin-bottom:6px}.dialog .sub{margin-bottom:22px}
+.dialog.recon{width:min(900px,94vw)}.dialog h2{font-size:26px;letter-spacing:-.025em;font-weight:700;margin-bottom:6px}.dialog .sub{margin-bottom:22px}
 .actions{display:flex;justify-content:space-between;gap:10px;margin-top:26px}
 .steps{display:flex;gap:6px;margin-bottom:24px}.steps i{width:8px;height:8px;border-radius:4px;background:var(--line-hi);transition:width .45s var(--spring),background .3s}.steps i.on{width:30px;background:var(--accent)}.steps i.done{background:var(--mute)}
 .choices{display:grid;gap:10px}.choice{text-align:left;border:1px solid var(--line);border-radius:var(--r-m);padding:14px 18px 14px 52px;display:grid;gap:2px;position:relative;background:rgba(255,255,255,.015)}
@@ -426,9 +426,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .choice:before{content:"";position:absolute;left:18px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;border:2px solid var(--line-hi);transition:border-color .2s,background .2s,box-shadow .3s}
 .choice span{color:var(--mute);font-size:14px}.choice.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}
 .choice.on:before{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 0 4px,transparent 5px);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
-.summary{padding-left:18px;color:var(--mute);line-height:1.9}
 .bulk{display:flex;gap:10px;margin:14px 0}
-.rh,.rr{display:grid;grid-template-columns:1.6fr .8fr .8fr 170px;gap:12px;align-items:center;padding:9px 4px}.rh{color:var(--mute);font-size:13px;border-bottom:1px solid var(--line)}.rr{border-bottom:1px solid var(--line)}.rr .who{display:flex;gap:12px;align-items:center}.rr small{display:block;color:var(--mute);font-size:12px}.rr .v{color:var(--mute);transition:color .2s}.rr .v.keep{color:var(--ink);font-weight:600}
 @keyframes draw{from{stroke-dashoffset:176}}
 
 /* ───────── fx · focus · skeleton ───────── */
@@ -1591,11 +1589,60 @@ body.srch #pal{display:grid}
 .dialog .steps{display:flex;gap:6px;justify-content:flex-end;margin-bottom:6px}
 .dialog .steps i{width:22px;height:6px;border-radius:6px;background:rgba(255,255,255,.14)}
 .dialog .steps i.on{background:var(--accent)}.dialog .steps i.done{background:color-mix(in srgb,var(--accent) 45%,transparent)}
-.dialog .summary{list-style:none;margin:18px 0 0;padding:6px 16px;border-radius:18px;background:rgba(255,255,255,.03);box-shadow:var(--edge)}
-.dialog .summary li{padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font:400 13px var(--mono);color:var(--ink-2)}
-.dialog .summary li:first-child{border-top:0}
 .dialog .found{font:400 12px var(--mono);color:var(--accent);margin-top:14px;display:flex;gap:8px;align-items:center}
-.dialog .rr .seg button.on{background:var(--accent);color:#111}
+/* The connect dialog (TODO 191): Settings-style rows; each show's episodes as
+   ticks — bright gold gets marked, pale gold is watched here, an outline was
+   seen on the account but is neither a file here nor online. The rows scroll, the buttons stay. */
+.dialog.recon{display:flex;flex-direction:column;overflow:hidden;padding-bottom:26px}
+.dialog.recon>*{flex:none}
+.dialog.recon h2{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px}.dialog.recon h2 small{margin:0}
+.dialog.recon .sub{margin-bottom:12px;max-width:740px}
+.rcbody{flex:1 1 auto!important;min-height:0;overflow:auto;margin:0 -36px;padding:2px 36px 22px;-webkit-mask:linear-gradient(#000 calc(100% - 22px),transparent);mask:linear-gradient(#000 calc(100% - 22px),transparent)}
+.rccap{display:flex;align-items:center;justify-content:space-between;gap:12px;font:500 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin:20px 0 4px}
+.rccap:first-child{margin-top:8px}
+.rcalls{display:flex;align-items:center;gap:2px;letter-spacing:0;text-transform:none}
+.rcall{font:500 12px var(--mono);color:var(--mute);background:none;border:0;padding:3px 9px;border-radius:99px;transition:color .2s,background .2s}
+.rcall:hover{color:var(--ink);background:rgba(255,255,255,.06)}.rcall.on{color:var(--ink);background:rgba(255,255,255,.09)}
+.rcrow{display:grid;grid-template-columns:40px minmax(0,300px) minmax(60px,1fr) 250px;column-gap:20px;align-items:center;padding:8px 10px;margin:0 -10px;border-radius:14px;transition:background .2s;animation:fin .32s var(--ease) backwards;animation-delay:calc(min(var(--r),14) * 28ms + .08s)}
+.rcrow:hover{background:rgba(255,255,255,.025)}
+.rcrow .poster{width:40px;height:57px;border-radius:9px;flex:none}
+.rct{min-width:0}
+.rct b{display:block;font:400 17px/1.3 var(--ui);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rct small{display:block;font:400 13px/1.35 var(--ui);color:var(--mute);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rct small .keep{color:var(--ink)}
+.rcrow .ticks{height:5px;gap:2px}
+.rcrow .ticks i{animation-delay:calc(min(var(--r),14) * 28ms + .2s);transition:background .35s var(--ease),box-shadow .35s}
+.rcrow .ticks i.w{background:color-mix(in srgb,var(--accent) 38%,transparent)}
+.rcrow .ticks i.n{background:var(--accent);box-shadow:0 0 8px -1px color-mix(in srgb,var(--accent) 70%,transparent)}
+.rcrow .ticks i.x{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
+.rcl{height:1px;background:var(--line)}
+.rcv{justify-self:center;text-align:center;font:600 15px var(--ui);white-space:nowrap}
+.rcv .ok{color:var(--mute);font-weight:500}
+.rcv .mk{transition:color .35s}
+.rcrow.rcsw{grid-template-columns:minmax(0,360px) minmax(60px,1fr) 250px}
+.rcrow:has(.pk){grid-template-columns:40px minmax(0,1fr) minmax(0,30px) 250px}
+.rcrow .pk{justify-self:end}
+.dialog.recon .actions{margin-top:14px}
+.rcbody.nomark .ticks i.n{background:rgba(255,255,255,.16);box-shadow:none}.rcbody.nomark .rcv .mk{color:var(--mute);text-decoration:line-through}
+.dialog.recon.lit .ticks i.w,.dialog.recon.lit .ticks i.n{background:var(--accent);box-shadow:none}
+.dialog.recon.lit .rcv .mk{color:var(--accent)}
+@media (max-width:700px){
+  .overlay .dialog.recon{overflow:hidden;display:flex}
+  .rcbody{margin:0 -20px;padding:2px 20px 22px}
+  .rcrow{grid-template-columns:40px minmax(0,1fr) auto;row-gap:8px;column-gap:14px}
+  .rcrow .poster{grid-row:1 / 3}
+  .rcrow .ticks{grid-column:2 / 4;grid-row:2}
+  .rcrow .rcl{display:none}
+  .rcrow:has(.pk){grid-template-columns:40px minmax(0,1fr) auto}
+  .rcrow:has(.pk) .rcv{grid-column:2 / 4;grid-row:2;justify-self:start}
+  .rcrow .pk{justify-self:start}
+  .rccap{flex-wrap:wrap}
+  .rcall{white-space:nowrap}
+  .rcrow.rcsw{grid-template-columns:minmax(0,1fr) auto}
+  .rct b{font-size:15px}
+  .rcv{font-size:14px}
+  .dialog.recon .actions .note2{display:none}
+}
 .dialog .choice:before{display:none}.dialog .choice{display:block}
 
 /* ───────── Phone + narrow windows (TODO 60 step 8) ───────── */

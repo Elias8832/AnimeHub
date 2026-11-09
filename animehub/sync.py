@@ -4,7 +4,7 @@ import json
 import threading
 import time
 
-from . import anilist, database, library, mapping, progress, settings, streaming, util
+from . import anicli, anilist, database, library, mapping, progress, settings, streaming, util
 
 
 # --- Durable write outbox (TODO 14, Decision 18.4 + 24) ---------------------
@@ -338,25 +338,81 @@ def _reconcile_pending():
 
 
 def _listed_units(remote):
-    """(show, unit, list entry) for each mapped entry on the user's lists,
-    once per entry."""
+    """(show, unit, list entry) once per entry on the user's lists. The
+    connect-time reconcile runs on the merged library: an entry's files
+    and its online episodes (ani-cli's linked list) are one unit, as on
+    the show page (TODO 191): its linked list, else its aired episodes. `fits` says whether every source fits the
+    entry (unit_fits); a source that doesn't brings no episodes, so a
+    wrong match never pushes or marks anything — its show still takes
+    part in the curation check. The show is the folder when there is one."""
     scan = library.scan_library()
     library.merge_db(scan)  # the folder's match, season map and watch facts live in hub.db
-    seen = set()
-    for s in scan:
+    links = streaming.stream_links_all()
+    merged = {}
+    for s in scan + streaming.stream_shows(scan, links) + _unlinked_online(remote, links):
         for u in mapping.release_units(streaming.trackable(s)):
-            if u["media_id"] in remote and u["media_id"] not in seen:
-                seen.add(u["media_id"])
-                yield s, u, remote[u["media_id"]]
+            e = remote.get(u["media_id"])
+            if e is None:
+                continue
+            fits = mapping.unit_fits(u, e.get("episodes"))
+            have = merged.setdefault(u["media_id"], (s, {"media_id": u["media_id"], "eps": [], "fits": True}))[1]
+            if fits:
+                have["eps"] += u["eps"]
+            else:
+                have["fits"] = False
+    for mid, (s, u) in merged.items():
+        yield s, u, remote[mid]
+
+
+def _aired(e):
+    """How many episodes of a list entry are out (streaming.release_aired
+    for a list row)."""
+    nxt = (e.get("next_episode") or {}).get("number")
+    if e.get("airing") == "NOT_YET_RELEASED":
+        return 0
+    if e.get("airing") == "RELEASING" and nxt:
+        return nxt - 1
+    return e.get("episodes") or 0
+
+
+def _unlinked_online(remote, links):
+    """Entries ani-cli hasn't linked yet still have their aired episodes
+    online, as on the show page ("stream:<id>:<n>" plays and links on the
+    way): one online show each, while ani-cli is there and hasn't come up
+    empty for the entry."""
+    if not anicli.anicli_path():
+        return []
+    linked, missed, rows = {l["media_id"] for l in links}, streaming.stream_missed_ids(), streaming._stream_rows()
+    out = []
+    for mid, e in remote.items():
+        if mid in linked or mid in missed or not _aired(e):
+            continue
+        eps = [{"id": f"stream:{mid}:{n}", "number": n, "watched": bool((rows.get(f"stream:{mid}:{n}") or (0,))[0])}
+               for n in range(1, _aired(e) + 1)]
+        out.append({"id": f"aid:{mid}", "title": e.get("title"), "seasons": [{"episodes": eps, "releases": [
+            {"id": mid, "first_ep": 1, "last_ep": None, "offset": 0, "total": e.get("episodes")}]}]})
+    return out
+
+
+def _slots(u):
+    """The entry's own episode numbers → that number's sources (file and/or
+    online); a number is watched when any of its sources is."""
+    by_n = {}
+    for ep, n in u["eps"]:
+        by_n.setdefault(n, []).append(ep)
+    return by_n
 
 
 def _behind_anilist(u, e):
-    """Episode ids AniList counts as seen and this device doesn't, when
-    AniList is ahead of the highest episode watched here."""
+    """Episode numbers AniList counts as seen and this PC doesn't, with the
+    ids of every source of each (file and online), when AniList is ahead of
+    the highest episode watched here: {number: [ids]}."""
     done = e.get("progress") or 0
-    if not mapping.unit_fits(u, e.get("episodes")) or any(ep["watched"] and n >= done for ep, n in u["eps"]):
-        return []
-    return [ep["id"] for ep, n in u["eps"] if not ep["watched"] and n <= done]
+    slots = _slots(u)
+    seen = {n for n, eps in slots.items() if any(ep["watched"] for ep in eps)}
+    if any(n >= done for n in seen):
+        return {}
+    return {n: [ep["id"] for ep in eps] for n, eps in sorted(slots.items()) if n not in seen and n <= done}
 
 
 def reconcile_analyze():
@@ -382,10 +438,10 @@ def reconcile_analyze():
     for s, u, e in _listed_units(remote):
         aid = u["media_id"]
         label = e.get("title") or s["title"]
-        # Facts, per entry, in the entry's own numbering; a folder that
-        # doesn't fit the entry is never pushed (unit_fits). An unknown
-        # total (airing) can't rule it out.
-        if mapping.unit_fits(u, e.get("episodes")):
+        # Facts, per entry, in the entry's own numbering; a source that
+        # doesn't fit the entry is never pushed (unit_fits, in
+        # _listed_units). An unknown total (airing) can't rule it out.
+        if u["eps"]:
             watched = [n for ep, n in u["eps"] if ep["watched"]]
             local_highest = max(watched) if watched else 0
             remote_progress = e.get("progress") or 0
@@ -393,11 +449,17 @@ def reconcile_analyze():
                 if not outbox_pending_for(aid):
                     outbox_enqueue(aid, patch={"progress": local_highest})
                 facts.append({"show": label, "kind": "progress",
-                              "remote": remote_progress, "local": local_highest})
+                              "remote": remote_progress, "local": local_highest,
+                              "media_id": aid, "show_id": s["id"]})
             behind = _behind_anilist(u, e)
             if behind:
+                # The dialog draws each show's real episodes (additive):
+                # `numbers` get marked (a file or online), `watched` already
+                # are; anything else up to `remote` is neither here nor online.
                 marks.append({"show": label, "media_id": aid, "remote": remote_progress,
-                              "episodes": len(behind)})
+                              "episodes": len(behind), "show_id": s["id"],
+                              "total": e.get("episodes"), "numbers": sorted(behind),
+                              "watched": sorted(set(watched))})
         # Curation (user decides): only when the local overlay holds an
         # opinion — a never-touched show has no local values to defend.
         cur = library.curation_get("aid:%d" % aid) or {}
@@ -424,14 +486,16 @@ def reconcile_analyze():
 
 def reconcile_mark_watched():
     """The user's yes to `marks` (Decision 48): episodes up to AniList's
-    progress become watched here. Returns how many were marked."""
+    progress become watched here, files and online episodes alike. Returns
+    how many episode numbers were marked."""
     if not _reconcile_pending():
         return 0
     remote = {e["id"]: e for e in anilist.anilist_user_data().get("entries", [])}
     marked = 0
     for _, u, e in _listed_units(remote):
-        for ep_id in _behind_anilist(u, e):
-            progress.set_watched(ep_id, True)
+        for ids in _behind_anilist(u, e).values():
+            for ep_id in ids:  # the file and the online episode alike
+                progress.set_watched(ep_id, True)
             marked += 1
     return marked
 
