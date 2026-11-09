@@ -264,6 +264,14 @@ class SettingsRouteTests(unittest.TestCase):
         code, body = self.post({})
         self.assertEqual(code, 400)
 
+    def test_update_channel(self):
+        """Decision 76: Stable or Unstable, nothing else."""
+        self.assertEqual(self.get("/api/settings")["update"]["channel"], "stable")
+        code, body = self.post({"update_channel": "unstable"})
+        self.assertEqual((code, body["update"]["channel"]), (200, "unstable"))
+        self.assertEqual(self.post({"update_channel": "nightly"})[0], 400)
+        self.post({"update_channel": "stable"})
+
     def test_mpv_options(self):
         design = ["--osc=no", "--no-osd-bar", "--video-sync=display-vdrop"]
         self.assertEqual(settings.mpv_flags(), ["--fs", *design])  # fullscreen and our controls by default

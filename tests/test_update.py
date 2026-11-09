@@ -79,6 +79,77 @@ class Versions(unittest.TestCase):
         self.assertIsNone(update.pick([odd], "0.4", "appimage")["download"])
 
 
+def rolling(n, when, *names, commit="ab12cd3"):
+    r = release("unstable", *names)
+    r["body"] = f"Notes.\n\n<!-- build {n} {commit} {when} -->"
+    return r
+
+
+def stable(tag, when, *names):
+    return {**release(tag, *names), "published_at": when}
+
+
+class Unstable(unittest.TestCase):
+    """Decision 76: the rolling release is one build; a build beats a build
+    by number and a release by time."""
+    MINE = stable("v0.4", "2026-10-31T17:00:00Z", APP)
+
+    def test_a_newer_build_is_offered(self):
+        got = update.pick_unstable([rolling(12, "2026-11-09T10:00:00Z", APP), self.MINE], "0.4", {"number": 11, "commit": "x"}, "appimage")
+        self.assertEqual((got["label"], got["build"], got["channel"]), ("Build 12", 12, "unstable"))
+        self.assertEqual(got["download"], f"{update.DOWNLOADS}unstable/{APP}")
+
+    def test_the_same_build_says_nothing(self):
+        self.assertIsNone(update.pick_unstable([rolling(12, "2026-11-09T10:00:00Z", APP)], "0.4", {"number": 12, "commit": "x"}, "appimage"))
+
+    def test_a_release_copy_gets_a_build_made_after_its_release(self):
+        rels = [rolling(12, "2026-11-09T10:00:00Z", APP), self.MINE]
+        self.assertEqual(update.pick_unstable(rels, "0.4", None, "appimage")["build"], 12)
+        old = [rolling(9, "2026-10-30T10:00:00Z", APP), self.MINE]
+        self.assertIsNone(update.pick_unstable(old, "0.4", None, "appimage"))
+
+    def test_a_release_newer_than_the_build_wins(self):
+        rels = [stable("v0.5", "2026-11-10T09:00:00Z", APP), rolling(12, "2026-11-09T10:00:00Z", APP), self.MINE]
+        got = update.pick_unstable(rels, "0.4", {"number": 12, "commit": "x"}, "appimage")
+        self.assertEqual((got["label"], got["channel"]), ("v0.5", "stable"))
+        later = [rolling(14, "2026-11-11T10:00:00Z", APP), *rels[:1]]
+        self.assertEqual(update.pick_unstable(later, "0.4", {"number": 12, "commit": "x"}, "appimage")["build"], 14)
+
+    def test_without_the_build_line_or_this_copys_file_it_says_nothing(self):
+        bare = release("unstable", APP)
+        self.assertIsNone(update.pick_unstable([bare], "0.4", {"number": 1, "commit": "x"}, "appimage"))
+        self.assertIsNone(update.pick_unstable([rolling(12, "2026-11-09T10:00:00Z", APP)], "0.4", {"number": 1, "commit": "x"}, "windows"))
+
+    def test_stable_never_offers_the_rolling_release(self):
+        self.assertIsNone(update.pick([rolling(99, "2030-01-01T00:00:00Z", APP)], "0.4", "appimage"))
+
+
+class Channels(unittest.TestCase):
+    def setUp(self):
+        for key in ("update_channel", "update_found"):
+            settings.set_setting(key, "")
+        self.addCleanup(settings.set_setting, "update_channel", "")
+
+    def test_stable_by_default(self):
+        self.assertEqual(update.channel(), "stable")
+        self.assertEqual(update.payload()["channel"], "stable")
+
+    def test_what_was_found_belongs_to_its_channel(self):
+        settings.set_setting("update_found", json.dumps({"version": "0.4", "build": 12, "channel": "unstable"}))
+        self.assertIsNone(update.stored())
+        settings.set_setting("update_channel", "unstable")
+        with mock.patch.object(update, "BUILD", {"number": 11, "commit": "x"}):
+            self.assertEqual(update.stored()["build"], 12)
+        with mock.patch.object(update, "BUILD", {"number": 12, "commit": "x"}):
+            self.assertIsNone(update.stored())  # this copy is that build now
+
+    def test_check_reads_the_channel(self):
+        settings.set_setting("update_channel", "unstable")
+        body = json.dumps([rolling(12, "2026-11-09T10:00:00Z")]).encode()
+        with mock.patch.object(update, "urlopen", return_value=Reply(body)), mock.patch.object(update, "kind", return_value="git"), \
+                mock.patch.object(update, "BUILD", {"number": 3, "commit": "x"}):
+            self.assertEqual(update.check()["found"]["build"], 12)
+
 class Asking(unittest.TestCase):
     def setUp(self):
         for key in ("update_check", "update_checked", "update_found", "update_asked"):
