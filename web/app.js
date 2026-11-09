@@ -2625,7 +2625,7 @@ function updateRows(s) {
   const how = done ? `Updated. Close AnimeHub and open it again to start the new version${s.keep_running ? " (Quit in the tray icon, as it keeps running)" : ""}.${j.note ? " " + esc(j.note) : ""}`
     : busy ? (u.kind === "git" ? "Getting it with git…" : `Downloading… ${j.percent || 0}%`)
     : j.state === "failed" ? `<span class="chip warn">Failed</span> ${esc(j.error || "")}`
-    : one ? (u.kind === "git" ? "Moves this copy ahead with git. Your data stays." : "Replaces this AppImage. Your data stays.")
+    : one ? ({ git: "Moves this copy ahead with git. Your data stays.", windows: "Swaps in the new files. Your data stays." }[u.kind] || "Replaces this AppImage. Your data stays.")
     : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";

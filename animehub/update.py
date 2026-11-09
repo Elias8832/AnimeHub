@@ -1,8 +1,9 @@
 """New versions of AnimeHub (Decision 58). A check asks GitHub's release
 list, on a click or once a day with the switch on, and never unasked
 (Decision 47). An AppImage replaces itself on a click, a git copy moves
-ahead with git on a click (Decision 78); a zip only gets told how.
-Nothing installs without that click.
+ahead with git on a click (Decision 78), and a Windows zip copy swaps its
+files beside the running app (Decision 79). Nothing installs without that
+click, and every way leaves what was there when it fails.
 
 Two channels (Decision 76): Stable is every numbered release, Unstable is
 the one rolling "unstable" release CI rebuilds after each green push to
@@ -18,6 +19,7 @@ import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from decimal import Decimal
 from http.client import HTTPException
 from pathlib import Path
@@ -40,6 +42,11 @@ MARK = re.compile(r"<!--\s*build (\d+) ([0-9a-f]{7,40}) (\S+)\s*-->")
 # A git copy (Decision 78): this checkout, which follows origin's master.
 REPO = Path(__file__).resolve().parent.parent
 BRANCH = "master"
+# A Windows zip copy (Decision 79): AnimeHub\ holds AnimeHub.exe, python\
+# and app\ (this code); the zip has that one folder at its top.
+ROOT = REPO.parent
+TOP = "AnimeHub/"
+LEFT = ".update-"  # what an install leaves beside the app; gone at the next start
 
 _job = {"state": "idle", "percent": 0, "error": None, "note": None}
 
@@ -104,7 +111,7 @@ def _offer(found, r, asset, how):
     found.update(url=r.get("html_url") or "", download=None, sha256=None)
     digest = (asset or {}).get("digest") or ""
     link = (asset or {}).get("browser_download_url") or ""
-    if how == "appimage" and digest.startswith("sha256:") and link.startswith(DOWNLOADS):
+    if how in ("appimage", "windows") and digest.startswith("sha256:") and link.startswith(DOWNLOADS):
         found.update(download=link, sha256=digest[7:])
     return found
 
@@ -270,6 +277,8 @@ def installable(found, how=None):
         return False
     if how == "appimage":
         return bool(found.get("download"))
+    if how == "windows":
+        return bool(found.get("download")) and zip_copy()
     return how == "git" and git_copy() and (found.get("build") is None or bool(_commit(found)))
 
 
@@ -287,6 +296,8 @@ def install():
         _job.update(state="working", percent=0, error=None, note=None)
     if how == "git":
         threading.Thread(target=_pull, args=(found,), daemon=True).start()
+    elif how == "windows":
+        threading.Thread(target=_swap_zip, args=(found, ROOT), daemon=True).start()
     else:
         threading.Thread(target=_replace, args=(found, Path(os.environ.get("APPIMAGE") or "")), daemon=True).start()
     return {"ok": True}
@@ -324,27 +335,36 @@ def _pull(found):
         _job.update(state="failed" if error else "done", percent=0 if error else 100, error=error, note=note)
 
 
+def _fetch(found, path, share=99):
+    """The download into path, checked against GitHub's sha256. The first
+    bytes come back for a look at what it is. Progress up to share %."""
+    sha = hashlib.sha256()
+    head, done = b"", 0
+    with urlopen(Request(found["download"], headers=UA), timeout=30) as r, open(path, "wb") as out:
+        size = int(r.headers.get("Content-Length") or 0)
+        for chunk in iter(lambda: r.read(1 << 16), b""):
+            head = head or chunk[:16]
+            done += len(chunk)
+            if done > MAX_APP:
+                raise ValueError
+            sha.update(chunk)
+            out.write(chunk)
+            if size:
+                with _lock:
+                    _job["percent"] = min(share, done * share // size)
+    if sha.hexdigest() != found["sha256"]:
+        raise ValueError
+    return head
+
+
 def _replace(found, target):
     """Into a file beside the AppImage, then swap: a running AppImage keeps
     its old file open, and a failure leaves what was there."""
     tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     error = None
     try:
-        sha = hashlib.sha256()
-        head, done = b"", 0
-        with urlopen(Request(found["download"], headers=UA), timeout=30) as r, open(tmp, "wb") as out:
-            size = int(r.headers.get("Content-Length") or 0)
-            for chunk in iter(lambda: r.read(1 << 16), b""):
-                head = head or chunk[:16]
-                done += len(chunk)
-                if done > MAX_APP:
-                    raise ValueError
-                sha.update(chunk)
-                out.write(chunk)
-                if size:
-                    with _lock:
-                        _job["percent"] = min(99, done * 100 // size)
-        if sha.hexdigest() != found["sha256"] or head[:4] != b"\x7fELF" or head[8:10] != b"AI":
+        head = _fetch(found, tmp)
+        if head[:4] != b"\x7fELF" or head[8:10] != b"AI":
             raise ValueError
         tmp.chmod(0o755)
         os.replace(tmp, target)
@@ -358,3 +378,131 @@ def _replace(found, target):
         tmp.unlink(missing_ok=True)
     with _lock:
         _job.update(state="failed" if error else "done", percent=0 if error else 100, error=error)
+
+
+def zip_copy():
+    """This copy came from the Windows zip: AnimeHub.exe and python\\ beside
+    app\\, and no git (a Windows checkout is never swapped)."""
+    return ((ROOT / "AnimeHub.exe").is_file() and (ROOT / "python").is_dir() and (REPO / "hub.py").is_file()
+            and not (REPO / ".git").exists())
+
+
+def _files(folder):
+    """Every file under folder, as "a/b" paths."""
+    return {p.relative_to(folder).as_posix(): p for p in folder.rglob("*") if p.is_file()}
+
+
+def _digest(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.digest()
+
+
+def _same(a, b):
+    return a.stat().st_size == b.stat().st_size and _digest(a) == _digest(b)
+
+
+def _move(src, dst):
+    """A move that outlasts a moment's lock (a virus scanner on a new file)."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    system.replace(src, dst)
+
+
+def _unpack(archive, stage):
+    """The zip into stage, after a look at every name: one AnimeHub\\ folder
+    holding the exe, Python and the hub, and nothing that climbs out."""
+    with zipfile.ZipFile(archive) as z:
+        names = [i.filename for i in z.infolist() if not i.is_dir()]
+        for n in names:
+            parts = n.split("/")
+            if not n.startswith(TOP) or "\\" in n or ":" in n or ".." in parts or "" in parts[1:]:
+                raise ValueError
+        for need in ("AnimeHub.exe", "app/hub.py", "app/animehub/update.py", "python/python.exe"):
+            if TOP + need not in names:
+                raise ValueError
+        z.extractall(stage)
+    return stage / TOP.rstrip("/")
+
+
+def _swap_zip(found, root):
+    """A Windows zip copy (Decision 79). Windows won't let a running program
+    be overwritten, but it can be moved: every changed file goes aside into
+    a backup folder and the new one takes its place, so the running app
+    keeps going and the next start is the new version. python\\ stays; a
+    version with another Python says to download it by hand. Any failure
+    puts every moved file back."""
+    tag = uuid.uuid4().hex[:12]
+    archive, stage, aside = root / f"{LEFT}{tag}.zip", root / f"{LEFT}{tag}", root / f"{LEFT}{tag}-old"
+    error, moved = None, []
+    try:
+        _fetch(found, archive, share=80)
+        new = _unpack(archive, stage)
+        with _lock:
+            _job["percent"] = 90
+        mine = _files(root / "python")
+        for rel, path in _files(new / "python").items():
+            if rel not in mine or not _same(path, mine[rel]):
+                raise LookupError
+        incoming = {rel: path for rel, path in _files(new).items() if not rel.startswith("python/")}
+        for rel, path in sorted(incoming.items()):
+            target = root / rel
+            if target.is_file() and _same(path, target):
+                continue
+            if target.exists():
+                _move(target, aside / rel)
+                moved.append((target, aside / rel))
+            else:
+                moved.append((target, None))
+            _move(path, target)
+        # Code the new version dropped goes too, or Python could still import it.
+        for rel, target in _files(root / "app").items():
+            if "app/" + rel not in incoming and "__pycache__" not in rel:
+                _move(target, aside / "app" / rel)
+                moved.append((None, (target, aside / "app" / rel)))
+    except LookupError:
+        error = "This version comes with a newer Python, so it can't swap in. Download the zip by hand; your data stays."
+    except (ValueError, zipfile.BadZipFile):
+        error = "That download didn't look right, so nothing changed."
+    except PermissionError:
+        error = ("Windows wouldn't let AnimeHub change its files, so nothing changed. Close the player and try again;"
+                 " if AnimeHub sits in Program Files, download the zip by hand.")
+    except (OSError, HTTPException):
+        error = "The download failed, so nothing changed."
+    if error and not _put_back(moved):
+        error += f" Some old files couldn't go back; they are in {aside}."
+    else:
+        shutil.rmtree(aside, ignore_errors=True)  # the running exe stays, tidy() takes it next start
+    archive.unlink(missing_ok=True)
+    shutil.rmtree(stage, ignore_errors=True)
+    with _lock:
+        _job.update(state="failed" if error else "done", percent=0 if error else 100, error=error)
+
+
+def _put_back(moved):
+    ok = True
+    for target, back in reversed(moved):
+        try:
+            if target is None:  # a dropped file
+                _move(back[1], back[0])
+            elif back is None:  # a file that wasn't there before
+                target.unlink(missing_ok=True)
+            else:
+                _move(back, target)
+        except OSError as e:
+            ok = False
+            util.log("update: couldn't put back %s: %s" % (back, e))
+    return ok
+
+
+def tidy():
+    """At start: what the last install left beside a zip copy (the old
+    exe Windows wouldn't let go of while it ran)."""
+    if kind() != "windows" or not zip_copy():
+        return
+    for p in ROOT.glob(LEFT + "*"):
+        if not p.is_dir():
+            p.unlink(missing_ok=True)
+        elif not p.name.endswith("-old") or set(_files(p)) <= {"AnimeHub.exe"}:
+            shutil.rmtree(p, ignore_errors=True)  # a backup that holds more is someone's way back

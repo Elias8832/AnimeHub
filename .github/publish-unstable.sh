@@ -12,7 +12,7 @@ notes="$(cat <<NOTES
 The newest build of master, rebuilt after every change that passes the tests. New fixes land here first, and it can break.
 
 - Linux: \`AnimeHub-x86_64.AppImage\`. In the app, Settings → System → Updates from → Unstable updates it with a click.
-- Windows: \`AnimeHub-windows-x64.zip\`. Not tested on Windows between releases.
+- Windows: \`AnimeHub-windows-x64.zip\`. In the app, the same switch updates it with a click too. Not tested on Windows between releases.
 
 Commit: $sha
 
