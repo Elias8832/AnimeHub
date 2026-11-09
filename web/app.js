@@ -2364,6 +2364,8 @@ const onoff = (key, label, on, off) => pick(label, "advset", key, [["on", "On"],
 /* A row whose value is something to do (Rescan, Connect…): it sits where a value would. */
 const pkdo = (html) => `<span class="pk pkdo">${html}</span>`;
 const tgl = (key, label, on, off) => `<button class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-a="adv" data-v="${key}" ${off ? "disabled" : ""}></button>`;
+/* A found version by name: "v0.5" or "Build 312" (Unstable, Decision 76). */
+const upName = (f) => f.label || "v" + f.version;
 /* New versions (Decision 58): how to get one depends on how this copy got here. */
 function updateRows(s) {
   const u = s.update || {}, f = u.found, j = u.job || {}, one = !!f?.download, busy = j.state === "working", done = j.state === "done";
@@ -2375,8 +2377,14 @@ function updateRows(s) {
     : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
-  return srow("Version", `AnimeHub v${esc(u.version || "")}`, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
-    + (f ? srow(`v${esc(f.version)} is out`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>Update</button>` : ""))) : "")
+  const b = u.build, unstableHere = !!b && u.channel !== "unstable" && !f;
+  const ver = `AnimeHub v${esc(u.version || "")}${b ? ` · build ${esc(String(b.number))} (${esc(b.commit.slice(0, 7))})` : ""}`
+    + (unstableHere ? ". This is an unstable build: Stable takes over at the next release." : "");
+  const chan = u.channel === "unstable" ? "A new build after every change. Newest fixes first, and sometimes broken." + (u.kind === "windows" ? " Not tested on Windows." : "")
+    : "Every numbered release on GitHub.";
+  return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
+    + (f ? srow(`${esc(upName(f))} is out`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>Update</button>` : ""))) : "")
+    + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
     + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
 }
 const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), pkdo(`${path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : ""}<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "Found" : "Not found"}</span>`));
@@ -2980,10 +2988,10 @@ const SETTINGS_INDEX = [
   ["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"], ["Online episodes and downloads", "privacy", "vpn warn ask without streaming privacy", "vpn_warn"], ["AniSkip", "privacy", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Update checks", "privacy", "update updates vpn github ip only", "update_vpn_only"],
   ["AniList", "anilist", "anilist account connect token login disconnect"], ["Send watched episodes", "anilist", "anilist progress sync track episodes", "auto_progress_sync"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"], ["Keep the PC playing", "phone", "phone play both pc mpv stop", "phone_play_both"],
-  ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Keep running after closing", "data", "keep running background server close phone tray", "keep_running"], ["Start at login", "data", "start login boot autostart server phone", "start_at_login"],
+  ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Updates from", "data", "update channel stable unstable beta nightly build"], ["Keep running after closing", "data", "keep running background server close phone tray", "keep_running"], ["Start at login", "data", "start login boot autostart server phone", "start_at_login"],
   ["mpv", "data", "mpv ani-cli upscayl tools player detected"], ["Config file", "data", "config file data folder server port"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["First-run tour", "data", "tour setup welcome"],
 ];
-const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}v${esc(f.version)} is out</button>` : ""; };
+const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}${esc(upName(f))} is out</button>` : ""; };
 /* Ten plain sections (Decision 73, like GNOME's Settings): one or two words you'd look for. */
 const SET_TABS = [["player", "Player", "Watching"], ["subs", "Subtitles", "Watching"], ["skipping", "Skipping", "Watching"], ["online", "Online", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["privacy", "Privacy & VPN", "Accounts"], ["anilist", "AniList", "Accounts"], ["phone", "Phone", "Accounts"], ["data", "System", "This PC"]];
 const COMMANDS = [
@@ -5336,7 +5344,7 @@ async function upCheck(tell) {
   const r = await api("/api/update-check", {}).catch(() => ({ error: "Could not reach the hub." }));
   S.upBusy = false; await loadSettings();
   if (S.view === "settings") render(true);
-  if (tell) toast(r.error || (r.found ? `v${r.found.version} is out` : "You have the latest version"), r.error ? "err" : undefined);
+  if (tell) toast(r.error || (r.found ? `${upName(r.found)} is out` : "You have the latest version"), r.error ? "err" : undefined);
 }
 async function setToggle(key, on) {
   const r = await api("/api/settings", { [key]: on }).catch(() => null);
@@ -5554,6 +5562,7 @@ const A = {
     api("/api/settings", { [t.dataset.k]: v }).then((r) => {
       if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
       S.settings = r; if (S.view === "settings") render(true);
+      if (t.dataset.k === "update_channel" && r.update?.check) upCheck(false);
     }).catch(() => toast("Could not save — is the hub running?"));
   },
   sync: () => {

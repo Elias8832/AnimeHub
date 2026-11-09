@@ -1,7 +1,11 @@
 """New versions of AnimeHub (Decision 58). A check asks GitHub's release
 list, on a click or once a day with the switch on, and never unasked
 (Decision 47). An AppImage can replace itself on a click; a zip or a git
-copy only gets told how. Nothing installs without that click."""
+copy only gets told how. Nothing installs without that click.
+
+Two channels (Decision 76): Stable is every numbered release, Unstable is
+the one rolling "unstable" release CI rebuilds after each green push to
+master. CI stamps its builds with build.json (number, commit)."""
 
 import hashlib
 import json
@@ -18,7 +22,7 @@ from urllib.request import Request, urlopen
 
 from . import VERSION, settings, system, util
 
-RELEASES = "https://api.github.com/repos/Elias8832/AnimeHub/releases?per_page=20"
+RELEASES = "https://api.github.com/repos/Elias8832/AnimeHub/releases?per_page=100"
 DOWNLOADS = "https://github.com/Elias8832/AnimeHub/releases/download/"
 EVERY = 24 * 3600
 MAX_LIST = 2_000_000
@@ -26,8 +30,24 @@ MAX_APP = 200_000_000
 NO_VPN = "No VPN is on. Turn one on, or switch off Only with a VPN."
 UA = {"User-Agent": "anime-hub/%s" % VERSION}
 TAG = re.compile(r"v?(\d+)\.(\d+)(?:\.(\d+))?$")
+CHANNELS = ("stable", "unstable")
+UNSTABLE = "unstable"
+# The rolling release's notes end with this line, written by CI last.
+MARK = re.compile(r"<!--\s*build (\d+) ([0-9a-f]{7,40}) (\S+)\s*-->")
 
 _job = {"state": "idle", "percent": 0, "error": None}
+
+
+def _build():
+    """This copy's CI stamp, or None for a copy no CI built (git)."""
+    try:
+        b = json.loads((Path(__file__).parent / "build.json").read_text())
+        return {"number": int(b["number"]), "commit": str(b["commit"])[:40]}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+BUILD = _build()
 _lock = threading.Lock()
 
 
@@ -68,7 +88,13 @@ def pick(releases, current, how):
     if not best:
         return None
     n, r, asset = best
-    found = {"version": r["tag_name"].lstrip("v"), "url": r.get("html_url") or "", "download": None, "sha256": None}
+    version = r["tag_name"].lstrip("v")
+    found = {"version": version, "label": "v" + version, "channel": "stable", "published": r.get("published_at") or ""}
+    return _offer(found, r, asset, how)
+
+
+def _offer(found, r, asset, how):
+    found.update(url=r.get("html_url") or "", download=None, sha256=None)
     digest = (asset or {}).get("digest") or ""
     link = (asset or {}).get("browser_download_url") or ""
     if how == "appimage" and digest.startswith("sha256:") and link.startswith(DOWNLOADS):
@@ -76,12 +102,51 @@ def pick(releases, current, how):
     return found
 
 
+def pick_unstable(releases, current, build, how):
+    """The newest build for the Unstable channel: the rolling release when
+    it is newer than this copy, or a numbered release made after it (a
+    release can land while master has no new build yet). A build is newer
+    than a build by its number, and than a release by its time."""
+    want = asset_name(how)
+    own = build["number"] if build else None
+    mine = next((r.get("published_at") or "" for r in releases if number(r.get("tag_name")) == number(current)), "")
+    roll = None
+    for r in releases:
+        m = MARK.search(r.get("body") or "")
+        if r.get("tag_name") != UNSTABLE or r.get("draft") or not m:
+            continue
+        asset = next((a for a in r.get("assets") or [] if a.get("name") == want), None)
+        if want and asset is None:
+            continue
+        n, commit, when = int(m[1]), m[2], m[3]
+        if (n > own) if own is not None else (when > mine):
+            found = {"version": current, "label": f"Build {n}", "channel": UNSTABLE, "build": n,
+                     "commit": commit[:7], "published": when}
+            roll = _offer(found, r, asset, how)
+    stable = pick(releases, current, how)
+    if stable and (not roll or stable["published"] > roll["published"]):
+        return stable
+    return roll
+
+
+def channel():
+    c = settings.get_setting("update_channel")
+    return c if c in CHANNELS else "stable"
+
+
 def stored():
+    """What the last check found, while it is still news: this channel's,
+    and newer than this copy (which it isn't after updating)."""
     try:
         found = json.loads(settings.get_setting("update_found") or "null")
     except ValueError:
         return None
-    return found if found and number(found.get("version")) and number(found["version"]) > number(VERSION) else None
+    if not isinstance(found, dict) or found.get("channel", "stable") != channel():
+        return None
+    if found.get("build") is not None:
+        return found if BUILD is None or found["build"] > BUILD["number"] else None
+    n = number(found.get("version"))
+    return found if n and n > number(VERSION) else None
 
 
 def vpn_missing():
@@ -101,7 +166,7 @@ def check():
         return {"error": "Could not reach GitHub."}
     if not isinstance(releases, list):
         return {"error": "GitHub sent something unexpected."}
-    found = pick(releases, VERSION, kind())
+    found = pick_unstable(releases, VERSION, BUILD, kind()) if channel() == UNSTABLE else pick(releases, VERSION, kind())
     settings.set_setting("update_checked", str(int(time.time())))
     settings.set_setting("update_found", json.dumps(found))
     return {"ok": True, "found": found}
@@ -133,6 +198,7 @@ def payload():
     with _lock:
         job = dict(_job)
     return {"version": VERSION, "kind": how, "check": settings.automation_enabled("update_check"),
+            "channel": channel(), "build": BUILD,
             "vpn_only": settings.automation_enabled("update_vpn_only"),
             "asked": settings.get_setting("update_asked") == "1", "found": stored(), "job": job}
 

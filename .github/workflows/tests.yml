@@ -1,5 +1,7 @@
 # Every push: the whole suite on real Windows and on Linux, the real mpv tests,
 # and the Windows zip (TODO 148). Download the zip from the run's Artifacts.
+# A green push to master also builds the AppImage and publishes both to the
+# rolling "unstable" release, the Unstable update channel (Decision 76).
 name: Tests
 
 on:
@@ -64,6 +66,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - name: Stamp the build
+        shell: bash
+        run: .github/stamp.sh
       - name: Build the zip
         run: powershell -ExecutionPolicy Bypass -File desktop\windows\build.ps1
       - name: Check the zip
@@ -84,3 +89,47 @@ jobs:
           python-version: "3.12"
       - name: Tests
         run: python -m unittest
+
+  appimage:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Stamp the build
+        run: .github/stamp.sh
+      - name: Build the AppImage
+        env:
+          # appimagetool is an AppImage itself; the runner has no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: desktop/appimage/build.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          path: desktop/target/AnimeHub-x86_64.AppImage
+          archive: false
+          retention-days: 30
+
+  # Only after everything is green: a red build never reaches Unstable.
+  unstable:
+    needs: [windows, windows-zip, linux, appimage]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: unstable-release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: AnimeHub-x86_64.AppImage
+          path: out
+      - uses: actions/download-artifact@v8
+        with:
+          name: AnimeHub-windows-x64.zip
+          path: out
+      - name: Publish to the unstable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/publish-unstable.sh out/AnimeHub-x86_64.AppImage out/AnimeHub-windows-x64.zip

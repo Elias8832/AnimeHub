@@ -708,7 +708,7 @@ class Handler(BaseHTTPRequestHandler):
                        **{key: settings.MPV_MODES for key in settings.MPV_OPTIONS},
                        "mpv_look": tuple(settings.PLAYER_LOOKS),
                        **{key: allowed for key, (_, allowed) in settings.MPV_CHOICES.items()},
-                       "upscale_style": tuple(upscale.STYLES)}
+                       "upscale_style": tuple(upscale.STYLES), "update_channel": update.CHANNELS}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
                     self._bad("'%s' must be a boolean" % key)
