@@ -371,10 +371,24 @@ const kbH = (k) => `<kbd class="kb">${k}</kbd>`;
 const homeThumb = (sea, ep) => { const t = sea?.thumbs; return !t ? null : Array.isArray(t) ? t[ep.number - 1] || null : t[String(ep.number)] || null; };
 const safeThumb = (sea, ep) => (spoils(ep) ? null : homeThumb(sea, ep));
 /* One tick per episode of the season: seen · partly seen · on disk · online. */
-function seasonTicks(sea) {
-  const eps = (sea?.episodes || []).slice(0, 60);
-  return `<div class="ticks">${eps.map((x, i) => { const p = x.duration ? x.position / x.duration : 0;
-    return `<i style="--i:${i};--pp:${Math.round(p * 100)}%" class="${x.watched ? "s" : p > 0.01 ? "p" : streamEp(x) ? "o" : "d"}"></i>`; }).join("")}</div>`;
+/* Home's tick bar: one tick per episode of the season, not just the ones
+   in the folder — AniList's total, else the aired ones (stated, never
+   guessed). An episode that isn't here yet is a faint tick; one past your
+   AniList progress counts as watched. */
+function seasonEntry(s, sea) {
+  const id = sea?.media_id || (s?.seasons.length === 1 ? s.meta?.anilist_id : null);
+  return id ? (S.data?.spine?.entries || []).find((e) => (e.media_id ?? e.id) === id) || null : null;
+}
+function seasonBar(s, sea) {
+  const eps = sea?.episodes || [], e = seasonEntry(s, sea);
+  const aired = e?.next_episode?.number > 1 ? e.next_episode.number - 1 : 0;
+  const tot = Math.max(eps.length, e?.episodes || aired || 0), done = typeof e?.progress === "number" ? e.progress : 0;
+  const byNum = eps.every((x) => x.number >= 1 && x.number <= tot) ? new Map(eps.map((x) => [x.number, x])) : null;
+  const slots = Array.from({ length: tot }, (_, i) => (byNum ? byNum.get(i + 1) : eps[i]) || { missing: true, watched: i < done });
+  const seen = slots.filter((x) => x.watched).length;
+  if (tot > 60) return { tot, seen, html: `<span class="tline"><i style="width:${(100 * seen / tot).toFixed(1)}%"></i></span>` };
+  return { tot, seen, html: `<div class="ticks">${slots.map((x, i) => { const p = x.duration ? x.position / x.duration : 0;
+    return `<i style="--i:${i};--pp:${Math.round(p * 100)}%" class="${x.watched ? "s" : x.missing ? "" : p > 0.01 ? "p" : streamEp(x) ? "o" : "d"}"></i>`; }).join("")}</div>` };
 }
 function dayWord(h) { return h < 5 ? "Tonight" : h < 12 ? "This morning" : h < 18 ? "This afternoon" : "Tonight"; }
 /* The Continue banner's online episode gets ready before the click (Decision 49). */
@@ -389,14 +403,14 @@ function heroHTML(up) {
   const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
   const len = ep.duration || ep.length, left = pct >= 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
   const src = streamEp(ep) ? "online" : "on disk";
-  const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
+  const { seen, tot, html: bar } = seasonBar(s, sea);
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
   return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
     <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
     <div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
     <div class="facts">${[left, src].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
-    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}<span>${seen}/${tot}</span></div>` : ""}
+    ${tot > 1 ? `<div class="tbar">${bar}<span>${seen}/${tot}</span></div>` : ""}
     <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span>${kbH("↵")}</button><button class="btn big" data-a="open" data-v="${esc(s.id)}">Open show${kbH("O")}</button></div>
   </div></div>`;
 }
@@ -3214,12 +3228,12 @@ function watchRow({ s, t }) {
    what else you're watching as a rail of episode stills. */
 function upHero(up) {
   const s = up.s, ep = up.ep, sea = up.sea, art = s.poster || safeThumb(sea, ep) || s.banner; // a tall hero: the poster fits it, a wide banner would show a sliver
-  const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
+  const { seen, tot, html: bar } = seasonBar(s, sea);
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
   return `<div class="uph"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
     <div class="uph-in" data-a="open" data-v="${esc(s.id)}"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
-    ${tot > 1 ? `<div class="tbar">${seasonTicks(sea)}</div>` : ""}
+    ${tot > 1 ? `<div class="tbar">${bar}</div>` : ""}
     <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div></div>`; // the whole card opens the show; Play plays (Elias)
 }
 function contStill({ s, t }) {
