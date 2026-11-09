@@ -364,7 +364,8 @@ class Handler(BaseHTTPRequestHandler):
             except anilist.AniListAuthError as e:
                 self.send_json({"error": e.reason, "auth": True}, 401)
             except Exception as e:
-                self.send_json({"error": anilist.friendly_error(e)}, 502)
+                # why + retry_in (additive): the page waits and asks again itself
+                self.send_json({"error": anilist.friendly_error(e), **anilist.error_hint(e)}, 502)
         elif route == "/api/journal":
             # Additive (Elias, 2026-10-24): the Journal from your AniList activity.
             try:

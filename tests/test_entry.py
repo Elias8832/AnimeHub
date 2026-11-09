@@ -350,6 +350,16 @@ class EntryRouteTests(unittest.TestCase):
         code, body = self.get("/api/entry?id=potato")
         self.assertEqual(code, 400)
 
+    def test_busy_read_says_when_to_ask_again(self):
+        """A read AniList refuses for now tells the page why and when its
+        own retry is due (additive: `error` stays the friendly sentence)."""
+        busy = anilist.AniListTransientError("x", status=429, retry_in=9.4)
+        with patch.object(anilist, "load_token", return_value={"access_token": "t"}), \
+                patch.object(anilist, "anilist_entry_state_quick", side_effect=busy):
+            code, body = self.get("/api/entry?id=11061")
+        self.assertEqual(code, 502)
+        self.assertEqual(body, {"error": anilist.friendly_error(busy), "why": "busy", "retry_in": 10})
+
 
 class ListCacheFollowsSavesTests(unittest.TestCase):
     """A status saved in the app shows on Home at once: the cached lists the
