@@ -1059,6 +1059,14 @@ class Handler(BaseHTTPRequestHandler):
             if self._fields(body, strings=("url",)):
                 r = mal.auth_paste(body["url"])
                 self.send_json(r, 200 if r.get("ok") else 400)
+        elif route == "/api/continue-hide":
+            # Additive (Decision 81): {show_id, hide?} — off Home's Continue
+            # watching until the show plays again; hide=false puts it back.
+            if self._fields(body, strings=("show_id",)):
+                if not isinstance(body.get("hide", True), bool):
+                    self._bad("'hide' must be a boolean")
+                else:
+                    self.send_json(library.hide_continue(body["show_id"], body.get("hide", True)))
         elif route == "/api/next-prompt/dismiss":
             player.dismiss_next_prompt()
             self.send_json({"ok": True})
