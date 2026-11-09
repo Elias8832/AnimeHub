@@ -873,10 +873,9 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 /* up next: one big card, the art inside it */
 .upn{position:relative;isolation:isolate;min-height:380px;border-radius:26px;overflow:hidden;display:flex;align-items:flex-end;box-shadow:0 30px 70px rgba(0,0,0,.4);background:hsl(var(--h) 20% 14%)}
 /* hover zooms with `scale`, not `transform`: the opening artIn owns transform, and sharing it made the zoom snap in when the opening ended under the mouse */
-.upn .upa{position:absolute;inset:0;z-index:-1;background-size:cover;background-position:center 30%;transition:scale 1.2s var(--ease)}
+/* the dark wash is painted in the art's own background (not a ::after) and the art sits 1 px past the card with its own rounded corners: at 125 % scaling the wash and the art, and the art's edge and the card's, landed on different pixels and left a light hairline around the corners (Elias, 2026-11-09, as .twb). It still zooms with the art on hover, so nothing peeks out at the corners */
+.upn .upa{position:absolute;inset:-1px;z-index:-1;border-radius:inherit;background:linear-gradient(90deg,rgba(10,11,14,.86),rgba(10,11,14,.4) 55%,rgba(10,11,14,.05)),linear-gradient(0deg,rgba(10,11,14,.6),transparent 50%),var(--art) center 30%/cover;transition:scale 1.2s var(--ease)}
 .upn:hover .upa{scale:1.03}
-/* the dark wash lives inside the art, so the hover zoom moves and clips both as one: as a sibling it was clipped apart from the zoomed art and the art peeked out at the corners */
-.upn .upa::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,11,14,.86),rgba(10,11,14,.4) 55%,rgba(10,11,14,.05)),linear-gradient(0deg,rgba(10,11,14,.6),transparent 50%);pointer-events:none}
 .upn .upc{padding:40px 44px}
 .upn .eye{display:flex;align-items:center;gap:10px;font:500 12px var(--mono);color:var(--ink-2)}
 .upn .eye .ok{color:var(--accent)}
@@ -927,9 +926,10 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 /* this week (polish 2026-11-08): the banner that matters + the rest as a list */
 .twg{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px}
 .twg.solo{grid-template-columns:minmax(0,1fr)}
-.twb{position:relative;isolation:isolate;min-height:236px;border-radius:24px;overflow:hidden;display:flex;align-items:flex-end;cursor:pointer;background:hsl(var(--h) 22% 14%);box-shadow:0 24px 60px -18px rgba(0,0,0,.6),var(--edge)}
-.twb .twa{position:absolute;inset:0;z-index:-1;background-size:cover;background-position:center 30%;transition:scale 1.2s var(--ease)}
-.twb .twa::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,11,14,.94),rgba(10,11,14,.72) 45%,rgba(10,11,14,.28)),linear-gradient(0deg,rgba(10,11,14,.55),transparent 55%)}
+/* no --edge ring here: the art covers it, and only its antialiased curve showed, as a light line around the corners (same as .upn) */
+.twb{position:relative;isolation:isolate;min-height:236px;border-radius:24px;overflow:hidden;display:flex;align-items:flex-end;cursor:pointer;background:hsl(var(--h) 22% 14%);box-shadow:0 24px 60px -18px rgba(0,0,0,.6)}
+/* the dark wash is painted in the art's own background, not as a ::after over it: at fractional monitor scaling the two layers snapped to different pixels and a hairline of bright art showed around the corners (Elias, 2026-11-09); then at 125 % scaling the art's own edge landed on the card's edge and left a light hairline: 1 px bigger than the card, with its own rounded corners, the card's clip is the only edge */
+.twb .twa{position:absolute;inset:-1px;z-index:-1;border-radius:inherit;background:linear-gradient(90deg,rgba(10,11,14,.94),rgba(10,11,14,.72) 45%,rgba(10,11,14,.28)),linear-gradient(0deg,rgba(10,11,14,.55),transparent 55%),var(--art) center 30%/cover;transition:scale 1.2s var(--ease)}
 .twb:hover .twa{scale:1.035}
 .twc{padding:26px 30px;min-width:0}
 .twb .eye{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font:500 12px var(--mono);color:var(--ink-2)}

@@ -391,7 +391,7 @@ function heroHTML(up) {
   const src = streamEp(ep) ? "online" : "on disk";
   const seen = (sea?.episodes || []).filter((x) => x.watched).length, tot = sea?.episodes.length || 0;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
+  return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}">${art ? `<i class="upa" style="--art:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
     <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
     <div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
@@ -479,7 +479,7 @@ function twBanner(lead, now, k = 0) {
     sub = `Episode ${lead.next.ep}${ofN}`;
   }
   const cd = lead.next ? `<div class="twcd"><b data-cd="${lead.next.t}">${esc(cdText(lead.next.t, now))}</b><small>${lead.behind ? `episode ${esc(lead.next.ep)} · ` : ""}${esc(airDay(lead.next.t, now))} · ${hhmm(lead.next.t)}</small></div>` : "";
-  return `<div class="twb${k ? " side" : ""}" data-a="entry" data-v="${esc(e.id)}" style="--i:${k};--h:${hueOf(e.title)}">${art ? `<i class="twa" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${cd}
+  return `<div class="twb${k ? " side" : ""}" data-a="entry" data-v="${esc(e.id)}" style="--i:${k};--h:${hueOf(e.title)}">${art ? `<i class="twa" style="--art:${esc(cssUrl(art))}"></i>` : ""}${cd}
     <div class="twc"><div class="eye">${eye}</div><h3>${esc(e.title)}</h3><div class="sub">${esc(sub)}</div>${cta ? `<div class="cta">${cta}</div>` : ""}</div></div>`;
 }
 function weekHTML(list, now = Date.now()) {
