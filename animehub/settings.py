@@ -80,6 +80,7 @@ def mpv_mode(key):
 
 # Settings → mpv beyond on/off/own (Decision 53). Setting → (default, choices).
 # "own" sends nothing: mpv.conf and input.conf decide, as in Decision 45.
+CLICK_CHOICES = ("own", "menu", "pause", "fullscreen", "off")
 MPV_CHOICES = {"mpv_start_volume": ("own", ("own", "last", "25", "50", "75", "100")),
                "mpv_sub_size": ("own", ("own", "small", "normal", "large")),
                "mpv_sub_color": ("own", ("own", "white", "yellow")),
@@ -87,9 +88,14 @@ MPV_CHOICES = {"mpv_start_volume": ("own", ("own", "last", "25", "50", "75", "10
                "mpv_sub_styled": ("own", ("own", "override")),
                # Read by the player look, not flags.
                "mpv_skip_seconds": ("10", ("5", "10", "15", "30")),
-               "mpv_click": ("own", ("own", "pause")),
-               "mpv_double": ("own", ("fullscreen", "off", "own")),
+               # The four clicks share one list (Decision 74).
+               "mpv_click": ("own", CLICK_CHOICES),
+               "mpv_double": ("own", CLICK_CHOICES),
                "mpv_wheel": ("own", ("volume", "seek", "own")),
+               "mpv_right": ("menu", CLICK_CHOICES),
+               "mpv_right_double": ("own", CLICK_CHOICES),
+               # Decision 74: who wins when input.conf binds the same button or key.
+               "mpv_priority": ("config", ("config", "settings")),
                "mpv_loaded": ("on", ("on", "off"))}
 _CHOICE_FLAGS = {"mpv_sub_size": {"small": "--sub-font-size=30", "normal": "--sub-font-size=38", "large": "--sub-font-size=50"},
                  "mpv_sub_color": {"white": "--sub-color=1.0/1.0/1.0", "yellow": "--sub-color=1.0/0.9/0.3"},
@@ -115,11 +121,73 @@ def remember_volume(volume):
         set_setting("mpv_last_volume", str(round(volume)))
 
 
+# Settings → mpv → Keys. Action → mpv's own default key ("" = none), in the
+# order Settings lists them. Only keys the user moved are bound (by
+# player-mouse.lua), so an untouched action is still mpv's own.
+PLAYER_KEYS = {"pause": "SPACE", "back": "LEFT", "forward": "RIGHT", "vol_up": "0", "vol_down": "9",
+               "mute": "m", "fullscreen": "f", "subs": "j", "audio": "SHARP", "speed_up": "]",
+               "speed_down": "[", "screenshot": "s", "menu": "", "quit": "q"}
+_KEY_NAMES = {"SPACE", "ENTER", "TAB", "BS", "DEL", "INS", "HOME", "END", "PGUP", "PGDWN",
+              "UP", "DOWN", "LEFT", "RIGHT", "ESC", "SHARP", "MBTN_MID", "MBTN_BACK", "MBTN_FORWARD", *(f"F{n}" for n in range(1, 13))}
+_KEY = re.compile(r"((?:Ctrl|Alt|Shift|Meta)\+)*(.+)\Z")
+
+
+def valid_key(key):
+    """An mpv key name the editor can make: modifiers, then one printable
+    character or a named key. "" means no key."""
+    if key == "":
+        return True
+    m = _KEY.match(key) if isinstance(key, str) else None
+    base = m and m.group(2)
+    return bool(base) and (base in _KEY_NAMES or (len(base) == 1 and base.isprintable() and not base.isspace() and base != "#"))
+
+
+def key_overrides():
+    """The keys the user moved: action → key."""
+    try:
+        raw = json.loads(get_setting("mpv_keys") or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {a: k for a, k in raw.items() if a in PLAYER_KEYS and valid_key(k) and k != PLAYER_KEYS[a]}
+
+
+def player_keys():
+    """Every action's key, the moved ones over mpv's defaults."""
+    return {**PLAYER_KEYS, **key_overrides()}
+
+
+def set_player_keys(overrides):
+    """Save a whole set of moved keys. Raises ValueError on a bad one."""
+    if not isinstance(overrides, dict):
+        raise ValueError("'mpv_keys' must be an object of action → key")
+    for a, k in overrides.items():
+        if a not in PLAYER_KEYS:
+            raise ValueError("unknown action '%s' — one of: %s" % (a, ", ".join(PLAYER_KEYS)))
+        if not valid_key(k):
+            raise ValueError("'%s' is not a key mpv knows" % k)
+    used = [k for k in {**PLAYER_KEYS, **overrides}.values() if k]
+    if len(used) != len(set(used)):
+        raise ValueError("two actions can't share one key")
+    set_setting("mpv_keys", json.dumps({a: k for a, k in overrides.items() if k != PLAYER_KEYS[a]}))
+
+
+def key_prefs():
+    """What player-mouse.lua binds: the moved keys, and the default keys
+    nothing uses any more (bound to nothing, so the old key stops)."""
+    moved = key_overrides()
+    keys = player_keys()
+    free = sorted({PLAYER_KEYS[a] for a in moved if PLAYER_KEYS[a]} - set(keys.values()))
+    return {"bind": moved, "free": free, "all": keys}
+
+
 def player_prefs():
     """What the player look reads itself: skip length and the mouse."""
     return {"skip": int(mpv_choice("mpv_skip_seconds")), "click": mpv_choice("mpv_click"),
             "double": mpv_choice("mpv_double"), "wheel": mpv_choice("mpv_wheel"),
-            "loaded": mpv_choice("mpv_loaded")}
+            "right": mpv_choice("mpv_right"), "right_double": mpv_choice("mpv_right_double"), "priority": mpv_choice("mpv_priority"), "loaded": mpv_choice("mpv_loaded"),
+            "keys": key_prefs()}
 
 
 def player_look():
@@ -253,7 +321,8 @@ def settings_payload():
         # additive (Decision 45): mpv options, "on" / "off" / "own"
         "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks"),
                 "look": player_look(), "looks": list(PLAYER_LOOKS),
-                **{key[4:]: mpv_choice(key) for key in MPV_CHOICES}},
+                **{key[4:]: mpv_choice(key) for key in MPV_CHOICES},
+                "keys": player_keys(), "key_defaults": PLAYER_KEYS},
         # additive (Decision 51): the server without the window; only the desktop app can
         "background_ok": background.launcher() is not None,
         "keep_running": config.KEEP_RUNNING,

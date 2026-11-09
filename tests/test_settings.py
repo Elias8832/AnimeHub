@@ -300,10 +300,33 @@ class SettingsRouteTests(unittest.TestCase):
         self.addCleanup(settings.set_setting, "mpv_last_volume", "")
 
     def test_player_look_reads_skip_and_mouse(self):
-        self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_wheel": "own"})
-        self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "double": "own", "wheel": "own", "loaded": "on"})
-        self.post({"mpv_skip_seconds": "30", "mpv_click": "pause", "mpv_wheel": "seek"})
-        self.assertEqual(settings.player_prefs(), {"skip": 30, "click": "pause", "double": "own", "wheel": "seek", "loaded": "on"})
+        self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_wheel": "own", "mpv_right": "menu", "mpv_right_double": "own", "mpv_priority": "config"})
+        self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "double": "own", "wheel": "own", "right": "menu", "right_double": "own", "priority": "config", "loaded": "on", "keys": settings.player_prefs()["keys"]})
+        self.post({"mpv_skip_seconds": "30", "mpv_click": "pause", "mpv_wheel": "seek", "mpv_right": "fullscreen", "mpv_right_double": "pause", "mpv_priority": "settings"})
+        self.assertEqual(settings.player_prefs(), {"skip": 30, "click": "pause", "double": "own", "wheel": "seek", "right": "fullscreen", "right_double": "pause", "priority": "settings", "loaded": "on", "keys": settings.player_prefs()["keys"]})
+        self.assertEqual(self.post({"mpv_right": "nope"})[0], 400)
+        self.assertEqual(self.post({"mpv_click": "menu", "mpv_double": "pause"})[0], 200)  # one list for all four
+        self.addCleanup(self.post, {"mpv_double": "own"})
+
+    def test_player_keys_move_and_free_the_old_key(self):
+        """Settings → mpv → Keys: only moved keys are kept and bound; a
+        default key nothing uses any more is bound to nothing."""
+        self.addCleanup(self.post, {"mpv_keys": {}})
+        self.assertEqual(settings.player_prefs()["keys"], {"bind": {}, "free": [], "all": settings.PLAYER_KEYS})
+        self.assertEqual(self.post({"mpv_keys": {"pause": "p", "menu": "Ctrl+m", "fullscreen": "f"}})[0], 200)
+        keys = settings.player_prefs()["keys"]
+        self.assertEqual(keys["bind"], {"pause": "p", "menu": "Ctrl+m"})  # f is fullscreen's own: not stored
+        self.assertEqual(keys["free"], ["SPACE"])
+        self.assertEqual(keys["all"]["pause"], "p")
+        status, body = self.post({"mpv_keys": {"fullscreen": "", "pause": "f"}})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["mpv"]["keys"]["fullscreen"], "")
+        self.assertEqual(settings.player_prefs()["keys"]["free"], ["SPACE"])  # f is pause's now
+        for bad in ({"pause": "m"}, {"nope": "x"}, {"pause": "two words"}, {"pause": "#"}, ["p"], {"pause": 5}):
+            self.assertEqual(self.post({"mpv_keys": bad})[0], 400, bad)
+        self.assertEqual(settings.player_keys()["pause"], "f")  # a refused set changes nothing
+        for good in ("MBTN_BACK", "Ctrl+MBTN_MID", "Shift+LEFT", "Ctrl++", "F5", "Alt+ä", "SHARP", ""):
+            self.assertTrue(settings.valid_key(good), good)
 
     def test_controls_follow_the_setting(self):
         """Decision 52: the script and its fonts load only with the design

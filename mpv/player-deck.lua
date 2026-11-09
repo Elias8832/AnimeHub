@@ -1283,13 +1283,27 @@ mp.observe_property("mouse-pos", "native", function(_, m)
     redraw()
 end)
 
--- The right-click menu. A plain binding: the user's input.conf still wins.
+-- The key Settings → mpv → Keys gave an action, as the menu shows it.
+local KEY_SHOWN = { MBTN_MID = "Middle click", MBTN_BACK = "Back button", MBTN_FORWARD = "Forward button", SPACE = "Space", ENTER = "Enter", TAB = "Tab", BS = "Bksp", DEL = "Del", INS = "Ins",
+    HOME = "Home", END = "End", PGUP = "PgUp", PGDWN = "PgDn", UP = "↑", DOWN = "↓", LEFT = "←", RIGHT = "→",
+    ESC = "Esc", SHARP = "#" }
+local function key_of(action, default)
+    local all = type(info.prefs) == "table" and type(info.prefs.keys) == "table" and info.prefs.keys.all
+    local key = type(all) == "table" and all[action]
+    if type(key) ~= "string" then return default end
+    if key == "" then return nil end
+    local mods, base = key:match("^(.-)([^+]+)$")
+    if key:sub(-1) == "+" then mods, base = key:sub(1, -2), "+" end
+    return (mods or "") .. (KEY_SHOWN[base] or base)
+end
+
+-- The right-click menu (Settings → Player → Right click, in player-mouse.lua).
 local function context_rows()
     local function list(tab) return function() st.menu = { kind = "list", tab = tab, top = 0 } end end
     local function opens(i) return function() st.menu.open, st.menu.child = i, { top = 0 } end end
     local paused = mp.get_property_bool("pause")
     return {
-        { icon = paused and "play" or "pause", label = paused and "Play" or "Pause", key = "Space", run = function() mp.commandv("cycle", "pause") end },
+        { icon = paused and "play" or "pause", label = paused and "Play" or "Pause", key = key_of("pause", "Space"), run = function() mp.commandv("cycle", "pause") end },
         { icon = "subs", label = "Subtitles", sub = CONTENT.Subtitles, run = opens(2), stay = true },
         { icon = "wave", label = "Audio", sub = CONTENT.Audio, run = opens(3), stay = true },
         { icon = "tune", label = "Speed and sleep", sub = CONTENT.Playback, run = opens(4), stay = true },
@@ -1297,13 +1311,20 @@ local function context_rows()
         { icon = "list", label = "Episodes", run = list("Episodes") },
         { icon = "list", label = "Chapters", run = list("Chapters") },
         { icon = "next", label = "Finish episode", key = "Enter", run = function() mp.commandv("script-message", "anime-hub-finish") end },
-        { icon = "full", label = "Fullscreen", key = "f", run = function() mp.commandv("cycle", "fullscreen") end },
+        { icon = "full", label = "Fullscreen", key = key_of("fullscreen", "f"), run = function() mp.commandv("cycle", "fullscreen") end },
     }
 end
 
-mp.add_key_binding("MBTN_RIGHT", "deck-context", function()
+-- The menu opens on "anime-hub-menu": from player-mouse.lua when a click
+-- is set to Menu ("mouse": where the mouse is) or from a key (mid-picture).
+mp.register_script_message("anime-hub-menu", function(at)
     poke()
-    st.menu = { kind = "context", x = st.mouse.x, y = st.mouse.y, rows = context_rows, top = 0 }
+    if st.menu then st.menu = nil
+    elseif at == "mouse" then
+        st.menu = { kind = "context", x = st.mouse.x, y = st.mouse.y, rows = context_rows, top = 0 }
+    else
+        st.menu = { kind = "context", x = st.w / 2 - 120, y = H / 2 - 160, rows = context_rows, top = 0, kbd = true, focus = 1 }
+    end
     rebind()
     redraw()
 end)
