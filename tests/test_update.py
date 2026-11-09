@@ -308,6 +308,16 @@ class GitCopy(unittest.TestCase):
         update._job.update(state="idle")
         self.assertIsNone(update.stored())  # after the restart, it is that build
 
+    def test_a_build_found_before_shas_were_kept_whole_still_works(self):
+        old = {k: v for k, v in self.build(self.new).items() if k != "sha"}
+        settings.set_setting("update_found", json.dumps(old))
+        self.assertTrue(update.payload()["installable"])
+        update._pull(update.stored())
+        self.assertEqual((update._job["state"], git(self.copy, "rev-parse", "HEAD")), ("done", self.new))
+        update._job.update(state="idle")
+        self.assertIsNone(update.stored())  # the copy has it: no "Build 12 is out"
+        self.assertEqual(update.payload()["head"], self.new[:7])
+
     def test_install_moves_master_to_a_release(self):
         settings.set_setting("update_channel", "")
         settings.set_setting("update_found", json.dumps({"version": "99.0", "channel": "stable", "tag": "v99.0"}))
