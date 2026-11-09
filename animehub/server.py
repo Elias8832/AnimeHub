@@ -439,7 +439,7 @@ class Handler(BaseHTTPRequestHandler):
             art = upscale.art_payload()
             # Additive (TODO 61): the metadata pass's progress while it runs,
             # so the library note follows it without refetching the library.
-            meta = ({"running": True, "pending": metadata._meta_status["pending"],
+            meta = ({"running": True, "pending": metadata._meta_status["pending"], "total": metadata._meta_status["total"],
                      "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"]}
                     if metadata._meta_status["running"] else None)
             phone_now = phoneplay.now()

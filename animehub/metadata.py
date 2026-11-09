@@ -20,7 +20,7 @@ EPISODE_META_TTL = 12 * 3600
 # what the background pass is doing — a guessing game between "not found"
 # and "still loading" is not acceptable. pending/current/phase feed
 # /api/library's meta_pending payload.
-_meta_status = {"running": False, "pending": 0, "current": None, "phase": None}
+_meta_status = {"running": False, "pending": 0, "total": 0, "current": None, "phase": None}
 
 
 def load_overrides():
@@ -666,7 +666,7 @@ def refresh_meta():
         overrides = load_overrides()
         kept = kept_local()
         missing = [s for s in scan if not s.get("poster") and s["id"] not in kept]
-        _meta_status["pending"] = len(missing)
+        _meta_status["pending"] = _meta_status["total"] = len(missing)
         _meta_status["phase"] = "show metadata"
         for s in missing:
             try:
@@ -698,6 +698,6 @@ def refresh_meta():
             util.log("art check failed: %s" % e)
     finally:
         _meta_status["running"] = False
-        _meta_status["pending"] = 0
+        _meta_status["pending"] = _meta_status["total"] = 0
         _meta_status["current"] = None
         _meta_status["phase"] = None
