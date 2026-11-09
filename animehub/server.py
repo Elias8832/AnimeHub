@@ -3,6 +3,7 @@
 import contextlib
 import gzip
 import hashlib
+import html
 import json
 import mimetypes
 import os
@@ -17,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mapping, metadata, pages, phoneplay, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
+from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -71,6 +72,24 @@ if (!t) {
   .catch(() => { m.textContent = "Connect failed — could not reach the hub. Is it still running?"; });
 }
 </script></body></html>"""
+
+
+def mal_callback_page(r):
+    """The page MAL's redirect lands on (Decision 75). A connection this hub
+    didn't start keeps the address in the bar: pasted into the hub that
+    did start it (another port), it finishes there."""
+    if r.get("ok"):
+        msg = "MyAnimeList connected as <b>%s</b> — you can close this tab." % html.escape(r.get("user") or "")
+        script = 'history.replaceState(null, "", "/auth/mal/callback"); setTimeout(() => window.close(), 3000);'
+    elif r.get("foreign"):
+        msg = ("This Anime Hub didn't start that connection. If another Anime Hub window asked, copy this "
+               "page's address and paste it there: Settings → Account → MyAnimeList.")
+        script = ""
+    else:
+        msg = html.escape(r.get("error") or "Connect failed.")
+        script = 'history.replaceState(null, "", "/auth/mal/callback");'
+    return AUTH_CALLBACK_PAGE.split("<body>")[0].replace("Anime Hub — AniList", "Anime Hub — MyAnimeList") + \
+        '<body><div id="m">%s</div><script>"use strict";%s</script></body></html>' % (msg, script)
 
 
 PAIR_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -318,9 +337,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self.send_json(anilist.anilist_user_data())
             except Exception as e:
-                if config.ANILIST_CACHE.exists():
+                if anilist.cache_path().exists():
                     try:
-                        stale = json.loads(system.read_bytes(config.ANILIST_CACHE))
+                        stale = json.loads(system.read_bytes(anilist.cache_path()))
                         stale["stale"] = True
                         self.send_json(stale)
                         return
@@ -337,7 +356,7 @@ class Handler(BaseHTTPRequestHandler):
             if mid <= 0:
                 self._bad("'id' must be an integer")
                 return
-            if not anilist.load_token():
+            if not anilist.account_present():
                 # No-AniList mode (Decision 10's local fallback, TODO 17):
                 # the editing surface renders from the curation overlay
                 # instead of demanding a connection — same fields, local
@@ -399,6 +418,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._bad(str(e))
         elif route == "/auth/callback":
             self.send_file_body(AUTH_CALLBACK_PAGE.encode(), "text/html; charset=utf-8")
+        elif route == "/auth/mal/callback":
+            # Decision 75: MyAnimeList sends the browser back here with a
+            # one-time code; the hub trades it for the login itself.
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("error"):
+                r = {"error": "MyAnimeList said no (%s) — start again from the app." % qs["error"][0][:60]}
+            else:
+                r = mal.auth_finish(qs.get("code", [None])[0], qs.get("state", [None])[0])
+            self.send_file_body(mal_callback_page(r).encode(), "text/html; charset=utf-8")
         elif route == "/api/now":
             outbox_n = sync.outbox_count()
             # ani-cli downloads (additive): the nav's downloads popover.
@@ -414,6 +442,9 @@ class Handler(BaseHTTPRequestHandler):
                      "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"]}
                     if metadata._meta_status["running"] else None)
             phone_now = phoneplay.now()
+            # Additive (Decision 75): the lists' stamp and, while they are
+            # read, how far — the page reloads itself when they arrive.
+            lists = anilist.lists_status()
             with player._active_lock:
                 if not player._active:
                     payload = {"playing": False}
@@ -448,6 +479,8 @@ class Handler(BaseHTTPRequestHandler):
                         payload["meta"] = meta
                     if art:
                         payload["art"] = art
+                    if lists:
+                        payload["lists"] = lists
                     self.send_json(payload)
                     return
                 a = next(iter(player._active.values()))
@@ -1006,7 +1039,25 @@ class Handler(BaseHTTPRequestHandler):
                 r = anilist.auth_finish(body["token"], require_pending=False)
                 self.send_json(r, 200 if r.get("ok") else 400)
         elif route == "/api/auth/logout":
-            self.send_json(anilist.auth_disconnect())
+            # Additive `service` (Decision 75): which login goes; default the one in use.
+            which = body.get("service")
+            if which is not None and which not in anilist.SERVICES:
+                self._bad("'service' must be \"anilist\" or \"mal\"")
+            else:
+                self.send_json(anilist.auth_disconnect(which))
+        elif route == "/api/auth/use":
+            # Decision 75 (additive): which logged-in service the lists and tracking use.
+            r = anilist.use_service(body.get("service"))
+            self.send_json(r, 200 if r.get("ok") else 400)
+        elif route == "/api/auth/mal/start":
+            # Decision 75 (additive): MyAnimeList's authorize address.
+            r = mal.auth_start()
+            self.send_json(r, 200 if r.get("url") else 400)
+        elif route == "/api/auth/mal/paste":
+            # The address MAL sent the browser to, when it landed elsewhere.
+            if self._fields(body, strings=("url",)):
+                r = mal.auth_paste(body["url"])
+                self.send_json(r, 200 if r.get("ok") else 400)
         elif route == "/api/next-prompt/dismiss":
             player.dismiss_next_prompt()
             self.send_json({"ok": True})
@@ -1113,7 +1164,7 @@ class Handler(BaseHTTPRequestHandler):
                 cpatch["favourite"] = fav
             library.curation_set(ref, cpatch)
             fav_result = None
-            if anilist.load_token():
+            if anilist.account_present():
                 try:
                     if patch or fav is not None:
                         result = anilist.anilist_entry_save(body["media_id"], patch) \
@@ -1389,7 +1440,7 @@ def main():
     threading.Thread(target=anilist.background_work(metadata.refresh_meta), daemon=True).start()
     # Warm the AniList cache so the spine (TODO 8) is populated on the very
     # first library view; /api/anilist visits keep it fresh afterwards.
-    if anilist.load_anilist_username():
+    if anilist.account_name():
         threading.Thread(target=anilist.refresh_user_data, daemon=True).start()
     # Durable-write flush loop (TODO 14): retries held intents with backoff.
     threading.Thread(target=sync.outbox_loop, daemon=True).start()
@@ -1409,10 +1460,9 @@ def main():
     print(f"Anime Hub → http://127.0.0.1:{config.PORT}", flush=True)
     print(f"  config   {CONFIG_PATH}{' (missing — defaults in use)' if not CONFIG_PATH.exists() else ''}", flush=True)
     print(f"  library  {config.LIBRARY or 'not configured — choose a folder in Settings (or set library_root in the config file)'}", flush=True)
-    u = anilist.load_anilist_username()
     a = anilist.auth_status()
-    print(f"  anilist  reads as {u or 'not configured (optional)'}; oauth "
-          f"{'connected as ' + a['user'] if a.get('connected') else 'not connected'}", flush=True)
+    print(f"  account  {anilist.service_name() + ' as ' + a['user'] if a.get('connected') else 'not connected (optional)'}",
+          flush=True)
     if not no_browser and config.WINDOW != "none":
         open_ui()
     server.serve_forever()

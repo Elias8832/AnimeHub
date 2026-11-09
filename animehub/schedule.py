@@ -111,7 +111,7 @@ def schedule():
     """GET /api/schedule: {state, items}. state "none" (no account or nothing
     airing), "loading" (first build running), "ready". Each item is
     {id, ep, at} or, for a show's start day, {id, date}."""
-    if anilist.load_anilist_username() is None:
+    if anilist.account_name() is None:
         return {"state": "none", "items": []}
     data = anilist.anilist_cache_stale()
     if not data:

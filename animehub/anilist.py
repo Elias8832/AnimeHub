@@ -8,7 +8,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from . import database, sync, system, util
+from . import database, mal, sync, system, util
 from .config import config
 
 
@@ -49,13 +49,27 @@ def anilist_cache_stale():
     a failed warm-up, a long session without an AniList tab visit, or an
     outage must not silently flip the library into local mode). None only
     when nothing has ever been fetched."""
-    try:
-        cached = json.loads(system.read_bytes(config.ANILIST_CACHE))
-        if cached.get("user"):
-            return cached
-    except Exception:
-        pass
+    cached = _cache_raw()
+    # The lists belong to the service in use (Decision 75): never another's.
+    if cached and cached.get("user") and (cached.get("service") == "mal") == (service() == "mal"):
+        return cached
     return None
+
+
+def cache_path(which=None):
+    """Each service keeps its own lists (Decision 75), so a switch shows the
+    last known ones at once while they are read again."""
+    if (which or service()) == "mal":
+        return config.ANILIST_CACHE.with_name("mal_cache.json")
+    return config.ANILIST_CACHE
+
+
+def _cache_raw(which=None):
+    try:
+        cached = json.loads(system.read_bytes(cache_path(which)))
+        return cached if isinstance(cached, dict) else None
+    except Exception:
+        return None
 
 
 # --- AniList entry state (TODO 9): authenticated per-release reads + edits ---
@@ -125,6 +139,17 @@ def _cache_del(key):
     database.cache_del(key)
 
 
+def forget_entry_state(media_id):
+    database.cache_del("entry-state:v1:%d" % media_id)
+
+
+def forget_entry_states():
+    """Every stored panel read: they belong to the account that read them,
+    and the panel serves them at any age while it reads again."""
+    with database.db() as c:
+        c.execute("DELETE FROM catalog_cache WHERE key LIKE 'entry-state:v1:%'")
+
+
 ENTRY_STATE_FRESH = 30
 _entry_refreshing = set()
 
@@ -182,7 +207,8 @@ def entry_state_from_lists(media_id):
         nxt = {"number": nxt["number"], "in_seconds": nxt.get("in_seconds")}
     return {"media_id": media_id, "format": e.get("format"), "episodes": e.get("episodes"),
             "popularity": None, "favourites": None,
-            "is_favourite": media_id in library.spine_favourites(cached),
+            **({"service": "mal", "mal_id": e.get("mal_id")} if cached.get("service") == "mal" else {}),
+            "is_favourite": None if cached.get("service") == "mal" else media_id in library.spine_favourites(cached),
             "studios": [], "next_episode": nxt,
             "score_format": fmt, "score_max": _SCORE_MAX.get(fmt, 10),
             "entry": {"status": e.get("status"), "score": score, "progress": e.get("progress") or 0,
@@ -221,9 +247,10 @@ def list_cache_apply(media_id, state):
         if state.get("is_favourite") is not None:
             favs = [i for i in cached.get("favourites") or [] if i != media_id]
             cached["favourites"] = favs + [media_id] if state["is_favourite"] else favs
-        tmp = config.ANILIST_CACHE.with_suffix(".patch.tmp")
+        path = cache_path("mal" if cached.get("service") == "mal" else "anilist")
+        tmp = path.with_suffix(".patch.tmp")
         tmp.write_text(json.dumps(cached), encoding="utf-8")  # keeps _ts: the list's own age
-        system.replace(tmp, config.ANILIST_CACHE)
+        system.replace(tmp, path)
 
 
 def _list_refetch():
@@ -243,6 +270,12 @@ def anilist_entry_state(media_id):
     cached = database.cache_get(key, ttl=ENTRY_STATE_FRESH)
     if cached:
         return cached
+    if service() == "mal":
+        # MyAnimeList is the account (Decision 75).
+        out = mal.entry_state(media_id)
+        if out:
+            database.cache_put(key, out)
+        return out
     fmt = _score_format()
     data = anilist_mutation(ENTRY_STATE_QUERY, {"id": media_id, "fmt": fmt})
     if not data:
@@ -394,6 +427,8 @@ def anilist_entry_save(media_id, patch):
     """SaveMediaListEntry through the chokepoint — only fields present in
     the patch are sent (Decision 18.4: changed fields, not stale entries).
     Returns the fresh entry state, or an {"error": ...} dict on failure."""
+    if service() == "mal":
+        return mal.entry_save(media_id, patch)
     fields = []
     if "status" in patch:
         if patch["status"] not in ENTRY_STATUS:
@@ -440,6 +475,10 @@ def anilist_favourite_set(media_id, want):
     The toggle answers with the favourites list itself — that is the
     verify when it is decisive; a fresh read covers the rest. Returns
     fresh state, or an {"error": ...} dict."""
+    if service() == "mal":
+        # MAL's API has no favourites (Decision 75): the app doesn't offer
+        # the heart; a held outbox row with one is answered, not retried.
+        return {"error": "MyAnimeList can't change favourites from other apps."}
     _cache_del("entry-state:v1:%d" % media_id)  # never decide on a 30 s old flag
     try:
         state = anilist_entry_state(media_id)
@@ -605,13 +644,81 @@ def load_anilist_username():
 
 
 def anilist_connected():
-    """Whether the app is in AniList mode (Decision 6's switch, TODO 17):
-    a usable OAuth token defines the connection. Nothing else — not the
-    config username, not the cache — may hold the library in AniList mode
-    once the user disconnects."""
+    """Whether the app is in account mode (Decision 6's switch, TODO 17):
+    a usable login of the service in use defines the connection. Nothing
+    else — not the config username, not the cache — may hold the library
+    in account mode once the user disconnects."""
+    if service() == "mal":
+        return mal.connected()
     tok = load_token()
     return bool(tok) and (tok.get("expires_at") is None
                           or tok["expires_at"] >= time.time())
+
+
+# --- the account: AniList or MyAnimeList (Decision 75) ---
+# Both may stay logged in; one is in use: its lists are the library's
+# sections and tracking goes to it. The other is paused.
+
+ACCOUNT_KEY = "account_service"
+SERVICES = ("anilist", "mal")
+
+
+def service():
+    """"anilist", "mal" or None: the service in use. With both logged in,
+    the pick in Settings → Account (default AniList); with one, that one."""
+    al, m = bool(load_token()), bool(mal.load_token())
+    if al and m:
+        from . import settings  # settings imports modules that import this one
+        return "mal" if settings.get_setting(ACCOUNT_KEY) == "mal" else "anilist"
+    return "mal" if m else "anilist" if al else None
+
+
+def service_name(which=None):
+    return "MyAnimeList" if (which or service()) == "mal" else "AniList"
+
+
+def account_present():
+    """The service in use has a login, usable or not (an expired one still
+    raises the re-auth prompt on its live read)."""
+    return service() is not None
+
+
+def account_id(which=None):
+    """Who queued changes belong to (Decision 24): the AniList user id, or
+    "mal:<id>" for a MyAnimeList login."""
+    if (which or service()) == "mal":
+        return mal.account_id()
+    return (load_token() or {}).get("user_id")
+
+
+def account_name():
+    """The name on the service in use; None with no login."""
+    if service() == "mal":
+        return mal.account_name()
+    return load_anilist_username()
+
+
+def _activated(which):
+    """`which` just became the service in use: its lists replace the
+    other's, panel reads are read again, and — like a connect (Decision
+    14) — the reconcile dialog compares this PC with the new lists."""
+    from . import settings
+    settings.set_setting(ACCOUNT_KEY, which)
+    forget_entry_states()
+    sync.reconcile_mark_pending(account_id(which))
+
+
+def use_service(which):
+    """Settings → Account's switch: lists and tracking from `which`. The
+    other login stays; its queued changes wait for it (Decision 24)."""
+    if which not in SERVICES:
+        return {"error": "unknown service"}
+    if not (mal.load_token() if which == "mal" else load_token()):
+        return {"error": "Connect %s first." % service_name(which)}
+    if service() != which:
+        _activated(which)
+        threading.Thread(target=refresh_user_data, kwargs={"force": True}, daemon=True).start()
+    return {"ok": True, **auth_status()}
 
 
 # --- AniList OAuth + the single write chokepoint (TODO 19, Decisions 17.1+20) ---
@@ -637,10 +744,11 @@ class AniListAuthError(Exception):
 class AniListTransientError(Exception):
     """Network/server-side failure — not the caller's fault, worth retrying.
     The outbox queues writes that fail with this (TODO 14)."""
-    def __init__(self, reason, status=None):
+    def __init__(self, reason, status=None, service="AniList"):
         super().__init__(reason)
         self.reason = reason
         self.status = status
+        self.service = service
 
 
 def friendly_error(e):
@@ -650,13 +758,14 @@ def friendly_error(e):
     if isinstance(e, AniListAuthError):
         return e.reason
     code = e.status if isinstance(e, AniListTransientError) else getattr(e, "code", None)
+    name = getattr(e, "service", None) or "AniList"
     if code == 429:
-        return "AniList is limiting requests — try again in a minute."
+        return "%s is limiting requests — try again in a minute." % name
     if code == 404:
-        return "AniList has no entry with this id."
+        return "%s has no entry with this id." % name
     if code == 403 or (isinstance(code, int) and code >= 500) \
             or isinstance(e, (URLError, TimeoutError, ConnectionError, AniListTransientError)):
-        return "AniList is unreachable right now — try again later."
+        return "%s is unreachable right now — try again later." % name
     util.log("AniList: %s" % e)
     return "Something went wrong talking to AniList."
 
@@ -695,30 +804,55 @@ def clear_token():
     config.ANILIST_TOKEN_FILE.unlink(missing_ok=True)
 
 
-def auth_disconnect():
+def auth_disconnect(which=None):
     """Symmetric disconnect (Decision 6, TODO 17): unlinking converts back
     to the local variant in place — the token goes, and with it the account
-    (reads follow the token's account, so nothing can hold AniList mode),
+    (reads follow the token's account, so nothing can hold account mode),
     the pending reconcile marker goes. Curation and watch facts are
-    untouched: no data is lost in either direction, AniList state is an
-    overlay on top of local state."""
-    clear_token()
+    untouched: no data is lost in either direction, the account's state is
+    an overlay on top of local state. `which` (Decision 75) picks the
+    service, default the one in use; the other login, if kept, takes over."""
+    before = service()
+    which = which or before
+    if which != "anilist":  # None: nothing in use — clear whatever is left
+        mal.clear_token()
+    if which != "mal":
+        clear_token()
+    forget_entry_states()
     sync.reconcile_clear()
+    after = service()
+    if after and after != before:
+        _activated(after)
+        threading.Thread(target=refresh_user_data, kwargs={"force": True}, daemon=True).start()
     return {"ok": True}
+
+
+def _anilist_status():
+    tok = load_token()
+    if not tok:
+        return {"connected": False}
+    expired = tok.get("expires_at") is not None and tok["expires_at"] < time.time()
+    return {"connected": not expired, "user": tok.get("user_name"), "user_id": tok.get("user_id"),
+            "expires_at": tok.get("expires_at"), "expired": expired}
 
 
 def auth_status():
     """Connection state for the UI. The token itself never appears here —
-    only who is connected and until when (Decision 20 redaction rule)."""
-    tok = load_token()
-    if not tok:
-        return {"connected": False, "client_id_configured": bool(config.ANILIST_CLIENT_ID),
-                "redirect_uri": f"http://localhost:{config.PORT}/auth/callback"}
-    expired = tok.get("expires_at") is not None and tok["expires_at"] < time.time()
-    return {"connected": not expired, "user": tok.get("user_name"), "user_id": tok.get("user_id"),
-            "expires_at": tok.get("expires_at"), "expired": expired,
+    only who is connected and until when (Decision 20 redaction rule).
+    The top level is the service in use; additive (Decision 75): `service`,
+    `accounts` (both services' logins) and `mal` (its app id, redirect)."""
+    m, al, which = mal.status(), _anilist_status(), service()
+    accounts = {"anilist": al, "mal": {k: m[k] for k in ("connected", "user", "user_id")} if mal.load_token()
+                else {"connected": False}}
+    base = {"service": which, "accounts": accounts, "mal": m,
             "client_id_configured": bool(config.ANILIST_CLIENT_ID),
             "redirect_uri": f"http://localhost:{config.PORT}/auth/callback"}
+    if which == "mal":
+        return {**base, "connected": m["connected"], "user": m["user"], "user_id": m["user_id"],
+                "expires_at": None, "expired": not m["connected"]}
+    if which == "anilist":
+        return {**base, **al}
+    return {**base, "connected": False}
 
 
 _AUTH_PENDING_TS = 0.0
@@ -772,10 +906,15 @@ def auth_finish(access_token, expires_in=None, require_pending=False):
         # AniList rejected it. Say so without echoing the token back.
         return {"error": "AniList rejected that token — create a fresh one."}
     store_token(access_token, expires_in, viewer)
-    cached = anilist_cache_stale()
-    if cached and (cached.get("user") or {}).get("name") != viewer["name"]:
+    # Connecting AniList puts it in use (Decision 75); a MyAnimeList login
+    # stays, paused.
+    from . import settings
+    settings.set_setting(ACCOUNT_KEY, "anilist")
+    forget_entry_states()
+    cached = _cache_raw("anilist")
+    if cached and (cached.get("service") == "mal" or (cached.get("user") or {}).get("name") != viewer["name"]):
         # A different account: the cached lists are someone else's.
-        config.ANILIST_CACHE.unlink(missing_ok=True)
+        cache_path("anilist").unlink(missing_ok=True)
     # Reads follow this token's account (load_anilist_username reads
     # user_name from the token file) — no separate binding to maintain.
     # Decision 24: reconnect with the SAME account flushes the held queue
@@ -861,18 +1000,88 @@ def refresh_user_data(force=False):
         util.log("AniList lists not refreshed: %s" % e)
 
 
+def _list_cache_write(out, which):
+    # Atomic: request threads read this file concurrently, and a torn read
+    # would briefly flip the spine into local mode.
+    path = cache_path(which)
+    ts = time.time()
+    with _list_cache_lock:  # list_cache_apply must not write an older copy over this one
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(out | {"_ts": ts}), encoding="utf-8")
+        system.replace(tmp, path)
+    _stamps[which] = ts
+    return out
+
+
+def _list_cache_fresh(which, since=None):
+    """The cached lists while under 10 min old, or — with `since` — only
+    when written at or after it."""
+    cached = _cache_raw(which)
+    if not cached or (cached.get("service") == "mal") != (which == "mal"):
+        return None
+    ts = cached.get("_ts", 0)
+    if (ts >= since) if since is not None else (time.time() - ts < 600):
+        return {k: v for k, v in cached.items() if k != "_ts"}
+    return None
+
+
+# One read of a service's lists at a time: a switch, the reconcile dialog
+# and the refresh loop asking together share it. While it runs,
+# `lists_loading[service]` says how far it got (/api/now, Decision 75).
+_fetching = {"anilist": threading.Lock(), "mal": threading.Lock()}
+lists_loading = {}
+_stamps = {}
+
+
+def lists_status():
+    """/api/now's `lists` (additive): the service in use, when its lists were
+    last read (the page reloads when that changes) and, while a read runs,
+    how far it got."""
+    which = service()
+    if not which:
+        return None
+    if which not in _stamps:
+        _stamps[which] = (_cache_raw(which) or {}).get("_ts")
+    out = {"service": which, "stamp": _stamps[which]}
+    if which in lists_loading:
+        out["loading"] = dict(lists_loading[which])
+    return out
+
+
+def _progress(which):
+    def report(step, done=None, total=None):
+        lists_loading[which] = {"step": step, "done": done, "total": total}
+    return report
+
+
 def anilist_user_data(force=False):
-    if load_anilist_username() is None:
+    """The lists of the service in use (the spine's source), cached 10 min.
+    With MyAnimeList in use (Decision 75) they come from MAL, in the same
+    shape, keyed by AniList id."""
+    which = service() or ("anilist" if load_anilist_username() else None)
+    if which is None:
         # No-AniList mode (Decision 6): a readable payload shape, not a 502 —
         # the UI renders "not connected" rather than "unavailable".
         return {"user": None, "entries": []}
-    if not force and config.ANILIST_CACHE.exists():
+    if not force:
+        cached = _list_cache_fresh(which)
+        if cached:
+            return cached
+    asked = time.time()
+    with _fetching[which]:
+        cached = _list_cache_fresh(which, since=asked)  # read meanwhile by another caller
+        if cached:
+            return cached
+        report = _progress(which)
+        report("list")
         try:
-            cached = json.loads(system.read_bytes(config.ANILIST_CACHE))
-            if time.time() - cached.get("_ts", 0) < 600:
-                return {k: v for k, v in cached.items() if k != "_ts"}
-        except Exception:
-            pass
+            out = mal.user_data(report) if which == "mal" else _anilist_lists()
+            return _list_cache_write(out, which)
+        finally:
+            lists_loading.pop(which, None)
+
+
+def _anilist_lists():
     data = anilist_request({"query": ANILIST_USER_QUERY, "variables": {"name": load_anilist_username()}})
     u = data["data"]["User"]
     entries = {}
@@ -929,10 +1138,4 @@ def anilist_user_data(force=False):
         "entries": list(entries.values()),
         "favourites": [n["id"] for n in (((u.get("favourites") or {}).get("anime") or {}).get("nodes") or [])],
     }
-    # Atomic: request threads read this file concurrently, and a torn read
-    # would briefly flip the spine into local mode.
-    with _list_cache_lock:  # list_cache_apply must not write an older copy over this one
-        tmp = config.ANILIST_CACHE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(out | {"_ts": time.time()}), encoding="utf-8")
-        system.replace(tmp, config.ANILIST_CACHE)
     return out

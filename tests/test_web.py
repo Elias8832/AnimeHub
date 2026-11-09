@@ -626,10 +626,11 @@ class NodeChecks(unittest.TestCase):
 class DeviceMarks(unittest.TestCase):
     """TODO 166: episode ticks are this device's own; AniList being further
     along is a small offer on the show page, not a setting."""
-    def ahead(self, f, slots, pending=False, fmt="TV"):
+    def ahead(self, f, slots, pending=False, fmt="TV", service="AniList"):
         a = APP.index("function aheadLine(")
         code = APP[a:APP.index("\n}\n", a) + 3]
-        js = ('const esc = (x) => String(x); const ico = (n) => `<i data-ico="${n}"></i>`;' + code + 'console.log(JSON.stringify(aheadLine('
+        js = ('const esc = (x) => String(x); const ico = (n) => `<i data-ico="${n}"></i>`;'
+              + "const acct = () => %s;" % json.dumps(service) + code + 'console.log(JSON.stringify(aheadLine('
               + json.dumps(f) + "," + json.dumps(pending) + "," + json.dumps({"format": fmt, "slots": slots}) + ")))")
         out = subprocess.run(["node", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=20)
         self.assertEqual(out.returncode, 0, out.stderr)
@@ -658,6 +659,18 @@ class DeviceMarks(unittest.TestCase):
     def test_movie(self):
         out = self.ahead({"progress": 1}, self.slots(0, 1), fmt="MOVIE")
         self.assertIn("watched on AniList", out)
+
+    def test_lists_reload_the_page_when_they_arrive(self):
+        """Decision 75 (Elias: switching left "still loading" up until a
+        manual reload): /api/now's list stamp reloads the page, and the
+        library's note shows the steps with a bar."""
+        self.assertIn("if (!now.playing) listsWatch(now.lists);", APP)
+        self.assertIn('notes.push(`<div class="note-bar listnote">${listNote()}</div>`)', APP)
+        self.assertIn("Matching your shows with AniList", APP)
+
+    def test_names_the_account_service(self):
+        """Decision 75: with MyAnimeList as the account, the line names it."""
+        self.assertIn("MyAnimeList is at ep 4", self.ahead({"progress": 4}, self.slots(1), service="MyAnimeList"))
 
     def test_movie_button(self):
         self.assertIn("mark watched here", self.ahead({"progress": 1}, self.slots(0, 1), fmt="MOVIE"))
