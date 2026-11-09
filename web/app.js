@@ -970,10 +970,18 @@ function plFlip(stack, d) {
   if (ctr) ctr.textContent = k + 1;
 }
 /* Scrolling over a stack flips it instead of the page: one card per flick of
-   the wheel, and a touchpad's long glide doesn't race through the list. */
+   the wheel, and a touchpad's long glide doesn't race through the list.
+   But a stack the page scrolled under a still mouse doesn't catch the wheel:
+   the page keeps scrolling until the mouse itself moves (Elias: you got stuck
+   on a playlist when you only meant to scroll the page). */
+const pageWheel = { x: NaN, y: NaN };
 document.addEventListener("wheel", (e) => {
   const st = e.target.closest?.(".plstack[data-n]");
-  if (!st || +st.dataset.n < 2 || e.ctrlKey || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+  const still = Math.hypot(e.screenX - pageWheel.x, e.screenY - pageWheel.y) < 6;
+  if (!st || still || +st.dataset.n < 2 || e.ctrlKey || Math.abs(e.deltaY) < Math.abs(e.deltaX)) {
+    if (!e.ctrlKey) { pageWheel.x = e.screenX; pageWheel.y = e.screenY; } // the page scrolled from here
+    return;
+  }
   e.preventDefault();
   const now = Date.now(), w = (st._w ||= { acc: 0, last: 0, flip: 0 });
   if (now - w.last > 200) w.acc = 0; // a new flick
