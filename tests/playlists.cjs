@@ -210,3 +210,14 @@ test("with no playlists the menu says how to make the first", () => {
   assert.equal(r.foot, "");
   assert.match(plMenuRows([], "aid:7", "Isekai", null).rows, /Make “Isekai” and add/);
 });
+
+test("the icon picker: every icon has a drawing, none twice, old icons still drawn", () => {
+  const a = source.indexOf("const LUCIDE = {"), b = source.indexOf("const lu = ");
+  const ctx = vm.createContext({});
+  vm.runInContext(source.slice(a, b) + ";this.L = LUCIDE; this.G = LU_GROUPS;", ctx);
+  const names = ctx.G.flatMap(([, g]) => g.split(" "));
+  assert.ok(names.length >= 100);
+  assert.equal(new Set(names).size, names.length);
+  for (const n of names) assert.ok(ctx.L[n], n);
+  for (const n of ["folder-code", "terminal", "git-branch", "cloud-rain"]) assert.ok(ctx.L[n], n); // saved on playlists before
+});
