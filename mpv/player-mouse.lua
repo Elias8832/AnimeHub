@@ -1,40 +1,96 @@
--- Anime Hub: what Settings → mpv says about the mouse on the picture,
--- Decision 53, and the fullscreen close button. Loaded beside every player
--- look. Plain bindings, so the user's input.conf still wins, and "own" binds
--- nothing.
+-- Anime Hub: what Settings → Player says about the mouse on the picture and
+-- keys (Decisions 53, 74), and the fullscreen close button. Loaded beside
+-- every player look. Plain bindings, so the user's input.conf still wins,
+-- unless Who wins says "These settings"; "own" binds nothing.
 local utils = require "mp.utils"
 
-local click = "own"
+-- Settings → Player → Who wins: "settings" binds forced, over input.conf.
+local priority = "config"
+local function bind(key, name, fn, opts)
+    if priority == "settings" then
+        mp.add_forced_key_binding(key, name, fn, opts)
+    else
+        mp.add_key_binding(key, name, fn, opts)
+    end
+end
 
--- Bound from the start, so the skip button's own binding, added later, wins
--- while it shows.
-mp.add_key_binding("MBTN_LEFT", "hub-picture-click", function()
-    if click == "pause" then mp.commandv("cycle", "pause") end
-end)
+-- Click, Double-click, Right click and Right double-click share one list.
+-- "own" binds nothing; "off" binds nothing to do, over mpv's own.
+local CLICKS = {
+    menu = function() mp.commandv("script-message", "anime-hub-menu", "mouse") end,
+    pause = function() mp.commandv("cycle", "pause") end,
+    fullscreen = function() mp.commandv("cycle", "fullscreen") end,
+    off = function() end,
+}
+local BUTTONS = { { "MBTN_LEFT", "click", "own" }, { "MBTN_LEFT_DBL", "double", "own" },
+    { "MBTN_RIGHT", "right", "menu" }, { "MBTN_RIGHT_DBL", "right_double", "own" } }
+
+local function bind_buttons(prefs)
+    for _, b in ipairs(BUTTONS) do
+        local name = "hub-" .. b[2]
+        mp.remove_key_binding(name)
+        local fn = CLICKS[prefs[b[2]] or b[3]]
+        if fn then bind(b[1], name, fn) end
+    end
+end
+-- Before the hub has said anything: right click opens the menu.
+bind_buttons({})
 
 local function apply(prefs)
-    click = prefs.click
-    for _, name in ipairs({ "hub-picture-double", "hub-wheel-up", "hub-wheel-down" }) do
+    priority = prefs.priority == "settings" and "settings" or "config"
+    bind_buttons(prefs)
+    for _, name in ipairs({ "hub-wheel-up", "hub-wheel-down" }) do
         mp.remove_key_binding(name)
     end
-    if prefs.double == "fullscreen" then
-        mp.add_key_binding("MBTN_LEFT_DBL", "hub-picture-double", function() mp.commandv("cycle", "fullscreen") end)
-    elseif prefs.double == "off" then
-        mp.add_key_binding("MBTN_LEFT_DBL", "hub-picture-double", function() end)
-    end
     if prefs.wheel == "volume" then
-        mp.add_key_binding("WHEEL_UP", "hub-wheel-up", function() mp.commandv("add", "volume", "5") end)
-        mp.add_key_binding("WHEEL_DOWN", "hub-wheel-down", function() mp.commandv("add", "volume", "-5") end)
+        bind("WHEEL_UP", "hub-wheel-up", function() mp.commandv("add", "volume", "5") end)
+        bind("WHEEL_DOWN", "hub-wheel-down", function() mp.commandv("add", "volume", "-5") end)
     elseif prefs.wheel == "seek" then
         local step = tostring(tonumber(prefs.skip) or 10)
-        mp.add_key_binding("WHEEL_UP", "hub-wheel-up", function() mp.commandv("seek", step, "relative+exact") end)
-        mp.add_key_binding("WHEEL_DOWN", "hub-wheel-down", function() mp.commandv("seek", "-" .. step, "relative+exact") end)
+        bind("WHEEL_UP", "hub-wheel-up", function() mp.commandv("seek", step, "relative+exact") end)
+        bind("WHEEL_DOWN", "hub-wheel-down", function() mp.commandv("seek", "-" .. step, "relative+exact") end)
+    end
+end
+
+-- Settings → mpv → Keys: only the keys the user moved, as plain bindings
+-- (input.conf still wins). Each matches what mpv's own default key does.
+local ACTIONS = {
+    pause = { "cycle", "pause" }, back = { "seek", "-5" }, forward = { "seek", "5" },
+    vol_up = { "add", "volume", "2" }, vol_down = { "add", "volume", "-2" }, mute = { "cycle", "mute" },
+    fullscreen = { "cycle", "fullscreen" }, subs = { "cycle", "sub" }, audio = { "cycle", "audio" },
+    speed_up = { "multiply", "speed", "1.1" }, speed_down = { "multiply", "speed", "0.9090909" },
+    screenshot = { "screenshot" }, menu = { "script-message", "anime-hub-menu" }, quit = { "quit" },
+}
+local REPEATS = { back = true, forward = true, vol_up = true, vol_down = true, speed_up = true, speed_down = true }
+local key_names = {}
+local unpack_ = table.unpack or unpack
+
+local function apply_keys(keys)
+    for _, name in ipairs(key_names) do mp.remove_key_binding(name) end
+    key_names = {}
+    if type(keys) ~= "table" then return end
+    for _, key in ipairs(type(keys.free) == "table" and keys.free or {}) do
+        local name = "hub-free-" .. #key_names
+        bind(key, name, function() end)
+        key_names[#key_names + 1] = name
+    end
+    for action, key in pairs(type(keys.bind) == "table" and keys.bind or {}) do
+        local cmd = ACTIONS[action]
+        if cmd and type(key) == "string" and key ~= "" then
+            local name = "hub-key-" .. action
+            bind(key, name, function() mp.commandv(unpack_(cmd)) end,
+                { repeatable = REPEATS[action] or false })
+            key_names[#key_names + 1] = name
+        end
     end
 end
 
 mp.register_script_message("anime-hub-info", function(raw)
     local data = utils.parse_json(raw or "")
-    if type(data) == "table" and type(data.prefs) == "table" then apply(data.prefs) end
+    if type(data) == "table" and type(data.prefs) == "table" then
+        apply(data.prefs)
+        apply_keys(data.prefs.keys)
+    end
 end)
 
 -- The close button: fullscreen has no window corner to close from, so resting

@@ -2596,8 +2596,87 @@ const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
 const PLAYER_LOOKS = { soft: "Float", deck: "Dock" };
 const PLAYER_LINES = { soft: "Controls float over the picture.", deck: "One slim bar along the bottom." };
 const mpick = (m, k, label, opts) => pick(label, "spref", "mpv_" + k, opts, m[k]);
+/* The four clicks on the picture share one list (Decision 74). */
+const CLICKS = [["own", "My config"], ["menu", "Menu"], ["pause", "Pause"], ["fullscreen", "Fullscreen"], ["off", "Nothing"]];
 const MPVMODES = [["on", "On"], ["off", "Off"], ["own", "My config"]];
 const mpvSeg = (m, k, label) => mpick(m, k, label, MPVMODES);
+/* Player keys: click a key, press a new one. Only moved keys
+   are saved; the player binds them, input.conf still wins. */
+const HK_ACTIONS = [["pause", "Play / pause"], ["back", "Back 5 s"], ["forward", "Forward 5 s"], ["vol_up", "Volume up"], ["vol_down", "Volume down"],
+  ["mute", "Mute"], ["fullscreen", "Fullscreen"], ["subs", "Next subtitles"], ["audio", "Next audio"], ["speed_up", "Faster"], ["speed_down", "Slower"],
+  ["screenshot", "Screenshot"], ["menu", "Open the menu"], ["quit", "Close the player"]];
+const HK_SHOWN = { MBTN_MID: "Middle click", MBTN_BACK: "Back button", MBTN_FORWARD: "Forward button", SPACE: "Space", ENTER: "Enter", TAB: "Tab", BS: "Backspace", DEL: "Delete", INS: "Insert", HOME: "Home", END: "End",
+  PGUP: "Page up", PGDWN: "Page down", UP: "↑", DOWN: "↓", LEFT: "←", RIGHT: "→", ESC: "Esc", SHARP: "#" };
+function hkShow(k) {
+  if (!k) return "";
+  const plus = k.endsWith("+") && !k.endsWith("++") ? k.length - 1 : k.lastIndexOf("+", k.length - 2);
+  const mods = plus > 0 ? k.slice(0, plus + 1) : "", base = plus > 0 ? k.slice(plus + 1) : k;
+  return mods + (HK_SHOWN[base] || base);
+}
+const HK_NAMED = { " ": "SPACE", Enter: "ENTER", Tab: "TAB", Backspace: "BS", Delete: "DEL", Insert: "INS", Home: "HOME", End: "END",
+  PageUp: "PGUP", PageDown: "PGDWN", ArrowUp: "UP", ArrowDown: "DOWN", ArrowLeft: "LEFT", ArrowRight: "RIGHT", "#": "SHARP" };
+/* A browser key press as mpv names it; null for one it can't take. */
+function hkName(e) {
+  let base = HK_NAMED[e.key] || (/^F([1-9]|1[0-2])$/.test(e.key) ? e.key : null);
+  const named = !!base;
+  if (!base && [...e.key].length === 1 && e.key.trim()) base = e.key;
+  if (!base) return null;
+  return (e.ctrlKey ? "Ctrl+" : "") + (e.altKey ? "Alt+" : "") + (e.metaKey ? "Meta+" : "") + (e.shiftKey && named ? "Shift+" : "") + base;
+}
+function hkGroup(m) {
+  const d = m.key_defaults || {}, moved = HK_ACTIONS.some(([a]) => (m.keys[a] || "") !== (d[a] || ""));
+  const row = ([a, label]) => {
+    const k = m.keys[a] || "", wait = S.hkWait === a, own = k !== (d[a] || "");
+    const ctl = `<span class="hk">${own ? `<button class="hkr" data-a="hkreset" data-v="${a}" aria-label="${esc(label)}: back to ${esc(hkShow(d[a]) || "no key")}" title="Back to ${esc(hkShow(d[a]) || "no key")}">${ico("undo")}</button>` : ""}<button class="hkb${wait ? " wait" : ""}${k ? "" : " none"}" data-a="hkset" data-v="${a}" aria-label="${esc(label)}: ${esc(hkShow(k) || "no key")}. Change">${wait ? "Press a key…" : k ? `<kbd>${esc(hkShow(k))}</kbd>` : "No key"}</button></span>`;
+    return srow(esc(label), "", ctl);
+  };
+  return `<div class="group"><h3>Keys</h3><p class="sub">Click a key, then press the new one: a key, middle click or a mouse side button. Esc cancels. ${m.priority === "settings" ? "These win over your input.conf." : "A key in your input.conf still wins."}${moved ? ` <button class="lnk" data-a="hkresetall">Reset all keys</button>` : ""}</p>
+    ${HK_ACTIONS.map(row).join("")}</div>`;
+}
+function hkSave(over, note) {
+  api("/api/settings", { mpv_keys: over }).then((r) => {
+    if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+    S.settings = r; if (S.view === "settings") render(true);
+    if (note) toast(note);
+  }).catch(() => toast("Could not save — is the hub running?"));
+}
+/* The moved keys now, as the server keeps them. */
+function hkMoved() {
+  const m = S.settings?.mpv || {}, d = m.key_defaults || {}, over = {};
+  for (const [a] of HK_ACTIONS) if ((m.keys?.[a] || "") !== (d[a] || "")) over[a] = m.keys[a] || "";
+  return over;
+}
+/* A mouse button while waiting: middle and the side buttons are taken; the
+   left button only cancels (it is the Click setting), the right one too. */
+const HK_MOUSE = { 1: "MBTN_MID", 3: "MBTN_BACK", 4: "MBTN_FORWARD" };
+window.addEventListener("mousedown", (e) => {
+  if (!S.hkWait) return;
+  const k = HK_MOUSE[e.button];
+  if (!k) { if (!e.target.closest?.("[data-a=hkset]")) { S.hkWait = null; render(true); } return; }
+  e.preventDefault(); e.stopImmediatePropagation();
+  const a = S.hkWait; S.hkWait = null;
+  hkTake(a, (e.ctrlKey ? "Ctrl+" : "") + (e.altKey ? "Alt+" : "") + (e.shiftKey ? "Shift+" : "") + k);
+}, true);
+/* The side buttons would also go back/forward in the window. */
+for (const t of ["mouseup", "auxclick"]) window.addEventListener(t, (e) => { if (e.button === 3 || e.button === 4) { if (S.view === "settings" && $(".hk")) e.preventDefault(); } }, true);
+function hkTake(a, k) {
+  const over = hkMoved(), keys = S.settings.mpv.keys, d = S.settings.mpv.key_defaults;
+  let note = "";
+  for (const [b, label] of HK_ACTIONS) if (b !== a && keys[b] === k) { over[b] = ""; note = `${hkShow(k)} was ${label} — that has no key now`; }
+  over[a] = k;
+  if (k === d[a]) delete over[a];
+  hkSave(over, note);
+}
+window.addEventListener("keydown", (e) => {
+  if (!S.hkWait) return;
+  if (["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "Dead"].includes(e.key)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const a = S.hkWait; S.hkWait = null;
+  if (e.key === "Escape") { render(true); return; }
+  const k = hkName(e);
+  if (!k) { render(true); toast("mpv can't use that key — pick another."); return; }
+  hkTake(a, k);
+}, true);
 function playerGroup(s) {
   const m = s.mpv || {}, hub = m.design === "on";
   const w = playWhere();
@@ -2612,9 +2691,13 @@ function playerGroup(s) {
     ${hub ? srow("Loaded part on the seek bar", "A lighter stretch shows how much mpv has loaded.", mpick(m, "loaded", "Loaded part on the seek bar", [["on", "On"], ["off", "Off"]])) : ""}
     ${hub ? srow("Skip buttons jump", "How far back and forward go.", mpick(m, "skip_seconds", "Skip buttons jump", [["5", "5 s"], ["10", "10 s"], ["15", "15 s"], ["30", "30 s"]])) : ""}</div>
     ${hub ? `<div class="group"><h3>Mouse on the picture</h3>
-    ${srow("Click", "", mpick(m, "click", "Click on the picture", [["own", "My config"], ["pause", "Pause"]]))}
-    ${srow("Double-click", "", mpick(m, "double", "Double-click on the picture", [["own", "My config"], ["fullscreen", "Fullscreen"], ["off", "Nothing"]]))}
-    ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}</div>` : ""}`;
+    ${srow("Who wins", "When your input.conf sets the same button or key as the mouse and Keys choices here.", mpick(m, "priority", "Who wins", [["config", "My input.conf"], ["settings", "These settings"]]))}
+    ${srow("Click", "", mpick(m, "click", "Click on the picture", CLICKS))}
+    ${srow("Double-click", "", mpick(m, "double", "Double-click on the picture", CLICKS))}
+    ${srow("Right click", "Menu: subtitles, audio, episodes and more.", mpick(m, "right", "Right click on the picture", CLICKS))}
+    ${srow("Right double-click", "", mpick(m, "right_double", "Right double-click on the picture", CLICKS))}
+    ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}
+    ${m.keys ? hkGroup(m) : ""}` : ""}`;
 }
 function subsGroup(s) {
   const m = s.mpv || {}, st = s.stream || {};
@@ -2875,7 +2958,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
    preview of the picked row and its keys. */
 const SETTINGS_INDEX = [
   ["Fullscreen", "player", "mpv fullscreen window player config"], ["Starting volume", "player", "mpv volume start remember last"], ["Player design", "player", "mpv controls design skin osc interface anime hub controls"], ["Player layout", "player", "mpv look layout design style float dock skin"],
-  ["Smooth controls while playing", "player", "mpv smooth lag laggy video sync display refresh"], ["Loaded part on the seek bar", "player", "mpv buffer cache loaded preload seek bar"], ["Skip buttons jump", "player", "mpv skip seconds forward back length"], ["Click", "player", "mpv mouse click pause picture"], ["Double-click", "player", "mpv mouse double click fullscreen"], ["Scroll wheel", "player", "mpv mouse scroll wheel volume seek"],
+  ["Smooth controls while playing", "player", "mpv smooth lag laggy video sync display refresh"], ["Loaded part on the seek bar", "player", "mpv buffer cache loaded preload seek bar"], ["Skip buttons jump", "player", "mpv skip seconds forward back length"], ["Click", "player", "mpv mouse click pause picture"], ["Double-click", "player", "mpv mouse double click fullscreen"], ["Scroll wheel", "player", "mpv mouse scroll wheel volume seek"], ["Right click", "player", "mpv mouse right click menu context pause fullscreen"], ["Right double-click", "player", "mpv mouse right double click menu pause fullscreen"], ["Play / pause", "player", "mpv keys hotkeys shortcuts keyboard bind keybind input space mouse button middle side"], ["Who wins", "player", "mpv input.conf priority config settings override clash conflict"],
   ["Sub or dub", "subs", "sub dub audio language online japanese english"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dual remember", "remember_tracks"], ["Size", "subs", "mpv subtitle size bigger smaller"], ["Colour", "subs", "mpv subtitle colour color white yellow"], ["Outline", "subs", "mpv subtitle outline border thick thin"], ["Styled subtitles", "subs", "mpv subtitle styled ass replace override style font"],
   ["Skip openings", "skipping", "skip opening op intro chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed outro chapter mpv"], ["Mark them on the seek bar", "skipping", "mpv timeline chapters marks opening ending seek bar", "mpv_marks"], ["Skip times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Load the next episode early", "online", "prepare next episode speed faster ready", "prepare_online"], ["ani-cli", "online", "ani-cli update version install streaming"],
@@ -5446,6 +5529,16 @@ const A = {
   dlcancel: (v) => { api("/api/download/cancel", { id: +v }).then(() => pollSoon(200)).catch(() => {}); },
   dlclear: () => { api("/api/download/clear", {}).then(() => { S.dl = S.dl.filter((j) => j.status === "running" || j.status === "queued"); paintNav(); }).catch(() => {}); },
   tipgo: () => { const go = S.modal?.go; S.settings.play_tip_done = true; api("/api/settings", { play_tip_done: true }).catch(() => {}); closeModal(); go?.(); },
+  hkset: (v) => { S.hkWait = S.hkWait === v ? null : v; render(true); },
+  hkreset: (v) => {
+    const over = hkMoved(), d = S.settings.mpv.key_defaults[v], keys = S.settings.mpv.keys;
+    delete over[v];
+    let note = "";
+    /* Its old key went to another action meanwhile: that one gives it back. */
+    for (const [b, label] of HK_ACTIONS) if (b !== v && d && keys[b] === d) { over[b] = ""; note = `${hkShow(d)} was ${label} — that has no key now`; }
+    hkSave(over, note);
+  },
+  hkresetall: () => hkSave({}, "Keys are back to mpv's own"),
   spref: (v, t) => {
     api("/api/settings", { [t.dataset.k]: v }).then((r) => {
       if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");

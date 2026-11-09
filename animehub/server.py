@@ -721,9 +721,16 @@ class Handler(BaseHTTPRequestHandler):
                 if key in body and body[key] not in allowed:
                     self._bad("'%s' must be one of: %s" % (key, ", ".join(allowed)))
                     return
-            if not any(key in body for key in (*keys, *choices)):
-                self._bad("nothing to change — send one of: %s" % ", ".join((*keys, *choices)))
+            if not any(key in body for key in (*keys, *choices, "mpv_keys")):
+                self._bad("nothing to change — send one of: %s" % ", ".join((*keys, *choices, "mpv_keys")))
                 return
+            if "mpv_keys" in body:
+                # Settings → mpv → Keys: the whole set of moved keys.
+                try:
+                    settings.set_player_keys(body["mpv_keys"])
+                except ValueError as e:
+                    self._bad(str(e))
+                    return
             for key in choices:
                 if key in body:
                     settings.set_setting(key, body[key])
