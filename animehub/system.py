@@ -138,10 +138,12 @@ def _kernel32():
     return k
 
 
-def job_start(proc):
+def job_start(proc, kill_on_close=False):
     """Windows only: put a process started with SUSPENDED in a job of its
     own, then let it run. Returns the job, or None when Windows won't make
-    one (the run then goes as before, with taskkill alone)."""
+    one (the run then goes as before, with taskkill alone). kill_on_close:
+    the job ends the process when its last handle closes, so when this
+    process ends, however it ends."""
     import ctypes
     from ctypes import wintypes
     handle = int(proc._handle)
@@ -149,6 +151,13 @@ def job_start(proc):
     try:
         k = _kernel32()
         job = k.CreateJobObjectW(None, None)
+        if job and kill_on_close:
+            info = _job_limits()
+            info.basic.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            k.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
+            if not k.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):  # extended limits
+                k.CloseHandle(job)
+                job = None
         if job and not k.AssignProcessToJobObject(job, handle):
             k.CloseHandle(job)
             job = None
@@ -159,6 +168,60 @@ def job_start(proc):
         ntdll.NtResumeProcess.argtypes = (wintypes.HANDLE,)
         ntdll.NtResumeProcess(handle)
     return job
+
+
+def _job_limits():
+    """JOBOBJECT_EXTENDED_LIMIT_INFORMATION, all zero."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("user_time", ctypes.c_int64), ("job_time", ctypes.c_int64), ("LimitFlags", wintypes.DWORD),
+                    ("min_set", ctypes.c_size_t), ("max_set", ctypes.c_size_t), ("processes", wintypes.DWORD),
+                    ("affinity", ctypes.c_size_t), ("priority", wintypes.DWORD), ("scheduling", wintypes.DWORD)]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("basic", Basic), ("io", ctypes.c_uint64 * 6), ("process_memory", ctypes.c_size_t),
+                    ("job_memory", ctypes.c_size_t), ("peak_process", ctypes.c_size_t), ("peak_job", ctypes.c_size_t)]
+
+    return Extended()
+
+
+def hand_over(cmd):
+    """This process ends and cmd runs in its place, for whoever started it
+    (the desktop app holds the hub by its process). POSIX: exec, the same
+    process, and the desktop app's leash (PR_SET_PDEATHSIG) carries over.
+    Windows has no real exec: cmd runs as a child in a job that ends it when
+    this process ends (the desktop app's Quit ends this one), and this
+    process waits for it holding the GIL, so none of its other threads runs
+    again. It ends with cmd's exit code. Never returns."""
+    for f in (sys.stdout, sys.stderr):
+        try:
+            f.flush()
+        except (AttributeError, OSError, ValueError):
+            pass
+    if not WINDOWS:
+        os.execv(cmd[0], cmd)
+    import ctypes
+    from ctypes import wintypes
+    out = [_std(f) for f in (sys.stdout, sys.stderr)]
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out[0], stderr=out[1],
+                            creationflags=SUSPENDED | _NO_WINDOW)
+    job = job_start(proc, kill_on_close=True)  # noqa: F841  (open until this process ends)
+    # PyDLL keeps the GIL through the call: the other threads stop here.
+    wait = ctypes.PyDLL("kernel32").WaitForSingleObject
+    wait.argtypes, wait.restype = (wintypes.HANDLE, wintypes.DWORD), wintypes.DWORD
+    wait(int(proc._handle), 0xFFFFFFFF)
+    os._exit(proc.wait() or 0)
+
+
+def _std(f):
+    """A stream for a child to write to: this one's, or nowhere."""
+    try:
+        f.fileno()
+        return f
+    except (AttributeError, OSError, ValueError):
+        return subprocess.DEVNULL
 
 
 def job_end(job):

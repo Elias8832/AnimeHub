@@ -968,6 +968,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(update.check())
         elif route == "/api/update-install":
             self.send_json(update.install())
+        elif route == "/api/update-restart":
+            r = update.restart(restart_busy())
+            self.send_json(r, 400 if r.get("error") else 200)
+            if r.get("ok"):
+                threading.Thread(target=stop_serving, daemon=True).start()
         elif route == "/api/playlists":
             # Additive (Decision 64): one route, {op: create/rename/delete/add/remove/move}.
             try:
@@ -1402,6 +1407,28 @@ class RemoteHandler(Handler):
             self.send_json({"error": "Wrong or expired code. Check the PC for the current one."}, 400)
 
 
+_serving = {"server": None}
+
+
+def restart_busy():
+    """What a restart would cut off, in words, or None."""
+    with player._active_lock:
+        if player._active:
+            return "Something is playing. Close the player, then restart."
+    if phoneplay.now():
+        return "The phone is playing. Stop it, then restart."
+    if any(j.get("status") in ("queued", "running") for j in downloader.downloads_payload()):
+        return "A download is running. Restart when it's done, or cancel it."
+    return None
+
+
+def stop_serving():
+    """Ends serve_forever once the answer is out; main() then restarts."""
+    time.sleep(0.3)
+    if _serving["server"]:
+        _serving["server"].shutdown()
+
+
 def open_ui():
     """How the user reaches the UI on startup (Decision 26). "app": a
     Chromium-family app-mode window — a standalone window with no tabs or
@@ -1484,4 +1511,13 @@ def main():
           flush=True)
     if not no_browser and config.WINDOW != "none":
         open_ui()
+    _serving["server"] = server
     server.serve_forever()
+    # Only a restart stops the loop (an update just installed): the ports go
+    # free first, then the new version takes this process's place.
+    server.server_close()
+    if not update.restart_wanted():
+        return
+    remote.stop()
+    print("anime-hub: restarting for the new version", flush=True)
+    system.hand_over(update.restart_command(sys.argv))

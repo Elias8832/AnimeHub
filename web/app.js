@@ -2655,20 +2655,21 @@ const upName = (f) => f.label || "v" + f.version;
 function updateRows(s) {
   const u = s.update || {}, f = u.found, j = u.job || {}, one = !!u.installable, busy = j.state === "working", done = j.state === "done";
   const more = f?.url ? `<button class="btn" data-a="upnotes">What's new</button>` : "";
-  const how = done ? `Updated. Close AnimeHub and open it again to start the new version${s.keep_running ? " (Quit in the tray icon, as it keeps running)" : ""}.${j.note ? " " + esc(j.note) : ""}`
+  const how = done ? (S.upRestart ? "Restarting… the page reloads when the new version answers." : `Updated. Restart AnimeHub to start the new version.${j.note ? " " + esc(j.note) : ""}`)
     : busy ? (u.kind === "git" ? "Getting it with git…" : `Downloading… ${j.percent || 0}%`)
-    : j.state === "failed" ? `<span class="chip warn">Failed</span> ${esc(j.error || "")}`
+    : j.state === "failed" ? esc(j.error || "Nothing changed.")
     : one ? ({ git: "Moves this copy ahead with git. Your data stays.", windows: "Swaps in the new files. Your data stays." }[u.kind] || "Replaces this AppImage. Your data stays.")
     : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
   const b = u.build, unstableHere = !!b && u.channel !== "unstable" && !f;
-  const ver = `AnimeHub v${esc(u.version || "")}${b ? ` · build ${esc(String(b.number))} (${esc(b.commit.slice(0, 7))})` : u.head ? ` · commit ${esc(u.head)}` : ""}`
+  const ver = `AnimeHub v${esc(u.version || "")}${b ? ` · build ${esc(String(b.number))} (${esc(b.commit.slice(0, 7))})` : u.head ? (u.git_build ? ` · build ${esc(String(u.git_build))} (${esc(u.head)})` : ` · commit ${esc(u.head)}`) : ""}`
     + (unstableHere ? ". This is an unstable build: Stable takes over at the next release." : "");
   const chan = u.channel === "unstable" ? "A new build after every change. Newest fixes first, and sometimes broken." + (u.kind === "windows" ? " Not tested on Windows." : "")
     : "Every numbered release on GitHub.";
   return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
-    + (f ? srow(`${esc(upName(f))} is out`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : "Install"}</button>` : ""))) : "")
+    + (f ? srow(`${esc(upName(f))} is out${j.state === "failed" ? '<span class="swarn">Failed</span>' : ""}`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : j.state === "failed" ? "Try again" : "Install"}</button>`
+      : done ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
     + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
     + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
 }
@@ -3290,7 +3291,7 @@ const SETTINGS_INDEX = [
   ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Updates from", "data", "update channel stable unstable beta nightly build"], ["Keep running after closing", "data", "keep running background server close phone tray", "keep_running"], ["Start at login", "data", "start login boot autostart server phone", "start_at_login"],
   ["mpv", "data", "mpv ani-cli upscayl tools player detected"], ["Config file", "data", "config file data folder server port"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["First-run tour", "data", "tour setup welcome"],
 ];
-const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}${esc(upName(f))} is out</button>` : ""; };
+const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st up" data-a="upopen">${ico("download")}${esc(upName(f))} is out</button>` : ""; };
 /* Ten plain sections (Decision 73, like GNOME's Settings): one or two words you'd look for. */
 const SET_TABS = [["player", "Player", "Watching"], ["subs", "Subtitles", "Watching"], ["skipping", "Skipping", "Watching"], ["online", "Online", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["privacy", "Privacy & VPN", "Accounts"], ["anilist", "Account", "Accounts"], ["phone", "Phone", "Accounts"], ["data", "System", "This PC"]];
 const COMMANDS = [
@@ -3542,12 +3543,12 @@ function paintNav() {
   const now = S.data?.now, ctx = now && findEpContext(now.episode_id), pct = now ? Math.round(now.percent) : 0;
   const nr = $("#nr"), popHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued");
   const dlPct = dlActive.find((j) => j.status === "running")?.percent;
-  /* The status line (Decision 38): playing · next source · downloads · VPN · AniList sync · keys. */
+  /* The status line (Decision 38): playing · next source · downloads · VPN · AniList sync · on the right: new version · keys. */
   const html = `${now ? `<button class="st np" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><i class="led"></i><span class="npt">playing <b>${esc(now.show)} · ${esc(now.label)}</b></span><span class="pc">${now.loading ? "loading" : "@P@%"}</span></button>${nextChip(now)}` : ""}
     <div class="rel"><button class="st dlb${dlActive.length ? " on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive.length ? `<b>${dlActive.length}</b>${dlPct != null ? ` · ${Math.floor(dlPct)}%` : ""}` : "downloads"}</button>${S.menu === "dl" ? dlPop() : ""}</div>
-    ${vpnChip()}${upChip()}
+    ${vpnChip()}
     ${S.outbox ? `<div class="rel"><button class="st sync warn" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : S.ani?.connected ? `<span class="st">${isMal() ? "mal" : "anilist"} synced</span>` : ""}
-    <div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button>${S.menu === "keys" ? keysPop() : ""}</div>`;
+    ${upChip()}<div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button>${S.menu === "keys" ? keysPop() : ""}</div>`;
   if (html === nrLast) {
     /* Only the playback percent moved: patch in place. */
     const pc = nr.querySelector(".np .pc");
@@ -6354,6 +6355,25 @@ const A = {
     } while (S.settings?.update?.job?.state === "working");
     await loadSettings();
     if (S.view === "settings") render(true);
+  },
+  /* The hub starts its new version in its own place; the page reloads once
+     a hub that started later answers (update.started). */
+  uprestart: async () => {
+    const was = S.settings?.update?.started;
+    const r = await api("/api/update-restart", {}).catch(() => ({ error: "Could not reach the hub." }));
+    if (r.error) return toast(r.error, "err");
+    S.upRestart = true;
+    if (S.view === "settings") render(true);
+    let down = false; // a hub that went away and answers again is the new one too
+    for (const end = Date.now() + 90e3; Date.now() < end;) {
+      await sleep(1000);
+      const s = await fetch("/api/settings", { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+      if (!s) down = true;
+      else if ((s.update?.started && s.update.started !== was) || down) return location.reload();
+    }
+    S.upRestart = false;
+    if (S.view === "settings") render(true);
+    toast("AnimeHub didn't come back. Open it again by hand.", "err");
   },
   aniget: async () => {
     S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);
