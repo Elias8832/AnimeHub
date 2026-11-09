@@ -17,8 +17,9 @@ function context(mode, entries, shows, playlists = [], untracked = []) {
     entryCard: (e) => `entry:${e.id}`, showCard: (s) => `show:${s.id}`, FMT: { TV: "TV" },
     LUCIDE: { "cloud-rain": "<path/>" }, lu: (n) => `<svg data-icon="${n}"></svg>`,
     esc: (x) => String(x), ico: (n) => `[${n}]`, poster: (t, u) => `<img alt="${t}" src="${u}">`,
+    hl: (t, q) => String(t).replace(new RegExp(q, "i"), (m) => `<mark>${m}</mark>`),
   });
-  vm.runInContext(source.slice(from, to) + source.slice(source.indexOf("function plWall() {"), source.indexOf("function plResPaint()")) + ";this.api = { plEntryRef, plShowRef, plFind, plItemCard, plHead, plReorder, plSlotAt, plBox, plStack, plPos, plAddCands, plHomeHTML, plWall };", ctx);
+  vm.runInContext(source.slice(from, to) + source.slice(source.indexOf("function plWall() {"), source.indexOf("function plResPaint()")) + ";this.api = { plEntryRef, plShowRef, plFind, plItemCard, plHead, plReorder, plSlotAt, plBox, plStack, plPos, plAddCands, plHomeHTML, plWall, plMenuRows };", ctx);
   ctx.api.ctx = ctx;
   return ctx.api;
 }
@@ -176,4 +177,36 @@ test("Settings: four ways to open a stack, a ‹ value › to pick one, the chos
   assert.match(row, /class="plpv" data-fan="cascade"/); // the picture shows the chosen one
   assert.match(row, /src="f.jpg"/);
   assert.match(source, /fan: \["fan", "wide", "cascade", "peek"\]/);
+});
+
+/* The add menu (TODO 189, mockup A): ticks, find as you type, make one by name. */
+test("the add menu ticks the playlists a show is on and counts them", () => {
+  const { plMenuRows } = context("local", [], []);
+  const all = [{ id: 1, name: "Interested", items: [] }, { id: 2, name: "Weekend binge", color: "#e5737a", items: [{ ref: "aid:7" }] }];
+  const r = plMenuRows(all, "aid:7", "", null);
+  assert.match(r.rows, /data-v="2" role="menuitemcheckbox" aria-checked="true"/);
+  assert.match(r.rows, /data-v="1" role="menuitemcheckbox" aria-checked="false"/);
+  assert.equal(r.foot, "on 1 playlist");
+  assert.doesNotMatch(r.rows, /plmake/);
+  assert.match(plMenuRows(all, "aid:7", "", 2).rows, /Added · /);
+  assert.equal(plMenuRows(all, "aid:9", "", null).foot, "on no playlist yet");
+});
+
+test("typing filters the playlists and offers to make one by that name", () => {
+  const { plMenuRows } = context("local", [], []);
+  const all = [{ id: 1, name: "Interested", items: [] }, { id: 2, name: "Weekend binge", items: [] }];
+  const r = plMenuRows(all, "aid:7", "week", null);
+  assert.match(r.rows, /<mark>Week<\/mark>end binge/);
+  assert.doesNotMatch(r.rows, /Interested/);
+  assert.match(r.rows, /data-a="plmake".*Make “week” and add/);
+  assert.doesNotMatch(plMenuRows(all, "aid:7", " interested ", null).rows, /plmake/); // that name exists already
+});
+
+test("with no playlists the menu says how to make the first", () => {
+  const { plMenuRows } = context("local", [], []);
+  const r = plMenuRows([], "aid:7", "", null);
+  assert.equal(r.rows, "");
+  assert.match(r.note, /Type a name/);
+  assert.equal(r.foot, "");
+  assert.match(plMenuRows([], "aid:7", "Isekai", null).rows, /Make “Isekai” and add/);
 });

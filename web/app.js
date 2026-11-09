@@ -764,6 +764,21 @@ const plHomeHTML = () => {
   const pins = (S.data.playlists || []).filter((p) => p.pinned);
   return pins.length ? `<section class="hsec plhome"><div class="sh"><h2>Playlists</h2><span class="mut">pinned</span><span class="fill"></span><button class="link-btn" data-a="plgoto" data-v="">All playlists${ico("arrowr")}</button></div><div class="plhomegrid">${pins.map((p, i) => plBox(p, i, "plgoto")).join("")}</div></section>` : "";
 };
+/* The add menu's list (Elias picked mockup A, 2026-11-09): every playlist
+   with a tick, the ones whose name holds the typed words, and "Make …"
+   when no playlist has exactly that name. `just` is the one a click just
+   added to: its count line says so in its colour. */
+function plMenuRows(all, ref, q, just) {
+  const ql = q.trim().toLowerCase(), hits = ql ? all.filter((p) => p.name.toLowerCase().includes(ql)) : all;
+  const rows = hits.map((p) => {
+    const on = plHolds(p, ref), now = on && just === p.id;
+    return `<button class="mi plmi${on ? " on" : ""}${now ? " just" : ""}" style="--plc:${esc(plColor(p))};--plk:${esc(p.color || "#ecebe8")}" data-a="pltoggle" data-v="${p.id}" role="menuitemcheckbox" aria-checked="${on}"><span class="plmt">${p.icon && LUCIDE[p.icon] ? lu(p.icon) : ico("list")}</span><span class="ml"><b>${ql ? hl(p.name, q.trim()) : esc(p.name)}</b><small>${now ? "<i>Added · </i>" : ""}${plCount(p.items.length)}</small></span><span class="plmc">${ico("check")}</span></button>`;
+  });
+  if (ql && !all.some((p) => p.name.trim().toLowerCase() === ql)) rows.push(`<button class="mi plmk" data-a="plmake"><span class="plmt">${ico("plus")}</span><span class="ml">Make “${esc(q.trim())}” and add</span><kbd class="kb">↵</kbd></button>`);
+  const on = all.filter((p) => plHolds(p, ref)).length;
+  const note = !all.length && !ql ? "No playlists yet. Type a name to make one." : "";
+  return { rows: rows.join(""), note, foot: on ? `on ${on} playlist${on === 1 ? "" : "s"}` : all.length ? "on no playlist yet" : "" };
+}
 /* @pl:end */
 function plWall() {
   const cur = plCurrent();
@@ -921,15 +936,32 @@ async function plDragEnd(keep) {
   } else if (d.pending) render(true);
   if (d.pending && keep && to !== d.from) render(true);
 }
-/* The add menu, in the episode-menu box: a tick on the playlists it's on. */
+/* The add menu, in the episode-menu box (mockup A, 2026-11-09): the show's
+   poster and name on top, a box that finds a playlist or makes one, a tick
+   per playlist. It stays open, so one show goes on several lists in one go. */
 function plMenu(item, x, y) {
-  S.plItem = item;
-  const m = $("#cm"), all = S.data.playlists || [];
-  m.innerHTML = `<div class="cap">Add to playlist · ${esc(item.title)}</div>${all.map((p) => {
-    const on = plHolds(p, item.ref);
-    return `<button class="mi plmi${on ? " on" : ""}" style="--plc:${esc(plColor(p))}" data-a="pltoggle" data-v="${p.id}" aria-pressed="${on}"><span class="plmt">${p.icon && LUCIDE[p.icon] ? lu(p.icon) : ico("list")}</span><span class="ml"><b>${esc(p.name)}</b><small>${plCount(p.items.length)}</small></span><span class="plmc">${ico("check")}</span></button>`;
-  }).join("")}${all.length ? '<div class="sep"></div>' : ""}${cmRow("plnew", "item", "plus", "New playlist")}`;
+  S.plItem = item; S.plMq = ""; S.plJust = null;
+  const m = $("#cm");
+  m.innerHTML = `<div class="plmh">${item.poster ? `<img src="${esc(item.poster)}" alt="">` : `<span class="plmph">${ico("list")}</span>`}<div><small>Add to playlist</small><b>${esc(item.title)}</b></div></div>
+  <label class="plmq">${ico("search")}<input id="plmq" type="text" autocomplete="off" spellcheck="false" maxlength="60" placeholder="${(S.data.playlists || []).length ? "Find or make a playlist" : "Name a new playlist"}" aria-label="Find or make a playlist"></label>
+  <div class="plml" id="plml" role="menu"></div><div class="plmf" id="plmf"></div>`;
+  plMenuPaint();
   cmShow(m, x, y);
+  m.querySelector(".mi.sel")?.classList.remove("sel"); // nothing looks picked before a key or the mouse says so
+  $("#plmq").addEventListener("input", (e) => { S.plMq = e.target.value; plMenuPaint(); });
+  if (!mq("(pointer:coarse)")) $("#plmq").focus({ preventScroll: true });
+}
+const plPicking = () => $("#cm").style.display === "block" && !!$("#cm .plmh");
+/* Repaint the rows in place (the typed box keeps its focus); while typing,
+   the first row is the one Enter takes. */
+function plMenuPaint() {
+  const it = S.plItem, l = $("#plml"), f = $("#plmf");
+  if (!it || !l) return;
+  const keep = l.querySelector(".mi.sel")?.dataset.v, r = plMenuRows(S.data.playlists || [], it.ref, S.plMq || "", S.plJust);
+  l.innerHTML = r.rows + (r.note ? `<div class="plme">${r.note}</div>` : "");
+  f.innerHTML = `<span>${r.foot}</span><span class="plmk2">${mq("(pointer:coarse)") ? "" : "↑↓ ↵ toggles · esc"}</span>`;
+  const sel = (S.plMq || "").trim() ? l.querySelector(".mi") : keep && l.querySelector(`.mi[data-v="${keep}"]`);
+  sel?.classList.add("sel");
 }
 /* Right-click on a playlist box: open, edit, pin, delete. */
 function plBoxMenu(id, x, y, home) {
@@ -6073,12 +6105,30 @@ const A = {
   },
   plmove: async (v, t) => { if (await plPost({ op: "move", id: S.lib.pl, ref: v, by: +t.dataset.d })) render(); },
   plremove: (v) => { const p = plCurrent(); if (p) plRemove(p, v); },
-  pladd: (v, t) => { const r = t.getBoundingClientRect(); plMenu({ ref: t.dataset.r, title: t.dataset.t, poster: t.dataset.p || null }, r.left, r.bottom + 6); },
+  /* From the ⋯ menu the row is already hidden (no size): open where that menu was. */
+  pladd: (v, t) => {
+    const r = t.getBoundingClientRect(), m = $("#cm"), z = zoomGet() / 100;
+    const [x, y] = r.width ? [r.left, r.bottom + 6] : [(parseFloat(m.style.left) || 8) * z, (parseFloat(m.style.top) || 8) * z];
+    plMenu({ ref: t.dataset.r, title: t.dataset.t, poster: t.dataset.p || null }, x, y);
+  },
+  /* The menu stays open: the tick and "Added" in the row are the answer; taking a show off keeps its Undo. */
   pltoggle: async (v) => {
     const it = S.plItem, p = (S.data.playlists || []).find((x) => x.id === +v);
     if (!it || !p) return;
-    if (plHolds(p, it.ref)) return plRemove(p, it.ref);
-    if (await plPost({ op: "add", id: p.id, item: it })) { toast(`Added to ${p.name}`); if (S.view === "library") render(true); }
+    if (plHolds(p, it.ref)) { S.plJust = null; await plRemove(p, it.ref); }
+    else if (await plPost({ op: "add", id: p.id, item: it })) { S.plJust = p.id; if (S.view === "library" || S.view === "home") render(true); }
+    if (plPicking()) plMenuPaint();
+  },
+  /* "Make … and add": a new playlist named as typed, with this show on it; icon and colour come later through Edit. */
+  plmake: async () => {
+    const it = S.plItem, name = (S.plMq || "").trim();
+    if (!it || !name) return;
+    const r = await plPost({ op: "create", name, item: it });
+    if (!r) return;
+    S.plJust = r.created; S.plMq = "";
+    const q = $("#plmq"); if (q) { q.value = ""; q.placeholder = "Find or make a playlist"; }
+    if (S.view === "library" || S.view === "home") render(true);
+    if (plPicking()) plMenuPaint();
   },
   pladdq: async (v) => {
     const p = plCurrent(), it = S.plCands?.[+v];
@@ -6145,7 +6195,7 @@ const A = {
 /* ---------- events ---------- */
 const isField = (t) => /^(SELECT|INPUT)$/.test(t.tagName);
 document.addEventListener("click", (e) => {
-  if ($("#cm").style.display === "block" && !$("#cm").classList.contains("closing")) { cmHide(); ovClosed("cm"); }
+  if ($("#cm").style.display === "block" && !$("#cm").classList.contains("closing") && !(plPicking() && e.target.closest?.("#cm"))) { cmHide(); ovClosed("cm"); }
   if (S.menu && !e.target.closest(".rel,#srb,#pal .pbox")) { S.menu = null; paintNav(); }
   if (S.cal && !e.target.closest(".datef")) calClose();
   const t = e.target.closest("[data-a]");
@@ -6258,12 +6308,16 @@ document.addEventListener("keydown", (e) => {
   const m = $("#cm");
   if (m.style.display !== "block" || e.ctrlKey || e.metaKey || e.altKey) return;
   const rows = [...m.querySelectorAll(".mi")], cur = rows.findIndex((r) => r.classList.contains("sel"));
-  const pick = (r) => { e.preventDefault(); e.stopImmediatePropagation(); if (r) { m.style.display = "none"; r.click(); } };
+  /* The add-to-playlist menu stays open on Enter; letters go to its box. */
+  const keep = plPicking();
+  if (keep && e.key.length === 1 && e.target.id !== "plmq") { $("#plmq")?.focus({ preventScroll: true }); return; }
+  const pick = (r) => { e.preventDefault(); e.stopImmediatePropagation(); if (r) { if (!keep) m.style.display = "none"; r.click(); } };
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault(); e.stopImmediatePropagation();
     const n = (cur + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
     rows.forEach((r, k) => r.classList.toggle("sel", k === n));
-  } else if (e.key === "Enter") pick(rows[cur] || rows[0]);
+    rows[n]?.scrollIntoView({ block: "nearest" });
+  } else if (e.key === "Enter") pick(rows[cur] || (keep ? null : rows[0]));
   else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); m.style.display = "none"; }
   else { const k = e.key.toUpperCase(), r = rows.find((x) => x.querySelector("kbd")?.textContent === k); if (r) pick(r); }
 }, true);
