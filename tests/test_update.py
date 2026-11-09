@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import tempfile
 import time
 import unittest
@@ -240,11 +241,121 @@ class Replacing(unittest.TestCase):
         self.assertEqual(update._job["state"], "failed")
         self.assertEqual(self.app.read_bytes(), b"old")
 
-    def test_only_an_appimage_can(self):
+    def test_only_an_appimage_or_a_git_copy_can(self):
         settings.set_setting("update_found", json.dumps({"version": "99.0", "download": "x"}))
-        with mock.patch.dict(os.environ):
+        with mock.patch.dict(os.environ), mock.patch.object(update, "REPO", self.app.parent):  # no .git there
             os.environ.pop("APPIMAGE", None)
             self.assertEqual(update.install(), {"error": "This copy can't update itself."})
+
+
+def git(cwd, *args):
+    import subprocess
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    return subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+
+@unittest.skipUnless(shutil.which("git"), "needs git")
+class GitCopy(unittest.TestCase):
+    """Decision 78: a git copy installs with a click, by moving its master
+    forward to the build's commit or the release's tag. Real git, a real
+    "origin" folder, no network."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.origin, self.copy = root / "origin", root / "copy"
+        self.origin.mkdir()
+        git(self.origin, "init", "-q", "-b", "master")
+        self.commit(self.origin, "hub.py", "one")
+        git(root, "clone", "-q", str(self.origin), str(self.copy))
+        self.new = self.commit(self.origin, "hub.py", "two")
+        git(self.origin, "tag", "-a", "v99.0", "-m", "release")
+        update._job.update(state="idle", percent=0, error=None, note=None)
+        self.addCleanup(update._job.update, state="idle", percent=0, error=None, note=None)
+        for patch in (mock.patch.object(update, "REPO", self.copy), mock.patch.object(update, "kind", return_value="git"),
+                      mock.patch.object(update, "BUILD", None)):
+            patch.start()
+            self.addCleanup(patch.stop)
+        settings.set_setting("update_channel", "unstable")
+        self.addCleanup(settings.set_setting, "update_channel", "")
+        self.addCleanup(settings.set_setting, "update_found", "")
+
+    def commit(self, repo, name, text):
+        (repo / name).write_text(text)
+        git(repo, "add", name)
+        git(repo, "commit", "-q", "-m", text)
+        return git(repo, "rev-parse", "HEAD")
+
+    def build(self, sha):
+        return {"version": "0.4", "label": "Build 12", "channel": "unstable", "build": 12, "commit": sha[:7], "sha": sha}
+
+    def test_a_build_is_new_until_the_copy_has_its_commit(self):
+        rels = [rolling(12, "2026-11-09T10:00:00Z", commit=self.new)]
+        self.assertEqual(update.pick_unstable(rels, "0.4", None, "git", update.has_commit)["sha"], self.new)
+        old = git(self.copy, "rev-parse", "HEAD")
+        self.assertIsNone(update.pick_unstable([rolling(11, "2026-11-09T10:00:00Z", commit=old)], "0.4", None, "git", update.has_commit))
+
+    def test_install_moves_master_to_the_build(self):
+        settings.set_setting("update_found", json.dumps(self.build(self.new)))
+        self.assertTrue(update.payload()["installable"])
+        update._pull(update.stored())
+        self.assertEqual((update._job["state"], update._job["error"]), ("done", None))
+        self.assertEqual(git(self.copy, "rev-parse", "HEAD"), self.new)
+        self.assertEqual((self.copy / "hub.py").read_text(), "two")
+        self.assertIsNotNone(update.stored())  # still says "open it again"
+        update._job.update(state="idle")
+        self.assertIsNone(update.stored())  # after the restart, it is that build
+
+    def test_install_moves_master_to_a_release(self):
+        settings.set_setting("update_channel", "")
+        settings.set_setting("update_found", json.dumps({"version": "99.0", "channel": "stable", "tag": "v99.0"}))
+        self.assertTrue(update.installable(update.stored()))
+        update._pull(update.stored())
+        self.assertEqual(update._job["state"], "done")
+        self.assertEqual(git(self.copy, "rev-parse", "HEAD"), self.new)
+        self.assertIsNone(update._job["note"])
+
+    def test_a_changed_window_app_is_named(self):
+        (self.origin / "desktop").mkdir()
+        sha = self.commit(self.origin, "desktop/main.rs", "fn main() {}")
+        update._pull(self.build(sha))
+        self.assertEqual(update._job["state"], "done")
+        self.assertIn("cargo build", update._job["note"])
+
+    def test_own_changes_or_commits_or_another_branch_change_nothing(self):
+        before = git(self.copy, "rev-parse", "HEAD")
+        (self.copy / "hub.py").write_text("mine")
+        update._pull(self.build(self.new))
+        self.assertIn("changes of its own", update._job["error"])
+        git(self.copy, "checkout", "-q", "hub.py")
+        (self.copy / "notes.txt").write_text("untracked is fine")
+        self.commit(self.copy, "local.txt", "my commit")
+        update._pull(self.build(self.new))
+        self.assertIn("commits of its own", update._job["error"])
+        git(self.copy, "reset", "-q", "--hard", before)
+        git(self.copy, "checkout", "-q", "-b", "feature")
+        update._pull(self.build(self.new))
+        self.assertIn("isn't on master", update._job["error"])
+        self.assertEqual(git(self.copy, "rev-parse", "HEAD"), before)
+        self.assertTrue((self.copy / "notes.txt").exists())
+
+    def test_an_unknown_commit_changes_nothing(self):
+        before = git(self.copy, "rev-parse", "HEAD")
+        update._pull(self.build("f" * 40))
+        self.assertEqual(update._job["state"], "failed")
+        self.assertEqual(git(self.copy, "rev-parse", "HEAD"), before)
+
+    def test_install_starts_the_git_path(self):
+        settings.set_setting("update_found", json.dumps(self.build(self.new)))
+        with mock.patch.object(update, "vpn_missing", return_value=False), mock.patch.object(update, "_pull") as pull:
+            self.assertEqual(update.install(), {"ok": True})
+        for _ in range(50):
+            if pull.called:
+                break
+            time.sleep(0.02)
+        pull.assert_called_once()
 
 
 if __name__ == "__main__":

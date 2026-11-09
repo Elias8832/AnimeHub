@@ -2620,12 +2620,12 @@ const tgl = (key, label, on, off) => `<button class="switch" role="switch" aria-
 const upName = (f) => f.label || "v" + f.version;
 /* New versions (Decision 58): how to get one depends on how this copy got here. */
 function updateRows(s) {
-  const u = s.update || {}, f = u.found, j = u.job || {}, one = !!f?.download, busy = j.state === "working", done = j.state === "done";
+  const u = s.update || {}, f = u.found, j = u.job || {}, one = !!u.installable, busy = j.state === "working", done = j.state === "done";
   const more = f?.url ? `<button class="btn" data-a="upnotes">What's new</button>` : "";
-  const how = done ? `Updated. Close AnimeHub and open it again to start the new version${s.keep_running ? " (Quit in the tray icon, as it keeps running)" : ""}.`
-    : busy ? `Downloading… ${j.percent || 0}%`
+  const how = done ? `Updated. Close AnimeHub and open it again to start the new version${s.keep_running ? " (Quit in the tray icon, as it keeps running)" : ""}.${j.note ? " " + esc(j.note) : ""}`
+    : busy ? (u.kind === "git" ? "Getting it with git…" : `Downloading… ${j.percent || 0}%`)
     : j.state === "failed" ? `<span class="chip warn">Failed</span> ${esc(j.error || "")}`
-    : one ? "Replaces this AppImage. Your data stays."
+    : one ? (u.kind === "git" ? "Moves this copy ahead with git. Your data stays." : "Replaces this AppImage. Your data stays.")
     : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
@@ -2635,7 +2635,7 @@ function updateRows(s) {
   const chan = u.channel === "unstable" ? "A new build after every change. Newest fixes first, and sometimes broken." + (u.kind === "windows" ? " Not tested on Windows." : "")
     : "Every numbered release on GitHub.";
   return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
-    + (f ? srow(`${esc(upName(f))} is out`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>Update</button>` : ""))) : "")
+    + (f ? srow(`${esc(upName(f))} is out`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : "Install"}</button>` : ""))) : "")
     + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
     + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
 }
