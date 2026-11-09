@@ -1258,7 +1258,6 @@ function scanNote() {
   else if (scan.state === "partial") bits.push("Some folders could not be read — part of the library may be missing.");
   return bits.length ? bits.join(" ") : null;
 }
-const metaText = (d) => `Fetching ${d.meta_phase || "metadata"} · ${d.meta_pending} left${d.meta_current ? ` · ${d.meta_current}` : ""}`;
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
 const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score", "average"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
@@ -1333,7 +1332,10 @@ function Lib() {
   const note = scanNote();
   const notes = [];
   if (note) notes.push(`<div class="note-bar">${esc(note)}${d.scan?.root === "changed" ? ' <button class="btn" data-a="adopt">Connect folder</button>' : ""}</div>`);
-  else if (d.meta_running && d.meta_pending > 0) notes.push(`<div class="note-bar metanote"><i class="spin"></i><span>${esc(metaText(d))}</span></div>`);
+  const fetching = !note && d.meta_running && d.meta_pending > 0; // TODO 199: a quiet line, not a bar over the page
+  /* On the PC it sits beside the grid's title, in the room the row has spare:
+     in the side list it pushed the lists down and back up (Elias). */
+  const mrow = fetching && isRail() ? `<div class="lload mload hrow">${metaLoad(false, true)}</div>` : "";
   const loading = m.cold && S.ani?.connected; // the lists are on their way (TODO 191: shown where they'll land)
   const isPl = S.lib.tab === "PLAYLISTS" && !m.cold, plCur = isPl ? plCurrent() : null;
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
@@ -1355,7 +1357,7 @@ function Lib() {
        list; sort sits on the line above the grid. */
     const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
     const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
-      <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}
+      <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
@@ -1365,9 +1367,9 @@ function Lib() {
       <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
-  const solo = m.cold ? `<div class="lsolo"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
-    : (isPl || isMatch || isUn) && lhead ? `<div class="lsolo">${lhead}</div>` : "";
-  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${main}</div></div></div>`;
+  const solo = m.cold ? `<div class="lsolo"><div class="lhw"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${mrow}</div>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
+    : (isPl || isMatch || isUn) && lhead ? `<div class="lsolo"><div class="lhw">${lhead}${mrow}</div></div>` : "";
+  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${fetching && !mrow ? `<div class="lload mload inl">${metaLoad(true)}</div>` : ""}${main}</div></div></div>`;
 }
 /* The filter controls; on the PC they live in the side list (Elias,
    2026-11-06: "most of them could easily be in the left panel"). */
@@ -5021,8 +5023,8 @@ function metaTick() {
   api("/api/now").then((now) => {
     const m = now && now.meta;
     if (!m) { metaWatch = null; reload(); return; } // final settle: posters flip in
-    Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_current: m.current, meta_phase: m.phase });
-    if (S.view === "library") { const n = $(".metanote"); if (n && S.data.meta_pending > 0) n.lastChild.textContent = metaText(S.data); else n?.remove(); }
+    Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_total: m.total, meta_current: m.current, meta_phase: m.phase });
+    if (S.view === "library") for (const n of $$(".mload")) { if (S.data.meta_pending > 0) loadPatch(n, metaLoadState()); else n.remove(); }
     /* Franchise cards fold together as the background build reaches them. */
     if (m.phase === "franchises" && S.view === "library" && byFranchise() && Date.now() - metaFold > 15e3) { metaFold = Date.now(); reload(); }
     metaWatch = setTimeout(metaTick, 2500);
@@ -5041,17 +5043,32 @@ function listLoadState() {
     pct: l?.total ? Math.min(100, Math.round(((l.done || 0) * 100) / l.total)) : null,
   };
 }
-function listLoad(inline) {
-  const t = listLoadState();
-  return `<p class="ll" title="${esc(t.tip)}"><i class="dot"></i>${inline ? `<span class="lw">${acct()} lists</span>` : ""}<span class="lt">${t.what}</span><b class="lc">${t.count}</b></p>
-    <i class="lbar${t.pct == null ? " ind" : ""}" role="progressbar" aria-label="${esc(t.tip)}"${t.pct == null ? "" : ` aria-valuenow="${t.pct}" aria-valuemin="0" aria-valuemax="100"`}><b style="width:${t.pct ?? 35}%"></b></i>`;
+function listLoad(inline) { return loadLine(listLoadState(), inline && acct() + " lists"); }
+/* The same quiet line for the metadata pass (TODO 199): it sits under On this
+   PC, the folders it works on, and names the show it is on under the bar. */
+function metaLoadState(d = S.data) {
+  const total = Math.max(d.meta_total || 0, d.meta_pending || 0), done = total - (d.meta_pending || 0);
+  return {
+    what: "fetching art",
+    tip: "Looking up new folders on AniList, for their posters, banners and details",
+    count: total ? `${done} / ${total}` : "",
+    pct: total ? Math.min(100, Math.round((done * 100) / total)) : null,
+    now: d.meta_current || "",
+  };
+}
+const metaLoad = (inline, row) => loadLine(metaLoadState(), inline && "This PC", row);
+function loadLine(t, label, row) {
+  const now = t.now != null ? `<small class="lnow" title="${esc(t.now)}">${esc(t.now)}</small>` : "";
+  return `<p class="ll" title="${esc(t.tip)}"><i class="dot"></i>${label ? `<span class="lw">${esc(label)}</span>` : ""}<span class="lt">${t.what}</span>${row ? now : ""}<b class="lc">${t.count}</b></p>
+    <i class="lbar${t.pct == null ? " ind" : ""}" role="progressbar" aria-label="${esc(t.tip)}"${t.pct == null ? "" : ` aria-valuenow="${t.pct}" aria-valuemin="0" aria-valuemax="100"`}><b style="width:${t.pct ?? 35}%"></b></i>${row ? "" : now}`;
 }
 /* Polls change the line in place, so the bar slides on instead of restarting. */
-function listLoadPatch(el) {
-  const t = listLoadState(), bar = el.querySelector(".lbar");
+function loadPatch(el, t) {
+  const bar = el.querySelector(".lbar"), now = el.querySelector(".lnow");
   el.querySelector(".lt").textContent = t.what;
   el.querySelector(".lc").textContent = t.count;
   el.querySelector(".ll").title = t.tip;
+  if (now) { now.textContent = t.now; now.title = t.now; }
   bar.classList.toggle("ind", t.pct == null);
   bar.setAttribute("aria-label", t.tip);
   if (t.pct == null) bar.removeAttribute("aria-valuenow");
@@ -5062,11 +5079,11 @@ function listsWatch(l) {
   const was = S.lists;
   S.lists = l || null;
   if (l && was !== undefined && (was?.service !== l.service || (l.stamp && l.stamp !== was?.stamp))) {
-    if ($(".lload")) S.listsLanded = Date.now(); // the rows that replace the placeholders rise in
+    if ($(".lload:not(.mload)")) S.listsLanded = Date.now(); // the rows that replace the placeholders rise in
     reload();
     return;
   }
-  for (const n of $$(".lload")) listLoadPatch(n);
+  for (const n of $$(".lload:not(.mload)")) loadPatch(n, listLoadState());
 }
 function pollSoon(ms) { if (nowTimer) clearTimeout(nowTimer); nowTimer = setTimeout(pollNow, ms); }
 async function pollNow() {

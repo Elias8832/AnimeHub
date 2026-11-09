@@ -216,6 +216,14 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 @keyframes lbarInd{from{transform:translateX(-100%)}to{transform:translateX(290%)}}
 .lload.inl{margin:16px 0 6px} /* as wide as the grid under it: a capped line looked cut off (Elias) */
 .lload .lw{color:var(--ink-2)}.lload .lw::after{content:"·";margin-left:8px;color:var(--mute)}
+.lload .lnow{display:block;margin-top:7px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:400 12px var(--ui);color:color-mix(in srgb,var(--ink-2) 70%,transparent)} /* the show the metadata pass is on (TODO 199) */
+.lload.inl+.lload.inl{margin-top:4px}
+/* PC: beside the grid's title, one line with the show's name in it (TODO 199) */
+.lload.hrow{flex:4 1 0;max-width:420px;min-width:150px;margin:0 0 0 28px;padding-top:0} /* text and bar centred together on the title (Elias: it sat too low) */
+.lload.hrow .lnow{flex:1 1 auto;min-width:0;margin:0 0 0 4px;font-size:12.5px}
+.lload.hrow .lnow::before{content:"·";margin-right:8px;color:var(--mute)}
+.lload.hrow .lt,.lload.hrow .lc{flex:none;white-space:nowrap}
+.lhw{display:flex;align-items:center}
 .lghost i{display:flex;align-items:center;height:36px;padding:0 14px}
 .lghost b{height:10px;border-radius:5px;background:linear-gradient(90deg,rgba(255,255,255,.06) 30%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.06) 70%) 0 0/300% 100%;animation:llShim 1.8s linear infinite}
 .lghost i:nth-child(2) b{animation-delay:.12s}.lghost i:nth-child(3) b{animation-delay:.24s}.lghost i:nth-child(4) b{animation-delay:.36s}
@@ -2667,6 +2675,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lsolo .lsub{display:block;margin:6px 0 0;font:400 13.5px var(--ui);color:color-mix(in srgb,var(--ink-2) 82%,transparent)}
   .lghost{display:flex;flex-direction:column;gap:2px}
   .lnav .lload{padding:10px 14px 2px}
+  .lnav .lhello .lload{padding:16px 0 0;max-width:220px} /* the metadata pass, under the summary: always in view (TODO 199) */
   .lload.inl{display:none}
   .lnav>button[data-land]{animation:rise .4s var(--ease) backwards;animation-delay:calc(min(var(--i,0),8)*35ms)}
   .lib2 .lmain .filters{padding:0;animation:none} /* rebuilt on every click in the side list: rising each time flickered (Elias) */
