@@ -67,6 +67,15 @@ def jpeg_dimensions(data):
     return None
 
 
+def image_dimensions(data):
+    """(width, height) of a JPEG or PNG, or None. AniList serves a few
+    banners as PNG, saved under the same .banner.jpg name (Upscayl reads
+    both and always writes a JPEG back)."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
+        return (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+    return jpeg_dimensions(data)
+
+
 def jpeg_looks_blank(data):
     """True for a JPEG of one flat colour — what Upscayl writes when the GPU
     run fails (found again 2026-10-26: a Flatpak NVIDIA driver older than the
@@ -85,7 +94,7 @@ def upscale_looks_sane(src_bytes, out_bytes):
     """Guard for the banner upscaler (TODO 37: six real banners were once
     replaced by black voids, one batch even at a runaway 27440×5776): the
     output must be a 4x-reach of the source's size and not one flat colour."""
-    src, out = jpeg_dimensions(src_bytes), jpeg_dimensions(out_bytes)
+    src, out = image_dimensions(src_bytes), jpeg_dimensions(out_bytes)
     if not src or not out:
         return False
     return (src[0] // 2 <= out[0] <= src[0] * 4.5 + 8 and
@@ -173,7 +182,7 @@ def _save_records(rec):
 def _dims(path):
     try:
         with open(path, "rb") as f:
-            return jpeg_dimensions(f.read(65536))
+            return image_dimensions(f.read(65536))
     except OSError:
         return None
 
@@ -376,22 +385,25 @@ def _work():
         while _playing() and config.UPSCALE_BANNERS:
             time.sleep(5)
         tool = find_upscayl()
+        # Taken off the queue before the run lock goes: a new AniList
+        # picture saved right after (metadata.save_art waits for this lock)
+        # then queues the banner again instead of finding it still queued.
         with _run_lock:
             run = tool and config.UPSCALE_BANNERS and needs_upscale(path)
             result = upscale_banner(path, tool) if run else False
-        with _lock:
-            _queue.popleft()
-            _queued.discard(path)
-            status["left"] = len(_queue)
-            if result is True:
-                status["done"] += 1
-            else:
-                _skipped.add(path)
-            if not tool or result == "blank":
-                if result == "blank":
-                    status["state"] = "broken"
-                _queue.clear()
-                _queued.clear()
+            with _lock:
+                _queue.popleft()
+                _queued.discard(path)
+                status["left"] = len(_queue)
+                if result is True:
+                    status["done"] += 1
+                else:
+                    _skipped.add(path)
+                if not tool or result == "blank":
+                    if result == "blank":
+                        status["state"] = "broken"
+                    _queue.clear()
+                    _queued.clear()
 
 
 def payload():

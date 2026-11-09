@@ -1,5 +1,6 @@
 """Show metadata: matching folders to AniList, posters, episode thumbnails."""
 
+import contextlib
 import hashlib
 import json
 import re
@@ -372,14 +373,17 @@ def save_art(url, dest):
     except OSError:
         same = False
     if not same:
-        if not _write_image(dest, body):
-            return dest.is_file()
-        if orig:
-            try:  # Windows: a picture being served can't be removed yet
-                orig.unlink(missing_ok=True)
-            except OSError:
-                pass
-            upscale.replaced(dest)
+        # A banner waits for an upscale in progress: else that run would put
+        # its upscale of the old picture over the new one when it ends.
+        with upscale._run_lock if banner else contextlib.nullcontext():
+            if not _write_image(dest, body):
+                return dest.is_file()
+            if orig:
+                try:  # Windows: a picture being served can't be removed yet
+                    orig.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                upscale.replaced(dest)
     _art_source(dest.name, url)
     if banner:
         upscale.queue_banner(dest)

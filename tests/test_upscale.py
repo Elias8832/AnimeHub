@@ -42,6 +42,24 @@ open(out, "wb").write(open(os.environ["FAKE_OUT"], "rb").read())
 """
 
 
+# A slower fake: waits for the test's go-ahead, and its result ends with the
+# picture it was given, so a test can tell which picture it upscaled.
+FAKE_WAIT = """import os, sys, time
+src, out = sys.argv[sys.argv.index("-i") + 1], sys.argv[sys.argv.index("-o") + 1]
+d, picture = os.path.dirname(out), open(src, "rb").read()  # read first, like Upscayl
+open(os.path.join(d, "started"), "w").close()
+while not os.path.exists(os.path.join(d, "go")):
+    time.sleep(0.02)
+open(out, "wb").write(open(os.environ["FAKE_OUT"], "rb").read() + picture)
+"""
+
+
+def png(w, h):
+    """A stand-in PNG: the signature and the IHDR chunk the size check reads."""
+    return (b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR" + w.to_bytes(4, "big") + h.to_bytes(4, "big")
+            + b"\x08\x06\x00\x00\x00" + os.urandom(40000))
+
+
 class Guard(unittest.TestCase):
     def test_blank_pictures_are_caught(self):
         """The 2026-10-26 failure: right size, all black, exit code 0."""
@@ -215,6 +233,45 @@ class Worker(unittest.TestCase):
         v = art["changed"]["a.banner.jpg"]
         self.assertGreaterEqual(v, int(banner.stat().st_mtime))
         self.assertLessEqual(v, after)
+
+    def test_a_png_banner_is_upscaled_too(self):
+        """AniList serves a few banners as PNG (stream-99634 was never
+        upscaled: its size was unreadable)."""
+        self.out(real(7600, 1600))
+        banner = self.posters / "stream-1.banner.jpg"
+        banner.write_bytes(src := png(1900, 400))
+        self.assertTrue(upscale.needs_upscale(banner))
+        upscale.queue_all()
+        self.wait()
+        self.assertEqual(upscale.jpeg_dimensions(banner.read_bytes()), (7600, 1600))
+        self.assertEqual(upscale.original_of(banner).read_bytes(), src)
+
+    def test_a_new_picture_saved_during_a_run_is_not_overwritten(self):
+        """AniList's new banner lands while the old one is being upscaled:
+        the run's end must not put the old picture back over it."""
+        from animehub import metadata
+        script = self.tmp / "fake_wait.py"
+        script.write_text(FAKE_WAIT)
+        self.tool["cmd"] = [sys.executable, str(script)]
+        self.out(real(7600, 1600))
+        banner = self.posters / "s1.banner.jpg"
+        banner.write_bytes(real(1900, 400))
+        new = real(1900, 400)
+        upscale.queue_banner(banner)
+        for _ in range(200):
+            if (self.posters / "started").exists():
+                break
+            time.sleep(0.02)
+        with patch.object(metadata, "_fetch_image", return_value=new):
+            saver = threading.Thread(target=metadata.save_art, args=("https://x/new.jpg", banner))
+            saver.start()
+            time.sleep(0.3)  # save_art now waits for the run
+            (self.posters / "go").touch()
+            saver.join(10)
+        self.wait()
+        self.assertTrue(banner.read_bytes().endswith(new), "the old picture's upscale won")
+        self.assertEqual(upscale.original_of(banner).read_bytes(), new)
+        self.assertNotIn(banner, upscale._skipped)
 
     def test_off_queues_nothing(self):
         config.UPSCALE_BANNERS = False
