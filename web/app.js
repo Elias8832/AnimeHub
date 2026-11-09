@@ -2142,7 +2142,7 @@ function entryHTML(f, pending) {
   /* Discovery (Decision 9): a show off the lists says so and offers the one-click add. */
   const off = !f.status && !pending ? `<p class="note offlist">Not on your list yet. <button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></p>` : "";
   const prog = f.local ? `<b class="flat">${fe ? fe.slots.filter((x) => x.watched).length + " / " + (fe.episodes || fe.slots.length) : show ? epWatched(show) + " / " + epTotal(show) : "—"}</b>` : stp("progress", f.progress ?? 0, "progress", media.episodes || "");
-  return `${off}${f.local ? '<p class="note">Saved on this PC only — goes to AniList when you connect.</p>' : ""}${pending ? '<p class="note"><span class="chip warn">Waiting to sync</span></p>' : ""}
+  return `${off}${f.local ? '<p class="note">Saved on this PC only — goes to AniList when you connect.</p>' : ""}${pending ? `<p class="note">${swarn("Waiting to sync.")} Saved here; it goes to ${acct()} as soon as it answers.</p>` : ""}
   <div class="ef"><span class="cap">status</span>${pills}</div>
   <div class="ef"><span class="cap">score${cur ? ` <b class="sv">${esc(f.score)}</b><small>/${max}</small>` : ""}</span>${score}</div>
   <div class="ef two"><div><span class="cap">progress</span>${prog}</div><div><span class="cap">rewatches</span>${stp("repeat", f.repeat ?? 0, "rewatches")}</div></div>
@@ -2668,6 +2668,8 @@ const onoff = (key, label, on, off) => pick(label, "advset", key, [["on", "On"],
 /* A row whose value is something to do (Rescan, Connect…): it sits where a value would. */
 const pkdo = (html) => `<span class="pk pkdo">${html}</span>`;
 const tgl = (key, label, on, off) => `<button class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-a="adv" data-v="${key}" ${off ? "disabled" : ""}></button>`;
+/* Something wrong, said in amber beside a row's title (no pill), the why on the line under it. */
+const swarn = (w) => `<span class="swarn">${w}</span>`;
 /* A found version by name: "v0.5" or "Build 312" (Unstable, Decision 76). */
 const upName = (f) => f.label || "v" + f.version;
 /* New versions (Decision 58): how to get one depends on how this copy got here. */
@@ -2687,7 +2689,7 @@ function updateRows(s) {
   const chan = u.channel === "unstable" ? "A new build after every change. Newest fixes first, and sometimes broken." + (u.kind === "windows" ? " Not tested on Windows." : "")
     : "Every numbered release on GitHub.";
   return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
-    + (f ? srow(`${esc(upName(f))} is out${j.state === "failed" ? '<span class="swarn">Failed</span>' : ""}`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : j.state === "failed" ? "Try again" : "Install"}</button>`
+    + (f ? srow(`${esc(upName(f))} is out${j.state === "failed" ? swarn("Failed") : ""}`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : j.state === "failed" ? "Try again" : "Install"}</button>`
       : done ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
     + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
     + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
@@ -2823,13 +2825,13 @@ function upscaleRow(s) {
     missing: "Install Upscayl to use this. It redraws show banners 4× bigger on your graphics card.",
     idle: `On. New banners are redrawn as they arrive.${u.done ? ` ${u.done} done.` : ""}`,
     working: `Working: ${u.done || 0} done, ${u.left || 0} left. Pauses while an episode plays.`,
-    broken: `<span class="chip warn">Stopped</span> Upscayl gave blank pictures, so your banners stay as they are. Update the graphics driver${u.flatpak ? " (for the Flatpak: run <code>flatpak update</code>)" : ""}, then switch this off and on.`,
+    broken: `Upscayl gave blank pictures, so your banners stay as they are. Update the graphics driver${u.flatpak ? " (for the Flatpak: run <code>flatpak update</code>)" : ""}, then switch this off and on.`,
   }[u.state] || "";
   if (u.state === "working" && !upscaleRow.t) upscaleRow.t = setTimeout(() => {
     upscaleRow.t = 0;
     if (S.view === "settings") loadSettings().then(() => S.view === "settings" && render(true));
   }, 4000);
-  return srow("Sharper banners", txt, (missing ? pkdo(UPSCAYL_BTN) : "") + onoff("upscale_banners", "Sharper banners", u.on, missing && !u.on))
+  return srow(`Sharper banners${u.state === "broken" ? swarn("Stopped") : ""}`, txt, (missing ? pkdo(UPSCAYL_BTN) : "") + onoff("upscale_banners", "Sharper banners", u.on, missing && !u.on))
     + srow("Banner look", "Digital art is crisper and takes about 3× longer.", pick("Banner look", "spref", "upscale_style", [["natural", "Natural"], ["digital", "Digital art"]], u.style, { off: !u.on }));
 }
 /* Playlist stacks on hover (Decision 64): four ways to open, each card shows
@@ -3071,7 +3073,7 @@ function phoneGroup() {
   const when = (t) => t ? new Date(t.replace(" ", "T") + (/[zZ+]/.test(t) ? "" : "Z")).toLocaleDateString() : "";
   const code = r.code, mins = code ? Math.max(1, Math.ceil(code.left / 60)) : 0;
   if (code && !phoneGroup.t) phoneGroup.t = setTimeout(phoneWatch, 3000);
-  const pair = !r.on ? "" : r.error ? srow("Pair a phone", `<span class="chip warn">Not reachable</span> ${esc(r.error)}`, "")
+  const pair = !r.on ? "" : r.error ? srow(`Pair a phone${swarn("Not reachable")}`, esc(r.error), "")
     : !r.address ? srow("Pair a phone", "This PC isn't on a network right now.", "")
     : code ? `<div class="pairbox"><div class="qr" aria-label="QR code with the pairing link">${code.qr}</div><div class="pairtxt"><b>Scan this with the phone's camera</b>
         <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
@@ -3105,7 +3107,7 @@ function streamGroup(s) {
   const st = s.stream || {}, off = !s.tools?.["ani-cli"];
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
   const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), pkdo(aniBtn(s))) : st.own ? srow("ani-cli", esc(aniLine(s)), pkdo(aniBtn(s))) : "";
-  return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show. Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
+  return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show. Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>${bad ? `<p class="note">${swarn("Update ani-cli.")} This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
     ${!off && !st.outdated && st.needs?.includes("curl-impersonate") ? srow('curl-impersonate <span style="margin-left:6px;color:var(--warn);font-weight:500">Missing</span>', "Without it, the streaming site blocks ani-cli. Install it, then restart Anime Hub.", pkdo(IMP_BTN)) : ""}
     ${srow("Quality", "For watching and downloading.", pick("Quality", "spref", "stream_quality", (st.qualities || []).map((q) => [q, QLABEL[q] || q + "p"]), st.quality, { off }))}
     ${srow("Load the next episode early", "Gets the next online episode ready while you watch. Only with a VPN, unless you switched off asking in Privacy & VPN.", onoff("prepare_online", "Load the next episode early", s.prepare_online !== false, off))}${off ? "" : getRow}</div>`;
@@ -3273,7 +3275,7 @@ async function extraRemove(id) {
 }
 function extraGroup(s) {
   const xs = s.library_extra || [], name = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
-  const rows = xs.map((x) => srow(esc(name(x.path)), `<code>${esc(x.path)}</code>${x.state === "missing" ? ' <span class="chip warn">not reachable</span>' : ""}`,
+  const rows = xs.map((x) => srow(esc(name(x.path)) + (x.state === "missing" ? swarn("Not reachable") : ""), `<code>${esc(x.path)}</code>`,
     pkdo(`<button class="btn" data-a="xremove" data-v="${x.id}">Remove</button>`))).join("");
   return `<div class="group"><h3>Extra folders</h3><p class="sub">Their shows join your library. Downloads go where a show already is.</p>${rows}
     ${srow("Add a folder", xs.length ? "Another folder with anime." : "No extra folders yet.", `<div class="path">${libPath("extra", {})}${dirBtn("extra")}</div>`, "wide")}${DirPick("extra")}</div>`;
