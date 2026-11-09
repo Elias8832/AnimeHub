@@ -125,11 +125,17 @@ jobs:
         with:
           name: AnimeHub-x86_64.AppImage
           path: out
+      # Kept packed: without skip-decompress the action unzips a .zip artifact
+      # into its contents, and the release needs the zip itself.
       - uses: actions/download-artifact@v8
         with:
           name: AnimeHub-windows-x64.zip
-          path: out
+          path: zip
+          skip-decompress: true
       - name: Publish to the unstable release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/publish-unstable.sh out/AnimeHub-x86_64.AppImage out/AnimeHub-windows-x64.zip
+        run: |
+          ls -la out zip
+          mv "$(find zip -type f | head -n 1)" out/AnimeHub-windows-x64.zip
+          .github/publish-unstable.sh out/AnimeHub-x86_64.AppImage out/AnimeHub-windows-x64.zip
