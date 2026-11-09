@@ -12,7 +12,7 @@ This app is early in development — expect bugs and breaking changes.
 - **One page per show.** Every season, movie and special together, with your AniList entry right there.
 - **Your files and online episodes in one list.** Missing an episode? Watch or download it from the same page. Auto-play carries on from a file to an online episode.
 - **Made for mpv.** Resume, skip openings and endings with Enter, marks on the timeline, next episode. Screenshots go to `Pictures/AnimeHub`. Your own `mpv.conf` still loads.
-- **AniList stays in sync.** Progress and scores go back to your list, even after being offline.
+- **AniList stays in sync.** Progress and scores go back to your list, even after being offline. Use MyAnimeList instead if that's where your list is.
 - **A calendar of what's airing**, and a Journal of what you watched.
 - **Your phone as a remote.** No app to install, and it has its own phone layout.
 
@@ -95,6 +95,7 @@ Most of it is in Settings. The file is `~/.config/anime-hub/config.json` (Window
 | `data_dir` | where data lives (default `~/.local/share/anime-hub`, Windows: `%LOCALAPPDATA%\anime-hub`) |
 | `window` | `"app"`, `"browser"` or `"none"` |
 | `anilist_client_id` | your own AniList app id, only if you change `port` |
+| `mal_client_id` | your own MyAnimeList app id |
 | `remote_port` | the phone remote's Wi-Fi port (default `port` + 1) |
 | `keep_running` | the desktop app's server stays on after you close the window (default off; Settings → Phone remote) |
 | `start_at_login` | the desktop app's server starts at login, without a window (default off; Settings → Phone remote) |
@@ -111,10 +112,10 @@ No tracking, no accounts, no ads. Your data stays on your PC.
 <details>
 <summary>What it talks to, and security</summary>
 
-- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (the list of all anime titles for typo-proof search: on your first AniList search, then every two weeks, 6 MB, or 62 MB on Windows; also when you get or update ani-cli, or when you check for new versions: on a click, or once a day if you say yes; you can limit this to when a VPN is on). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on. Before you click, it contacts the site only while a VPN is up (Warn without VPN off lifts that): to link a show, refresh its episode list, or get the next episode ready.
-- **Access:** the server only listens on your PC. The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or AniList account.
+- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [MyAnimeList](https://myanimelist.net) (your list, only if you connect it), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (the list of all anime titles for typo-proof search: on your first AniList search, then every two weeks, 6 MB, or 62 MB on Windows; also when you get or update ani-cli, or when you check for new versions: on a click, or once a day if you say yes; you can limit this to when a VPN is on). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on. Before you click, it contacts the site only while a VPN is up (Warn without VPN off lifts that): to link a show, refresh its episode list, or get the next episode ready.
+- **Access:** the server only listens on your PC. The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or account.
 - **Proxy:** through `remote_hosts` there's no password, so everyone on that network can use it.
-- **AniList login:** a token in `anilist_token.json`, readable only by your user.
+- **Logins:** AniList's token in `anilist_token.json`, MyAnimeList's in `mal_token.json`, readable only by your user.
 
 </details>
 
@@ -137,7 +138,8 @@ GPL-3.0. See [LICENSE](LICENSE).
 ## Credits
 
 - Info, artwork, airing times and recommendations from [AniList](https://anilist.co). Unofficial; not affiliated with AniList.
-- AnimeHub is a player for your files, not a list or tracking service. Your list lives on AniList.
+- AnimeHub is a player for your files, not a list or tracking service. Your list lives on AniList or MyAnimeList.
+- MyAnimeList lists, progress and scores through the [MyAnimeList API](https://myanimelist.net/apiconfig/references/api/v2). Unofficial; not affiliated with MyAnimeList.
 - AniList data is kept on your PC only to show it, never as a backup. Free and non-commercial, following the [AniList API terms](https://docs.anilist.co/guide/terms-of-use).
 - Typo-proof search uses the [anime-offline-database](https://github.com/manami-project/anime-offline-database) by manami-project, under the [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) / [DbCL 1.0](https://opendatacommons.org/licenses/dbcl/1-0/). Only its titles and AniList links are kept.
 - Playback by [mpv](https://mpv.io).

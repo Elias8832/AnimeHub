@@ -358,7 +358,8 @@ class EntryRouteTests(unittest.TestCase):
                 patch.object(anilist, "anilist_entry_state_quick", side_effect=busy):
             code, body = self.get("/api/entry?id=11061")
         self.assertEqual(code, 502)
-        self.assertEqual(body, {"error": anilist.friendly_error(busy), "why": "busy", "retry_in": 10})
+        self.assertEqual(body, {"error": anilist.friendly_error(busy), "why": "busy", "retry_in": 10,
+                                "service": "AniList"})
 
 
 class ListCacheFollowsSavesTests(unittest.TestCase):

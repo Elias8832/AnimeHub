@@ -132,7 +132,7 @@ def recommendations(limit=KEEP):
     """GET /api/recommendations: {state, items}. state "none" (no account or
     nothing rated highly yet), "loading" (first build running), "ready".
     A stale set is served while a fresh one builds."""
-    if anilist.load_anilist_username() is None:
+    if anilist.account_name() is None:
         return {"state": "none", "items": []}
     data = anilist.anilist_cache_stale()
     if not data:

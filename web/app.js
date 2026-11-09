@@ -303,6 +303,10 @@ const AIR = { RELEASING: "Airing", FINISHED: "Finished", NOT_YET_RELEASED: "Upco
 const CAP = { installed: "installed", partial: "partial", none: "no source", online: "online" };
 const capLabel = (c) => (c === "none" && S.data?.stream_ready ? "not available" : CAP[c] || "");
 const aniMode = () => S.data?.spine?.mode === "anilist";
+/* The account's service (Decision 75): AniList or MyAnimeList, one at a time.
+   AniList stays the catalog either way: show info, search, airing. */
+const acct = () => S.ani?.service === "mal" ? "MyAnimeList" : "AniList";
+const isMal = () => S.ani?.service === "mal";
 const localMode = () => S.data?.spine?.mode === "local";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* Appearance (Decision 38): device preferences in localStorage, put on
@@ -1138,7 +1142,7 @@ function Lib() {
   const notes = [];
   if (note) notes.push(`<div class="note-bar">${esc(note)}${d.scan?.root === "changed" ? ' <button class="btn" data-a="adopt">Connect folder</button>' : ""}</div>`);
   else if (d.meta_running && d.meta_pending > 0) notes.push(`<div class="note-bar metanote"><i class="spin"></i><span>${esc(metaText(d))}</span></div>`);
-  if (m.cold && S.ani?.connected) notes.push('<div class="note-bar">Your AniList lists are still loading — showing what is on disk.</div>');
+  if (m.cold && S.ani?.connected) notes.push(`<div class="note-bar listnote">${listNote()}</div>`);
   const isPl = S.lib.tab === "PLAYLISTS" && !m.cold, plCur = isPl ? plCurrent() : null;
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
   const files = d.shows.reduce((a, x) => a + epTotal(x), 0);
@@ -1197,7 +1201,7 @@ function libRail(m, sum) {
   const lists = m.tabs.filter((t) => !t.side), pl = m.tabs.filter((t) => t.k === "PLAYLISTS"), pc = m.tabs.filter((t) => t.k === "UNTRACKED" || t.k === "MATCH");
   const gen = !m.cold && lists.some((t) => t.k === S.lib.tab) ? railGenres(m) : "";
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
-    ${lists.length ? head(aniMode() ? "AniList lists" : "Lists") + lists.map(it).join("") : ""}
+    ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
     ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
@@ -1887,7 +1891,8 @@ function entryHTML(f, pending) {
   const media = f.media || {}, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
   const stp = (k, v, lab, cap) => `<span class="stepper"><button aria-label="Decrease ${lab}" data-a="ebump" data-k="${k}" data-d="-1">${ico("minus")}</button><b data-k="${k}">${v}${cap ? `<small> / ${cap}</small>` : ""}</b><button aria-label="Increase ${lab}" data-a="ebump" data-k="${k}" data-d="1">${ico("plus")}</button></span>`;
   const pills = `<div class="pills" role="radiogroup" aria-label="Status">${LISTS.map(([v, l]) => `<button class="${f.status === v ? "on" : ""}" role="radio" aria-checked="${f.status === v}" data-a="eset" data-k="status" data-v="${v}">${l}</button>`).join("")}</div>`;
-  const heart = `<button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
+  /* MyAnimeList has no favourites API (Decision 75): no heart then. */
+  const heart = media.service === "mal" ? "" : `<button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
   const cur = f.score ? Math.round(f.score) : 0;
   const score = max === 10 && (!dec || !f.score || f.score === Math.round(f.score)) // 1–10 pills (decimal 10-point too, unless a .5 is set)
     ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div><i class="vs"></i>${heart}</div>`
@@ -1931,7 +1936,7 @@ function aheadLine(f, pending, fe) {
   const nums = fe.slots.filter((x) => typeof x.number === "number" && x.number <= f.progress && !x.watched && (x.local || x.online)).map((x) => x.number);
   if (!nums.length) return "";
   const movie = fe.format === "MOVIE" && fe.slots.length <= 1;
-  return `<p class="ahead"><span>${movie ? "watched on AniList" : `AniList is at ep ${f.progress}`}</span><i class="sep"></i><button class="lnk" data-a="frahead" data-v="${esc(JSON.stringify(nums))}">${movie ? "mark watched here" : `catch up to ep ${f.progress}`}${ico("chevr")}</button></p>`;
+  return `<p class="ahead"><span>${movie ? "watched on " + acct() : `${acct()} is at ep ${f.progress}`}</span><i class="sep"></i><button class="lnk" data-a="frahead" data-v="${esc(JSON.stringify(nums))}">${movie ? "mark watched here" : `catch up to ep ${f.progress}`}${ico("chevr")}</button></p>`;
 }
 /* Paint the editor and/or the row from fields; steppers that changed get their bump. */
 function entryPaint(f, pending, prev) {
@@ -1970,7 +1975,7 @@ function EntryDlg() {
   return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
     <div class="edt"><span class="cap">your entry</span><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
   <div class="edb"><div id="entrybox"><p class="note">Loading…</p></div></div>
-  <div class="actions"><span class="mono note2">saves as you go · if AniList is offline, it waits and retries</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
+  <div class="actions"><span class="mono note2">saves as you go · if ${acct()} is offline, it waits and retries</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
 }
 /* The panel never sits on "Loading…" for a page it has shown before
    (TODO 61): the last answer per entry draws at once, the fresh one
@@ -2002,14 +2007,16 @@ function loadEntry(mid, tries = 0) {
    the hub's (AniList's Retry-After or its own rate gate); without one
    (the hub itself is down) the page backs off 5 → 10 → 20 → 30 s. A
    missing entry or an unknown failure waits for "try now". */
-const ERR_LABEL = { busy: "AniList is busy", offline: "AniList is unreachable", hub: "Can't reach the hub", missing: "Not on AniList", error: "Couldn't load your list", auth: "AniList needs you to sign in" };
+/* `svc`: the service that failed (the hub says; AniList or MyAnimeList, Decision 75). */
+const ERR_LABEL = { busy: "%s is busy", offline: "%s is unreachable", hub: "Can't reach the hub", missing: "Not on %s", error: "Couldn't load your list", auth: "%s needs you to sign in" };
+const errLabel = (e) => ERR_LABEL[e.why].replace("%s", e.svc);
 let entryErrTimer = 0;
 function entryFail(mid, res) {
   if (S.entry?.f || S.entry?.mid !== mid) return; // keep what is on screen
   const prev = S.entry.err, tries = (prev?.tries || 0) + 1;
   const why = res.auth ? "auth" : ERR_LABEL[res.why] ? res.why : "error";
   const wait = res.retry_in || (why === "hub" ? [5, 10, 20, 30][Math.min(tries, 4) - 1] : 0);
-  S.entry.err = { why, msg: res.error, tries, due: why === "auth" || !wait ? 0 : Date.now() + wait * 1000 };
+  S.entry.err = { why, svc: res.service || acct(), msg: res.error, tries, due: why === "auth" || !wait ? 0 : Date.now() + wait * 1000 };
   entryErrPaint();
   clearInterval(entryErrTimer);
   if (S.entry.err.due) entryErrTimer = setInterval(entryErrTick, 1000);
@@ -2030,19 +2037,20 @@ function entryErrPaint() {
   const e = S.entry?.err;
   if (!e) return;
   const auth = e.why === "auth", when = entryErrWhen(e);
-  const act = auth ? `<button class="lnk" data-a="ani">connect${ico("chevr")}</button>` : e.checking ? "" : `<button class="lnk" data-a="eretry">${ico("refresh")}try now</button>`;
+  const conn = isMal() ? "mal" : "ani";
+  const act = auth ? `<button class="lnk" data-a="${conn}">connect${ico("chevr")}</button>` : e.checking ? "" : `<button class="lnk" data-a="eretry">${ico("refresh")}try now</button>`;
   const st = $("#entrystats");
   if (st) {
     const show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
     const total = fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
     const bar = total > 1 ? `<div class="tbar aerrbar"><span class="ticks">${total <= 40 ? "<i></i>".repeat(total) : "<i></i>"}</span><span>–/${total}</span></div>` : "";
-    st.innerHTML = `<p class="mline aerr ${e.checking ? "chk" : ""}" title="${esc(e.msg || "")}" role="status"><i class="adot"></i><span class="warn">${ERR_LABEL[e.why].toLowerCase()}</span>${when ? `<i class="sep"></i><span class="cd">${when}</span>` : ""}${act ? `<i class="sep"></i>${act}` : ""}</p>${bar}`;
+    st.innerHTML = `<p class="mline aerr ${e.checking ? "chk" : ""}" title="${esc(e.msg || "")}" role="status"><i class="adot"></i><span class="warn">${esc(errLabel(e).toLowerCase())}</span>${when ? `<i class="sep"></i><span class="cd">${when}</span>` : ""}${act ? `<i class="sep"></i>${act}` : ""}</p>${bar}`;
     st._own = true;
   }
   const box = $("#entrybox");
   if (box) {
     const sub = auth ? esc(e.msg || "") : entryErrWhen(e, true) || esc(e.msg || "");
-    box.innerHTML = `<div class="aerrbox ${e.checking ? "chk" : ""}" role="status"><i class="adot"></i><div><b>${ERR_LABEL[e.why]}</b><span class="cd">${sub}</span></div>${auth ? '<button class="btn pri" data-a="ani">Connect</button>' : `<button class="btn" data-a="eretry" ${e.checking ? "disabled" : ""}>${ico("refresh")}Try now</button>`}</div>`;
+    box.innerHTML = `<div class="aerrbox ${e.checking ? "chk" : ""}" role="status"><i class="adot"></i><div><b>${esc(errLabel(e))}</b><span class="cd">${sub}</span></div>${auth ? `<button class="btn pri" data-a="${conn}">Connect</button>` : `<button class="btn" data-a="eretry" ${e.checking ? "disabled" : ""}>${ico("refresh")}Try now</button>`}</div>`;
     box._own = true;
   }
 }
@@ -2079,7 +2087,7 @@ function entryFlush() {
   entrySave(job.mid, patch, job.fav).then((res) => {
     const here = S.entry?.mid === job.mid;
     if (res && res.error) { toast(res.error); if (here) loadEntry(job.mid); return; }
-    toast(res && res.queued ? "Saved — will sync when AniList is reachable" : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
+    toast(res && res.queued ? `Saved — will sync when ${acct()} is reachable` : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
     if (res && res.queued) res.patch = patch;
     if (!res.queued) entryMemo[job.mid] = res; else delete entryMemo[job.mid];
     if (here && !entryPend) entryDraw(res); // newer edits are still on screen: keep them
@@ -2371,12 +2379,12 @@ function Stats(embed) {
   for (const e of E) if (e.year) years[e.year] = (years[e.year] || 0) + 1;
   const ys = Object.keys(years).map(Number), yItems = ys.length ? Array.from({ length: Math.max(...ys) - Math.min(...ys) + 1 }, (_, i) => [String(Math.min(...ys) + i), years[Math.min(...ys) + i] || 0]) : [];
   const dist = Array.from({ length: 10 }, (_, i) => [String(i + 1), scored.filter((e) => Math.round(e.score) === i + 1).length]);
-  const note = aniMode() && !u ? '<p class="stat-note">Loading your full AniList totals…</p>' : "";
+  const note = aniMode() && !u ? `<p class="stat-note">Loading your full ${acct()} totals…</p>` : "";
   const fmts2 = Object.entries(fmts).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const curY = new Date().getFullYear();
   const card = (cls, head, body) => `<div class="jcard${cls ? " " + cls : ""}"><div class="sh">${head}</div>${body}</div>`;
   return {
-    main: note + `<div class="jpair">${card("", `<b>Episodes per month</b><span>${aniMode() ? "from AniList" : "on this PC"}</span>`, jBars(months.map(([l, v], i) => [l, v, i === months.length - 1]), "full vals", (v) => (v ? String(v) : "")))}`
+    main: note + `<div class="jpair">${card("", `<b>Episodes per month</b><span>${aniMode() ? "from " + acct() : "on this PC"}</span>`, jBars(months.map(([l, v], i) => [l, v, i === months.length - 1]), "full vals", (v) => (v ? String(v) : "")))}`
       + `${card("", "<b>Release years</b>", yItems.length ? jBars(yItems.map(([l, v]) => [l, v, +l === curY]), "full") : '<p class="empty">No year data yet.</p>')}</div>`
       + `<div class="jpair">${card("", `<b>Scores you give</b>${scored.length ? `<span>mean ${mean}</span>` : ""}`, scored.length ? jBars(dist.map(([l, v]) => [l, v, false]), "full") : '<p class="empty">No scores yet.</p>')}`
       + `${card("gen", "<b>Formats</b>", fmts2.length ? jRows(fmts2) : '<p class="empty">No data yet.</p>')}</div>`,
@@ -2459,10 +2467,8 @@ function setSections(s) {
       + (s.library_root ? extraGroup(s) : "")
       + g("Shows", srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture. Also in mpv's list.", onoff("hide_spoilers", "Hide spoilers", s.hide_spoilers)) + upscaleRow(s) + plFanRow()),
     privacy: privacyGroup(s),
-    anilist: `<div class="group"><h3>Account</h3>${srow("AniList", conn ? `Your AniList lists are the sections of your library.${ani.expires_at ? " Token expires " + new Date(ani.expires_at * 1000).toLocaleDateString() + "." : ""}` : ani.expired ? "The saved token has expired — reconnect." : "Not connected. Everything runs on what you watch on this PC.",
-      pkdo(conn ? `<span class="who"><i class="avatar">${esc((ani.user || "?")[0].toUpperCase())}</i>${esc(ani.user || "")}</span><button class="btn" data-a="ani">Manage</button>` : '<button class="btn pri" data-a="ani">Connect AniList</button>'))}</div>
-  <div class="group adv2${off ? " dis" : ""}"><h3>While you watch</h3>${off ? '<p class="sub">Connect AniList to use these.</p>' : ""}
-    ${srow("Send watched episodes", "Sends your highest watched episode to AniList.", onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, off))}
+    anilist: accountGroup(ani) + `<div class="group adv2${off ? " dis" : ""}"><h3>While you watch</h3>${off ? '<p class="sub">Connect an account to use these.</p>' : ""}
+    ${srow("Send watched episodes", `Sends your highest watched episode to ${acct()}.`, onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, off))}
     ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, off))}</div>`,
     phone: s.phone ? "" : phoneGroup(),
     data: g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
@@ -2470,6 +2476,21 @@ function setSections(s) {
       + g("Files", `${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}`)
       + g("Help", (isPhone() ? "" : srow("Keys", "Every shortcut. Press ? anywhere for this list.", pkdo('<button class="btn" data-a="menu" data-v="keys">Show keys</button>'))) + srow("First-run tour", "Walk through the library folder and AniList again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>'))),
   };
+}
+/* Settings → Account (Decision 75): AniList and MyAnimeList can both stay
+   logged in; "Lists from" picks the one in use, the other is paused. */
+function accountGroup(ani) {
+  const acc = ani.accounts || {}, al = acc.anilist || {}, ml = acc.mal || {}, use = ani.service, both = !!(al.user && ml.user);
+  const who = (u) => `<span class="who"><i class="avatar">${esc((u || "?")[0].toUpperCase())}</i>${esc(u || "")}</span>`;
+  const txt = (a, name, on) => !a.user ? (name === "AniList" ? "Not connected." : "Use your MyAnimeList lists, progress and scores.")
+    : a.expired || a.connected === false ? "The login has run out — reconnect."
+    : on ? `In use: your ${name} lists are the sections of your library.${a.expires_at ? " Token expires " + new Date(a.expires_at * 1000).toLocaleDateString() + "." : ""}`
+    : "Logged in, paused. Switch Lists from to use it.";
+  const row = (name, a, act, on) => srow(name, txt(a, name, on), pkdo(a.user ? who(a.user) + `<button class="btn" data-a="${act}">Manage</button>` : `<button class="btn${use ? "" : " pri"}" data-a="${act}">Connect ${name}</button>`));
+  return `<div class="group"><h3>Account</h3><p class="sub">${use ? "Show info, art and airing times come from AniList either way." : "Not connected. Everything runs on what you watch on this PC."}</p>
+    ${row("AniList", al, "ani", use === "anilist")}${row("MyAnimeList", ml, "mal", use === "mal")}
+    ${both ? srow("Lists from", "Your library's sections, and where watched episodes and scores go.", pick("Lists from", "acctuse", null, [["anilist", "AniList"], ["mal", "MyAnimeList"]], use)) : ""}</div>
+  `;
 }
 /* Everything that asks before going out without a VPN, in one place (Decision 73). */
 function privacyGroup(s) {
@@ -3033,14 +3054,14 @@ const SETTINGS_INDEX = [
   ["Library folder", "library", "folder path library directory browse rescan scan"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Show episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"],
   ["Hide spoilers", "library", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Sharper banners", "library", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "library", "upscayl upscale banner natural digital art tta model"], ["Playlist stacks", "library", "playlist stack hover fan wide cascade peek open cards"],
   ["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"], ["Online episodes and downloads", "privacy", "vpn warn ask without streaming privacy", "vpn_warn"], ["AniSkip", "privacy", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Update checks", "privacy", "update updates vpn github ip only", "update_vpn_only"],
-  ["AniList", "anilist", "anilist account connect token login disconnect"], ["Send watched episodes", "anilist", "anilist progress sync track episodes", "auto_progress_sync"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
+  ["AniList", "anilist", "anilist account connect token login disconnect"], ["MyAnimeList", "anilist", "myanimelist mal account connect login disconnect"], ["Send watched episodes", "anilist", "anilist progress sync track episodes", "auto_progress_sync"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
   ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"], ["Keep the PC playing", "phone", "phone play both pc mpv stop", "phone_play_both"],
   ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Updates from", "data", "update channel stable unstable beta nightly build"], ["Keep running after closing", "data", "keep running background server close phone tray", "keep_running"], ["Start at login", "data", "start login boot autostart server phone", "start_at_login"],
   ["mpv", "data", "mpv ani-cli upscayl tools player detected"], ["Config file", "data", "config file data folder server port"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["First-run tour", "data", "tour setup welcome"],
 ];
 const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}${esc(upName(f))} is out</button>` : ""; };
 /* Ten plain sections (Decision 73, like GNOME's Settings): one or two words you'd look for. */
-const SET_TABS = [["player", "Player", "Watching"], ["subs", "Subtitles", "Watching"], ["skipping", "Skipping", "Watching"], ["online", "Online", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["privacy", "Privacy & VPN", "Accounts"], ["anilist", "AniList", "Accounts"], ["phone", "Phone", "Accounts"], ["data", "System", "This PC"]];
+const SET_TABS = [["player", "Player", "Watching"], ["subs", "Subtitles", "Watching"], ["skipping", "Skipping", "Watching"], ["online", "Online", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["privacy", "Privacy & VPN", "Accounts"], ["anilist", "Account", "Accounts"], ["phone", "Phone", "Accounts"], ["data", "System", "This PC"]];
 const COMMANDS = [
   ["Go to Home", "home start", () => nav("home"), "1"], ["Go to Library", "library shows", () => nav("library"), "2"], ["Go to Journal", "journal history stats", () => nav("history"), "3"], ["Go to Calendar", "calendar airing schedule week", () => nav("week"), "4"],
   ["Open settings", "settings preferences options", () => nav("settings"), ","], ["Rescan library", "rescan scan refresh", () => { api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(reload, 2500); }, ""],
@@ -3160,17 +3181,18 @@ function obChange(it) {
   return out.join(" · ") || "Update";
 }
 function obState(it) {
+  if (it.state === "account") return `Waits for ${it.held_for} — goes out when it's in use again`;
   if (it.state === "seasons") return "Waits for AniList's season info";
-  if (it.state === "retrying") return `AniList unreachable — next try in ${Math.max(1, Math.round(it.retry_in / 60))} min`;
+  if (it.state === "retrying") return `${acct()} unreachable — next try in ${Math.max(1, Math.round(it.retry_in / 60))} min`;
   return "Waiting to send";
 }
 function obPop() {
   const items = S.obItems;
   const rows = (items || []).map((it) => `<div class="dlj"><div class="dlj-t"><b>${esc(it.title)}</b><small class="obc">${esc(obChange(it))}</small><small>${esc(obState(it))}</small></div>
-    <button class="chip ib" aria-label="Cancel this change" title="Don't send this to AniList" data-a="obcancel" data-v="${it.id}">${ico("close")}</button></div>`).join("");
-  return `<div class="pop dl ob"><div class="cap">Waiting to sync with AniList</div>
+    <button class="chip ib" aria-label="Cancel this change" title="Don't send this to ${acct()}" data-a="obcancel" data-v="${it.id}">${ico("close")}</button></div>`).join("");
+  return `<div class="pop dl ob"><div class="cap">Waiting to sync with ${acct()}</div>
     ${!items ? '<p class="dl-empty"><i class="spin"></i></p>' : rows ? `<div class="dlist">${rows}</div>` : '<p class="dl-empty">Nothing waiting.</p>'}
-    <p class="dl-empty">Cancelling keeps the change in the app — only AniList won't get it.</p>
+    <p class="dl-empty">Cancelling keeps the change in the app — only ${acct()} won't get it.</p>
     <div class="row" style="padding:6px 8px 0"><button class="btn" data-a="sync">${ico("refresh")}Sync now</button></div></div>`;
 }
 const obLoad = () => api("/api/outbox").then((r) => { S.obItems = r.items || []; if (S.menu === "ob") paintNav(); }).catch(() => {});
@@ -3293,7 +3315,7 @@ function paintNav() {
   const html = `${now ? `<button class="st np" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><i class="led"></i><span class="npt">playing <b>${esc(now.show)} · ${esc(now.label)}</b></span><span class="pc">${now.loading ? "loading" : "@P@%"}</span></button>${nextChip(now)}` : ""}
     <div class="rel"><button class="st dlb${dlActive.length ? " on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive.length ? `<b>${dlActive.length}</b>${dlPct != null ? ` · ${Math.floor(dlPct)}%` : ""}` : "downloads"}</button>${S.menu === "dl" ? dlPop() : ""}</div>
     ${vpnChip()}${upChip()}
-    ${S.outbox ? `<div class="rel"><button class="st sync warn" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : S.ani?.connected ? '<span class="st">anilist synced</span>' : ""}
+    ${S.outbox ? `<div class="rel"><button class="st sync warn" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : S.ani?.connected ? `<span class="st">${isMal() ? "mal" : "anilist"} synced</span>` : ""}
     <div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button>${S.menu === "keys" ? keysPop() : ""}</div>`;
   if (html === nrLast) {
     /* Only the playback percent moved: patch in place. */
@@ -3854,7 +3876,7 @@ function setSummary(k, s) {
     appearance: "accent, fonts, zoom, top bar, motion",
     library: s.library_root || "no folder chosen yet",
     privacy: S.data?.vpn?.active ? "a VPN is on" : "no VPN right now",
-    anilist: ani.connected ? `connected as ${ani.user || "you"}` : "not connected",
+    anilist: ani.connected ? `${acct()} · ${ani.user || "you"}` : "not connected",
     phone: "pair a phone with a QR code",
     data: "updates, tools, files",
   }[k] || "";
@@ -4037,14 +4059,33 @@ function openCm(id, x, y) {
 /* ---------- overlays ---------- */
 const recVal = (side) => { const b = []; if (side?.status) b.push(statusLabel(side.status)); if (side && side.score != null && side.score !== 0) b.push("Score " + side.score); return b.length ? b.join(" · ") : "—"; };
 function AniDlg() {
-  const a = S.ani || {}, exp = a.expires_at ? new Date(a.expires_at * 1000).toLocaleDateString() : null;
+  const a0 = S.ani || {}, a = { ...(a0.accounts?.anilist || (a0.service === "anilist" ? a0 : {})), client_id_configured: a0.client_id_configured };
+  const mal = !a.user && a0.service === "mal";
+  const exp = a.expires_at ? new Date(a.expires_at * 1000).toLocaleDateString() : null;
   return `<h2 id="dt">AniList account</h2>
-  <p class="sub">${a.connected ? `Connected as <b>${esc(a.user)}</b>${exp ? ` · token expires ${exp}` : ""}` : a.expired ? "The saved token has expired — reconnect below." : "Not connected. Everything runs on what you watch on this PC."}</p>
-  ${a.connected ? '<div class="bulk"><button class="btn" data-a="aniout">Disconnect</button></div>' : ""}
+  <p class="sub">${a.connected ? `Connected as <b>${esc(a.user)}</b>${exp ? ` · token expires ${exp}` : ""}${a0.service === "anilist" ? "" : ". Paused: MyAnimeList is in use."}` : a.expired ? "The saved token has expired — reconnect below." : mal ? "MyAnimeList is in use. Connecting AniList puts AniList in use; MyAnimeList stays logged in." : "Not connected. Everything runs on what you watch on this PC."}</p>
+  ${a.connected ? '<div class="bulk"><button class="btn" data-a="aniout" data-v="anilist">Disconnect</button></div>' : ""}
   ${!a.connected && a.client_id_configured ? '<div class="bulk"><button class="btn pri" data-a="anioauth">Connect via AniList</button></div>' : ""}
   ${!a.connected && location.port !== "8787" ? `<p class="hint-line">The hub runs on port ${esc(location.port || "80")}, but the bundled AniList client redirects to port 8787 — one-click connect needs the hub on its default port, or your own client registered for this port (add <code>anilist_client_id</code> to the config file).</p>` : ""}
   ${!a.connected ? `<p class="hint-line">The browser flow opens anilist.co for one Authorize click. Prefer a token? AniList → Settings → Apps → Create New Token, then paste it below.</p>
     <div class="row" style="margin-top:12px"><input id="tok" type="text" placeholder="…or paste an AniList token" autocomplete="off" spellcheck="false"><button class="btn" data-a="anitoken">Use token</button></div>` : ""}
+  <div class="msg" id="animsg"></div>
+  <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
+}
+/* MyAnimeList as the account (Decision 75). Show info stays AniList's. MAL
+   sends the browser back to port 8787 only: on another port, the address it
+   lands on is pasted here. */
+function MalDlg() {
+  const a = S.ani || {}, m = a.mal || {}, me = a.accounts?.mal || {}, in_use = a.service === "mal", on = !!me.connected, n = in_use ? S.alData?.unmatched?.length || 0 : 0;
+  return `<h2 id="dt">MyAnimeList account</h2>
+  <p class="sub">${on ? `Connected as <b>${esc(me.user)}</b>. ${in_use ? "Your MyAnimeList lists are the sections of your library; show info still comes from AniList." : "Paused: AniList is in use. Switch Lists from in Settings → Account to use it."}`
+    : me.user ? "The login has run out — reconnect below." : a.service === "anilist" ? "AniList is in use. Connecting MyAnimeList puts it in use; AniList stays logged in." : "Use your MyAnimeList lists, progress and scores. Show info still comes from AniList."}</p>
+  ${on ? `<p class="hint-line">MyAnimeList doesn't let apps change favourites, so the heart is hidden while it's in use.${n ? ` ${n} of your MyAnimeList entr${n === 1 ? "y has" : "ies have"} no AniList match and don't show in the library.` : ""}</p>
+    <div class="bulk"><button class="btn" data-a="aniout" data-v="mal">Disconnect</button></div>` : ""}
+  ${!on && m.client_id_configured ? '<div class="bulk"><button class="btn pri" data-a="maloauth">Connect via MyAnimeList</button></div>' : ""}
+  ${!on && !m.client_id_configured ? '<p class="hint-line">This copy of Anime Hub has no MyAnimeList app id. Add <code>mal_client_id</code> to the config file.</p>' : ""}
+  ${!on && m.client_id_configured ? `<p class="hint-line">${location.port !== "8787" ? `MyAnimeList sends you back to port 8787, and this hub runs on port ${esc(location.port || "80")}. After you approve, copy the address you land on and paste it here.` : "Opens myanimelist.net for one Allow click. If the page you land on says so, paste its address here."}</p>
+    <div class="row" style="margin-top:12px"><input id="malurl" type="text" placeholder="…paste the address MyAnimeList sent you to" autocomplete="off" spellcheck="false"><button class="btn" data-a="malpaste">Connect</button></div>` : ""}
   <div class="msg" id="animsg"></div>
   <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
 }
@@ -4077,7 +4118,7 @@ function tourFound(s, a, n, ok) {
     row(ok ? "ok" : "bad", "Library", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : s.library_root ? `${s.library_root} · can't be read` : "no folder chosen yet"),
     row(s.tools?.mpv ? "ok" : "bad", "Player", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "mpv not found — install it to play files"),
     row(s.tools?.["ani-cli"] ? "ok" : "opt", "Online episodes", s.tools?.["ani-cli"] ? aniLine(s) : "not set up, optional"),
-    row(a.connected ? "ok" : "opt", "AniList", a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected"),
+    row(a.connected ? "ok" : "opt", acct(), a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected"),
   ].join("");
 }
 /* The phone page needs the desktop app: without it the tour skips that page. */
@@ -4154,15 +4195,15 @@ function Rec() {
   const facts = res.facts.map((f) => `<li>${esc(f.show)} — watch progress synced to EP ${f.local} (was ${f.remote})</li>`).join("");
   const asks = marks.map((m) => `<li>${esc(m.show)} — ${m.episodes} episode${m.episodes === 1 ? "" : "s"}, up to E${m.remote}</li>`).join("");
   const seg = (on, v, l) => `<button class="${on ? "on" : ""}" aria-pressed="${on}" data-a="recmark" data-v="${v}">${l}</button>`;
-  return `<h2 id="dt">${n ? `${n} difference${n === 1 ? "" : "s"} to review` : eps ? "Mark what you watched?" : "AniList connected"}</h2>
-  ${facts ? `<p class="sub">Episodes you watched here went to AniList:</p><ul class="summary">${facts}</ul>` : ""}
-  ${eps ? `<p class="sub"${facts ? ' style="margin-top:14px"' : ""}>Your AniList list is ahead of this app. Mark ${eps === 1 ? "this episode" : `these ${eps} episodes`} as watched here too?</p><ul class="summary">${asks}</ul>
+  return `<h2 id="dt">${n ? `${n} difference${n === 1 ? "" : "s"} to review` : eps ? "Mark what you watched?" : acct() + " connected"}</h2>
+  ${facts ? `<p class="sub">Episodes you watched here went to ${acct()}:</p><ul class="summary">${facts}</ul>` : ""}
+  ${eps ? `<p class="sub"${facts ? ' style="margin-top:14px"' : ""}>Your ${acct()} list is ahead of this app. Mark ${eps === 1 ? "this episode" : `these ${eps} episodes`} as watched here too?</p><ul class="summary">${asks}</ul>
     ${n ? `<div class="bulk"><span class="seg" role="group" aria-label="Mark as watched here">${seg(mark, 1, "Mark as watched")}${seg(!mark, 0, "Leave as is")}</span></div>` : ""}` : ""}
   ${n ? `<p class="sub" style="margin-top:14px">These shows differ in list status or score — choose what to keep.</p>
-    <div class="bulk"><button class="btn" data-a="recall" data-v="anilist">AniList wins everywhere</button><button class="btn" data-a="recall" data-v="local">This PC wins everywhere</button></div>
-    <div class="rh"><span>Show</span><span>AniList</span><span>This PC</span><span>Keep</span></div>
+    <div class="bulk"><button class="btn" data-a="recall" data-v="anilist">${acct()} wins everywhere</button><button class="btn" data-a="recall" data-v="local">This PC wins everywhere</button></div>
+    <div class="rh"><span>Show</span><span>${acct()}</span><span>This PC</span><span>Keep</span></div>
     ${res.conflicts.map((c) => { const k = pick[c.media_id]; return `<div class="rr"><span class="who"><span><b>${esc(c.title)}</b><small>${esc(c.diff || "")}</small></span></span><span class="v ${k === "anilist" ? "keep" : ""}">${esc(recVal(c.remote))}</span><span class="v ${k === "local" ? "keep" : ""}">${esc(recVal(c.local))}</span>
-      <span class="seg" role="group" aria-label="Keep for ${esc(c.title)}"><button class="${k === "anilist" ? "on" : ""}" aria-pressed="${k === "anilist"}" data-a="recset" data-m="${c.media_id}" data-v="anilist">AniList</button><button class="${k === "local" ? "on" : ""}" aria-pressed="${k === "local"}" data-a="recset" data-m="${c.media_id}" data-v="local">This PC</button></span></div>`; }).join("")}` : ""}
+      <span class="seg" role="group" aria-label="Keep for ${esc(c.title)}"><button class="${k === "anilist" ? "on" : ""}" aria-pressed="${k === "anilist"}" data-a="recset" data-m="${c.media_id}" data-v="anilist">${acct()}</button><button class="${k === "local" ? "on" : ""}" aria-pressed="${k === "local"}" data-a="recset" data-m="${c.media_id}" data-v="local">This PC</button></span></div>`; }).join("")}` : ""}
   <div class="actions"><button class="btn" data-a="recclose">${eps && !n ? "Leave as is" : "Skip"}</button><button class="btn pri" data-a="recapply">${n ? `Apply ${n} choice${n === 1 ? "" : "s"}` : eps ? "Mark as watched" : "Close"}</button></div>`;
 }
 /* You finished a show (Decision 25 → 38): poster, the big title, rate it
@@ -4173,10 +4214,10 @@ function Done() {
   const nxOn = nx && S.data.spine?.entries?.find((y) => y.id === nx.id);
   return `<div class="dn"><div class="dnp">${poster(c.title || "", e?.poster || null)}</div><div class="dnb">
     <span class="cap">you finished</span><h2 id="dt">${esc(c.title || "a show")}</h2>
-    <div class="facts">${[e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on AniList" : "saved on this PC"].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
+    <div class="facts">${[e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on " + acct() : "saved on this PC"].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
     <span class="cap" style="margin-top:22px">how was it?</span>
-    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div><i class="vs"></i>
-      <button class="heart" id="dn-fav" aria-label="Favourite" aria-pressed="false" data-a="dnfav">${ico("heart")}</button></div>
+    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : `<i class="vs"></i>
+      <button class="heart" id="dn-fav" aria-label="Favourite" aria-pressed="false" data-a="dnfav">${ico("heart")}</button>`}</div>
     <input type="hidden" id="dn-score" value=""><input type="hidden" id="dn-status" value="COMPLETED"><span id="dn-max" hidden></span>
     ${nx ? `<div class="dnnext">${poster(nx.title || nx.label, nx.poster || null, { c: "t" })}<span class="tx"><b>${esc(nx.title || nx.label)}</b><small>${esc([nx.format_label, "next in this franchise", nxOn ? "on your list" : "not on your list"].filter(Boolean).join(" · "))}</small></span>${nxOn ? "" : `<button class="btn sm" data-a="dnplan" data-v="${nx.id}">+ Planning</button>`}</div>` : ""}
   </div></div>
@@ -4192,7 +4233,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -4277,7 +4318,7 @@ function maybeCompletion(c) {
     const st = res.state, e = st.entry || {}, max = st.score_max || 10;
     const sc = $("#dn-score");
     if (e.score != null && e.score > 0) { sc.value = max === 10 ? Math.round(e.score) : e.score; dnPills(max === 10 ? Math.round(e.score) : 0); }
-    if (st.is_favourite) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
+    if (st.is_favourite && $("#dn-fav")) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
   }).catch(() => {});
 }
 /* A tour pick shows at once (Elias: the outline lagged a second behind the
@@ -4315,14 +4356,18 @@ async function openExternal(url) {
 
 /* Wait for the OAuth callback bridge to report a connection (both the
    browser-tab flow and the shell flow's "approve in your browser" path). */
-async function pollOauth() {
-  for (let i = 0; i < 150 && S.modal?.t === "ani"; i++) {
+async function pollOauth(want = "anilist") {
+  const t = want === "mal" ? "mal" : "ani", name = want === "mal" ? "MyAnimeList" : "AniList";
+  for (let i = 0; i < 150 && S.modal?.t === t; i++) {
     await sleep(2000);
-    if (S.modal?.t !== "ani") return;
+    if (S.modal?.t !== t) return;
     const st = await api("/api/auth/status").catch(() => null);
-    if (st?.connected) { S.ani = st; S.alData = null; toast(`AniList connected as ${st.user}`); closeModal(); aniStatusRefresh(); setTimeout(reload, 2500); return; }
+    if (st?.connected && st.service === want) { accountConnected(st, name); return; }
   }
-  if (S.modal?.t === "ani") setMsg("Still not connected — the AniList tab may have been closed. Try again, or paste a token below.");
+  if (S.modal?.t === t) setMsg(`Still not connected — the ${name} tab may have been closed. Try again, or paste ${want === "mal" ? "the address" : "a token"} below.`);
+}
+function accountConnected(st, name) {
+  S.ani = st; S.alData = null; toast(`${name} connected as ${st.user}`); closeModal(); aniStatusRefresh(); setTimeout(reload, 2500);
 }
 
 /* ---------- render ---------- */
@@ -4786,6 +4831,24 @@ function metaTick() {
     metaWatch = setTimeout(metaTick, 2500);
   }).catch(() => { metaWatch = null; });
 }
+/* The lists of the account in use (Decision 75): their stamp and, while they
+   are read, how far, ride /api/now. New lists reload the page by itself; the
+   library's note shows the steps with a bar. */
+function listNote() {
+  const l = S.lists?.loading, name = acct();
+  if (!l) return `<span>Your ${name} lists are still loading — showing what is on disk.</span>`;
+  const step = l.step === "match" ? "Matching your shows with AniList" : `Reading your ${name} list`;
+  const pct = l.total ? Math.min(100, Math.round(((l.done || 0) * 100) / l.total)) : null;
+  return `<span>${step}${l.total ? ` · ${l.done || 0} of ${l.total}` : "…"} — showing what is on disk meanwhile.</span>
+    <i class="lbar${pct == null ? " ind" : ""}" role="progressbar" aria-label="${esc(step)}"${pct == null ? "" : ` aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"`}><b style="width:${pct ?? 35}%"></b></i>`;
+}
+function listsWatch(l) {
+  const was = S.lists;
+  S.lists = l || null;
+  if (l && was !== undefined && (was?.service !== l.service || (l.stamp && l.stamp !== was?.stamp))) { reload(); return; }
+  const n = $(".listnote");
+  if (n) n.innerHTML = listNote();
+}
 function pollSoon(ms) { if (nowTimer) clearTimeout(nowTimer); nowTimer = setTimeout(pollNow, ms); }
 async function pollNow() {
   nowTimer = null;
@@ -4819,7 +4882,7 @@ async function pollNow() {
       if (wasLoading !== !!now.loading) pagePatch();
       if (prevEp && prevEp !== now.episode_id) await reload(); // autoplay moved on: refresh ticks / next-up
     }
-    if (S.outbox > 0 && outbox === 0) toast("Waiting changes synced to AniList");
+    if (S.outbox > 0 && outbox === 0) toast(`Waiting changes synced to ${acct()}`);
     if (outbox !== S.outbox) { S.outbox = outbox; if (S.menu === "ob") outbox ? obLoad() : (S.menu = null); }
     S.artWorking = !!now.art?.working;
     if (now.art && now.art.stamp !== S.artStamp) { S.artStamp = now.art.stamp; swapArt(now.art.changed); }
@@ -4834,11 +4897,12 @@ async function pollNow() {
     if (!now.playing) S.live = null;
     else if (!S.live || S.live.ep !== now.episode_id) liveFrom(now);
     paintRemote();
+    if (!now.playing) listsWatch(now.lists);
     if (now.completed) maybeCompletion(now.completed);
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.rmtOpen || S.data?.now ? 1000 : S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000); // while playing: Home follows mpv within a second
+  pollSoon(S.rmtOpen || S.data?.now || S.lists?.loading ? 1000 : S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000); // while playing: Home follows mpv within a second
 }
 /* A banner was upscaled (or put back) under the same name: point every
    copy of its URL at the new ?v= stamp — the data the page draws from and
@@ -5588,7 +5652,7 @@ const A = {
   obcancel: (v) => {
     api("/api/outbox/cancel", { id: +v }).then((r) => {
       if (r && r.error) return toast(r.error);
-      S.outbox = r.left; toast("Cancelled — AniList won't get this change");
+      S.outbox = r.left; toast(`Cancelled — ${acct()} won't get this change`);
       if (!r.left) S.menu = null;
       S.obItems = (S.obItems || []).filter((it) => it.id !== +v); paintNav();
     }).catch(() => toast("Could not reach the hub — is it running?"));
@@ -5614,11 +5678,11 @@ const A = {
     }).catch(() => toast("Could not save — is the hub running?"));
   },
   sync: () => {
-    toast("Syncing with AniList…");
+    toast(`Syncing with ${acct()}…`);
     api("/api/outbox/flush", {}).then((r) => {
       S.outbox = r.left; if (S.menu === "ob") obLoad(); paintNav();
-      toast(!r.left ? "All changes synced to AniList" : r.left < r.before ? `Synced ${r.before - r.left} — ${r.left} still waiting`
-        : "AniList is still unreachable — your changes are saved and will sync when it's back.");
+      toast(!r.left ? `All changes synced to ${acct()}` : r.left < r.before ? `Synced ${r.before - r.left} — ${r.left} still waiting`
+        : `${acct()} is still unreachable — your changes are saved and will sync when it's back.`);
     }).catch(() => toast("Could not reach the hub — is it running?"));
   },
   ext: (v, t, e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button) return; e.preventDefault(); openExternal(v); },
@@ -5859,9 +5923,46 @@ const A = {
   rmttrack: (v, t) => remoteSend(t.dataset.k, v === "no" ? "no" : Number(v)),
 
   ani: () => openModal({ t: "ani" }),
-  aniout: async () => {
-    await api("/api/auth/logout", {}).catch(() => {});
-    toast("AniList disconnected"); S.alData = null; closeModal(); await aniStatusRefresh(); reload();
+  acctuse: async (v) => {
+    if (v === S.ani?.service) return;
+    const r = await api("/api/auth/use", { service: v }).catch(() => null);
+    if (!r || r.error) return toast(r?.error || "Could not reach the hub.");
+    S.ani = r; S.alData = null; toast(`Lists from ${acct()}`); paintNav(); render(true); pollSoon(300); maybeReconcile();
+  },
+  mal: () => { openModal({ t: "mal" }); if (isMal() && !S.alData) api("/api/anilist").then((r) => { if (r?.user) { S.alData = r; if (S.modal?.t === "mal") paintModal(); } }).catch(() => {}); },
+  maloauth: async () => {
+    /* As anioauth: the tab opens inside the click; the shell hands the
+       address to the system browser. */
+    if (SHELL) {
+      const r0 = await api("/api/auth/mal/start", {}).catch(() => null);
+      if (!r0 || r0.error) return setMsg(r0?.error || "Could not reach the hub.");
+      openExternal(r0.url);
+      setMsg("Waiting for MyAnimeList — approve in your browser…");
+      return pollOauth("mal");
+    }
+    const win = window.open("about:blank", "_blank");
+    if (win) win.opener = null;
+    let r = null;
+    try { r = await api("/api/auth/mal/start", {}); } catch {}
+    if (!r || r.error) { win?.close(); return setMsg(r?.error || "Could not reach the hub."); }
+    if (win) { win.location = r.url; setMsg("Waiting for MyAnimeList — approve in the tab that opened…"); }
+    else { const m = $("#animsg"); if (m) m.innerHTML = `Popup blocked — <a href="${esc(r.url)}" target="_blank" rel="noopener">open MyAnimeList</a> to continue.`; }
+    return pollOauth("mal");
+  },
+  malpaste: async (v, t) => {
+    const url = ($("#malurl")?.value || "").trim();
+    if (!url) return;
+    t.disabled = true;
+    const r = await api("/api/auth/mal/paste", { url }).catch(() => null);
+    t.disabled = false;
+    if (!r || r.error) return setMsg(r?.error || "Could not reach the hub.");
+    const st = await api("/api/auth/status").catch(() => null);
+    accountConnected(st || { connected: true, service: "mal", user: r.user }, "MyAnimeList");
+  },
+  aniout: async (v) => {
+    const which = v === "mal" ? "mal" : "anilist";
+    await api("/api/auth/logout", { service: which }).catch(() => {});
+    toast(`${which === "mal" ? "MyAnimeList" : "AniList"} disconnected`); S.alData = null; closeModal(); await aniStatusRefresh(); reload();
   },
   anitoken: async (v, t) => {
     const tok = ($("#tok")?.value || "").trim();
@@ -5986,9 +6087,9 @@ const A = {
     delete entryMemo[c.media_id];
     if (sc !== "") patch.score = parseFloat(sc);
     t.disabled = true;
-    entrySave(c.media_id, patch, $("#dn-fav").classList.contains("on")).then((res) => {
+    entrySave(c.media_id, patch, $("#dn-fav") ? $("#dn-fav").classList.contains("on") : undefined).then((res) => {
       if (res && res.error) { toast(res.error); t.disabled = false; return; }
-      toast(res && res.queued ? "Saved — will sync when AniList is reachable" : "Saved");
+      toast(res && res.queued ? `Saved — will sync when ${acct()} is reachable` : "Saved");
       api("/api/completion-seen", { media_id: c.media_id, count: c.count }).catch(() => {});
       closeModal(); refreshData();
     }).catch(() => { toast("Could not save — is the hub running?"); t.disabled = false; });
