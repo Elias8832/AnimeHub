@@ -183,16 +183,26 @@ const epName = (s, sea, ep) => (spoils(ep) ? null : epTitle(s, sea, ep));
 
 /* What a show's big button plays. Seasons come in the hub's order
    (season_rank): main seasons first, extras last. */
+/* A slot is watched when any source is (Decision 35): a file counts as
+   watched when the same entry's online copy is, and the other way round.
+   Only one-season shows: their entry and episode numbers line up. */
+function slotSeen(s, ep) {
+  if (ep.watched) return true;
+  const aid = s?.seasons?.length === 1 ? s.meta?.anilist_id : null;
+  if (!aid || typeof ep.number !== "number") return false;
+  return allShows().some((x) => x !== s && x.seasons.length === 1 && x.meta?.anilist_id === aid
+    && x.seasons[0].episodes.some((e) => e.number === ep.number && e.watched));
+}
 function pickTarget(s) {
   const ord = s.seasons.map((sea) => ({ sea }));
   let resume = null;
   /* A stopped rewatch (watched, under 92 %) leads only once nothing is left unwatched. */
-  const allW = s.seasons.every((sea) => sea.episodes.every((e) => e.watched));
+  const allW = s.seasons.every((sea) => sea.episodes.every((e) => slotSeen(s, e)));
   for (const { sea } of ord) for (const ep of sea.episodes) {
-    if (resumable(ep) && (!ep.watched || allW) && (!resume || (ep.last_played || "") > (resume.ep.last_played || ""))) resume = { sea, ep, kind: "resume" };
+    if (resumable(ep) && (!slotSeen(s, ep) || allW) && (!resume || (ep.last_played || "") > (resume.ep.last_played || ""))) resume = { sea, ep, kind: "resume" };
   }
   if (resume) return resume;
-  for (const { sea } of ord) { const ep = sea.episodes.find((e) => !e.watched); if (ep) return { sea, ep, kind: "play" }; }
+  for (const { sea } of ord) { const ep = sea.episodes.find((e) => !slotSeen(s, e)); if (ep) return { sea, ep, kind: "play" }; }
   const first = ord.find((x) => x.sea.episodes.length);
   return first ? { sea: first.sea, ep: first.sea.episodes[0], kind: "rewatch" } : null;
 }
@@ -225,9 +235,9 @@ function nextUpInfo() {
     .sort((a, b) => (b.last_played || "").localeCompare(a.last_played || ""))[0];
   if (!newest) return null;
   const ctx = findEpContext(newest.id);
-  if (!ctx.ep.watched) return { ...ctx, label: "Continue watching", ep: ctx.ep };
-  const after = ctx.sea.episodes.filter((e) => !e.watched && e.number > ctx.ep.number)[0];
-  const anyUn = ctx.s.seasons.map((sea) => ({ sea, ep: sea.episodes.find((e) => !e.watched) })).filter((x) => x.ep)[0];
+  if (!slotSeen(ctx.s, ctx.ep)) return { ...ctx, label: "Continue watching", ep: ctx.ep };
+  const after = ctx.sea.episodes.filter((e) => !slotSeen(ctx.s, e) && e.number > ctx.ep.number)[0];
+  const anyUn = ctx.s.seasons.map((sea) => ({ sea, ep: sea.episodes.find((e) => !slotSeen(ctx.s, e)) })).filter((x) => x.ep)[0];
   if (after) return { s: ctx.s, sea: ctx.sea, ep: after, label: "Up next" };
   if (anyUn) return { s: ctx.s, sea: anyUn.sea, ep: anyUn.ep, label: "Up next" };
   if (resumable(ctx.ep)) return { ...ctx, label: "Continue watching", ep: ctx.ep };
@@ -385,10 +395,11 @@ function seasonBar(s, sea) {
   const tot = Math.max(eps.length, e?.episodes || aired || 0), done = typeof e?.progress === "number" ? e.progress : 0;
   const byNum = eps.every((x) => x.number >= 1 && x.number <= tot) ? new Map(eps.map((x) => [x.number, x])) : null;
   const slots = Array.from({ length: tot }, (_, i) => (byNum ? byNum.get(i + 1) : eps[i]) || { missing: true, watched: i < done });
-  const seen = slots.filter((x) => x.watched).length;
+  const isSeen = (x) => (x.missing ? x.watched : slotSeen(s, x));
+  const seen = slots.filter(isSeen).length;
   if (tot > 60) return { tot, seen, html: `<span class="tline"><i style="width:${(100 * seen / tot).toFixed(1)}%"></i></span>` };
   return { tot, seen, html: `<div class="ticks">${slots.map((x, i) => { const p = x.duration ? x.position / x.duration : 0;
-    return `<i style="--i:${i};--pp:${Math.round(p * 100)}%" class="${x.watched ? "s" : x.missing ? "" : p > 0.01 ? "p" : streamEp(x) ? "o" : "d"}"></i>`; }).join("")}</div>` };
+    return `<i style="--i:${i};--pp:${Math.round(p * 100)}%" class="${isSeen(x) ? "s" : x.missing ? "" : p > 0.01 ? "p" : streamEp(x) ? "o" : "d"}"></i>`; }).join("")}</div>` };
 }
 function dayWord(h) { return h < 5 ? "Tonight" : h < 12 ? "This morning" : h < 18 ? "This afternoon" : "Tonight"; }
 /* The Continue banner's online episode gets ready before the click (Decision 49). */
