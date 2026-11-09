@@ -145,6 +145,12 @@ def pick_unstable(releases, current, build, how, has=None):
     return roll
 
 
+def _commit(found):
+    """A found build's commit: the whole sha, or the short one a check made
+    before Decision 78 kept it whole (git finds a commit by either)."""
+    return found.get("sha") or found.get("commit")
+
+
 def channel():
     c = settings.get_setting("update_channel")
     return c if c in CHANNELS else "stable"
@@ -166,7 +172,7 @@ def stored():
         # the click just now: then the row stays to say "open it again".
         with _lock:
             just = _job["state"] == "done"
-        return None if found.get("sha") and not just and git_copy() and has_commit(found["sha"]) else found
+        return None if _commit(found) and not just and git_copy() and has_commit(_commit(found)) else found
     n = number(found.get("version"))
     return found if n and n > number(VERSION) else None
 
@@ -228,7 +234,7 @@ def payload():
             "channel": channel(), "build": BUILD,
             "vpn_only": settings.automation_enabled("update_vpn_only"),
             "asked": settings.get_setting("update_asked") == "1", "found": found, "job": job,
-            "installable": installable(found, how)}
+            "installable": installable(found, how), "head": head() if BUILD is None else None}
 
 
 def _git(*args, timeout=15):
@@ -249,6 +255,14 @@ def git_copy():
     return kind() == "git" and (REPO / ".git").exists() and shutil.which("git") is not None
 
 
+def head():
+    """A git copy's own commit, short, so the Version row can name it."""
+    if not git_copy():
+        return None
+    ok, out = _git("rev-parse", "--short=7", "HEAD")
+    return out if ok and out else None
+
+
 def has_commit(sha):
     """This copy has that commit already. A commit it hasn't fetched yet
     isn't in it, which is the usual case for a new build."""
@@ -265,7 +279,7 @@ def installable(found, how=None):
         return bool(found.get("download"))
     if how == "windows":
         return bool(found.get("download")) and zip_copy()
-    return how == "git" and git_copy() and (found.get("build") is None or bool(found.get("sha")))
+    return how == "git" and git_copy() and (found.get("build") is None or bool(_commit(found)))
 
 
 def install():
@@ -302,8 +316,8 @@ def _pull(found):
         error = "This copy has changes of its own (git status shows them). Commit or undo them, then try again."
     else:
         old = _git("rev-parse", "HEAD")[1]
-        if found.get("sha"):
-            fetch, target = ["origin", BRANCH], found["sha"]
+        if _commit(found):
+            fetch, target = ["origin", BRANCH], _commit(found)
         else:
             tag = found.get("tag") or "v" + found["version"]
             fetch, target = ["--no-tags", "origin", f"+refs/tags/{tag}:refs/tags/{tag}"], f"refs/tags/{tag}"

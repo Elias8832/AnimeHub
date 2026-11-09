@@ -2630,7 +2630,7 @@ function updateRows(s) {
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
   const b = u.build, unstableHere = !!b && u.channel !== "unstable" && !f;
-  const ver = `AnimeHub v${esc(u.version || "")}${b ? ` · build ${esc(String(b.number))} (${esc(b.commit.slice(0, 7))})` : ""}`
+  const ver = `AnimeHub v${esc(u.version || "")}${b ? ` · build ${esc(String(b.number))} (${esc(b.commit.slice(0, 7))})` : u.head ? ` · commit ${esc(u.head)}` : ""}`
     + (unstableHere ? ". This is an unstable build: Stable takes over at the next release." : "");
   const chan = u.channel === "unstable" ? "A new build after every change. Newest fixes first, and sometimes broken." + (u.kind === "windows" ? " Not tested on Windows." : "")
     : "Every numbered release on GitHub.";
