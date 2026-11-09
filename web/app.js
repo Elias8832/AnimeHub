@@ -1984,7 +1984,7 @@ function entryPaint(f, pending, prev) {
 function entryDraw(res) {
   if (!entryHost() || !S.entry) return;
   const prev = S.entry.f, f = entryFields(res);
-  S.entry.f = f; S.entry.res = res;
+  S.entry.f = f; S.entry.res = res; S.entry.err = null; clearInterval(entryErrTimer);
   entryPaint(f, !!(res.pending || res.queued), prev);
   const box = $("#entrybox"); if (box) box._own = true; // filled here: an in-place page update leaves it alone
   const m = f.media || {}, next = m.next_episode;
@@ -2018,23 +2018,73 @@ const entryMemo = {};
 function loadEntry(mid, tries = 0) {
   const tok = ++entryTok, box = entryHost();
   if (S.entry?.mid !== mid || !S.entry.f) {
-    S.entry = { mid, f: null, res: null };
+    const err = S.entry?.mid === mid ? S.entry.err : null; // a fresh page keeps the countdown it had
+    S.entry = { mid, f: null, res: null, err };
     if (entryMemo[mid]) entryDraw(entryMemo[mid]);
+    else if (err) { err.checking = true; entryErrPaint(); }
   } else if (box && !box._own && S.entry.res) entryDraw(S.entry.res); // a fresh page: same entry, new box
   api("/api/entry?id=" + mid).then((res) => {
     if (tok !== entryTok || !entryHost()) return;
-    if (res && res.error) {
-      if (S.entry?.f) return; // keep what is on screen
-      entryHost().innerHTML = `<span class="chip warn">${esc(res.error)}</span>${res.auth ? ' <button class="btn" data-a="ani" style="margin-left:8px">Connect</button>' : ""}`;
-      return;
-    }
+    if (res && res.error) return entryFail(mid, res);
     entryMemo[mid] = res;
     if (res.stale && tries < 4) setTimeout(() => { if (tok === entryTok && S.entry?.mid === mid) loadEntry(mid, tries + 1); }, 900);
     if (entryPend || entryFlight) return; // the user's edits are on screen and on their way
     if (document.activeElement?.matches?.("#entrybox input")) return; // typing: don't redraw under the cursor
     if (S.entry?.f && JSON.stringify(res) === JSON.stringify(S.entry.res)) return;
     entryDraw(res);
-  }).catch(() => { if (tok === entryTok && entryHost() && !S.entry?.f) entryHost().innerHTML = '<span class="chip warn">Could not reach the hub.</span>'; });
+  }).catch(() => { if (tok === entryTok && entryHost()) entryFail(mid, { error: "Could not reach the hub.", why: "hub" }); });
+}
+/* Your list couldn't load (AniList busy, offline, signed out): the line
+   says why in its own quiet style and asks again by itself. The wait is
+   the hub's (AniList's Retry-After or its own rate gate); without one
+   (the hub itself is down) the page backs off 5 → 10 → 20 → 30 s. A
+   missing entry or an unknown failure waits for "try now". */
+/* `svc`: the service that failed (the hub says; AniList or MyAnimeList, Decision 75). */
+const ERR_LABEL = { busy: "%s is busy", offline: "%s is unreachable", hub: "Can't reach the hub", missing: "Not on %s", error: "Couldn't load your list", auth: "%s needs you to sign in" };
+const errLabel = (e) => ERR_LABEL[e.why].replace("%s", e.svc);
+let entryErrTimer = 0;
+function entryFail(mid, res) {
+  if (S.entry?.f || S.entry?.mid !== mid) return; // keep what is on screen
+  const prev = S.entry.err, tries = (prev?.tries || 0) + 1;
+  const why = res.auth ? "auth" : ERR_LABEL[res.why] ? res.why : "error";
+  const wait = res.retry_in || (why === "hub" ? [5, 10, 20, 30][Math.min(tries, 4) - 1] : 0);
+  S.entry.err = { why, svc: res.service || acct(), msg: res.error, tries, due: why === "auth" || !wait ? 0 : Date.now() + wait * 1000 };
+  entryErrPaint();
+  clearInterval(entryErrTimer);
+  if (S.entry.err.due) entryErrTimer = setInterval(entryErrTick, 1000);
+}
+function entryErrTick() {
+  const e = S.entry?.err;
+  if (!e?.due || !entryHost()) { clearInterval(entryErrTimer); return; } // left the page: its next open asks anew
+  if (Date.now() >= e.due) { clearInterval(entryErrTimer); loadEntry(S.entry.mid); return; }
+  for (const el of $$(".aerr .cd, .aerrbox .cd")) el.textContent = entryErrWhen(e, el.closest(".aerrbox"));
+}
+function entryErrWhen(e, long) {
+  if (e.checking) return long ? "Checking…" : "checking…";
+  if (!e.due) return "";
+  const n = Math.max(1, Math.ceil((e.due - Date.now()) / 1000));
+  return long ? `Trying again in ${n} s` : `retrying in ${n}s`;
+}
+function entryErrPaint() {
+  const e = S.entry?.err;
+  if (!e) return;
+  const auth = e.why === "auth", when = entryErrWhen(e);
+  const conn = isMal() ? "mal" : "ani";
+  const act = auth ? `<button class="lnk" data-a="${conn}">connect${ico("chevr")}</button>` : e.checking ? "" : `<button class="lnk" data-a="eretry">${ico("refresh")}try now</button>`;
+  const st = $("#entrystats");
+  if (st) {
+    const show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
+    const total = fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
+    const bar = total > 1 ? `<div class="tbar aerrbar"><span class="ticks">${total <= 40 ? "<i></i>".repeat(total) : "<i></i>"}</span><span>–/${total}</span></div>` : "";
+    st.innerHTML = `<p class="mline aerr ${e.checking ? "chk" : ""}" title="${esc(e.msg || "")}" role="status"><i class="adot"></i><span class="warn">${esc(errLabel(e).toLowerCase())}</span>${when ? `<i class="sep"></i><span class="cd">${when}</span>` : ""}${act ? `<i class="sep"></i>${act}` : ""}</p>${bar}`;
+    st._own = true;
+  }
+  const box = $("#entrybox");
+  if (box) {
+    const sub = auth ? esc(e.msg || "") : entryErrWhen(e, true) || esc(e.msg || "");
+    box.innerHTML = `<div class="aerrbox ${e.checking ? "chk" : ""}" role="status"><i class="adot"></i><div><b>${esc(errLabel(e))}</b><span class="cd">${sub}</span></div>${auth ? `<button class="btn pri" data-a="${conn}">Connect</button>` : `<button class="btn" data-a="eretry" ${e.checking ? "disabled" : ""}>${ico("refresh")}Try now</button>`}</div>`;
+    box._own = true;
+  }
 }
 /* One write path for every edit. Favourite travels beside the patch — never
    instead of it — so a combined save (the completion popup) keeps both. */
@@ -4240,6 +4290,7 @@ function paintModal(focus) {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" || m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
+  else if (m.t === "entry" && S.entry?.err) entryErrPaint(); // not "Loading…" forever: the same wait as the page
   /* Touch: open at the top with nothing focused (focusing a field would
      scroll the sheet and pop the keyboard up). */
   if (focus) mq("(pointer:coarse)") ? el.querySelector(".dialog")?.focus({ preventScroll: true }) : (el.querySelector("#plname") || el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
@@ -5816,6 +5867,7 @@ const A = {
   folder: (v) => api("/api/open-folder", { show_id: v }).then((r) => { if (!r.ok) toast(r.error || "Could not open the folder"); }).catch(() => toast("Could not open the folder — is the hub running?")),
   edit: () => { if (S.view === "fr" || S.view === "show") openModal({ t: "entry" }); },
   frmore: (v, t) => { const r = t.getBoundingClientRect(); frMore(r.left, r.bottom + 6); },
+  eretry: () => { const e = S.entry?.err; if (e && !e.checking) { clearInterval(entryErrTimer); loadEntry(S.entry.mid); } },
   efav: () => { if (S.entry?.f) entryPatch(undefined, !S.entry.f.favourite); },
   /* match repair */
   pick: (v, t) => { const id = t.dataset.s; mst(id).pick = +v; paintMatch(id); },

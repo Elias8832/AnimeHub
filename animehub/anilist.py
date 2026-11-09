@@ -1,6 +1,7 @@
 """AniList API: requests, rate limiting, OAuth, entry state and user data."""
 
 import json
+import math
 import os
 import re
 import threading
@@ -570,7 +571,7 @@ def _anilist_slot():
         if not wait:
             return
         if deadline and now + min(wait, 2) > deadline:
-            raise AniListTransientError("AniList is busy — try again in a moment", status=429)
+            raise AniListTransientError("AniList is busy — try again in a moment", status=429, retry_in=wait)
         time.sleep(min(max(wait, 0.05), 2))
 
 
@@ -614,7 +615,7 @@ def anilist_request(payload, token=None):
                     wait = 62
                 deadline = getattr(_al_ctx, "deadline", None)
                 if deadline and time.time() + wait > deadline:
-                    raise AniListTransientError("AniList is busy — try again in a moment", status=429)
+                    raise AniListTransientError("AniList is busy — try again in a moment", status=429, retry_in=wait)
                 time.sleep(min(max(wait, 1), 62))
                 continue
             raise
@@ -744,11 +745,12 @@ class AniListAuthError(Exception):
 class AniListTransientError(Exception):
     """Network/server-side failure — not the caller's fault, worth retrying.
     The outbox queues writes that fail with this (TODO 14)."""
-    def __init__(self, reason, status=None, service="AniList"):
+    def __init__(self, reason, status=None, service="AniList", retry_in=None):
         super().__init__(reason)
         self.reason = reason
         self.status = status
         self.service = service
+        self.retry_in = retry_in  # seconds until AniList takes requests again, when known
 
 
 def friendly_error(e):
@@ -768,6 +770,37 @@ def friendly_error(e):
         return "%s is unreachable right now — try again later." % name
     util.log("AniList: %s" % e)
     return "Something went wrong talking to AniList."
+
+
+RETRY_DEFAULT = 30  # the page's next try when AniList names no wait
+
+
+def error_hint(e):
+    """What the page does about a failed read (additive to {"error": ...}):
+    `why` is busy / offline / missing / error, `service` who failed
+    (AniList or MyAnimeList, Decision 75), and `retry_in` the seconds
+    until the page asks again on its own: AniList's Retry-After or the
+    hub's own rate gate when it says, else RETRY_DEFAULT. A missing entry
+    or an unknown failure doesn't retry by itself."""
+    return dict(_hint(e), service=getattr(e, "service", None) or "AniList")
+
+
+def _hint(e):
+    code = e.status if isinstance(e, AniListTransientError) else getattr(e, "code", None)
+    if code == 429:
+        wait = getattr(e, "retry_in", None)
+        if wait is None:
+            try:
+                wait = int(e.headers.get("Retry-After"))
+            except (AttributeError, TypeError, ValueError):
+                wait = None
+        return {"why": "busy", "retry_in": max(1, math.ceil(wait)) if wait is not None else RETRY_DEFAULT}
+    if code == 404:
+        return {"why": "missing"}
+    if code == 403 or (isinstance(code, int) and code >= 500) \
+            or isinstance(e, (URLError, TimeoutError, ConnectionError, AniListTransientError)):
+        return {"why": "offline", "retry_in": RETRY_DEFAULT}
+    return {"why": "error"}
 
 
 def load_token():

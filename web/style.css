@@ -633,6 +633,24 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .mline .warn{color:var(--warn)}
 .sp2 .mline .add{display:none;align-items:center;gap:4px;padding:0;font:500 12px var(--mono);color:var(--accent)}.sp2 .mline .add .ico{width:13px;height:13px}
 .sp2 .tbar{margin-top:12px}
+/* your list couldn't load: the same line, saying why and when it asks again */
+.adot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--warn);animation:adot 1.8s var(--ease) infinite}
+.chk .adot{animation:adotc .7s ease-in-out infinite alternate}
+@keyframes adot{0%{box-shadow:0 0 0 0 rgb(var(--warn-rgb) / .55)}70%,100%{box-shadow:0 0 0 7px rgb(var(--warn-rgb) / 0)}}
+@keyframes adotc{to{opacity:.3;transform:scale(.7)}}
+.sp2 .mline.aerr .cd{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.aerr .lnk{display:inline-flex;align-items:center;gap:5px;padding:0;font:500 12px var(--mono);color:var(--accent);transition:color .2s}
+.aerr .lnk:hover{color:var(--accent-hi)}
+.aerr .lnk .ico{width:13px;height:13px;transition:transform .4s var(--ease)}
+.aerr .lnk:hover .ico{transform:rotate(-90deg)}
+.aerr .lnk:is([data-a=ani],[data-a=mal]):hover .ico{transform:translateX(2px)}
+.aerrbar .ticks i{background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);animation:none}
+.aerrbar>span:last-child{color:var(--mute)}
+.aerrbox{display:flex;align-items:center;gap:14px;padding:6px 0}
+.aerrbox .adot{margin:0 4px}
+.aerrbox b{display:block;font:600 15px var(--ui);color:var(--ink)}
+.aerrbox .cd{display:block;margin-top:3px;font:400 12px var(--mono);color:var(--mute);font-variant-numeric:tabular-nums}
+.aerrbox .btn{margin-left:auto}
 span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden}span.tline i{display:block;height:100%;border-radius:3px;background:var(--accent);animation:growx .6s .15s var(--ease) both;transform-origin:left}
 .ahead{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin-top:12px;font:400 12px var(--mono);color:var(--mute)}
 .ahead .lnk{display:inline-flex;align-items:center;gap:2px;padding:0;font:500 12px var(--mono);color:var(--accent)}
@@ -2916,6 +2934,7 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .hero .gb .lbl{display:block;position:static;width:auto;height:auto;clip:auto;margin:0;overflow:visible;white-space:normal}
   .sp2.frpage .hero .gb .v,.sp2.frpage .hero .gb .kb{display:none}
   .sp2.frpage .mline{display:none}
+  .sp2.frpage .mline.aerr{display:flex;margin:14px 0 0;padding:0} /* the one time the line has news: why your list is missing */
   .sp2.frpage .hsec .arr{display:none}
   .sp2.frpage .about dd.tags .tg:not(:last-child):after{display:none}
   /* episodes: a sideways row of stills, like the PC's strip */

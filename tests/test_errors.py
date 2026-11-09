@@ -29,6 +29,33 @@ class FriendlyError(unittest.TestCase):
                          "AniList is limiting requests — try again in a minute.")
         self.assertEqual(anilist.friendly_error(http(404)), "AniList has no entry with this id.")
 
+    def test_hint_says_when_to_ask_again(self):
+        """The page counts down to its own next try: AniList's or the hub's
+        own wait when known (rounded up), else the default."""
+        T, AL = anilist.AniListTransientError, {"service": "AniList"}
+        self.assertEqual(anilist.error_hint(T("x", status=429, retry_in=11.2)), {"why": "busy", "retry_in": 12, **AL})
+        self.assertEqual(anilist.error_hint(T("x", status=429, retry_in=0.2)), {"why": "busy", "retry_in": 1, **AL})
+        e = HTTPError("https://graphql.anilist.co", 429, "Too Many", {"Retry-After": "42"}, None)
+        self.assertEqual(anilist.error_hint(e), {"why": "busy", "retry_in": 42, **AL})
+        self.assertEqual(anilist.error_hint(http(429)), {"why": "busy", "retry_in": anilist.RETRY_DEFAULT, **AL})
+        for e in (http(503), URLError("no route"), T("Could not reach AniList: x")):
+            self.assertEqual(anilist.error_hint(e), {"why": "offline", "retry_in": anilist.RETRY_DEFAULT, **AL}, e)
+        self.assertEqual(anilist.error_hint(http(404)), {"why": "missing", **AL})
+        self.assertEqual(anilist.error_hint(KeyError("User")), {"why": "error", **AL})
+
+    def test_hint_names_myanimelist(self):
+        """With MyAnimeList as the account (Decision 75) the page names it, not AniList."""
+        e = anilist.AniListTransientError("x", status=429, service="MyAnimeList")
+        self.assertEqual(anilist.error_hint(e), {"why": "busy", "retry_in": anilist.RETRY_DEFAULT, "service": "MyAnimeList"})
+
+    def test_rate_gate_names_its_wait(self):
+        """A page read that can't get a slot in time says how long the gate needs."""
+        with mock.patch.object(anilist, "_anilist_try", return_value=17.5), anilist.quick():
+            with self.assertRaises(anilist.AniListTransientError) as cm:
+                anilist._anilist_slot()
+        self.assertEqual(cm.exception.status, 429)
+        self.assertEqual(anilist.error_hint(cm.exception)["retry_in"], 18)
+
     def test_auth_keeps_its_reason(self):
         self.assertEqual(anilist.friendly_error(anilist.AniListAuthError("token expired — reconnect AniList")),
                          "token expired — reconnect AniList")
