@@ -396,7 +396,7 @@ class FrontendPins(unittest.TestCase):
         self.assertIn("&peek=1", APP)
         self.assertIn('document.addEventListener("pointerover"', APP)
         self.assertIn("if (frKnown(mid)) go(); else Promise.race([frPeek(mid), sleep(250)]).then(go);", APP)
-        self.assertIn("if (entryMemo[mid]) entryDraw(entryMemo[mid]);", APP)
+        self.assertIn("if (entryMemo[key]) entryDraw(entryMemo[key]);", APP)
         self.assertIn("if (res.stale && tries < 4)", APP)
 
     def test_library_fetch_uses_the_etag(self):

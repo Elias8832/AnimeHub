@@ -844,7 +844,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 #entrybox .pills button{height:36px;padding:0 15px;border-radius:999px;font:600 13px var(--ui);color:var(--ink-2);background:rgba(255,255,255,.05);box-shadow:var(--edge)}
 #entrybox .pills button:hover{color:var(--ink);background:rgba(255,255,255,.09)}
 #entrybox .pills button.on{background:var(--ink);color:#111;box-shadow:none}
-.scrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.scrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:38px} /* the heart's height, so AniList and MyAnimeList (no heart) match */
 .scrow .vs{width:1px;height:26px;background:rgba(255,255,255,.12)}
 .score{display:flex;gap:6px}
 .score button{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;font:600 13px var(--mono);background:rgba(255,255,255,.05);box-shadow:var(--edge);color:var(--mute)}
@@ -902,6 +902,8 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 /* the entry dialog clips only its art header, so the date picker can open over the edge */
 .dialog.entry{overflow:visible}
 .dialog.entry .edh{border-radius:28px 28px 0 0;overflow:hidden}
+/* Edit on AniList or MyAnimeList (Decision 83): over the art, top right */
+.edh .edsvc{position:absolute;top:16px;right:18px;z-index:1}
 #entrybox .datef .cal{top:auto;bottom:calc(100% + 8px);z-index:30}
 #entrybox .cal{background:var(--glass-pop);border:0;border-radius:20px;box-shadow:var(--sh-pop);backdrop-filter:blur(30px)}
 

@@ -261,10 +261,11 @@ class Connect(Base):
         self.assertIsNone(anilist.anilist_cache_stale())  # AniList's lists never show as MAL's
         self.assertTrue(config.ANILIST_CACHE.exists())  # kept for switching back
         self.assertEqual(settings.get_setting(sync.RECONCILE_KEY), "mal:77")
-        # A queued AniList change waits, named, and isn't sent to MAL.
+        # Queued AniList tracking that needs its lists waits, named, and
+        # isn't sent to MAL (a plain edit goes to AniList: Decision 83).
         with database.db() as c:
             c.execute("INSERT INTO outbox(media_id,payload,account_id,created) VALUES(101,?,5,'x')",
-                      (json.dumps({"patch": {"progress": 3}, "account_id": 5}),))
+                      (json.dumps({"patch": {"progress": 3}, "verify": {"add": False}, "account_id": 5}),))
         item = sync.outbox_items()[0]
         self.assertEqual((item["state"], item["held_for"]), ("account", "AniList"))
         self.assertEqual(sync.outbox_flush(), 0)
@@ -534,6 +535,68 @@ class Edits(Base):
         self.assertEqual(self.mal.status[1]["num_episodes_watched"], 12)
 
 
+class EditorPick(Base):
+    """Decision 83: the entry editor reads and saves on the service it picks,
+    while the lists stay on the one in use."""
+
+    def setUp(self):
+        super().setUp()
+        anilist.store_token("al-token", None, {"id": 5, "name": "alfan"})
+        self.login()
+        self.assertEqual(anilist.service(), "anilist")  # AniList in use, MAL paused
+        self.mal.status[1] = {"status": "watching", "score": 6, "num_episodes_watched": 3}
+
+    def test_using_picks_a_logged_in_service_only(self):
+        with anilist.using("mal"):
+            self.assertEqual((anilist.service(), anilist.account_id()), ("mal", "mal:77"))
+            self.assertTrue(anilist.picked())
+        self.assertEqual(anilist.service(), "anilist")
+        mal.clear_token()
+        with anilist.using("mal"):
+            self.assertEqual(anilist.service(), "anilist")  # no login: the one in use
+        with anilist.using(None):
+            self.assertFalse(anilist.picked())
+
+    def test_read_and_save_on_the_paused_service(self):
+        with anilist.using("mal"):
+            st = anilist.anilist_entry_state(101)
+            self.assertEqual((st["service"], st["entry"]["progress"]), ("mal", 3))
+            anilist.anilist_entry_save(101, {"progress": 4})
+        self.assertEqual(self.mal.status[1]["num_episodes_watched"], 4)
+
+    def test_each_service_keeps_its_own_stored_read(self):
+        al = {"media_id": 101, "entry": {"status": "COMPLETED"}}
+        database.cache_put("entry-state:v1:101", al)
+        with anilist.using("mal"):
+            self.assertEqual(anilist.anilist_entry_state(101)["service"], "mal")
+        self.assertEqual(database.cache_get("entry-state:v1:101", ttl=30), al)
+        self.assertEqual(database.cache_get("entry-state:v1:mal:101", ttl=30)["service"], "mal")
+        # A MAL read stored under the shared key (before Decision 83) isn't AniList's.
+        database.cache_put("entry-state:v1:102", {"service": "mal", "entry": {}})
+        with mock.patch.object(anilist, "anilist_mutation", return_value=None):
+            self.assertIsNone(anilist.anilist_entry_state(102))
+
+    def test_a_queued_edit_goes_to_the_paused_service(self):
+        with anilist.using("mal"):
+            sync.outbox_enqueue(101, patch={"progress": 7})
+            self.assertEqual(sync.outbox_pending_for(101), 1)
+        self.assertEqual(sync.outbox_pending_for(101), 0)  # not AniList's
+        self.assertNotIn("held_for", sync.outbox_items()[0])
+        with mock.patch.object(anilist, "auth_status", return_value={"connected": True}):
+            self.assertEqual(sync.outbox_flush(), 1)
+        self.assertEqual(self.mal.status[1]["num_episodes_watched"], 7)
+        self.assertEqual(sync.outbox_count(), 0)
+
+    def test_the_paused_service_down_backs_off_alone(self):
+        with anilist.using("mal"):
+            sync.outbox_enqueue(101, patch={"progress": 7})
+        self.mal.fail = 503
+        with mock.patch.object(anilist, "auth_status", return_value={"connected": True}):
+            self.assertEqual(sync.outbox_flush(), 0)
+        with database.db() as c:
+            self.assertEqual(c.execute("SELECT attempts FROM outbox").fetchone()[0], 1)
+
+
 class Routes(Base):
     def setUp(self):
         super().setUp()
@@ -588,6 +651,20 @@ class Routes(Base):
         self.assertIn("myanimelist.net", json.loads(body)["url"])
         code, body = self.req("/api/auth/mal/paste", {"url": "nothing"})
         self.assertEqual(code, 400)
+
+    def test_the_editor_picks_its_service(self):
+        anilist.store_token("al-token", None, {"id": 5, "name": "alfan"})
+        self.login()
+        self.mal.status[1] = {"status": "watching", "score": 6, "num_episodes_watched": 3}
+        code, body = self.req("/api/entry?id=101&service=mal")
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(body)["state"]["service"], "mal")
+        code, body = self.req("/api/entry", {"media_id": 101, "service": "mal", "patch": {"score": 9}})
+        self.assertEqual((code, json.loads(body)["entry"]["score"]), (200, 9))
+        self.assertEqual(self.mal.status[1]["score"], 9)
+        self.assertEqual(anilist.service(), "anilist")  # the lists stay where they were
+        self.assertEqual(self.req("/api/entry?id=101&service=kitsu")[0], 400)
+        self.assertEqual(self.req("/api/entry", {"media_id": 101, "service": "x", "patch": {"score": 1}})[0], 400)
 
     def test_a_phone_cannot_change_the_account(self):
         for path in ("/api/auth/mal/start", "/api/auth/mal/paste", "/auth/mal/callback", "/api/auth/use"):
