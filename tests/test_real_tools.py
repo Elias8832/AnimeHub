@@ -147,6 +147,40 @@ class RealDisk(unittest.TestCase):
             (folder / "E01.mp4").write_bytes(b"x")
             self.assertTrue((folder / "E01.mp4").is_file(), title)
 
+    @unittest.skipUnless(system.WINDOWS, "Windows")
+    def test_an_update_swaps_in_beside_the_running_app(self):
+        """Windows won't overwrite a running program, but lets it be moved
+        (Decision 79). A copy of ping.exe stands in for AnimeHub.exe and keeps
+        running, started in app\\ like the hub, while the zip swaps in."""
+        from animehub import update
+        from tests.test_update import NEW, OLD, Reply, snapshot, windows_zip
+        root = Path(tempfile.mkdtemp(dir=support.TMP)) / "AnimeHub"
+        for name, data in OLD.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_bytes(data)
+        exe = root / "AnimeHub.exe"
+        shutil.copy(Path(os.environ["SystemRoot"]) / "System32" / "PING.EXE", exe)
+        running = subprocess.Popen([str(exe), "-n", "60", "127.0.0.1"], cwd=root / "app",
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(running.kill)
+        time.sleep(0.5)
+        with self.assertRaises(PermissionError):
+            exe.write_bytes(b"MZ")  # what a plain overwrite gets
+        body = windows_zip(NEW)
+        found = {"download": update.DOWNLOADS + "x", "sha256": __import__("hashlib").sha256(body).hexdigest()}
+        with mock.patch.object(update, "urlopen", return_value=Reply(body)):
+            update._swap_zip(found, root)
+        self.assertEqual((update._job["state"], update._job["error"]), ("done", None))
+        self.assertIsNone(running.poll(), "the running app was stopped")
+        self.assertEqual(snapshot(root)["AnimeHub.exe"], NEW["AnimeHub.exe"])
+        self.assertEqual(snapshot(root)["app/hub.py"], NEW["app/hub.py"])
+        self.assertNotIn("app/animehub/gone.py", snapshot(root))
+        running.kill()
+        running.wait(timeout=10)
+        with mock.patch.object(update, "ROOT", root), mock.patch.object(update, "REPO", root / "app"), \
+                mock.patch.object(update, "kind", return_value="windows"):
+            self.assertTrue(wait_for(lambda: update.tidy() or not list(root.glob(".update-*")), 5), list(root.glob(".update-*")))
+
     @unittest.skipUnless(system.WINDOWS and system.git_bash(), "Windows with Git for Windows")
     def test_git_bash_brings_what_ani_cli_needs(self):
         """curl, sed and grep aren't on a normal Windows PATH (TODO 147)."""
