@@ -205,11 +205,24 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 @keyframes floaty{50%{transform:translateY(-6px)}}
 .note-bar{margin:18px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:var(--r-m);background:var(--s1);color:var(--mute);font-size:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;animation:rise .35s var(--ease) both}
 .note-bar .btn{font-size:13px;padding:5px 12px}
-.listnote .lbar{flex:1 1 100%;height:3px;border-radius:3px;background:var(--line);overflow:hidden;display:block}
-.listnote .lbar b{display:block;height:100%;border-radius:inherit;background:var(--accent);transition:width .4s var(--ease)}
-.listnote .lbar.ind b{animation:lbarInd 1.4s ease-in-out infinite}
+/* Your lists on their way (TODO 191): a quiet line where they'll land, the real count, a thin bar */
+.lload .ll{display:flex;align-items:center;gap:8px;margin:0;font:400 11.5px var(--mono);color:var(--mute);cursor:default}
+.lload .lc{margin-left:auto;color:var(--ink-2);font-weight:500;font-variant-numeric:tabular-nums}
+.lload .dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:llPulse 1.4s ease-in-out infinite}
+@keyframes llPulse{50%{opacity:.35}}
+.lload .lbar{display:block;height:2px;margin-top:9px;border-radius:2px;background:var(--line);overflow:hidden}
+.lload .lbar b{display:block;height:100%;border-radius:inherit;background:var(--accent);box-shadow:0 0 10px color-mix(in srgb,var(--accent) 60%,transparent);transition:width .6s var(--ease)}
+.lload .lbar.ind b{animation:lbarInd 1.4s ease-in-out infinite}
 @keyframes lbarInd{from{transform:translateX(-100%)}to{transform:translateX(290%)}}
-@media (prefers-reduced-motion:reduce){.listnote .lbar.ind b{animation:none}}
+.lload.inl{margin:16px 0 6px} /* as wide as the grid under it: a capped line looked cut off (Elias) */
+.lload .lw{color:var(--ink-2)}.lload .lw::after{content:"·";margin-left:8px;color:var(--mute)}
+.lghost i{display:flex;align-items:center;height:36px;padding:0 14px}
+.lghost b{height:10px;border-radius:5px;background:linear-gradient(90deg,rgba(255,255,255,.06) 30%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.06) 70%) 0 0/300% 100%;animation:llShim 1.8s linear infinite}
+.lghost i:nth-child(2) b{animation-delay:.12s}.lghost i:nth-child(3) b{animation-delay:.24s}.lghost i:nth-child(4) b{animation-delay:.36s}
+.lghost u{margin-left:auto;width:16px;height:8px;border-radius:4px;background:rgba(255,255,255,.05)}
+@keyframes llShim{to{background-position:-150% 0}}
+.lsub{display:none}
+@media (prefers-reduced-motion:reduce){.lload .lbar.ind b,.lload .dot,.lghost b{animation:none}}
 
 /* ───────── posters + cards ───────── */
 .poster{--h:220;aspect-ratio:2/3;position:relative;overflow:hidden;border-radius:10px;display:flex;align-items:flex-end;padding:14px;font-weight:650;font-size:15px;line-height:1.2;letter-spacing:-.01em;color:hsl(var(--h) 28% 92%);background:linear-gradient(160deg,hsl(var(--h) 24% 31%),hsl(var(--h) 22% 17%));outline:1px solid rgba(255,255,255,.08);outline-offset:-1px;isolation:isolate}
@@ -2603,6 +2616,11 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lh{display:flex;align-items:baseline;gap:10px;margin:0 8px 0 0;font:650 22px var(--ui);letter-spacing:-.01em;white-space:nowrap}
   .lh .n{font:400 12px var(--mono);color:var(--mute)}
   .lsolo{display:block}
+  .lsolo .lsub{display:block;margin:6px 0 0;font:400 13.5px var(--ui);color:color-mix(in srgb,var(--ink-2) 82%,transparent)}
+  .lghost{display:flex;flex-direction:column;gap:2px}
+  .lnav .lload{padding:10px 14px 2px}
+  .lload.inl{display:none}
+  .lnav>button[data-land]{animation:rise .4s var(--ease) backwards;animation-delay:calc(min(var(--i,0),8)*35ms)}
   .lib2 .lmain .filters{padding:0;animation:none} /* rebuilt on every click in the side list: rising each time flickered (Elias) */
   #app.nav-in .lib2 .lmain .filters{animation:rise .4s var(--ease) both}
   /* show + sort as plain words, no pill (Elias, 2026-11-06); a soft wash on hover */
