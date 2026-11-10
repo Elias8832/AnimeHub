@@ -733,6 +733,25 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .sp2 .srcl:empty{display:none}
 .sp2 .ctl .arr{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:var(--glass);box-shadow:var(--edge);color:var(--ink-2)}
 .sp2 .ctl .arr:hover:not(:disabled){background:var(--glass-h);color:var(--ink)}.sp2 .ctl .arr:disabled{opacity:.3}
+/* The episode row's controls (mockup A, 2026-11-10): Sub/Dub and the arrows
+   in one glass bar, the same build and size as the action bar above. */
+@media (min-width:701px){
+  .sp2 .eps-head .ctl{height:48px;gap:2px;padding:0 5px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+  .sp2 .eps-head .ctl:empty,.sp2 .eps-head .ctl:not(:has(>:not([hidden]))){height:auto;padding:0;background:none;box-shadow:none;backdrop-filter:none} /* stays as a spacer: the source line keeps its place */
+  .sp2 .eps-head .ctl .seg{padding:0;gap:2px;background:none;box-shadow:none;backdrop-filter:none}
+  .sp2 .eps-head .ctl .seg button{height:38px;min-width:64px;padding:0 16px;font:600 14.5px var(--ui);color:var(--ink-2);transition:background .18s,color .18s}
+  .sp2 .eps-head .ctl .seg button:hover:not(:disabled):not(.on){background:rgba(255,255,255,.1);color:var(--ink)}
+  .sp2 .eps-head .ctl .seg button.on{background:var(--ink);color:#111}
+  .sp2 .eps-head .ctl .seg .spin{border-color:rgba(255,255,255,.25);border-top-color:var(--ink)}
+  .sp2 .eps-head .ctl .arr{position:relative;width:38px;height:38px;border:0;background:none;box-shadow:none;color:var(--ink);transition:background .15s,opacity .15s}
+  .sp2 .eps-head .ctl .arr:hover:not(:disabled){background:rgba(255,255,255,.17)}
+  .sp2 .eps-head .ctl .arr[data-d="1"]{background:rgba(255,255,255,.1)} /* forward is the usual way: it gets the circle (mockup A) */
+  .sp2 .eps-head .ctl .arr:disabled{background:none;opacity:.3}
+  .sp2 .eps-head .ctl .arr[hidden]{display:none}
+  .sp2 .eps-head .ctl .arr .ico{width:18px;height:18px;stroke-width:2.8}
+  .sp2 .eps-head .ctl .seg+.arr:not([hidden]){margin-left:9px}
+  .sp2 .eps-head .ctl .seg+.arr:not([hidden])::before{content:"";position:absolute;left:-6px;top:9px;width:1px;height:20px;background:rgba(255,255,255,.14)} /* the action bar's .gsep */
+}
 .sp2 .eps.strip{display:flex;gap:16px;overflow-x:auto;overflow-y:visible;padding:8px 6px 14px;margin:0 -6px;scroll-behavior:smooth;scroll-snap-type:x proximity;scrollbar-width:none}
 .sp2 .eps.strip::-webkit-scrollbar{display:none}
 .sp2 .eps.strip.mr{-webkit-mask:linear-gradient(90deg,#000 88%,transparent);mask:linear-gradient(90deg,#000 88%,transparent)}
@@ -911,7 +930,6 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .seg button{height:26px;padding:0 12px;border-radius:999px;font:600 12px var(--ui);color:var(--ink-2);background:none;border:0}
 .seg button:hover:not(:disabled){color:var(--ink)}
 .seg button.on{background:var(--ink);color:#111}
-.sp2 .ctl .seg button{height:26px}
 .dialog .btn.pri:focus-visible,.dialog .btn:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 .edh .cap{color:var(--ink-2)}
 .sp2 .eps.strip.ml.mr,.sp2 .eps.strip.mr{-webkit-mask:linear-gradient(90deg,#000 93%,transparent);mask:linear-gradient(90deg,#000 93%,transparent)}
