@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -180,6 +181,57 @@ class RealDisk(unittest.TestCase):
         with mock.patch.object(update, "ROOT", root), mock.patch.object(update, "REPO", root / "app"), \
                 mock.patch.object(update, "kind", return_value="windows"):
             self.assertTrue(wait_for(lambda: update.tidy() or not list(root.glob(".update-*")), 5), list(root.glob(".update-*")))
+
+    def test_a_restart_brings_the_hub_back_in_its_own_place(self):
+        """Restart now (after an install): a real hub stops, and a hub that
+        started later answers on the same port while the process its starter
+        holds stays the same (POSIX: exec; Windows: a child that waits). When
+        the starter ends that process, nothing is left on the port: on
+        Windows the job ends the new hub with it."""
+        import socket
+        import urllib.request
+        base = Path(tempfile.mkdtemp(dir=support.TMP))
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        cfg = base / "config.json"
+        cfg.write_text(json.dumps({"port": port, "window": "none", "data_dir": str(base / "data")}))
+        start = ("import sys; hub, cfg = sys.argv[1:3]; sys.argv = [hub, '--no-browser', '--config', cfg]; "
+                 "sys.path.insert(0, %r); from animehub import server, update; update._job['state'] = 'done'; server.main()"
+                 % str(support.ROOT))
+        env = {**os.environ, "XDG_CONFIG_HOME": str(base / "config"), "XDG_DATA_HOME": str(base / "share")}
+        hub = subprocess.Popen([sys.executable, "-c", start, str(support.ROOT / "hub.py"), str(cfg)], env=env,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(hub.wait, 10)
+        self.addCleanup(hub.kill)
+        url = f"http://127.0.0.1:{port}"
+
+        def started():
+            try:
+                with urllib.request.urlopen(url + "/api/settings", timeout=2) as r:
+                    return json.loads(r.read())["update"]["started"]
+            except (OSError, ValueError, KeyError):
+                return None
+
+        first = wait_for(started, 60)
+        self.assertTrue(first, "the hub never answered")
+        req = urllib.request.Request(url + "/api/update-restart", data=b"{}", method="POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(json.loads(r.read()), {"ok": True})
+        self.assertTrue(wait_for(lambda: (started() or first) != first, 60), "no new hub answered")
+        self.assertIsNone(hub.poll(), "the process its starter holds ended")
+        hub.kill()
+        hub.wait(timeout=10)
+
+        def gone():
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=1).close()
+                return False
+            except OSError:
+                return True
+
+        self.assertTrue(wait_for(gone, 10), "a hub outlived its starter")
 
     @unittest.skipUnless(system.WINDOWS and system.git_bash(), "Windows with Git for Windows")
     def test_git_bash_brings_what_ani_cli_needs(self):

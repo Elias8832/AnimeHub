@@ -684,8 +684,27 @@ class DeviceMarks(unittest.TestCase):
         """TODO 191: placeholder rows in the side list, not a box over the page."""
         self.assertIn('<div class="lghost"', APP)
         self.assertNotIn("note-bar listnote", APP)
-        self.assertIn("for (const n of $$(\".lload\")) listLoadPatch(n);", APP)
+        self.assertIn("for (const n of $$(\".lload:not(.mload)\")) loadPatch(n, listLoadState());", APP)
         self.assertIn(".lnav>button[data-land]", CSS)
+
+    def meta_state(self, d):
+        fn = re.search(r"function metaLoadState\(d = S.data\) \{.*?\n\}\n", APP, re.S).group(0)
+        return run_js(f"{fn}\nreturn metaLoadState({json.dumps(d)});")
+
+    def test_metadata_line_shows_the_real_count(self):
+        """TODO 199 (Elias: same as the lists' line): the metadata pass shows
+        done / total with a bar, and the show it is on under the bar."""
+        t = self.meta_state({"meta_pending": 1, "meta_total": 4, "meta_current": "Mugen Train"})
+        self.assertEqual((t["count"], t["pct"], t["now"]), ("3 / 4", 75, "Mugen Train"))
+        t = self.meta_state({"meta_pending": 2})  # an older hub without the total
+        self.assertEqual((t["count"], t["pct"]), ("0 / 2", 0))
+
+    def test_metadata_line_sits_in_the_side_list(self):
+        """TODO 199: no bar over the page; on the PC it sits beside the grid's title."""
+        self.assertNotIn("note-bar metanote", APP)
+        self.assertIn('`<div class="filters">${lhead}${mrow}', APP)  # beside the grid's title: the side list no longer jumps (Elias)
+        self.assertNotIn("libRail(m, sum, loading, fetching)", APP)
+        self.assertIn('<div class="lload mload inl">', APP)
 
     def test_names_the_account_service(self):
         """Decision 75: with MyAnimeList as the account, the line names it."""

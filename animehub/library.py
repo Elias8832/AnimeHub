@@ -764,6 +764,7 @@ def full_library():
             # Metadata-fetch visibility (Elias): additive — the UI shows
             # what the background pass is working on, or that it's idle.
             "meta_pending": metadata._meta_status["pending"],
+            "meta_total": metadata._meta_status["total"],  # additive: the bar's whole (TODO 199)
             "meta_running": metadata._meta_status["running"],
             "meta_current": metadata._meta_status["current"],
             "meta_phase": metadata._meta_status["phase"]}

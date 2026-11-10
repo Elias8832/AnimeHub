@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import anilist, database, library, mapping, server, settings, sync
+from animehub import anicli, anilist, database, library, mapping, server, settings, sync
 from animehub.config import config
 
 
@@ -56,6 +56,9 @@ class ReconcileAnalyzeTests(unittest.TestCase):
             patch.object(anilist, "load_token",
                          lambda: {"access_token": "t", "expires_at": None,
                                   "user_id": 42, "user_name": "Elias"}),
+            # No ani-cli unless a test says so: this machine's own must not
+            # turn aired episodes into online ones (TODO 191).
+            patch.object(anicli, "anicli_path", return_value=None),
         ]
         for p in self.patches:
             p.start()
@@ -102,8 +105,15 @@ class ReconcileAnalyzeTests(unittest.TestCase):
                 [(f"hxh-ep{i}",) for i in (1, 2, 3)])
         res = self.analyze([scan], [entry_fixture(11061, progress=50)])
         self.assertEqual(res["facts"], [])
-        self.assertEqual(res["marks"], [{"show": res["marks"][0]["show"], "media_id": 11061,
-                                         "remote": 50, "episodes": 47}])
+        m = res["marks"]
+        self.assertEqual(len(m), 1)
+        self.assertEqual({k: m[0][k] for k in ("media_id", "remote", "episodes")},
+                         {"media_id": 11061, "remote": 50, "episodes": 47})
+        # The dialog's real episodes (additive): which get marked, which are
+        # already watched here — never counted back from AniList's number.
+        self.assertEqual(m[0]["numbers"], list(range(4, 51)))
+        self.assertEqual(m[0]["watched"], [1, 2, 3])
+        self.assertEqual(m[0]["show_id"], scan["id"])
         def watched():
             with database.db() as c:
                 return {r[0] for r in c.execute("SELECT id FROM episodes WHERE watched=1")}
@@ -114,6 +124,77 @@ class ReconcileAnalyzeTests(unittest.TestCase):
                           return_value=remote_fixture([entry_fixture(11061, progress=50)])):
             self.assertEqual(sync.reconcile_mark_watched(), 47)
         self.assertEqual(watched(), {f"hxh-ep{i}" for i in range(1, 51)})
+
+    def test_marks_name_only_episodes_on_this_pc(self):
+        """The list is at E25 but the files stop at E7 (Blue Box, TODO 191):
+        the marks are E6-E7, and the dialog is told so — not "up to E25"."""
+        scan = show_fixture(sid="bb", aid=170942, n_eps=7, watched=(1, 2, 3, 4, 5), title="Blue Box")
+        res = self.analyze([scan], [entry_fixture(170942, progress=25, eps=25)])
+        m = res["marks"][0]
+        self.assertEqual((m["episodes"], m["numbers"], m["watched"], m["remote"], m["total"]),
+                         (2, [6, 7], [1, 2, 3, 4, 5], 25, 25))
+
+    def link(self, mid, n_eps, watched=()):
+        """ani-cli's online episode list for an entry, some watched online."""
+        with database.db() as c:
+            c.execute("""INSERT INTO stream_links(media_id, query, title, idx, mode, episodes, episodes_ts,
+                         meta, matched_by) VALUES(?,?,?,1,'sub',?,?, '{}', 'auto')""",
+                      (mid, "x", "x", json.dumps([str(n) for n in range(1, n_eps + 1)]), 9e9))
+            c.executemany("INSERT INTO episodes(id,watched) VALUES(?,1)",
+                          [(f"stream:{mid}:{n}",) for n in watched])
+
+    def test_marks_count_online_episodes_too(self):
+        """Files stop at E7, online has all 25 (TODO 191, parity): E6-E25
+        get marked, each number once, and a yes marks the file and the
+        online episode alike."""
+        scan = show_fixture(sid="bb", aid=170942, n_eps=7, watched=(1, 2, 3, 4, 5), title="Blue Box")
+        self.link(170942, 25)
+        res = self.analyze([scan], [entry_fixture(170942, progress=25, eps=25)])
+        m = res["marks"][0]
+        self.assertEqual((m["episodes"], m["numbers"], m["watched"]), (20, list(range(6, 26)), [1, 2, 3, 4, 5]))
+        with patch.object(library, "scan_library", return_value=[scan]), \
+             patch.object(library, "merge_db", lambda scan: None), \
+             patch.object(anilist, "anilist_user_data",
+                          return_value=remote_fixture([entry_fixture(170942, progress=25, eps=25)])):
+            self.assertEqual(sync.reconcile_mark_watched(), 20)
+        with database.db() as c:
+            done = {r[0] for r in c.execute("SELECT id FROM episodes WHERE watched=1")}
+        self.assertTrue({"bb-ep6", "bb-ep7", "stream:170942:6", "stream:170942:25"} <= done)
+
+    def test_streamed_only_show_takes_part(self):
+        """A show watched online only, no folder: it gets its marks, and an
+        episode watched online counts as watched here."""
+        self.link(21827, 13, watched=(1, 2))
+        res = self.analyze([], [entry_fixture(21827, progress=13, eps=13)])
+        m = res["marks"][0]
+        self.assertEqual((m["media_id"], m["numbers"], m["watched"]), (21827, list(range(3, 14)), [1, 2]))
+
+    def test_aired_episodes_count_before_ani_cli_links(self):
+        """OSHI NO KO: one file, never linked, but aired and ani-cli is
+        there — the show page plays E2-E11 online, so they get marked too
+        (Elias, 2026-11-09: "oshi no ko is online")."""
+        scan = show_fixture(sid="onk", aid=150672, n_eps=1, watched=(), title="OSHI NO KO")
+        entry = dict(entry_fixture(150672, progress=11, eps=11), airing="FINISHED")
+        with patch.object(anicli, "anicli_path", return_value="/usr/bin/ani-cli"):
+            res = self.analyze([scan], [entry])
+        self.assertEqual(res["marks"][0]["numbers"], list(range(1, 12)))
+        # ani-cli found nothing for it: files only
+        with database.db() as c:
+            c.execute("INSERT INTO stream_misses(media_id, ts) VALUES(150672, ?)", (9e9,))
+        with patch.object(anicli, "anicli_path", return_value="/usr/bin/ani-cli"):
+            res = self.analyze([scan], [entry])
+        self.assertEqual(res["marks"][0]["numbers"], [1])
+
+    def test_airing_entry_counts_only_what_is_out(self):
+        entry = dict(entry_fixture(5114, progress=8, eps=24), airing="RELEASING", next_episode={"number": 7})
+        self.assertEqual(sync._aired(entry), 6)
+        self.assertEqual(sync._aired(dict(entry, airing="NOT_YET_RELEASED")), 0)
+
+    def test_an_online_list_too_long_for_the_entry_sits_out(self):
+        """A wrong link (more episodes than the entry has) marks nothing."""
+        self.link(106286, 12)
+        res = self.analyze([], [entry_fixture(106286, progress=1, eps=1)])
+        self.assertEqual(res["marks"], [])
 
     def test_mark_watched_needs_a_pending_connect(self):
         sync.reconcile_clear()
@@ -348,6 +429,20 @@ class ReconcileRouteTests(unittest.TestCase):
         code, _ = self.request("POST", "/api/reconcile/dismiss")
         self.assertEqual(code, 200)
         self.assertEqual(settings.get_setting(sync.RECONCILE_KEY), None)
+
+    def test_compare_starts_the_connect_check(self):
+        """Settings → Account → Compare (TODO 191): no login → an error and
+        no marker; logged in → the marker for that account, so
+        /api/reconcile answers as after a connect."""
+        sync.reconcile_clear()
+        code, body = self.request("POST", "/api/reconcile/start")
+        self.assertEqual(code, 400)
+        self.assertIsNone(settings.get_setting(sync.RECONCILE_KEY))
+        with patch.object(anilist, "account_id", return_value=42):
+            code, body = self.request("POST", "/api/reconcile/start")
+        self.assertEqual((code, body), (200, {"ok": True}))
+        self.assertEqual(settings.get_setting(sync.RECONCILE_KEY), "42")
+        sync.reconcile_clear()
 
     def test_apply_rejects_non_list_decisions(self):
         sync.reconcile_mark_pending(42)
