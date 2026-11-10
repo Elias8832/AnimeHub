@@ -314,6 +314,17 @@ class LibraryCards(unittest.TestCase):
         self.assertEqual(ids({"sort": "average"}), [2, 1, 3])  # no average goes last
         self.assertEqual(ids({"sort": "average", "average": [80, 100]}), [2])
         self.assertEqual(ids({"sort": "average", "average": [0, 75]}), [1])  # no average isn't a low one
+        # The reverse button: lowest first, and no average still goes last.
+        self.assertEqual(ids({"sort": "average", "average": "all", "rev": True}), [1, 2, 3])
+        self.assertEqual(ids({"sort": "title", "rev": True}), [3, 2, 1])
+
+    def test_a_filter_change_replays_the_cards_rise_in(self):
+        """TODO 210: every filter, the sort and the reverse button paint the
+        wall with its opening animation; a range only once it's let go."""
+        self.assertIn("filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === \"group\") { S.fadeNext = true; return render(); } paintWall(true);", APP)
+        self.assertIn("srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true);", APP)
+        self.assertIn('if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); paintWall(true);', APP)
+        self.assertNotIn("saveLib(); paintWall(); syncFilters();", APP)
 
 
 class Library(unittest.TestCase):

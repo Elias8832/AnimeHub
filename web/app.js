@@ -761,6 +761,13 @@ const SORT = {
   average: (a, b) => (b.average || 0) - (a.average || 0),
   year: (a, b) => (b.year || 0) - (a.year || 0), title: (a, b) => (a.title || "").localeCompare(b.title || ""),
 };
+/* The reverse button flips the order; shows with no score, average, year or
+   date stay last either way, so "lowest first" doesn't open on blanks. */
+const blankFor = (k, e) => k !== "title" && !e[k];
+function libSort(k, rev) {
+  const key = SORT[k] ? k : "updated", by = SORT[key];
+  return (a, b) => (blankFor(key, a) - blankFor(key, b)) || (rev ? by(b, a) : by(a, b));
+}
 const inProg = (st) => ["CURRENT", "REPEATING", "PAUSED"].includes(st);
 /* "Keep local" (TODO 12c) moves a folder from To match to Untracked. */
 const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id && !s.kept_local);
@@ -815,7 +822,7 @@ function libList(m) {
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
     && (!Array.isArray(f.average) || (e.average > 0 && inRange(f.average, e.average)))
-    && hasGenres(e, f.genres))).sort(SORT[f.sort] || SORT.updated);
+    && hasGenres(e, f.genres))).sort(libSort(f.sort, f.rev));
 }
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
 const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genres || []).includes(g));
@@ -1400,6 +1407,7 @@ function scanNote() {
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
 const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score", "average"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
+const revBtn = () => `<button type="button" class="btn ic srev${S.lib.rev ? " on" : ""}" data-a="srev" aria-pressed="${!!S.lib.rev}" aria-label="Reverse order" title="Reverse order">${ico("sort")}</button>`;
 const fsel = (k, label, opts, locked) => {
   const set = !locked && k !== "sort" && S.lib[k] !== "all";
   return `<label class="fl">${label}<select data-a="filt" data-k="${k}" class="${set ? "set" : ""}" ${locked ? "disabled" : ""}>${(locked ? [opts[1]] : opts).map(([v, l]) => `<option value="${esc(v)}" ${v === S.lib[k] || locked ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
@@ -1434,6 +1442,9 @@ function fdropClose(except) {
 document.addEventListener("mousedown", (e) => { if (!e.target.closest?.(".fdrop.open")) fdropClose(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".fdrop.open")) { e.stopImmediatePropagation(); const d = $(".fdrop.open"); fdropClose(); d.querySelector(".fdb")?.focus(); } }, true);
 let rngFrame = 0;
+/* Every filter change replays the cards' rise-in (Elias, TODO 210); a range
+   does it once, when it's let go, not on every step of the drag. */
+document.addEventListener("change", (e) => { if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); paintWall(true); syncFilters(); saveLib(); } });
 document.addEventListener("input", (e) => {
   const r = e.target.closest?.(".rng input");
   if (!r) return;
@@ -1499,10 +1510,10 @@ function Lib() {
       <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
+      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
     const nf = [!srcLocked() && S.lib.src !== "all", S.lib.fmt !== "all", S.lib.air !== "all", ...["year", "score", "average"].map((k) => Array.isArray(S.lib[k])), S.lib.group !== "all"].filter(Boolean).length;
-    const fltb = !filters ? "" : ph ? `<div class="lsort"><label class="srt">${ico("sort")}<select data-a="filt" data-k="sort" aria-label="Sort">${[["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]].map(([v, l]) => `<option value="${v}" ${v === S.lib.sort ? "selected" : ""}>${l}</option>`).join("")}</select></label><span class="fill"></span>
+    const fltb = !filters ? "" : ph ? `<div class="lsort"><label class="srt">${ico("sort")}<select data-a="filt" data-k="sort" aria-label="Sort">${[["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]].map(([v, l]) => `<option value="${v}" ${v === S.lib.sort ? "selected" : ""}>${l}</option>`).join("")}</select></label>${revBtn()}<span class="fill"></span>
       <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
@@ -6113,8 +6124,8 @@ const A = {
   fpick: (v, t) => {
     const k = t.dataset.k, d = t.closest(".fdrop");
     S.lib[k] = v; saveLib();
-    if (k === "group" || isPhone()) return render(); // phones: the sheet and the Filter count follow
-    paintWall(); syncFilters();
+    if (k === "group" || isPhone()) { S.fadeNext = true; return render(); } // phones: the sheet and the Filter count follow
+    paintWall(true); syncFilters();
     for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
   },
@@ -6126,7 +6137,7 @@ const A = {
     for (const b of $$(`[data-a=genre][data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     const gd = $('.fdrop[data-k="genres"]');
     if (gd) { gd.classList.toggle("set", S.lib.genres.length > 0); gd.querySelector(".fdb b").textContent = genLabel(); }
-    saveLib(); paintWall(); syncFilters();
+    saveLib(); paintWall(true); syncFilters();
   },
   go: (v, t) => {
     /* The settings icon again acts as back. */
@@ -6159,7 +6170,8 @@ const A = {
     if (sid) openShow(sid); else if (e.media_id) openFranchise(e.media_id);
   },
   tab: (v) => { S.lib.tab = v; saveLib(); S.fadeNext = true; render(); },
-  filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") return render(); paintWall(); syncFilters(); },
+  srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true); $$(".srev").forEach((b) => { b.classList.toggle("on", S.lib.rev); b.setAttribute("aria-pressed", S.lib.rev); }); },
+  filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") { S.fadeNext = true; return render(); } paintWall(true); syncFilters(); },
   jtab: (v) => {
     const was = S.jTab; S.jTab = v; lsSet("jTab", v);
     if (!$("#app .jr2.phone .jpages")) return render(true);

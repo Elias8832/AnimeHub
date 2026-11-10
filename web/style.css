@@ -1150,6 +1150,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .lib2 .rt input,.lib2 .rt input::-webkit-slider-runnable-track{height:28px}
 .lib2 .filters .btn{height:36px;padding:0 14px;font-size:13px}
 .lib2 .filters .btn.ic{width:36px;padding:0}
+.srev .ico{transition:transform .2s var(--ease)}.srev.on{color:var(--accent)!important}.srev.on .ico{transform:scaleX(-1)}
 .gwrap{position:relative}
 .lib2 .gtray{padding:12px 76px 0 0;gap:6px;max-height:38px;overflow:hidden}.lib2 .gtray.open{max-height:none}
 .gmore{position:absolute;right:0;top:12px;height:26px;padding:0 12px;border-radius:999px;font:500 12px var(--ui);color:var(--ink-2);background:rgba(255,255,255,.09);box-shadow:var(--edge)}.gmore:hover{color:var(--ink)}
@@ -2828,6 +2829,9 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lib2 .lmain .filters .fl{color:#a4a4aa}
   .lib2 .lmain .filters .clr{height:32px;padding:0 12px;border:0;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:600 14px var(--ui)}
   .lib2 .lmain .filters .clr:hover{background:rgba(255,255,255,.06)}
+  /* reverse order: a plain icon left of the sort word, as far from it as show is from sort (-4px); lit and mirrored while on */
+  .lib2 .lmain .filters .srev{width:32px;height:32px;margin-right:-4px;border:0;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;color:var(--ink-2)}
+  .lib2 .lmain .filters .srev:hover{background:rgba(255,255,255,.06);color:var(--ink)}
   /* the filters as rows of the side list: name left, value right; a range opens in place */
   .lflt{display:flex;flex-direction:column;gap:2px}
   .lib2 .lflt .fl,.lflt .fdb{display:flex;align-items:center;justify-content:space-between;width:100%;height:34px;padding:0 0 0 14px;border-radius:12px;background:none;box-shadow:none;backdrop-filter:none;font:500 14px var(--ui);color:var(--ink-2);transition:background .2s,color .2s}
@@ -3017,6 +3021,7 @@ body.pp-open #modal{z-index:70}
   .lib2 .tabs .vs{margin:0 4px}
   .lsort{display:flex;align-items:center;gap:2px;margin:12px -6px 2px}
   .lsort .fill{flex:1}
+  .lsort .srev{width:34px;height:38px;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;color:var(--ink-2)}
   .lsort .srt{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 0 0 8px;color:var(--ink-2)}
   .lsort .srt .ico{width:16px;height:16px;flex:none}
   .lsort .srt select{height:38px;padding:0 24px 0 0;background-color:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;border-radius:0;font:600 14px var(--ui);color:var(--ink-2);background-position:right 4px center}
