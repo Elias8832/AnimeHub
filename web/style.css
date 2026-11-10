@@ -508,7 +508,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .scol.setin>.group>:is(h3,.sub,.srow){animation:fin .32s var(--ease) backwards;animation-delay:calc(var(--g)*50ms + var(--r)*18ms + .03s)}
 /* Calendar (Elias, 2026-11-04, after the calendar polish merged): the head, then the month's days in a wave from the top left
    (--i = row + column), the week's days left to right, the picked day's shows */
-#app.nav-in .airhead>*{animation:up .36s .03s var(--ease) backwards}#app.nav-in .airhead>:is(.arr,.btn){animation-delay:.06s}#app.nav-in .airhead>.seg{animation-delay:.09s}
+#app.nav-in .airhead>*{animation:up .36s .03s var(--ease) backwards}#app.nav-in .airhead>.airnav{animation-delay:.06s}#app.nav-in .airhead>:is(.airtabs,.airdiv){animation-delay:.09s}
 #app.nav-in .airsum{animation:up .36s .08s var(--ease) backwards}
 #app.nav-in .airw{animation:soft .3s .08s var(--ease) backwards}
 #app.nav-in .aird{animation:rise .34s var(--ease) backwards;animation-delay:calc(var(--i,0)*24ms + .1s)}
@@ -2558,15 +2558,22 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 /* the desktop calendar */
 .airp2{padding:0 44px 60px;max-width:1800px;margin:0 auto}
 .airhead{display:flex;align-items:center;gap:10px;margin-top:8px}
-.airhead .hd{font:700 clamp(44px,5vw,64px)/1 var(--display);text-transform:uppercase;margin:0 16px 0 0;white-space:nowrap}.airhead .hd span{color:var(--mute);font-weight:500}
-.airhead .seg+.seg{margin-left:6px}
+.airhead .hd{font:700 clamp(44px,5vw,64px)/1 var(--display);text-transform:uppercase;margin:0 16px 0 0;white-space:nowrap;display:grid}.airhead .hd>span{grid-area:1/1}.airhead .hd>[aria-hidden]{visibility:hidden}.airhead .hd>span>span{color:var(--mute);font-weight:500}
+/* The head's buttons (TODO 208) look like the top bar: ‹ Today › in one glass pill, the views as its tabs. */
+.airnav{display:inline-flex;align-items:center;height:40px;padding:0 4px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+.airnav button{height:32px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink-2);transition:color .15s,background .15s}.airnav button:hover{color:var(--ink);background:rgba(255,255,255,.08)}
+.airnav .i{width:32px;padding:0}.airnav .ico{width:16px;height:16px}
+.airtabs{display:inline-flex;gap:2px}.airtabs button{height:36px;padding:0 14px;border-radius:999px;font:600 14.5px var(--ui);color:rgba(243,243,241,.6);text-shadow:0 1px 8px rgba(0,0,0,.5);transition:color .15s,background .2s}
+.airtabs button:hover{color:var(--ink)}.airtabs button.on{color:var(--ink);background:var(--pick)}
+.airdiv{width:1px;height:20px;margin:0 8px;background:rgba(255,255,255,.12)}
+.airnav button:active,.airtabs button:active{transform:scale(.95)}.airnav button,.airtabs button{transition:color .15s,background .2s,transform .16s var(--ease)}
 .airsum{display:flex;align-items:center;gap:10px;margin:4px 0 16px;font:400 12px var(--mono);color:var(--mute)}.airsum b{color:var(--ink)}.airsum .sep{width:3px;height:3px;border-radius:50%;background:var(--mute)}
 .airload{display:inline-flex;align-items:center;gap:8px;margin-left:10px;font:400 11px var(--mono)}
 .airbody{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:20px;align-items:start}
 .airgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:auto repeat(var(--rows),calc(max(84px,(100vh - 252px - var(--rows) * 7px) / var(--rows))));gap:7px}
 .airw{padding:0 8px;font:400 11px var(--mono);color:var(--ink-2);text-shadow:0 1px 8px rgba(0,0,0,.7)}
-.aird{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;padding:10px;border-radius:15px;text-align:left;background:rgba(12,13,16,.26);transition:background .15s,box-shadow .15s}.aird.has{background:rgba(12,13,16,.56)}
-.aird:hover{background:rgba(40,41,46,.6)}.aird.is-out{opacity:.34}.aird.is-past:not(.is-out)>.airn{color:var(--mute)}.aird.is-sel{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.42)}
+.aird{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;padding:10px;border-radius:15px;text-align:left;background:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);transition:background .15s,box-shadow .15s,opacity .2s}.aird.has{background:rgba(12,13,16,.5);box-shadow:none}
+.aird:hover{background:rgba(40,41,46,.6)}.aird.is-out{opacity:.34}.aird.is-past:not(.is-out)>.airn{color:var(--mute)}.aird.is-past:not(.is-out,.is-sel,:hover){opacity:.62}.aird.is-sel{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.42)}
 .airn{align-self:flex-start;min-width:22px;padding:4px 2px;font:600 13px/1 var(--mono);color:var(--ink-2)}.is-today>.airn{padding:4px 8px;border-radius:999px;text-align:center;color:#0b0c0e;background:var(--accent);font-weight:700}
 .airts{flex:1;min-height:0;display:flex;gap:5px}
 .airt{position:relative;display:block;height:100%;aspect-ratio:5/7;min-width:0;flex:0 1 auto;border-radius:9px;background:var(--s3) center/cover;box-shadow:0 6px 14px -8px #000;container-type:inline-size}
@@ -2576,18 +2583,23 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 /* Too narrow for the word: the tag becomes a bar along the bottom (the day panel says which). */
 @container (max-width:58px){.airt em{left:5px;right:5px;bottom:5px;height:4px;padding:0;font-size:0}}
 .airplus{display:grid;place-items:center;font:600 13px var(--mono);font-style:normal;color:var(--ink-2);background:rgba(255,255,255,.08)}
-.airside{position:sticky;top:84px;max-height:calc(100vh - 236px);overflow:auto;scrollbar-width:none;padding:20px;border-radius:24px;background:rgba(12,13,16,.68);backdrop-filter:blur(24px);box-shadow:var(--edge)}
+.airside{position:sticky;top:84px;max-height:calc(100vh - 236px);overflow:auto;scrollbar-width:none;padding:4px 0 0 20px;box-shadow:inset 1px 0 0 rgba(255,255,255,.08);text-shadow:0 1px 8px rgba(0,0,0,.6)}
 .airsel{margin:0 0 6px;font:400 12px var(--mono);color:var(--mute)}.airsel b{font-weight:500;color:var(--accent)}.airside h2{font:700 42px/1 var(--display);text-transform:uppercase;margin:0 0 18px}.airside h3{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:22px 0 10px}.airside .sub{margin:0;font-size:14px}
 .aircard{display:flex;gap:14px;width:100%;padding:8px;margin:0 -8px 6px;box-sizing:content-box;border-radius:16px;text-align:left;transition:background .15s}.aircard:hover{background:rgba(255,255,255,.06)}
-.airp{flex:none;width:104px;height:146px;border-radius:12px;background:var(--s3) center/cover}
+.airp{flex:none;width:120px;height:168px;border-radius:12px;background:var(--s3) center/cover}
 .airx{min-width:0;display:flex;flex-direction:column;gap:5px;padding-top:2px}.airx b{font-size:17px;font-weight:650;line-height:1.25;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.airx small{font:400 11px/1.5 var(--mono);color:var(--mute)}.airx .ac{color:var(--accent)}
 .airtags{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}.airtags u{padding:2px 8px;border-radius:999px;text-decoration:none;font:500 11px/1.5 var(--ui);color:var(--ink-2);background:rgba(255,255,255,.07)}.airtags u.is-hot{color:#0b0c0e;background:var(--accent)}
 .airwk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
-.aircol{min-width:0;min-height:calc(100vh - 290px);padding:12px;border-radius:20px;background:rgba(12,13,16,.22)}.aircol.is-today{background:rgba(12,13,16,.5);box-shadow:var(--edge)}
+.aircol{min-width:0;min-height:calc(100vh - 290px);padding:12px;border-radius:20px;transition:opacity .2s}.aircol.is-past:not(:hover){opacity:.6}.aircol.is-today{background:rgba(12,13,16,.5);box-shadow:var(--edge)}
 .aircolh{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:2px 2px 12px;box-shadow:inset 0 -1px 0 rgba(255,255,255,.08);text-shadow:0 1px 8px rgba(0,0,0,.7)}.aircolh b{font:700 38px/.9 var(--display);color:var(--ink)}
 .aircolh span{display:flex;flex-direction:column;gap:3px;min-width:0}.aircolh i{font:600 12px/1 var(--ui);font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink)}.aircolh small{font:400 11px/1 var(--mono);color:var(--mute)}
 .is-past .aircolh b,.is-past .aircolh i{color:var(--mute)}.is-today .aircolh{box-shadow:inset 0 -2px 0 var(--accent)}.is-today .aircolh b,.is-today .aircolh i{color:var(--accent)}
-.airnone{display:grid;place-items:center;aspect-ratio:5/7;border-radius:14px;background:rgba(255,255,255,.025);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);color:rgba(255,255,255,.2)}.airnone .ico{width:24px;height:24px;stroke-width:1.6}
+/* An empty day's calendar mark, drawn with boxes: the browser snaps borders to whole screen
+   pixels, so it stays sharp at 125 % scaling, where a thin SVG line always falls between two. */
+.airnone{display:grid;place-items:center;height:60px}
+.airnone i{position:relative;width:18px;height:16px;margin-top:6px;border:2px solid #fff;border-radius:4px;opacity:.35}
+.airnone i:after{content:"";position:absolute;left:0;right:0;top:3px;height:2px;background:#fff}
+.airnone i:before{content:"";position:absolute;top:-6px;left:2px;width:10px;height:5px;box-sizing:border-box;border:solid #fff;border-width:0 2px}
 .airts{container:airts/inline-size}.air1t{display:none}
 .is-one>.airt{flex:0 0 auto;aspect-ratio:5/7}.is-one>.airt em{display:none}
 .is-one .air1t{display:flex;flex-direction:column;justify-content:space-between;gap:6px;flex:1;min-width:0;padding:2px 2px 2px 6px}

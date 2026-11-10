@@ -3921,7 +3921,7 @@ function airWeek(c, days, today) {
     let body = l.map(big);
     if (k === tk && l.length) { const at = l.findIndex((x) => x.t > now); body.splice(at < 0 ? l.length : at, 0, `<div class="airnow"><span>now ${esc(airTime({ t: now }))}</span></div>`); }
     const n = l.filter((x) => !x.start).length, note = n ? `${n} episode${n === 1 ? "" : "s"}` : l.length ? "starts" : "no episodes";
-    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}" style="--i:${i}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone">${ico("cal")}</div>`}</div>`; }).join("")}</div>`;
+    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}" style="--i:${i}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone"><i></i></div>`}</div>`; }).join("")}</div>`;
 }
 function CalDesk() {
   const now = Date.now(), today = new Date(now), c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: airKey(today), scope: "all", mode: lsGet("airMode", "month") });
@@ -3938,12 +3938,16 @@ function CalDesk() {
   const next = [...days.values()].flat().filter((x) => x.t > now).sort((a, b) => a.t - b.t).filter((x) => !seen.has(x.e.id) && seen.add(x.e.id)).slice(0, 4);
   const seg = (a, cur, opts) => opts.map(([v, l]) => `<button class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" data-a="${a}" data-v="${v}">${l}</button>`).join("");
   const title = week ? `${esc(md(mon))} <span>– ${esc(sun.getMonth() === mon.getMonth() ? String(sun.getDate()) : md(sun))}</span>` : `${esc(monthName(first))} <span>${c.y}</span>`;
+  /* Hidden copies of every month's title share the title's grid cell, so it
+     is always as wide as the widest one and the arrows don't move. */
+  const mons = Array.from({ length: 12 }, (_, i) => new Date(c.y, i, 28));
+  const sizers = mons.map((d) => `<span aria-hidden="true">${week ? `${esc(md(d))} <span>– ${esc(md(d))}</span>` : `${esc(monthName(d))} <span>${c.y}</span>`}</span>`).join("");
   const rel = c.sel === tk ? "Today" : c.sel === airKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)) ? "Tomorrow" : "";
   const panel = `<aside class="airside"><p class="airsel">${esc(monthName(sel))}${rel ? ` · <b>${rel}</b>` : ""}</p><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
-  return `<div class="airp2"><div class="airhead"><h1 class="hd">${title}</h1>
-    <button class="arr" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button class="arr" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button><button class="btn sm" data-a="airtoday">Today</button>
+  return `<div class="airp2"><div class="airhead"><h1 class="hd"><span>${title}</span>${sizers}</h1>
+    <span class="airnav"><button class="i" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button data-a="airtoday">Today</button><button class="i" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button></span>
     ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
-    <span class="seg" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><span class="seg" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
+    <span class="airtabs" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><i class="airdiv"></i><span class="airtabs" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
     <div class="sum airsum">${sum}</div>
     ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
 }
