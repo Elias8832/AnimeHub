@@ -54,6 +54,34 @@ def file_of(ep_id, version=0):
     return path, s, ep
 
 
+# Subtitles beside a file that a phone's <track> can read once made WebVTT.
+SUB_EXTS = (".vtt", ".srt")
+SUB_MAX = 4 * 1024 * 1024
+
+
+def file_subs(path):
+    """Subtitle files beside a video that share its name (`E01.vtt`,
+    `E01.en.srt`; ani-cli downloads save `E01.vtt`), sorted, plain name first."""
+    stem = path.stem.lower()
+    try:
+        found = [p for p in path.parent.iterdir()
+                 if p.is_file() and p.suffix.lower() in SUB_EXTS
+                 and (p.stem.lower() == stem or p.stem.lower().startswith(stem + "."))]
+    except OSError:
+        return []
+    return sorted(found, key=lambda p: (p.stem.lower() != stem, p.name.lower()))
+
+
+def file_subtitle(ep_id, version, n):
+    """Subtitle file n beside a library file, as WebVTT, or None."""
+    hit = file_of(ep_id, version)
+    subs = file_subs(hit[0]) if hit else []
+    if not 0 <= n < len(subs):
+        return None
+    with open(subs[n], "rb") as f:
+        return to_vtt(f.read(SUB_MAX).decode("utf-8-sig", "replace"))
+
+
 def _pc_proc():
     with player._active_lock:
         a = next(iter(player._active.values()), None)
@@ -92,7 +120,9 @@ def start(ep_id, version=0, from_start=False, at=None):
     label = _label(s, ep, ep_id)
     _begin(ep_id, version, s["title"], label)
     return {"ok": True, "id": ep_id, "src": f"/api/phone/video?id={_q(ep_id)}&v={int(version or 0)}",
-            "type": mimetypes.guess_type(path.name)[0] or "video/mp4", "hls": False, "subs": [],
+            "type": mimetypes.guess_type(path.name)[0] or "video/mp4", "hls": False,
+            "subs": [f"/api/phone/filesub?id={_q(ep_id)}&v={int(version or 0)}&n={i}"
+                     for i in range(len(file_subs(path)))],
             "start": _start_at(ep_id, from_start, at), "show": s["title"], "label": label,
             # Sub/Dub (Decision 70's rules): each version's audio, the player switches between them.
             "versions": [player.file_mode(f) for f in (ep.get("files") or [])],

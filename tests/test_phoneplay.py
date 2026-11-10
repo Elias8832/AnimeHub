@@ -87,8 +87,35 @@ class Serving(unittest.TestCase):
             self.assertEqual(self.req("GET", f"/api/phone/video?id={bad}")[0], 404, bad)
         self.assertIn("error", phoneplay.start("stream:16498:1"))
 
+    def test_subtitle_files_beside_it(self):
+        # Elias, 2026-11-10: own files had no subtitles on the phone; ani-cli
+        # downloads keep them as E01.vtt beside E01.mp4.
+        ep = self.eps[0]["id"]
+        self.assertEqual(json.loads(self.req("POST", "/api/phone/play", {"id": ep})[2])["subs"], [])
+        vtt = self.path.with_suffix(".vtt")
+        srt = self.path.parent / (self.path.stem + ".en.srt")
+        other = self.path.parent / (self.path.stem + "0.vtt")  # E010 is another episode's
+        vtt.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n", encoding="utf-8")
+        srt.write_text("1\r\n00:00:03,000 --> 00:00:04,500\r\nBye\r\n", encoding="utf-8")
+        other.write_text("WEBVTT\n", encoding="utf-8")
+        for f in (vtt, srt, other):
+            self.addCleanup(f.unlink, missing_ok=True)
+        subs = json.loads(self.req("POST", "/api/phone/play", {"id": ep})[2])["subs"]
+        self.assertEqual(subs, [f"/api/phone/filesub?id={ep}&v=0&n=0", f"/api/phone/filesub?id={ep}&v=0&n=1"])
+        st, h, body = self.req("GET", subs[0])
+        self.assertEqual((st, h["Content-Type"]), (200, "text/vtt; charset=utf-8"))
+        self.assertIn(b"Hello", body)
+        st, _, body = self.req("GET", subs[1])
+        self.assertEqual(st, 200)
+        self.assertTrue(body.startswith(b"WEBVTT"))
+        self.assertIn(b"00:00:03.000 --> 00:00:04.500", body)
+        for bad in (f"/api/phone/filesub?id={ep}&v=0&n=2", f"/api/phone/filesub?id={ep}&v=0&n=-1",
+                    f"/api/phone/filesub?id={ep}&v=0&n=x", "/api/phone/filesub?id=nope&n=0",
+                    "/api/phone/filesub?id=stream:1:1&n=0"):
+            self.assertEqual(self.req("GET", bad)[0], 404, bad)
+
     def test_a_paired_phone_may_use_it(self):
-        for route in ("/api/phone/video", "/api/phone/play", "/api/phone/progress", "/api/phone/skips"):
+        for route in ("/api/phone/video", "/api/phone/filesub", "/api/phone/play", "/api/phone/progress", "/api/phone/skips"):
             self.assertTrue(remote.allowed(route, 1), route)
             self.assertFalse(remote.allowed(route, None), route)
 

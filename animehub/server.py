@@ -552,6 +552,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_video(hit[0])
             else:
                 self.send_error(404)
+        elif route == "/api/phone/filesub":
+            # A subtitle file beside the phone player's file, as WebVTT (by episode id, never a path).
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                text = phoneplay.file_subtitle((q.get("id") or [""])[0], int((q.get("v") or ["0"])[0]),
+                                               int((q.get("n") or ["0"])[0]))
+            except ValueError:
+                text = None
+            except OSError as e:
+                util.log("phone subtitles: %s" % e)
+                text = None
+            if text is None:
+                self.send_error(404)
+                return
+            self.send_file_body(text.encode(), "text/vtt; charset=utf-8")
         elif route.startswith("/api/phone/relay/"):
             # An online episode for the phone, through the PC (Decision 71).
             u = (parse_qs(urlparse(self.path).query).get("u") or [""])[0]

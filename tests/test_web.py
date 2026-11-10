@@ -182,7 +182,7 @@ class ShowPage(unittest.TestCase):
                     "hit('.cta [data-a=\"play\"]')) return;"):
             self.assertIn(key, APP)
         self.assertNotIn('class="banner"', fran)  # the canvas shows the art now
-        self.assertIn("nxt: NextDlg, entry: EntryDlg }[m.t]();", APP)
+        self.assertIn("nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();", APP)
         self.assertIn("if (e.key === \"e\" && hit('[data-a=\"edit\"]')) return;", APP)
         self.assertIn('const entryHost = () => $("#entrybox") || $("#entrystats");', APP)
 
@@ -222,7 +222,7 @@ class WeekSection(unittest.TestCase):
 
     def test_calendar_week_and_month_polish(self):
         """Empty days still read as days, today's rail marks now, one summary for both views."""
-        self.assertIn('`<div class="airnone">${ico("cal")}</div>`', APP)  # a quiet empty slot, no plain text
+        self.assertIn('`<div class="airnone"><i></i></div>`', APP)  # a quiet empty slot, no plain text (a calendar mark drawn in CSS: sharp at 125 %)
         self.assertIn('<div class="airnow"><span>now ', APP)
         self.assertIn('<div class="sum airsum">${sum}</div>', APP)  # month and week alike
         self.assertIn('l.length ? "has" : ""', APP)  # empty month days sit back
@@ -231,6 +231,32 @@ class WeekSection(unittest.TestCase):
         css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
         self.assertIn("@container (max-width:58px){.airt em{", css)  # no cut "Premiere" on small posters
 
+    def test_calendar_quieter_polish(self):
+        """TODO 208: the arrows stay put, past days step back, the day panel sits on the glow."""
+        css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
+        self.assertIn('<h1 class="hd"><span>${title}</span>${sizers}</h1>', APP)  # hidden widest titles keep its width
+        self.assertIn(".airhead .hd>[aria-hidden]{visibility:hidden}", css)
+        self.assertIn(".aird.is-past:not(.is-out,.is-sel,:hover){opacity:", css)
+        self.assertIn(".aircol.is-past:not(:hover){opacity:", css)
+        side = css.split(".airside{", 1)[1].split("}", 1)[0]
+        self.assertNotIn("backdrop-filter", side)  # no box behind the panel
+        self.assertIn('<span class="airnav"><button class="i" data-a="airgo" data-v="-1"', APP)  # ‹ Today › in one pill
+        self.assertIn('<span class="airtabs" role="group" aria-label="View">', APP)  # views look like the top bar's tabs
+        self.assertIn(".airtabs button.on{color:var(--ink);background:var(--pick)}", css)
+
+    def test_keys_sheet(self):
+        """? opens a full-screen keys sheet (Decision 84): this page first, then everywhere, then the player."""
+        self.assertIn('<div id="keys" role="dialog" aria-label="Keys"></div>', HTML)
+        self.assertIn("#keys{position:fixed;inset:0;", CSS)
+        self.assertIn('keyGroup(`here · ${esc(where)}`, here, " acc")', APP)
+        # this page's keys come from the buttons really on screen, not a fixed list
+        self.assertIn("const on = (sel) => { const b = $(`#app ${sel}`); return b && !b.disabled ? b : null; };", APP)
+        # the player column shows your own mpv keys, as caps you press
+        self.assertIn("[l, mpvCaps(m.keys[a])]", APP)
+        self.assertIn('data-a="setgo" data-t="player"', APP)
+        self.assertIn('if (inInput || S.menu === "keys") return;', APP)  # no moving around behind the sheet
+        self.assertNotIn("keysPop", APP)
+
     def test_week_page_is_reachable_from_home(self):
         self.assertIn('data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}', APP)
 
@@ -238,7 +264,7 @@ class WeekSection(unittest.TestCase):
         """Easy to miss behind a Home link, so it sits in both tab bars."""
         self.assertIn('["week", "Calendar"]];', APP)
         self.assertIn('["week", "Calendar", "cal"]];', APP)
-        self.assertIn('["Home · Library · Journal · Calendar", "1 2 3 4"]', APP)
+        self.assertIn('["Home, Library, Journal, Calendar", ["1", "2", "3", "4"]]', APP)
         self.assertIn('const order = ["home", "library", "history", "week"]', APP)
         self.assertIn('<b>See when your shows air</b>', APP)  # logged out: one clear way in
         self.assertNotIn('Connect AniList to see what airs next.', APP)
@@ -296,8 +322,8 @@ class Library(unittest.TestCase):
     def test_library_shape(self):
         self.assertIn('l: "On disk only"', APP)
         self.assertIn('l: "Needs a look"', APP)
-        self.assertIn('<div class="match mc" data-show=', APP)
-        self.assertIn('data-a="match" data-v="${esc(s.id)}">This one</button>', APP)
+        self.assertIn('<button class="card mcard" style="--i:${Math.min(i, 24)}" data-a="mopen"', APP)
+        self.assertIn('data-a="match" data-v="${esc(s.id)}"${m.busy ? " disabled" : ""}>Yes, that\'s it', APP)
         # The background waits for a rest on the poster; the accent follows at once.
         self.assertIn('accentFrom(art.blur, art.color);', APP)
         self.assertIn('}, 450) };', APP)
