@@ -1291,7 +1291,6 @@ function scanNote() {
   else if (scan.state === "partial") bits.push("Some folders could not be read — part of the library may be missing.");
   return bits.length ? bits.join(" ") : null;
 }
-const metaText = (d) => `Fetching ${d.meta_phase || "metadata"} · ${d.meta_pending} left${d.meta_current ? ` · ${d.meta_current}` : ""}`;
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
 const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score", "average"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
@@ -1366,7 +1365,10 @@ function Lib() {
   const note = scanNote();
   const notes = [];
   if (note) notes.push(`<div class="note-bar">${esc(note)}${d.scan?.root === "changed" ? ' <button class="btn" data-a="adopt">Connect folder</button>' : ""}</div>`);
-  else if (d.meta_running && d.meta_pending > 0) notes.push(`<div class="note-bar metanote"><i class="spin"></i><span>${esc(metaText(d))}</span></div>`);
+  const fetching = !note && d.meta_running && d.meta_pending > 0; // TODO 199: a quiet line, not a bar over the page
+  /* On the PC it sits beside the grid's title, in the room the row has spare:
+     in the side list it pushed the lists down and back up (Elias). */
+  const mrow = fetching && isRail() ? `<div class="lload mload hrow">${metaLoad(false, true)}</div>` : "";
   const loading = m.cold && S.ani?.connected; // the lists are on their way (TODO 191: shown where they'll land)
   const isPl = S.lib.tab === "PLAYLISTS" && !m.cold, plCur = isPl ? plCurrent() : null;
   const isMatch = S.lib.tab === "MATCH" && !m.cold, isUn = S.lib.tab === "UNTRACKED" && !m.cold;
@@ -1388,7 +1390,7 @@ function Lib() {
        list; sort sits on the line above the grid. */
     const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
     const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
-      <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}
+      <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
@@ -1398,9 +1400,9 @@ function Lib() {
       <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
-  const solo = m.cold ? `<div class="lsolo"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
-    : (isPl || isMatch || isUn) && lhead ? `<div class="lsolo">${lhead}</div>` : "";
-  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${main}</div></div></div>`;
+  const solo = m.cold ? `<div class="lsolo"><div class="lhw"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${mrow}</div>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
+    : (isPl || isMatch || isUn) && lhead ? `<div class="lsolo"><div class="lhw">${lhead}${mrow}</div></div>` : "";
+  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${fetching && !mrow ? `<div class="lload mload inl">${metaLoad(true)}</div>` : ""}${main}</div></div></div>`;
 }
 /* The filter controls; on the PC they live in the side list (Elias,
    2026-11-06: "most of them could easily be in the left panel"). */
@@ -2113,6 +2115,16 @@ function entryFields(res) {
            score_format: st.score_format, score_max: st.score_max, media: st };
 }
 const entryHost = () => $("#entrybox") || $("#entrystats");
+/* The editor's own pick (Decision 83): with both accounts logged in, Edit
+   reads and saves on AniList or MyAnimeList — the last one picked, kept in
+   this browser — while the library stays on "Lists from". null = the one in
+   use; the page's own line always shows that one. */
+const SVC_NAME = { anilist: "AniList", mal: "MyAnimeList" };
+const bothAccts = () => !!(S.ani?.accounts?.anilist?.user && S.ani?.accounts?.mal?.user);
+const svcPick = () => { const v = lsGet("entrySvc", null); return bothAccts() && SVC_NAME[v] ? v : S.ani?.service; };
+const entrySvc = () => { const v = S.modal?.t === "entry" ? svcPick() : null; return v && v !== S.ani?.service ? v : null; };
+const entryAcct = () => SVC_NAME[S.entry?.svc] || acct();
+const entryLoadedFor = () => (S.entry?.svc || null) === entrySvc();
 /* The editor (Edit entry, E): status pills, score 1–10 pills with ♥ beside
    (other AniList score formats keep a number field), progress + rewatches,
    started + finished. Every change saves as you go. */
@@ -2122,15 +2134,15 @@ function entryHTML(f, pending) {
   const stp = (k, v, lab, cap) => `<span class="stepper"><button aria-label="Decrease ${lab}" data-a="ebump" data-k="${k}" data-d="-1">${ico("minus")}</button><b data-k="${k}">${v}${cap ? `<small> / ${cap}</small>` : ""}</b><button aria-label="Increase ${lab}" data-a="ebump" data-k="${k}" data-d="1">${ico("plus")}</button></span>`;
   const pills = `<div class="pills" role="radiogroup" aria-label="Status">${LISTS.map(([v, l]) => `<button class="${f.status === v ? "on" : ""}" role="radio" aria-checked="${f.status === v}" data-a="eset" data-k="status" data-v="${v}">${l}</button>`).join("")}</div>`;
   /* MyAnimeList has no favourites API (Decision 75): no heart then. */
-  const heart = media.service === "mal" ? "" : `<button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
+  const heart = media.service === "mal" ? "" : `<i class="vs"></i><button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
   const cur = f.score ? Math.round(f.score) : 0;
   const score = max === 10 && (!dec || !f.score || f.score === Math.round(f.score)) // 1–10 pills (decimal 10-point too, unless a .5 is set)
-    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div><i class="vs"></i>${heart}</div>`
-    : `<div class="scrow"><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:96px"><span class="dim">/ ${max}</span><i class="vs"></i>${heart}</div>`;
+    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${heart}</div>`
+    : `<div class="scrow"><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:96px"><span class="dim">/ ${max}</span>${heart}</div>`;
   /* Discovery (Decision 9): a show off the lists says so and offers the one-click add. */
   const off = !f.status && !pending ? `<p class="note offlist">Not on your list yet. <button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></p>` : "";
   const prog = f.local ? `<b class="flat">${fe ? fe.slots.filter((x) => x.watched).length + " / " + (fe.episodes || fe.slots.length) : show ? epWatched(show) + " / " + epTotal(show) : "—"}</b>` : stp("progress", f.progress ?? 0, "progress", media.episodes || "");
-  return `${off}${f.local ? '<p class="note">Saved on this PC only — goes to AniList when you connect.</p>' : ""}${pending ? '<p class="note"><span class="chip warn">Waiting to sync</span></p>' : ""}
+  return `${off}${f.local ? '<p class="note">Saved on this PC only — goes to AniList when you connect.</p>' : ""}${pending ? `<p class="note">${swarn("Waiting to sync.")} Saved here; it goes to ${acct()} as soon as it answers.</p>` : ""}
   <div class="ef"><span class="cap">status</span>${pills}</div>
   <div class="ef"><span class="cap">score${cur ? ` <b class="sv">${esc(f.score)}</b><small>/${max}</small>` : ""}</span>${score}</div>
   <div class="ef two"><div><span class="cap">progress</span>${prog}</div><div><span class="cap">rewatches</span>${stp("repeat", f.repeat ?? 0, "rewatches")}</div></div>
@@ -2170,9 +2182,9 @@ function aheadLine(f, pending, fe) {
 }
 /* Paint the editor and/or the row from fields; steppers that changed get their bump. */
 function entryPaint(f, pending, prev) {
-  const st = $("#entrystats");
+  const page = !S.entry?.svc, st = page && $("#entrystats");
   if (st) { st.innerHTML = entryStats(f, pending); st._own = true; }
-  const acts = $("#entryacts");
+  const acts = page && $("#entryacts");
   if (acts) { acts.innerHTML = entryActs(f, pending); acts._own = true; }
   const box = $("#entrybox");
   if (!box) return;
@@ -2202,11 +2214,14 @@ function EntryDlg() {
   const fe = S.view === "fr" ? frEntry() : null, s = S.view === "show" ? showById(S.showId) : null;
   const title = fe?.title || S.fr?.page?.title || s?.title || "", art = fe?.banner || S.fr?.page?.banner || s?.banner, pst = fe?.poster || s?.poster;
   const facts = fe ? [fe.format_label, fe.year, fe.episodes ? fe.episodes + " episodes" : ""].filter(Boolean).join(" · ") : "";
-  return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
+  const on = svcPick(), sw = bothAccts() ? `<div class="seg edsvc" role="radiogroup" aria-label="Edit your entry on">${Object.entries(SVC_NAME).map(([v, l]) =>
+    `<button role="radio" class="${v === on ? "on" : ""}" aria-checked="${v === on}" data-a="esvc" data-v="${v}">${l}</button>`).join("")}</div>` : "";
+  return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${sw}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
     <div class="edt"><span class="cap">your entry</span><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
   <div class="edb"><div id="entrybox"><p class="note">Loading…</p></div></div>
-  <div class="actions"><span class="mono note2">saves as you go · if ${acct()} is offline, it waits and retries</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
+  <div class="actions"><span class="mono note2" id="edfoot">${edFoot(on)}</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
 }
+const edFoot = (v) => `saves as you go · if ${SVC_NAME[v] || acct()} is offline, it waits and retries`;
 /* The panel never sits on "Loading…" for a page it has shown before
    (TODO 61): the last answer per entry draws at once, the fresh one
    replaces it when it differs. A "stale" answer (the hub's stored read
@@ -2214,18 +2229,20 @@ function EntryDlg() {
 let entryTok = 0;
 const entryMemo = {};
 function loadEntry(mid, tries = 0) {
-  const tok = ++entryTok, box = entryHost();
-  if (S.entry?.mid !== mid || !S.entry.f) {
-    const err = S.entry?.mid === mid ? S.entry.err : null; // a fresh page keeps the countdown it had
-    S.entry = { mid, f: null, res: null, err };
-    if (entryMemo[mid]) entryDraw(entryMemo[mid]);
+  const tok = ++entryTok, box = entryHost(), svc = entrySvc(), key = svc ? mid + ":" + svc : mid;
+  if (S.entry?.mid !== mid || (S.entry.svc || null) !== svc || !S.entry.f) {
+    const same = S.entry?.mid === mid && (S.entry.svc || null) === svc;
+    const err = same ? S.entry.err : null; // a fresh page keeps the countdown it had
+    S.entry = { mid, svc, f: null, res: null, err };
+    if (entryMemo[key]) entryDraw(entryMemo[key]);
     else if (err) { err.checking = true; entryErrPaint(); }
+    else if (!same && $("#entrybox")) $("#entrybox").innerHTML = '<p class="note">Loading…</p>'; // the other service's entry
   } else if (box && !box._own && S.entry.res) entryDraw(S.entry.res); // a fresh page: same entry, new box
-  api("/api/entry?id=" + mid).then((res) => {
+  api("/api/entry?id=" + mid + (svc ? "&service=" + svc : "")).then((res) => {
     if (tok !== entryTok || !entryHost()) return;
     if (res && res.error) return entryFail(mid, res);
-    entryMemo[mid] = res;
-    if (res.stale && tries < 4) setTimeout(() => { if (tok === entryTok && S.entry?.mid === mid) loadEntry(mid, tries + 1); }, 900);
+    entryMemo[key] = res;
+    if (res.stale && tries < 4) setTimeout(() => { if (tok === entryTok && S.entry?.mid === mid && entryLoadedFor()) loadEntry(mid, tries + 1); }, 900);
     if (entryPend || entryFlight) return; // the user's edits are on screen and on their way
     if (document.activeElement?.matches?.("#entrybox input")) return; // typing: don't redraw under the cursor
     if (S.entry?.f && JSON.stringify(res) === JSON.stringify(S.entry.res)) return;
@@ -2246,7 +2263,7 @@ function entryFail(mid, res) {
   const prev = S.entry.err, tries = (prev?.tries || 0) + 1;
   const why = res.auth ? "auth" : ERR_LABEL[res.why] ? res.why : "error";
   const wait = res.retry_in || (why === "hub" ? [5, 10, 20, 30][Math.min(tries, 4) - 1] : 0);
-  S.entry.err = { why, svc: res.service || acct(), msg: res.error, tries, due: why === "auth" || !wait ? 0 : Date.now() + wait * 1000 };
+  S.entry.err = { why, svc: res.service || entryAcct(), msg: res.error, tries, due: why === "auth" || !wait ? 0 : Date.now() + wait * 1000 };
   entryErrPaint();
   clearInterval(entryErrTimer);
   if (S.entry.err.due) entryErrTimer = setInterval(entryErrTick, 1000);
@@ -2267,9 +2284,9 @@ function entryErrPaint() {
   const e = S.entry?.err;
   if (!e) return;
   const auth = e.why === "auth", when = entryErrWhen(e);
-  const conn = isMal() ? "mal" : "ani";
+  const conn = (S.entry.svc || S.ani?.service) === "mal" ? "mal" : "ani";
   const act = auth ? `<button class="lnk" data-a="${conn}">connect${ico("chevr")}</button>` : e.checking ? "" : `<button class="lnk" data-a="eretry">${ico("refresh")}try now</button>`;
-  const st = $("#entrystats");
+  const st = !S.entry.svc && $("#entrystats");
   if (st) {
     const show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
     const total = fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
@@ -2286,8 +2303,8 @@ function entryErrPaint() {
 }
 /* One write path for every edit. Favourite travels beside the patch — never
    instead of it — so a combined save (the completion popup) keeps both. */
-function entrySave(mid, patch, fav) {
-  const body = { media_id: mid };
+function entrySave(mid, patch, fav, svc) {
+  const body = { media_id: mid, ...(svc ? { service: svc } : {}) };
   if (patch && Object.keys(patch).length) body.patch = patch;
   if (fav !== undefined) body.favourite = fav;
   return api("/api/entry", body);
@@ -2303,7 +2320,8 @@ function entryPatch(patch, fav, delay = 0) {
   ent.f = { ...prev, ...(patch || {}), ...(fav !== undefined ? { favourite: fav } : {}) };
   entryPaint(ent.f, false, prev);
   if (fav !== undefined) for (const h of $$("#entrybox .heart")) { h.classList.add("pop1"); if (fav) burstAt(h); }
-  const p = entryPend && entryPend.mid === ent.mid ? entryPend : { mid: ent.mid, patch: {}, fav: undefined };
+  if (entryPend && (entryPend.mid !== ent.mid || entryPend.svc !== (ent.svc || null))) { clearTimeout(entryTimer); entryFlush(); } // the other one's edits go first
+  const p = entryPend && entryPend.mid === ent.mid && entryPend.svc === (ent.svc || null) ? entryPend : { mid: ent.mid, svc: ent.svc || null, patch: {}, fav: undefined };
   Object.assign(p.patch, patch || {});
   if (fav !== undefined) p.fav = fav;
   entryPend = p;
@@ -2314,15 +2332,16 @@ function entryFlush() {
   if (entryFlight || !entryPend) return;
   const job = entryPend, patch = job.patch;
   entryPend = null; entryFlight = true;
-  entrySave(job.mid, patch, job.fav).then((res) => {
-    const here = S.entry?.mid === job.mid;
+  const key = job.svc ? job.mid + ":" + job.svc : job.mid;
+  entrySave(job.mid, patch, job.fav, job.svc).then((res) => {
+    const here = S.entry?.mid === job.mid && (S.entry.svc || null) === job.svc;
     if (res && res.error) { toast(res.error); if (here) loadEntry(job.mid); return; }
-    toast(res && res.queued ? `Saved — will sync when ${acct()} is reachable` : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
+    toast(res && res.queued ? `Saved — will sync when ${SVC_NAME[job.svc] || acct()} is reachable` : patch.status ? `Listed: ${statusLabel(patch.status)}` : "Saved");
     if (res && res.queued) res.patch = patch;
-    if (!res.queued) entryMemo[job.mid] = res; else delete entryMemo[job.mid];
+    if (!res.queued) entryMemo[key] = res; else delete entryMemo[key];
     if (here && !entryPend) entryDraw(res); // newer edits are still on screen: keep them
     if (patch.status || job.fav !== undefined) refreshData();
-  }).catch(() => { toast("Could not save — is the hub running?"); if (S.entry?.mid === job.mid) loadEntry(job.mid); })
+  }).catch(() => { toast("Could not save — is the hub running?"); if (S.entry?.mid === job.mid && (S.entry.svc || null) === job.svc) loadEntry(job.mid); })
     .finally(() => { entryFlight = false; if (entryPend) entryFlush(); });
 }
 
@@ -2649,26 +2668,29 @@ const onoff = (key, label, on, off) => pick(label, "advset", key, [["on", "On"],
 /* A row whose value is something to do (Rescan, Connect…): it sits where a value would. */
 const pkdo = (html) => `<span class="pk pkdo">${html}</span>`;
 const tgl = (key, label, on, off) => `<button class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-a="adv" data-v="${key}" ${off ? "disabled" : ""}></button>`;
+/* Something wrong, said in amber beside a row's title (no pill), the why on the line under it. */
+const swarn = (w) => `<span class="swarn">${w}</span>`;
 /* A found version by name: "v0.5" or "Build 312" (Unstable, Decision 76). */
 const upName = (f) => f.label || "v" + f.version;
 /* New versions (Decision 58): how to get one depends on how this copy got here. */
 function updateRows(s) {
   const u = s.update || {}, f = u.found, j = u.job || {}, one = !!u.installable, busy = j.state === "working", done = j.state === "done";
   const more = f?.url ? `<button class="btn" data-a="upnotes">What's new</button>` : "";
-  const how = done ? `Updated. Close AnimeHub and open it again to start the new version${s.keep_running ? " (Quit in the tray icon, as it keeps running)" : ""}.${j.note ? " " + esc(j.note) : ""}`
+  const how = done ? (S.upRestart ? "Restarting… the page reloads when the new version answers." : `Updated. Restart AnimeHub to start the new version.${j.note ? " " + esc(j.note) : ""}`)
     : busy ? (u.kind === "git" ? "Getting it with git…" : `Downloading… ${j.percent || 0}%`)
-    : j.state === "failed" ? `<span class="chip warn">Failed</span> ${esc(j.error || "")}`
+    : j.state === "failed" ? esc(j.error || "Nothing changed.")
     : one ? ({ git: "Moves this copy ahead with git. Your data stays.", windows: "Swaps in the new files. Your data stays." }[u.kind] || "Replaces this AppImage. Your data stays.")
     : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
   const b = u.build, unstableHere = !!b && u.channel !== "unstable" && !f;
-  const ver = `AnimeHub v${esc(u.version || "")}${b ? ` · build ${esc(String(b.number))} (${esc(b.commit.slice(0, 7))})` : u.head ? ` · commit ${esc(u.head)}` : ""}`
+  const ver = `AnimeHub v${esc(u.version || "")}${b ? ` · build ${esc(String(b.number))} (${esc(b.commit.slice(0, 7))})` : u.head ? (u.git_build ? ` · build ${esc(String(u.git_build))} (${esc(u.head)})` : ` · commit ${esc(u.head)}`) : ""}`
     + (unstableHere ? ". This is an unstable build: Stable takes over at the next release." : "");
   const chan = u.channel === "unstable" ? "A new build after every change. Newest fixes first, and sometimes broken." + (u.kind === "windows" ? " Not tested on Windows." : "")
     : "Every numbered release on GitHub.";
   return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
-    + (f ? srow(`${esc(upName(f))} is out`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : "Install"}</button>` : ""))) : "")
+    + (f ? srow(`${esc(upName(f))} is out${j.state === "failed" ? swarn("Failed") : ""}`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : j.state === "failed" ? "Try again" : "Install"}</button>`
+      : done ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
     + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
     + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
 }
@@ -2803,13 +2825,13 @@ function upscaleRow(s) {
     missing: "Install Upscayl to use this. It redraws show banners 4× bigger on your graphics card.",
     idle: `On. New banners are redrawn as they arrive.${u.done ? ` ${u.done} done.` : ""}`,
     working: `Working: ${u.done || 0} done, ${u.left || 0} left. Pauses while an episode plays.`,
-    broken: `<span class="chip warn">Stopped</span> Upscayl gave blank pictures, so your banners stay as they are. Update the graphics driver${u.flatpak ? " (for the Flatpak: run <code>flatpak update</code>)" : ""}, then switch this off and on.`,
+    broken: `Upscayl gave blank pictures, so your banners stay as they are. Update the graphics driver${u.flatpak ? " (for the Flatpak: run <code>flatpak update</code>)" : ""}, then switch this off and on.`,
   }[u.state] || "";
   if (u.state === "working" && !upscaleRow.t) upscaleRow.t = setTimeout(() => {
     upscaleRow.t = 0;
     if (S.view === "settings") loadSettings().then(() => S.view === "settings" && render(true));
   }, 4000);
-  return srow("Sharper banners", txt, (missing ? pkdo(UPSCAYL_BTN) : "") + onoff("upscale_banners", "Sharper banners", u.on, missing && !u.on))
+  return srow(`Sharper banners${u.state === "broken" ? swarn("Stopped") : ""}`, txt, (missing ? pkdo(UPSCAYL_BTN) : "") + onoff("upscale_banners", "Sharper banners", u.on, missing && !u.on))
     + srow("Banner look", "Digital art is crisper and takes about 3× longer.", pick("Banner look", "spref", "upscale_style", [["natural", "Natural"], ["digital", "Digital art"]], u.style, { off: !u.on }));
 }
 /* Playlist stacks on hover (Decision 64): four ways to open, each card shows
@@ -3051,7 +3073,7 @@ function phoneGroup() {
   const when = (t) => t ? new Date(t.replace(" ", "T") + (/[zZ+]/.test(t) ? "" : "Z")).toLocaleDateString() : "";
   const code = r.code, mins = code ? Math.max(1, Math.ceil(code.left / 60)) : 0;
   if (code && !phoneGroup.t) phoneGroup.t = setTimeout(phoneWatch, 3000);
-  const pair = !r.on ? "" : r.error ? srow("Pair a phone", `<span class="chip warn">Not reachable</span> ${esc(r.error)}`, "")
+  const pair = !r.on ? "" : r.error ? srow(`Pair a phone${swarn("Not reachable")}`, esc(r.error), "")
     : !r.address ? srow("Pair a phone", "This PC isn't on a network right now.", "")
     : code ? `<div class="pairbox"><div class="qr" aria-label="QR code with the pairing link">${code.qr}</div><div class="pairtxt"><b>Scan this with the phone's camera</b>
         <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
@@ -3085,7 +3107,7 @@ function streamGroup(s) {
   const st = s.stream || {}, off = !s.tools?.["ani-cli"];
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
   const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), pkdo(aniBtn(s))) : st.own ? srow("ani-cli", esc(aniLine(s)), pkdo(aniBtn(s))) : "";
-  return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show. Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>${bad ? `<p class="note"><span class="chip warn">Update ani-cli</span> This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
+  return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show. Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>${bad ? `<p class="note">${swarn("Update ani-cli.")} This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
     ${!off && !st.outdated && st.needs?.includes("curl-impersonate") ? srow('curl-impersonate <span style="margin-left:6px;color:var(--warn);font-weight:500">Missing</span>', "Without it, the streaming site blocks ani-cli. Install it, then restart Anime Hub.", pkdo(IMP_BTN)) : ""}
     ${srow("Quality", "For watching and downloading.", pick("Quality", "spref", "stream_quality", (st.qualities || []).map((q) => [q, QLABEL[q] || q + "p"]), st.quality, { off }))}
     ${srow("Load the next episode early", "Gets the next online episode ready while you watch. Only with a VPN, unless you switched off asking in Privacy & VPN.", onoff("prepare_online", "Load the next episode early", s.prepare_online !== false, off))}${off ? "" : getRow}</div>`;
@@ -3253,7 +3275,7 @@ async function extraRemove(id) {
 }
 function extraGroup(s) {
   const xs = s.library_extra || [], name = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
-  const rows = xs.map((x) => srow(esc(name(x.path)), `<code>${esc(x.path)}</code>${x.state === "missing" ? ' <span class="chip warn">not reachable</span>' : ""}`,
+  const rows = xs.map((x) => srow(esc(name(x.path)) + (x.state === "missing" ? swarn("Not reachable") : ""), `<code>${esc(x.path)}</code>`,
     pkdo(`<button class="btn" data-a="xremove" data-v="${x.id}">Remove</button>`))).join("");
   return `<div class="group"><h3>Extra folders</h3><p class="sub">Their shows join your library. Downloads go where a show already is.</p>${rows}
     ${srow("Add a folder", xs.length ? "Another folder with anime." : "No extra folders yet.", `<div class="path">${libPath("extra", {})}${dirBtn("extra")}</div>`, "wide")}${DirPick("extra")}</div>`;
@@ -3290,7 +3312,7 @@ const SETTINGS_INDEX = [
   ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Updates from", "data", "update channel stable unstable beta nightly build"], ["Keep running after closing", "data", "keep running background server close phone tray", "keep_running"], ["Start at login", "data", "start login boot autostart server phone", "start_at_login"],
   ["mpv", "data", "mpv ani-cli upscayl tools player detected"], ["Config file", "data", "config file data folder server port"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["First-run tour", "data", "tour setup welcome"],
 ];
-const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st" data-a="upopen">${ico("download")}${esc(upName(f))} is out</button>` : ""; };
+const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st up" data-a="upopen">${ico("download")}${esc(upName(f))} is out</button>` : ""; };
 /* Ten plain sections (Decision 73, like GNOME's Settings): one or two words you'd look for. */
 const SET_TABS = [["player", "Player", "Watching"], ["subs", "Subtitles", "Watching"], ["skipping", "Skipping", "Watching"], ["online", "Online", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["privacy", "Privacy & VPN", "Accounts"], ["anilist", "Account", "Accounts"], ["phone", "Phone", "Accounts"], ["data", "System", "This PC"]];
 const COMMANDS = [
@@ -3605,12 +3627,12 @@ function paintNav() {
   const now = S.data?.now, ctx = now && findEpContext(now.episode_id), pct = now ? Math.round(now.percent) : 0;
   const nr = $("#nr"), popHad = !!nr.querySelector(".pop"), dlActive = S.dl.filter((j) => j.status === "running" || j.status === "queued");
   const dlPct = dlActive.find((j) => j.status === "running")?.percent;
-  /* The status line (Decision 38): playing · next source · downloads · VPN · AniList sync · keys. */
+  /* The status line (Decision 38): playing · next source · downloads · VPN · AniList sync · on the right: new version · keys. */
   const html = `${now ? `<button class="st np" ${ctx ? `data-a="open" data-v="${esc(ctx.s.id)}"` : ""}><i class="led"></i><span class="npt">playing <b>${esc(now.show)} · ${esc(now.label)}</b></span><span class="pc">${now.loading ? "loading" : "@P@%"}</span></button>${nextChip(now)}` : ""}
     <div class="rel"><button class="st dlb${dlActive.length ? " on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive.length ? `<b>${dlActive.length}</b>${dlPct != null ? ` · ${Math.floor(dlPct)}%` : ""}` : "downloads"}</button>${S.menu === "dl" ? dlPop() : ""}</div>
-    ${vpnChip()}${upChip()}
+    ${vpnChip()}
     ${S.outbox ? `<div class="rel"><button class="st sync warn" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : S.ani?.connected ? `<span class="st">${isMal() ? "mal" : "anilist"} synced</span>` : ""}
-    <div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button></div>`;
+    ${upChip()}<div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button></div>`;
   paintKeys();
   if (html === nrLast) {
     /* Only the playback percent moved: patch in place. */
@@ -4618,7 +4640,8 @@ function paintModal(focus) {
   } else {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
-  if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
+  if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
+  else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
   else if (m.t === "entry" && S.entry?.err) entryErrPaint(); // not "Loading…" forever: the same wait as the page
   /* Touch: open at the top with nothing focused (focusing a field would
      scroll the sheet and pop the keyboard up). */
@@ -4627,7 +4650,10 @@ function paintModal(focus) {
 function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
 /* Back gesture / swipe down on a dialog: the same as tapping beside it. */
 const modalDismiss = () => (S.modal?.t === "done" ? A.dnskip() : closeModal());
-function closeModal() { S.modal = null; paintModal(); ovClosed("modal"); S.opener && S.opener.isConnected && S.opener.focus(); }
+function closeModal() {
+  S.modal = null; paintModal(); ovClosed("modal"); S.opener && S.opener.isConnected && S.opener.focus();
+  if (S.entry?.svc) loadEntry(S.entry.mid); // the editor's pick closes: the page's line is the one in use again
+}
 function confetti() {
   if (reduceMotion()) return;
   const f = $("#fx"), c = ["var(--accent)", "var(--accent-hi)", "var(--ok)", "var(--warn)", "var(--ink)"];
@@ -5188,8 +5214,8 @@ function metaTick() {
   api("/api/now").then((now) => {
     const m = now && now.meta;
     if (!m) { metaWatch = null; reload(); return; } // final settle: posters flip in
-    Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_current: m.current, meta_phase: m.phase });
-    if (S.view === "library") { const n = $(".metanote"); if (n && S.data.meta_pending > 0) n.lastChild.textContent = metaText(S.data); else n?.remove(); }
+    Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_total: m.total, meta_current: m.current, meta_phase: m.phase });
+    if (S.view === "library") for (const n of $$(".mload")) { if (S.data.meta_pending > 0) loadPatch(n, metaLoadState()); else n.remove(); }
     /* Franchise cards fold together as the background build reaches them. */
     if (m.phase === "franchises" && S.view === "library" && byFranchise() && Date.now() - metaFold > 15e3) { metaFold = Date.now(); reload(); }
     metaWatch = setTimeout(metaTick, 2500);
@@ -5208,17 +5234,32 @@ function listLoadState() {
     pct: l?.total ? Math.min(100, Math.round(((l.done || 0) * 100) / l.total)) : null,
   };
 }
-function listLoad(inline) {
-  const t = listLoadState();
-  return `<p class="ll" title="${esc(t.tip)}"><i class="dot"></i>${inline ? `<span class="lw">${acct()} lists</span>` : ""}<span class="lt">${t.what}</span><b class="lc">${t.count}</b></p>
-    <i class="lbar${t.pct == null ? " ind" : ""}" role="progressbar" aria-label="${esc(t.tip)}"${t.pct == null ? "" : ` aria-valuenow="${t.pct}" aria-valuemin="0" aria-valuemax="100"`}><b style="width:${t.pct ?? 35}%"></b></i>`;
+function listLoad(inline) { return loadLine(listLoadState(), inline && acct() + " lists"); }
+/* The same quiet line for the metadata pass (TODO 199): it sits under On this
+   PC, the folders it works on, and names the show it is on under the bar. */
+function metaLoadState(d = S.data) {
+  const total = Math.max(d.meta_total || 0, d.meta_pending || 0), done = total - (d.meta_pending || 0);
+  return {
+    what: "fetching art",
+    tip: "Looking up new folders on AniList, for their posters, banners and details",
+    count: total ? `${done} / ${total}` : "",
+    pct: total ? Math.min(100, Math.round((done * 100) / total)) : null,
+    now: d.meta_current || "",
+  };
+}
+const metaLoad = (inline, row) => loadLine(metaLoadState(), inline && "This PC", row);
+function loadLine(t, label, row) {
+  const now = t.now != null ? `<small class="lnow" title="${esc(t.now)}">${esc(t.now)}</small>` : "";
+  return `<p class="ll" title="${esc(t.tip)}"><i class="dot"></i>${label ? `<span class="lw">${esc(label)}</span>` : ""}<span class="lt">${t.what}</span>${row ? now : ""}<b class="lc">${t.count}</b></p>
+    <i class="lbar${t.pct == null ? " ind" : ""}" role="progressbar" aria-label="${esc(t.tip)}"${t.pct == null ? "" : ` aria-valuenow="${t.pct}" aria-valuemin="0" aria-valuemax="100"`}><b style="width:${t.pct ?? 35}%"></b></i>${row ? "" : now}`;
 }
 /* Polls change the line in place, so the bar slides on instead of restarting. */
-function listLoadPatch(el) {
-  const t = listLoadState(), bar = el.querySelector(".lbar");
+function loadPatch(el, t) {
+  const bar = el.querySelector(".lbar"), now = el.querySelector(".lnow");
   el.querySelector(".lt").textContent = t.what;
   el.querySelector(".lc").textContent = t.count;
   el.querySelector(".ll").title = t.tip;
+  if (now) { now.textContent = t.now; now.title = t.now; }
   bar.classList.toggle("ind", t.pct == null);
   bar.setAttribute("aria-label", t.tip);
   if (t.pct == null) bar.removeAttribute("aria-valuenow");
@@ -5229,11 +5270,11 @@ function listsWatch(l) {
   const was = S.lists;
   S.lists = l || null;
   if (l && was !== undefined && (was?.service !== l.service || (l.stamp && l.stamp !== was?.stamp))) {
-    if ($(".lload")) S.listsLanded = Date.now(); // the rows that replace the placeholders rise in
+    if ($(".lload:not(.mload)")) S.listsLanded = Date.now(); // the rows that replace the placeholders rise in
     reload();
     return;
   }
-  for (const n of $$(".lload")) listLoadPatch(n);
+  for (const n of $$(".lload:not(.mload)")) loadPatch(n, listLoadState());
 }
 function pollSoon(ms) { if (nowTimer) clearTimeout(nowTimer); nowTimer = setTimeout(pollNow, ms); }
 async function pollNow() {
@@ -6223,6 +6264,15 @@ const A = {
   frmore: (v, t) => { const r = t.getBoundingClientRect(); frMore(r.left, r.bottom + 6); },
   eretry: () => { const e = S.entry?.err; if (e && !e.checking) { clearInterval(entryErrTimer); loadEntry(S.entry.mid); } },
   efav: () => { if (S.entry?.f) entryPatch(undefined, !S.entry.f.favourite); },
+  /* Edit on AniList or MyAnimeList (Decision 83): remembered for next time. */
+  esvc: (v) => {
+    if (!SVC_NAME[v] || v === svcPick()) return;
+    lsSet("entrySvc", v);
+    for (const b of $$(".edsvc button")) { b.classList.toggle("on", b.dataset.v === v); b.setAttribute("aria-checked", b.dataset.v === v); }
+    const f = $("#edfoot"); if (f) f.textContent = edFoot(v);
+    calClose();
+    if (S.entry?.mid) loadEntry(S.entry.mid);
+  },
   /* match repair */
   pick: (v, t) => { const id = t.dataset.s; mst(id).pick = +v; paintMatch(id); },
   msearch: (v) => {
@@ -6418,6 +6468,25 @@ const A = {
     } while (S.settings?.update?.job?.state === "working");
     await loadSettings();
     if (S.view === "settings") render(true);
+  },
+  /* The hub starts its new version in its own place; the page reloads once
+     a hub that started later answers (update.started). */
+  uprestart: async () => {
+    const was = S.settings?.update?.started;
+    const r = await api("/api/update-restart", {}).catch(() => ({ error: "Could not reach the hub." }));
+    if (r.error) return toast(r.error, "err");
+    S.upRestart = true;
+    if (S.view === "settings") render(true);
+    let down = false; // a hub that went away and answers again is the new one too
+    for (const end = Date.now() + 90e3; Date.now() < end;) {
+      await sleep(1000);
+      const s = await fetch("/api/settings", { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+      if (!s) down = true;
+      else if ((s.update?.started && s.update.started !== was) || down) return location.reload();
+    }
+    S.upRestart = false;
+    if (S.view === "settings") render(true);
+    toast("AnimeHub didn't come back. Open it again by hand.", "err");
   },
   aniget: async () => {
     S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);

@@ -72,7 +72,7 @@ Won't start? Logs are in `%LOCALAPPDATA%\anime-hub-wrapper\`.
 <details>
 <summary>Updating</summary>
 
-Settings → System shows the new version: click **Install**, then reopen the app. Your data is kept. It works for the AppImage, the Windows zip and a git copy. **From git** the copy must be on master with no changes of its own; if the window app changed, the app says to run `cargo build --release && ./install.sh` in `desktop/`. **Windows:** a version that needs a newer Python asks you to download the new zip and replace the whole folder.
+Settings → System shows the new version: click **Install**, then **Restart now**. Your data is kept. It works for the AppImage, the Windows zip and a git copy. **From git** the copy must be on master with no changes of its own; if the window app changed, the app says to run `cargo build --release && ./install.sh` in `desktop/`. **Windows:** a version that needs a newer Python asks you to download the new zip and replace the whole folder.
 
 </details>
 
