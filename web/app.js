@@ -1943,6 +1943,7 @@ function loadAbout(mid) {
     if (!r || r.error) return; // the extras are a bonus: the page reads fine without them
     aboutMemo[mid] = r;
     aboutPaint(mid);
+    if (S.modal?.t === "recap" && S.modal.r.prev.id === mid) paintModal();
   }).catch(() => {});
 }
 /* The episode row's heading is a dropdown of the page's entries, in watch
@@ -3021,6 +3022,9 @@ function playerGroup(s) {
   const m = s.mpv || {}, hub = m.design === "on";
   const w = playWhere();
   const here = awayDevice() ? `<div class="group"><h3>On this phone</h3>${srow("Play button", "Where episodes play when you tap Play here. Online ones come through the PC.", pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
+  const rc = `<div class="group"><h3>Before a new season</h3>
+    ${srow("Season reminder", "When you start a new season, see how the last one ended: its last episode, recaps and characters.", onoff("recap_ask", "Season reminder", s.recap_ask !== false))}
+    ${srow("Remind me after", "Only if you finished the last season at least this long ago.", pick("Remind me after", "spref", "recap_after", [["1", "1 month"], ["2", "2 months"], ["3", "3 months"], ["6", "6 months"], ["12", "1 year"]], s.recap_after || "2", { off: s.recap_ask === false }))}</div>`;
   return `${here}<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. A choice here wins over it; My config leaves it to your file.</p>
     ${srow("Fullscreen", "Start every episode in fullscreen.", mpvSeg(m, "fullscreen", "Fullscreen"))}
     ${srow("Starting volume", "Where I left it: the volume the last episode ended on.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Where I left it"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
@@ -3037,7 +3041,7 @@ function playerGroup(s) {
     ${srow("Right click", "Menu: subtitles, audio, episodes and more.", mpick(m, "right", "Right click on the picture", CLICKS))}
     ${srow("Right double-click", "", mpick(m, "right_double", "Right double-click on the picture", CLICKS))}
     ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}
-    ${m.keys ? hkGroup(m) : ""}` : ""}`;
+    ${rc}${m.keys ? hkGroup(m) : ""}` : rc}`;
 }
 function subsGroup(s) {
   const m = s.mpv || {}, st = s.stream || {};
@@ -3298,6 +3302,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
    preview of the picked row and its keys. */
 const SETTINGS_INDEX = [
   ["Fullscreen", "player", "mpv fullscreen window player config"], ["Starting volume", "player", "mpv volume start remember last"], ["Player design", "player", "mpv controls design skin osc interface anime hub controls"], ["Player layout", "player", "mpv look layout design style float dock skin"],
+  ["Season reminder", "player", "recap recaps season before previous remind remember new season popup last episode", "recap_ask"], ["Remind me after", "player", "recap reminder season before months wait remember"],
   ["Smooth controls while playing", "player", "mpv smooth lag laggy video sync display refresh"], ["Loaded part on the seek bar", "player", "mpv buffer cache loaded preload seek bar"], ["Skip buttons jump", "player", "mpv skip seconds forward back length"], ["Click", "player", "mpv mouse click pause picture"], ["Double-click", "player", "mpv mouse double click fullscreen"], ["Scroll wheel", "player", "mpv mouse scroll wheel volume seek"], ["Right click", "player", "mpv mouse right click menu context pause fullscreen"], ["Right double-click", "player", "mpv mouse right double click menu pause fullscreen"], ["Play / pause", "player", "mpv keys hotkeys shortcuts keyboard bind keybind input space mouse button middle side"], ["Who wins", "player", "mpv input.conf priority config settings override clash conflict"],
   ["Sub or dub", "subs", "sub dub audio language online japanese english"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dual remember", "remember_tracks"], ["Size", "subs", "mpv subtitle size bigger smaller"], ["Colour", "subs", "mpv subtitle colour color white yellow"], ["Outline", "subs", "mpv subtitle outline border thick thin"], ["Styled subtitles", "subs", "mpv subtitle styled ass replace override style font"],
   ["Skip openings", "skipping", "skip opening op intro chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed outro chapter mpv"], ["Mark them on the seek bar", "skipping", "mpv timeline chapters marks opening ending seek bar", "mpv_marks"], ["Skip times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"],
@@ -4552,7 +4557,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -4574,7 +4579,7 @@ function paintModal(focus) {
       }
     }
   } else {
-    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "recap" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
   else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
@@ -5325,6 +5330,41 @@ function WhereDlg() {
   <p class="sub">Episodes can play on this phone, online ones too (they come through the PC). Change it any time in Settings → Player.</p>
   <div class="actions"><button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button></div>`;
 }
+/* Remember the season before (TODO 133, Decision 85): Play on the first
+   episode of a new season asks first when you finished the season before a
+   while ago (Settings → Player: on/off and how long). Real data only — your
+   finish date and score, its last episode, AniList's recaps of it, its
+   characters. The hub decides (GET /api/recap); answering it once is enough. */
+const recapOn = () => S.settings?.recap_ask !== false;
+function recapCandidate(id) {
+  if (id.startsWith("stream:")) return /:1$/.test(id);
+  const c = findEpContext(id);
+  return !!c && c.sea.episodes[0]?.id === id;
+}
+const recapFor = (id) => Promise.race([api("/api/recap?id=" + encodeURIComponent(id)).catch(() => null), new Promise((r) => setTimeout(() => r(null), 2500))]);
+const agoText = (m) => { const y = Math.floor(m / 12), r = m % 12, w = (n, x) => `${n} ${x}${n === 1 ? "" : "s"}`; return [y && w(y, "year"), r && w(r, "month")].filter(Boolean).join(" and ") + " ago"; };
+function RecapDlg() {
+  const r = S.modal.r, p = r.prev, L = r.last, x = aboutMemo[p.id];
+  loadAbout(p.id);
+  const day = new Date(p.finished + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+  const score = p.score ? `, and gave it <b>${esc(p.score)}${p.score_max !== 10 ? " / " + p.score_max : ""}</b>` : "";
+  const sNo = /^Season (\d+)$/.exec(p.label)?.[1];
+  const row = (o) => `<button class="rcpo" data-a="${o.play ? "recapplay" : "recapopen"}" data-v="${esc(o.play || o.open)}"><span class="th${o.poster ? " p" : ""}"${o.img ? ` style="background-image:url('${esc(o.img)}')"` : ""}>${o.n ? `<span class="n">${esc(o.n)}</span>` : ""}</span><span class="tx"><b>${esc(o.t)}</b><small>${o.s}</small></span><span class="go">${ico(o.play ? "play" : "chevr")}</span></button>`;
+  const rows = [];
+  if (L) rows.push({ play: L.id, img: L.thumb || p.banner || p.poster, n: `${sNo ? "S" + sNo + " · " : ""}E${String(L.number).padStart(2, "0")}`,
+    t: L.episodes > 1 ? L.title || `Episode ${L.number}` : p.title, s: esc(L.episodes > 1 ? `The last episode of ${p.label}` : "What came before this season") });
+  for (const c of r.recaps) rows.push({ play: c.play, open: c.id, img: c.poster, poster: true, t: c.title,
+    s: [c.format === "MOVIE" ? "Recap movie" : `Recap · ${esc(c.format_label)}`, c.episodes === 1 && c.duration ? `${c.duration} min` : c.episodes > 1 ? `${c.episodes} episodes` : "", c.watched ? '<span class="seen">you watched it</span>' : ""].filter(Boolean).join(" · ") });
+  const main = (x?.characters || []).filter((c) => c.role === "MAIN").slice(0, 5), side = (x?.characters || []).filter((c) => c.role !== "MAIN").slice(0, 8 - main.length);
+  const face = (c, big) => `<span class="f${big ? "" : " s"}" title="${esc(c.name)}"><i${c.image ? ` style="background-image:url('${esc(c.image)}')"` : ""}></i><small>${esc(c.name.split(" ")[0])}</small></span>`;
+  const who = main.length || side.length ? `<h3>Characters from ${esc(p.label)}</h3><div class="rcpw">${main.map((c) => face(c, true)).join("")}${side.length && main.length ? '<span class="gap"></span>' : ""}${side.map((c) => face(c)).join("")}</div>` : "";
+  const start = r.entry.label.length <= 14 ? `Start ${esc(r.entry.label)}` : "Start episode 1";
+  return `<div class="rcpart"${p.banner || p.poster ? ` style="background-image:url('${esc(p.banner || p.poster)}')"` : ""}></div><div class="rcpin">
+  <h2 id="dt"${p.label.length > 16 ? ' class="long"' : ""}>Remember ${esc(p.label)}?</h2>
+  <p class="lead">You finished ${esc(p.label)} on <b>${day}</b>, ${agoText(p.months)}${score}.</p>
+  ${rows.length ? `<h3>Watch first?</h3>${rows.map(row).join("")}` : ""}${who}
+  <div class="rcpf"><button class="quiet" data-a="recapoff">Don’t show this again</button><button class="btn pri" data-a="recapgo">${ico("play")}<span>${start}</span></button></div></div>`;
+}
 const ppVideo = () => $("#pp video");
 /* The player opens at the tap (a tap lets it play with sound and go full
    screen later), then waits for the hub: a file at once, an online episode
@@ -5778,6 +5818,10 @@ function ppClose(fromBack, quiet) {
 document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); });
 /* where: "pc" or "phone" to skip the phone's "Play where?" (Decision 71). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
+  if (recapOn() && !S.recapPass?.has(id) && recapCandidate(id)) {
+    const r = await recapFor(id);
+    if (r?.show) return openModal({ t: "recap", r, go: () => { (S.recapPass ||= new Set()).add(id); play(id, version, mode, asked, fromStart, skipOk, where); } });
+  }
   const online = id.startsWith("stream:");
   if (awayDevice() && where !== "pc") {
     const w = where || playWhere();
@@ -6166,6 +6210,11 @@ const A = {
   vpngo: () => { const go = S.modal?.go; closeModal(); go?.(true); },
   vpnno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
   wherego: (v) => { lsSet("playWhere", v); const go = S.modal?.go; closeModal(); go?.(v); },
+  /* Remember the season before (Decision 85): any answer is the answer for this season. */
+  recapgo: () => { const m = S.modal; api("/api/recap", { media_id: m.r.entry.id }).catch(() => {}); closeModal(); m.go(); },
+  recapplay: (v) => { api("/api/recap", { media_id: S.modal.r.entry.id }).catch(() => {}); closeModal(); play(v); },
+  recapopen: (v) => { closeModal(); openFranchise(+v); },
+  recapoff: () => { const m = S.modal; setToggle("recap_ask", false); toast("Turned off. Settings → Player turns it back on."); closeModal(); m.go(); },
   playwhere: (v) => { lsSet("playWhere", v || null); render(true); },
   ppclose: () => ppClose(false),
   ppfull: () => { ppFull(false); setTimeout(() => { if (PP.panel === "menu") ppPanel("menu"); }, 400); },
