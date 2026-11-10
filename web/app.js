@@ -1663,12 +1663,13 @@ function selEps() {
 function paintSel() {
   let bar = $("#selbar");
   const on = (S.view === "show" || S.view === "fr") && S.sel && S.sel.show === selKey();
+  document.body.classList.toggle("sel-on", !!on); // phones: the bar takes the Play row's place on the dock
   if (!on) { bar?.remove(); return; }
   const eps = selEps(), n = eps.length;
   const fe = S.view === "fr" ? frEntry() : null, ok = !!(fe && S.data.stream_ready && fe.online.available);
   const dl = ok ? eps.filter((x) => x.online && !x.local && !dlJob(x.online.id)) : [];
   if (!bar) { bar = document.createElement("div"); bar.id = "selbar"; bar.setAttribute("role", "toolbar"); bar.setAttribute("aria-label", "Selected episodes"); document.body.append(bar); }
-  bar.innerHTML = `<b>${n} selected</b><button class="link-btn" data-a="selall">Select season</button><span class="fill"></span>
+  bar.innerHTML = `<b>${n} selected</b><button class="link-btn" data-a="selall">Select season</button><span class="fill"></span><i class="selbr"></i>
     <button class="btn" data-a="selmark" data-w="true" ${n ? "" : "disabled"}>${ico("check")}Mark watched</button>
     <button class="btn" data-a="selmark" data-w="false" ${n ? "" : "disabled"}>${ico("undo")}Mark unwatched</button>
     ${ok ? `<button class="btn" data-a="seldl" ${dl.length ? "" : "disabled"}>${ico("download")}Download${dl.length ? " " + dl.length : ""}</button>` : ""}
