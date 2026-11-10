@@ -231,6 +231,19 @@ class WeekSection(unittest.TestCase):
         css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
         self.assertIn("@container (max-width:58px){.airt em{", css)  # no cut "Premiere" on small posters
 
+    def test_keys_sheet(self):
+        """? opens a full-screen keys sheet (Decision 84): this page first, then everywhere, then the player."""
+        self.assertIn('<div id="keys" role="dialog" aria-label="Keys"></div>', HTML)
+        self.assertIn("#keys{position:fixed;inset:0;", CSS)
+        self.assertIn('keyGroup(`here · ${esc(where)}`, here, " acc")', APP)
+        # this page's keys come from the buttons really on screen, not a fixed list
+        self.assertIn("const on = (sel) => { const b = $(`#app ${sel}`); return b && !b.disabled ? b : null; };", APP)
+        # the player column shows your own mpv keys, as caps you press
+        self.assertIn("[l, mpvCaps(m.keys[a])]", APP)
+        self.assertIn('data-a="setgo" data-t="player"', APP)
+        self.assertIn('if (inInput || S.menu === "keys") return;', APP)  # no moving around behind the sheet
+        self.assertNotIn("keysPop", APP)
+
     def test_week_page_is_reachable_from_home(self):
         self.assertIn('data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}', APP)
 
@@ -238,7 +251,7 @@ class WeekSection(unittest.TestCase):
         """Easy to miss behind a Home link, so it sits in both tab bars."""
         self.assertIn('["week", "Calendar"]];', APP)
         self.assertIn('["week", "Calendar", "cal"]];', APP)
-        self.assertIn('["Home · Library · Journal · Calendar", "1 2 3 4"]', APP)
+        self.assertIn('["Home, Library, Journal, Calendar", ["1", "2", "3", "4"]]', APP)
         self.assertIn('const order = ["home", "library", "history", "week"]', APP)
         self.assertIn('<b>See when your shows air</b>', APP)  # logged out: one clear way in
         self.assertNotIn('Connect AniList to see what airs next.', APP)
