@@ -222,7 +222,7 @@ class WeekSection(unittest.TestCase):
 
     def test_calendar_week_and_month_polish(self):
         """Empty days still read as days, today's rail marks now, one summary for both views."""
-        self.assertIn('`<div class="airnone">${ico("cal")}</div>`', APP)  # a quiet empty slot, no plain text
+        self.assertIn('`<div class="airnone"><i></i></div>`', APP)  # a quiet empty slot, no plain text (a calendar mark drawn in CSS: sharp at 125 %)
         self.assertIn('<div class="airnow"><span>now ', APP)
         self.assertIn('<div class="sum airsum">${sum}</div>', APP)  # month and week alike
         self.assertIn('l.length ? "has" : ""', APP)  # empty month days sit back
@@ -230,6 +230,19 @@ class WeekSection(unittest.TestCase):
         self.assertIn("@container airts (max-width:150px){", (support.ROOT / "web" / "style.css").read_text(encoding="utf-8"))  # narrow days drop the text
         css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
         self.assertIn("@container (max-width:58px){.airt em{", css)  # no cut "Premiere" on small posters
+
+    def test_calendar_quieter_polish(self):
+        """TODO 208: the arrows stay put, past days step back, the day panel sits on the glow."""
+        css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
+        self.assertIn('<h1 class="hd"><span>${title}</span>${sizers}</h1>', APP)  # hidden widest titles keep its width
+        self.assertIn(".airhead .hd>[aria-hidden]{visibility:hidden}", css)
+        self.assertIn(".aird.is-past:not(.is-out,.is-sel,:hover){opacity:", css)
+        self.assertIn(".aircol.is-past:not(:hover){opacity:", css)
+        side = css.split(".airside{", 1)[1].split("}", 1)[0]
+        self.assertNotIn("backdrop-filter", side)  # no box behind the panel
+        self.assertIn('<span class="airnav"><button class="i" data-a="airgo" data-v="-1"', APP)  # ‹ Today › in one pill
+        self.assertIn('<span class="airtabs" role="group" aria-label="View">', APP)  # views look like the top bar's tabs
+        self.assertIn(".airtabs button.on{color:var(--ink);background:var(--pick)}", css)
 
     def test_keys_sheet(self):
         """? opens a full-screen keys sheet (Decision 84): this page first, then everywhere, then the player."""
