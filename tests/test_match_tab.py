@@ -122,6 +122,77 @@ class Tab(unittest.TestCase):
         self.assertIn('api("/api/keep-local", { show_id: v, keep })', APP)
 
 
+def _js_fn(start, end_marker="\n}\n"):
+    """One top-level piece of app.js, from `start` to the end of its block."""
+    i = APP.index(start)
+    return APP[i:APP.index(end_marker, i) + len(end_marker)]
+
+
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class MatchDialog(unittest.TestCase):
+    """Needs a look polish (Elias, 2026-11-09: cards like mockup C, a centred
+    dialog asking A's "Is this …?"): each folder is a poster card, one dialog
+    goes through them in turn."""
+
+    def node(self, src):
+        import subprocess
+        out = subprocess.run(["node", "-"], input=src + "\n", capture_output=True, text=True, encoding="utf-8", timeout=20)
+        if out.returncode:
+            raise AssertionError(out.stderr)
+        return json.loads(out.stdout)
+
+    def test_parent_folder_joins_the_second_search(self):
+        got = self.node(_js_fn("const GENERIC = ") + """console.log(JSON.stringify([
+            altQuery({ title: "The Last Attack", path_label: "Attack on Titan/Movies/The Last Attack" }),
+            altQuery({ title: "Frieren", path_label: "Frieren" }),
+            altQuery({ title: "Movie 2", path_label: "Movies/Specials/Movie 2" }),
+            altQuery({ title: "Attack on Titan Season 2", path_label: "Attack on Titan/Attack on Titan Season 2" })]));""")
+        self.assertEqual(got, ["Attack on Titan The Last Attack", "", "", ""])
+
+    def test_dialog_moves_on_after_a_match_then_closes(self):
+        got = self.node("""const S = { modal: { t: "match", id: "b", list: ["a", "b", "c"] } }; const seen = [];
+            const closeModal = () => { S.modal = null; seen.push("closed"); }; const paintModal = () => seen.push(S.modal.id);
+            """ + _js_fn("function matchAdvance(done) {") + """matchAdvance("b"); matchAdvance("c"); matchAdvance("a");
+            console.log(JSON.stringify(seen));""")
+        self.assertEqual(got, ["c", "a", "closed"])  # the next one in place, wrapping back, then done
+
+    def test_shape(self):
+        self.assertIn("entry: EntryDlg, match: MatchDlg }[m.t]();", APP)
+        # keys pick the guesses by their place in the row, the number on each poster
+        self.assertIn('const b = $$("#modal .moth")[+e.key - 1];', APP)
+        self.assertIn('<kbd class="kb">${k + 1}</kbd>', APP)
+        # an unmatched folder's own page asks the same question and opens the dialog for it alone
+        self.assertIn('<div class="matchbox">${(autoSuggest([s]), matchTease(s))}</div>', APP)
+        self.assertIn('!t?.closest?.(".mtease") ? all : [v]', APP)
+        # the file count against AniList's episode count, coloured only when AniList states one
+        self.assertIn('best.episodes === n ? "ok" : "warn"', APP)
+        # no "is it …?" tag on the cards (Elias, 2026-11-09): the poster says it
+        self.assertIn('searching</span>` : best ? "" : `<span class="mtag none">', APP)
+
+    def test_search_is_live_and_a_pick_becomes_the_question(self):
+        # as you type, through the search box's path (local title list, then AniList)
+        self.assertIn('document.addEventListener("input", (e) => { if (e.target.id === "mdq") mdqInput(e.target.value); });', APP)
+        self.assertIn('api("/api/match-candidates", { query: t, fuzzy: true })', APP)
+        self.assertIn("if ((m.sq || \"\").trim() !== t) return; // a newer search took over", APP)
+        # a pick goes in front of the guesses and the search empties
+        self.assertIn("m.cands = [x, ...(m.cands || []).filter((y) => y.id !== x.id)]; m.pick = 0;", APP)
+        # ↑ ↓ ↵ Esc in the field; Esc on an empty field closes the dialog
+        self.assertIn('if (e.key === "Escape" && !m.sq) { e.preventDefault(); closeModal(); return; }', APP)
+
+    def test_a_pasted_link_or_id_matches(self):
+        got = self.node(_js_fn("const ANILINK = ", ";\n") + """console.log(JSON.stringify(
+            ["https://anilist.co/anime/5081/Bakemonogatari", "5081", "monogatari 2"].map((t) => (ANILINK(t) || [])[1] || null)));""")
+        self.assertEqual(got, ["5081", "5081", None])
+
+    def test_episode_count_is_green_only_when_it_fits(self):
+        # search rows and the guess rail: green when it equals the file count, plain otherwise
+        got = self.node("const esc = (x) => x; const FMT = { TV: \"TV\" };\n" + _js_fn("const candMeta = ", ";\n")
+                        + _js_fn("const candFits = ", ";\n") + """console.log(JSON.stringify(
+            [11, 12].map((n) => candFits({ seasonYear: 2013, format: "TV", episodes: 11 }, n))));""")
+        self.assertEqual(got, ['2013 · TV · <em class="mok">11 ep</em>', "2013 · TV · 11 ep"])
+        self.assertIn("<small>${candFits(x, n)}</small>", APP)
+
+
 class Desktop(unittest.TestCase):
     def test_desktop_entry_names_the_window_class(self):
         """X11 honours --class; native Wayland (TODO 61) names the window

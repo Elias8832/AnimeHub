@@ -182,7 +182,7 @@ class ShowPage(unittest.TestCase):
                     "hit('.cta [data-a=\"play\"]')) return;"):
             self.assertIn(key, APP)
         self.assertNotIn('class="banner"', fran)  # the canvas shows the art now
-        self.assertIn("nxt: NextDlg, entry: EntryDlg }[m.t]();", APP)
+        self.assertIn("nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();", APP)
         self.assertIn("if (e.key === \"e\" && hit('[data-a=\"edit\"]')) return;", APP)
         self.assertIn('const entryHost = () => $("#entrybox") || $("#entrystats");', APP)
 
@@ -296,8 +296,8 @@ class Library(unittest.TestCase):
     def test_library_shape(self):
         self.assertIn('l: "On disk only"', APP)
         self.assertIn('l: "Needs a look"', APP)
-        self.assertIn('<div class="match mc" data-show=', APP)
-        self.assertIn('data-a="match" data-v="${esc(s.id)}">This one</button>', APP)
+        self.assertIn('<button class="card mcard" style="--i:${Math.min(i, 24)}" data-a="mopen"', APP)
+        self.assertIn('data-a="match" data-v="${esc(s.id)}"${m.busy ? " disabled" : ""}>Yes, that\'s it', APP)
         # The background waits for a rest on the poster; the accent follows at once.
         self.assertIn('accentFrom(art.blur, art.color);', APP)
         self.assertIn('}, 450) };', APP)
