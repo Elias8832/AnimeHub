@@ -983,7 +983,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .hstrip.mr{-webkit-mask:linear-gradient(90deg,#000 93%,transparent);mask:linear-gradient(90deg,#000 93%,transparent)}
 .hc{flex:none;width:272px;cursor:pointer;scroll-snap-align:start;transition:transform .3s var(--ease)}
 .hc:hover{transform:translateY(-6px)}
-.hc .epa{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:var(--s1);box-shadow:0 12px 28px rgba(0,0,0,.35),var(--edge)}
+.hc .epa{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:var(--s1);box-shadow:0 14px 22px -14px rgba(0,0,0,.6),var(--edge)} /* drop shadow stays inside the row's 8 px side padding, which clips it (Elias) */
 .hc .epimg{position:absolute;inset:0;background-size:cover;transition:transform .8s var(--ease)}
 .hc:hover .epimg{transform:scale(1.06)}
 .hc .enum{position:absolute;left:10px;bottom:9px;font:500 11px var(--mono);padding:3px 8px;border-radius:999px;background:var(--glass-h);backdrop-filter:blur(10px);box-shadow:var(--edge)}
