@@ -181,6 +181,15 @@ class ShowPagePhone(unittest.TestCase):
         self.assertIn('descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }', APP)
         self.assertIn("body:has(.sp2.frpage) .cv-art{opacity:0!important}", CSS)
 
+    def test_select_bar_sits_on_the_dock(self):
+        # Elias, 2026-11-10: the select bar was drawn behind the dock on phones
+        self.assertIn('document.body.classList.toggle("sel-on", !!on)', APP)
+        self.assertIn('<span class="fill"></span><i class="selbr"></i>', APP)
+        self.assertIn("#selbar{left:12px;right:12px;width:auto;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom))", CSS)
+        self.assertIn("body.sel-on .pbar{visibility:hidden}", CSS)
+        self.assertIn("body.rmt-on #selbar{bottom:calc(72px + var(--dock)", CSS)
+        self.assertIn("#selbar .selbr{display:none}", CSS)  # one row on the PC
+
 
 class InstallAsApp(unittest.TestCase):
     """Phones install the app as an app: manifest icons Android asks for, a
@@ -246,7 +255,7 @@ class PhonePolish(unittest.TestCase):
 
     def test_small_fixes(self):
         self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top
-        self.assertIn(".match.mc .guess.none{display:block", CSS)
+        self.assertIn(".dialog.match>*{min-width:0}", CSS)  # the match sheet's guesses row doesn't widen it past the screen
         self.assertIn(".rview .rrb .seg{display:flex;flex-wrap:wrap", CSS)  # remote choices wrap, not run off the edge
         self.assertIn("#pal .plist{-webkit-mask:linear-gradient", CSS)
 
@@ -410,3 +419,41 @@ class PhoneRound4(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlayOnTheOtherSide(unittest.TestCase):
+    """Elias, 2026-11-10: a long-press on an episode also offers the place the
+    phone's Play button doesn't use (Decision 71). Checked live with
+    Work/phone-player/longpress.cjs at 390×844."""
+
+    def test_the_menu_offers_the_other_place(self):
+        i = APP.index("function cmOther(")
+        body = APP[i:APP.index("\n}\n", i)]
+        self.assertIn("awayDevice() ? playWhere() : null", body)
+        self.assertIn('to === "pc" ? "Play on the PC" : "Play on this phone"', body)
+        self.assertIn('`data-where="${to}"`', body)
+
+    def test_every_place_an_episode_starts(self):
+        # Episode menus, Home's Continue watching, and every other Play button.
+        self.assertIn("if (playable) rows.push(cmOther(id));", APP)
+        self.assertIn('"↵") + cmOther(ep.id) : ""}${cmRow("open"', APP)
+        self.assertIn('const pb = e.target.closest("[data-a=play][data-v], [data-a=deckplay][data-v]");', APP)
+        self.assertIn("${cmOther(id)}`;", APP[APP.index("function playMenu("):])
+
+    def test_it_plays_there_without_asking(self):
+        self.assertIn("playon: (v, t) => play(v, 0, undefined, false, undefined, undefined, t.dataset.where),", APP)
+        self.assertRegex(APP, r"\n  phone: \['<rect ")
+
+    def test_a_phone_with_a_pen_is_still_a_phone(self):
+        # S23 Ultra: the S Pen makes (any-pointer:fine) true; only the main pointer counts.
+        i = APP.index("const awayDevice = ")
+        line = APP[i:APP.index("\n", i)]
+        self.assertNotIn("any-pointer", line)
+        self.assertIn('matchMedia("(pointer:coarse)").matches && matchMedia("(hover:none)").matches', line)
+
+    def test_a_finger_hold_on_any_play_button(self):
+        # Real phones send no contextmenu on a hold here: the touch long-press does it.
+        i = APP.index('document.addEventListener("touchstart", (e) => {\n  clearTimeout(lp?.timer)')
+        body = APP[i:APP.index("}, 480) };", i)]
+        self.assertIn('const pb = !ep && !cw && t.closest?.("[data-a=play][data-v], [data-a=deckplay][data-v]");', body)
+        self.assertIn("playMenu(pb, x, y)", body)
