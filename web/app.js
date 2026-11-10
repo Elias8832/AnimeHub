@@ -1213,7 +1213,7 @@ function showCard(s, i) {
 
 /* AniList match repair (TODO 28): suggestions come from the same search the
    manual field uses; picking one writes the match. */
-const mst = (id) => (S.match[id] ||= { cands: null, pick: 0, busy: false, err: "", q: "", tried: false });
+const mst = (id) => (S.match[id] ||= { cands: null, pick: 0, busy: false, err: "", q: "", tried: false, sq: "", sres: null, sbusy: false, sel: 0 });
 const candLabel = (x) => x.title?.english || x.title?.romaji || `#${x.id}`;
 /* The files' own lengths (played, else measured): "24 min each" only when
    every file is known and they agree, else the range of the known ones. */
@@ -1224,24 +1224,107 @@ function lensText(eps) {
   if (eps.length === 1) return hm(lo);
   return lo === hi ? `${hm(lo)}${mins.length === eps.length ? " each" : ""}` : hi < 60 ? `${lo}–${hi} min` : `${hm(lo)}–${hm(hi)}`;
 }
-function matchUI(s) {
-  const m = mst(s.id), c = (m.cands || []).slice(0, 5), n = epTotal(s), best = c[m.pick] || c[0];
-  const files = s.seasons.flatMap((x) => x.episodes);
-  const facts = [n > 1 ? `${n} episodes` : n ? "1 file" : "", lensText(files), s.seasons.length > 1 ? `${s.seasons.length} seasons` : ""].filter(Boolean);
-  const meta = (x) => [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format, x.episodes ? x.episodes + " ep" : "", x.duration ? x.duration + " min" : ""].filter(Boolean).join(" · ");
-  return `<div class="match mc" data-show="${esc(s.id)}"><div class="mcl">
-      <span class="cap2">${ico("folder")} folder on disk</span>
-      <h3>${esc(s.title)}</h3>${s.path && s.path !== s.title ? `<div class="raw">${esc(s.path_label || s.path)}</div>` : ""}
-      ${facts.length ? `<div class="facts">${facts.map((f, i) => `<span${i === 1 ? ' class="len"' : ""}>${esc(f)}</span>`).join("")}</div>` : ""}
-      ${m.busy ? '<div class="found"><i class="spin"></i>Searching AniList…</div>' : ""}
-      ${c.length > 1 ? `<div class="others"><span class="cap2">other guesses</span>${c.map((x, i) => i === m.pick ? "" : `<button class="oth" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge || null, { c: "t" })}<span>${esc(candLabel(x))}</span><small>${esc(meta(x))}</small></button>`).join("")}</div>` : ""}
-      <div class="mrow"><input id="mq-${esc(s.id)}" aria-label="Search AniList" placeholder="search AniList, or paste an ID / anilist.co link" value="${esc(m.q)}"><button class="btn sm" data-a="msearch" data-v="${esc(s.id)}">Search</button><button class="btn sm ic" data-a="mrefresh" data-v="${esc(s.id)}" aria-label="Ask AniList again" title="Ask AniList again instead of using the saved suggestions"${m.busy ? " disabled" : ""}>${ico("refresh")}</button></div>
-      ${m.err ? `<div class="msg">${esc(m.err)}</div>` : ""}
-      <div class="mrow"><button class="btn sm" data-a="keeplocal" data-v="${esc(s.id)}" data-k="${!s.kept_local}">${s.kept_local ? "Back to Needs a look" : "Not on AniList — keep on this PC only"}</button>${s.path ? `<button class="btn sm ic" data-a="folder" data-v="${esc(s.id)}" aria-label="Open the folder" title="Open the folder">${ico("folder")}</button>` : ""}</div>
-    </div>
-    ${best ? `<div class="guess">${poster(candLabel(best), best.coverImage?.extraLarge || null)}<b>${esc(candLabel(best))}</b><small>${esc(meta(best))}</small><button class="btn pri" data-a="match" data-v="${esc(s.id)}">This one</button></div>`
-      : `<div class="guess none"><span>${m.cands && !m.busy ? "No AniList results for that title — search with another name, or keep it on this PC only." : m.busy ? "" : "Looking for a match…"}</span></div>`}</div>`;
+/* Needs a look (polish, 2026-11-09): each folder is a poster card asking
+   "is it …?"; a click opens one dialog that asks the question big, folder
+   by folder (1 of N), with the other guesses, search and keep-local. */
+const candMeta = (x) => [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format, x.episodes ? x.episodes + " ep" : "", x.duration ? x.duration + " min" : ""].filter(Boolean);
+const folderFacts = (s) => {
+  const n = epTotal(s), files = s.seasons.flatMap((x) => x.episodes);
+  return [n > 1 ? `${n} files` : n ? "1 file" : "", lensText(files), s.seasons.length > 1 ? `${s.seasons.length} seasons` : ""].filter(Boolean);
+};
+function matchCard(s, i) {
+  const m = mst(s.id), best = (m.cands || [])[m.pick] || (m.cands || [])[0];
+  const tag = m.busy || !m.cands ? `<span class="mtag busy"><i class="spin"></i>searching</span>` : best ? "" : `<span class="mtag none">no guess yet</span>`;
+  return `<button class="card mcard" style="--i:${Math.min(i, 24)}" data-a="mopen" data-v="${esc(s.id)}" data-show="${esc(s.id)}">
+    <div class="pw${best ? " guess" : ""}">${best ? poster(candLabel(best), best.coverImage?.extraLarge || null) : `<div class="poster mfold">${ico("folder")}</div>`}${tag}</div>
+    <h3>${esc(s.title)}</h3><div class="m">${esc(folderFacts(s).join(" · "))}</div></button>`;
 }
+/* On an unmatched folder's own page: the same question, one click to the dialog. */
+function matchTease(s) {
+  const m = mst(s.id), best = (m.cands || [])[m.pick] || (m.cands || [])[0];
+  return `<button class="mtease" data-a="mopen" data-v="${esc(s.id)}" data-show="${esc(s.id)}">${best ? poster(candLabel(best), best.coverImage?.extraLarge || null, { c: "t" }) : `<span class="mti">${ico("folder")}</span>`}
+    <span class="tx"><b>${best ? `Is this ${esc(candLabel(best))}?` : m.busy || !m.cands ? "Looking for it on AniList…" : "Not matched to AniList yet"}</b><small>${best ? "Check the match, pick another guess, or search" : "Search AniList, or keep it on this PC only"}</small></span>
+    <span class="btn sm">${best ? "Check" : "Search"}${ico("arrowr")}</span></button>`;
+}
+function MatchDlg() {
+  const M = S.modal, s = showById(M.id);
+  if (!s) return `<h2 id="dt">Matched</h2><div class="actions"><button class="btn pri" data-a="mdone">Close</button></div>`;
+  const m = mst(s.id), c = (m.cands || []).slice(0, 5), best = c[m.pick] || c[0];
+  const n = epTotal(s), at = M.list.indexOf(s.id), many = M.list.length > 1;
+  const art = best?.bannerImage || best?.coverImage?.extraLarge;
+  const epCls = best?.episodes ? (best.episodes === n ? "ok" : "warn") : "";
+  const am = best ? candMeta(best).map((x) => /^\d+ ep$/.test(x) && epCls ? `<em class="m${epCls}">${esc(x)}</em>` : esc(x)).join(" · ") : "";
+  const head = m.busy && !best ? `<div class="mqw"><span class="cap">${esc(s.title)}</span><h2 id="dt">Searching AniList…</h2><div class="found"><i class="spin"></i>looking for the right show</div></div>`
+    : best ? `<div class="mqw"><span class="cap">is this</span><h2 id="dt"${candLabel(best).length > 28 ? ' class="long"' : ""}>${esc(candLabel(best))}?</h2>
+      <div class="mcmp"><span>your folder</span><span>AniList</span><b>${esc(folderFacts(s).join(" · ") || "no files")}</b><b>${am}</b></div></div>`
+    : `<div class="mqw"><span class="cap">no match found</span><h2 id="dt">${esc(s.title)}</h2><p class="sub">AniList has nothing under that name. Try another name below, paste an anilist.co link, or keep it on this PC only.</p></div>`;
+  /* Numbered by place in the row: key 1 picks the first one shown. */
+  const others = c.map((x, i) => [x, i]).filter(([, i]) => i !== m.pick).map(([x, i], k) => `<button class="moth" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge || null)}<b>${esc(candLabel(x))}</b><small>${candFits(x, n)}</small><kbd class="kb">${k + 1}</kbd></button>`).join("");
+  return `<div class="mdh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}
+    <div class="mtop"><span class="mpath">${ico("folder")}<span>${esc(s.path_label || s.path || s.title)}</span></span>${many ? `<span class="mstep"><span class="steps">${M.list.map((_, i) => `<i class="${i === at ? "on" : ""}"></i>`).join("")}</span>${at + 1} of ${M.list.length}</span>` : ""}</div>
+    <div class="mhero">${best ? `<div class="mpo">${poster(candLabel(best), best.coverImage?.extraLarge || null)}</div>` : `<div class="mpo mnone">${ico("folder")}</div>`}${head}</div></div>
+  <div class="mbody">
+    <label class="msrch">${ico("search")}<input id="mdq" autocomplete="off" spellcheck="false" aria-label="Search AniList" aria-controls="mres" placeholder="${best ? "Not it? Type the show's name, or paste its anilist.co link" : "Type the show's name, or paste its anilist.co link"}" value="${esc(m.sq)}"><span id="msst">${mStatus(m)}</span></label>
+    <div id="mres" class="mres">${mResults(s, others)}</div>
+    ${m.err ? `<div class="msg">${esc(m.err)}</div>` : ""}
+  </div>
+  <div class="actions"><button class="btn" data-a="keeplocal" data-v="${esc(s.id)}" data-k="${!s.kept_local}">${s.kept_local ? "Back to Needs a look" : "Keep on this PC only"}</button>${s.path ? `<button class="btn ic" data-a="folder" data-v="${esc(s.id)}" aria-label="Open the folder" title="Open the folder">${ico("folder")}</button>` : ""}<span class="note2"></span>
+    ${many ? `<button class="btn mnx" data-a="mnext" aria-label="Next folder"><span>Next folder</span>${ico("arrowr")}</button>` : ""}${best ? `<button class="btn pri${m.busy ? " loading" : ""}" data-a="match" data-v="${esc(s.id)}"${m.busy ? " disabled" : ""}>Yes, that's it<kbd class="kb">↵</kbd></button>` : ""}</div>`;
+}
+/* The dialog's search (overhaul, 2026-11-09): results as you type (the local
+   title list first, then AniList — the search box's path, Decision 68), in
+   place of the guesses; a pick becomes the dialog's question. ↑↓ move, ↵ picks,
+   Esc clears. A pasted anilist.co link or ID matches on ↵. */
+// A guess's facts, its episode count in green when it equals the folder's file
+// count (Elias, 2026-11-10: colour only when it fits, so the right one stands out).
+const candFits = (x, n) => candMeta(x).map((y) => /^\d+ ep$/.test(y) && x.episodes === n ? `<em class="mok">${esc(y)}</em>` : esc(y)).join(" · ");
+const ANILINK = (t) => t.match(/anilist\.co\/anime\/(\d+)/) || t.match(/^(\d+)$/);
+const mStatus = (m) => m.sbusy ? '<i class="spin"></i>' : m.sq ? `<button class="mclr" data-a="mclear" aria-label="Clear the search" title="Clear (Esc)">${ico("close")}</button>` : "";
+function mResults(s, others) {
+  const m = mst(s.id), t = (m.sq || "").trim(), link = t && ANILINK(t);
+  if (link) return `<button class="mhit on" data-a="mlink">${`<span class="mti">${ico("arrowr")}</span>`}<span class="tx"><b>Match it to AniList #${esc(link[1])}</b><small>the show behind that link</small></span><kbd class="kb">↵</kbd></button>`;
+  if (!t) return others ? `<div class="mcaph"><span class="cap">or is it one of these?</span><button class="link-btn" data-a="mrefresh" data-v="${esc(s.id)}" title="Ask AniList again instead of using the saved suggestions"${m.busy ? " disabled" : ""}>${ico("refresh")}ask AniList again</button></div><div class="mrail">${others}</div>` : "";
+  const res = m.sres || [];
+  if (!res.length) return m.sbusy ? `<p class="mnone2">Searching AniList…</p>` : `<p class="mnone2">Nothing on AniList for “${esc(t)}”. Try its Japanese name, or paste the anilist.co link.</p>`;
+  const n = epTotal(s);
+  return `<div class="mlist" role="listbox">${res.slice(0, 8).map((x, i) => {
+    const alt = [x.title?.romaji, x.title?.english].find((y) => y && y !== candLabel(x));
+    const meta = candFits(x, n);
+    return `<button class="mhit${i === m.sel ? " on" : ""}" role="option" aria-selected="${i === m.sel}" data-a="mhit" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge || null, { c: "t" })}<span class="tx"><b>${esc(candLabel(x))}</b>${alt ? `<small>${esc(alt)}</small>` : ""}</span><span class="mm">${meta}</span>${i === m.sel ? '<kbd class="kb">↵</kbd>' : ""}</button>`;
+  }).join("")}</div>`;
+}
+function paintMres() {
+  const M = S.modal, s = M?.t === "match" && showById(M.id);
+  if (!s) return;
+  const m = mst(s.id), box = $("#mres"), st = $("#msst");
+  if (st) st.innerHTML = mStatus(m);
+  if (!box) return;
+  /* The guesses row comes back as it was: rebuild the whole dialog for it. */
+  if (!(m.sq || "").trim()) { mRepaint(); return; }
+  box.innerHTML = mResults(s, "");
+  box.querySelector(".mhit.on")?.scrollIntoView({ block: "nearest" });
+}
+/* A repaint while you type keeps the field focused, caret at the end. */
+function mRepaint() {
+  const typing = document.activeElement?.id === "mdq";
+  paintModal();
+  if (typing) { const f = $("#mdq"); if (f) { f.focus({ preventScroll: true }); f.setSelectionRange(f.value.length, f.value.length); } }
+}
+let mdqTimer = 0;
+function mdqInput(v) {
+  const id = S.modal?.id, m = mst(id), t = v.trim();
+  m.sq = v; m.sel = 0; m.err = ""; clearTimeout(mdqTimer);
+  if (!t || ANILINK(t)) { m.sres = null; m.sbusy = false; paintMres(); return; }
+  m.sbusy = true; paintMres();
+  mdqTimer = setTimeout(async () => {
+    let r = null;
+    try { r = await api("/api/match-candidates", { query: t, fuzzy: true }); } catch { /* offline: says nothing found */ }
+    if ((m.sq || "").trim() !== t) return; // a newer search took over
+    m.sbusy = false; m.sres = Array.isArray(r) ? r : [];
+    paintMres();
+  }, 250);
+}
+document.addEventListener("input", (e) => { if (e.target.id === "mdq") mdqInput(e.target.value); });
 /* Needs a look: a folder's guessed episode numbers, one field per file. */
 function numUI(s) {
   const seas = s.seasons.filter((sea) => sea.episodes.some((e) => e.guessed));
@@ -1255,8 +1338,22 @@ function numUI(s) {
     </div></div>`;
 }
 function paintMatch(id) {
-  const el = document.querySelector(`.match[data-show="${CSS.escape(id)}"]`), s = showById(id);
-  if (el && s) el.outerHTML = matchUI(s);
+  const s = showById(id);
+  if (!s) return;
+  if (S.modal?.t === "match" && S.modal.id === id) mRepaint();
+  for (const el of $$(`#app [data-show="${CSS.escape(id)}"]`)) {
+    if (el.classList.contains("mcard")) el.outerHTML = matchCard(s, 0);
+    else if (el.classList.contains("mtease")) el.outerHTML = matchTease(s);
+  }
+}
+/* A folder named after a part ("Movies/The Last Attack") finds nothing on its
+   own; the first folder above it that isn't a generic name ("Attack on Titan")
+   goes in front of it for a second try. */
+const GENERIC = /^(movies?|films?|specials?|extras?|ova|ona|season[ ._-]*\d+|s\d+)$/i;
+function altQuery(s) {
+  const segs = (s.path_label || "").split("/").slice(0, -1).filter((x) => x && !GENERIC.test(x.trim()));
+  const up = segs[0];
+  return up && !s.title.toLowerCase().includes(up.toLowerCase()) ? `${up} ${s.title}` : "";
 }
 let candQ = Promise.resolve();
 async function runSearch(id, text, fresh = false) {
@@ -1265,6 +1362,8 @@ async function runSearch(id, text, fresh = false) {
   try {
     const r = await api("/api/match-candidates", fresh ? { query: text, fresh } : { query: text });
     if (r && r.error) { m.err = r.error; m.cands = []; } else { m.cands = r || []; m.pick = 0; }
+    const s = showById(id), alt = s && !m.cands.length && text === s.title ? altQuery(s) : "";
+    if (alt) { const r2 = await api("/api/match-candidates", { query: alt }); if (Array.isArray(r2) && r2.length) { m.cands = r2; m.pick = 0; } }
   } catch { m.err = "Search failed — is the hub running?"; m.cands = []; }
   m.busy = false; paintMatch(id);
 }
@@ -1382,7 +1481,7 @@ function Lib() {
   if (isPl) main = `${plCur ? plHead(plCur) : `<p class="intro plintro">Your own lists of shows, in your order.<span>To add a show, ${plTip(mq("(pointer:coarse)"))}.${mq("(pointer:coarse)") ? "" : " Drag a box to move it."}</span></p>`}<div id="wall"></div>`;
   else if (isMatch) {
     autoSuggest(m.unmatched);
-    main = `${m.unmatched.length ? `<p class="intro">On disk, but not matched to AniList yet. Pick the right show and it joins your library — or keep it on this PC only.</p><div class="mgrid">${m.unmatched.map(matchUI).join("")}</div>` : ""}
+    main = `${m.unmatched.length ? `<p class="intro mintro">These folders aren't matched to AniList yet. Say which show each one is and it joins your library.${m.unmatched.length > 1 ? `<button class="btn sm" data-a="mopen" data-v="${esc(m.unmatched[0].id)}">Go through all ${m.unmatched.length}${ico("arrowr")}</button>` : ""}</p><div class="wall mwall">${m.unmatched.map(matchCard).join("")}</div>` : ""}
       ${m.unclear.length ? `<p class="intro">Episode numbers to check: these file names don't say which episode they are, so they're numbered in file order. Fix any that are wrong, then save. Your files aren't renamed.</p><div class="mgrid">${m.unclear.map(numUI).join("")}</div>` : ""}`;
   } else {
     const rail = (railNow = isRail());
@@ -2084,7 +2183,7 @@ function Det() {
     <h1 class="${s.title.length > 26 ? "long" : s.title.length > 14 ? "mid" : ""}">${esc(s.title)}</h1>
     <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${sea && sea.episodes.length ? `<button class="gb" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}<span>${seaAll ? "Unwatch season" : "Mark season watched"}</span></button>` : ""}${s.seasons.length > 1 && flat.length ? `<button class="gb" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}<span>${showAll ? "Unwatch all" : "Mark all watched"}</span></button>` : ""}${flat.length ? `<button class="gb${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}<span>${S.sel?.show === s.id ? "Done" : "Select"}</span></button>` : ""}<i class="gsep"></i><button class="gb ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>${s.path && flat.length ? `<button class="gb ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</span></div>
   </div>${s.poster ? `<div class="hp">${poster(s.title, s.poster)}</div>` : ""}</div>
-  ${matched ? "" : `<div class="matchbox"><h2>Match this show</h2>${(autoSuggest([s]), matchUI(s))}</div>`}
+  ${matched ? "" : `<div class="matchbox">${(autoSuggest([s]), matchTease(s))}</div>`}
   <div class="eps-head"><div class="tabs2">${s.seasons.length > 1 ? `<div class="rels" data-glide="seasons">${s.seasons.map((x, i) => `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${x.episodes.length ? `<span class="n">· ${x.episodes.length}</span>` : ""}</button>`).join("")}</div>` : `<h2>${movie ? "Movie" : "Episodes"}</h2>`}</div>
     <div class="ctl">${sea && sea.episodes.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
   ${sea && sea.episodes.length ? `<div class="eps strip">${sea.episodes.map((ep, i) => epTile(s, sea, ep, tg && tg.ep.id, i)).join("")}</div>` : '<p class="sub eps-note">No episodes.</p>'}
@@ -4616,7 +4715,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, nxt: NextDlg, entry: EntryDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -4638,7 +4737,7 @@ function paintModal(focus) {
       }
     }
   } else {
-    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "match" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
   else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
@@ -5902,9 +6001,22 @@ function commitMatch(id, aid) {
     m.busy = false;
     if (r && r.error) { m.err = r.error; paintMatch(id); return; }
     delete S.match[id];
-    toast(`Matched to AniList #${aid}`);
+    const c = (m.cands || []).find((x) => x.id === aid);
+    toast(c ? `Matched to ${candLabel(c)}` : `Matched to AniList #${aid}`);
+    matchAdvance(id);
     reload();
   }).catch(() => { m.busy = false; m.err = "Could not save — is the hub running?"; paintMatch(id); });
+}
+
+/* The dialog moves on to the next folder still to look at, or closes. */
+function matchAdvance(done) {
+  const M = S.modal;
+  if (M?.t !== "match") return;
+  const i = M.list.indexOf(done);
+  M.list = M.list.filter((x) => x !== done);
+  if (!M.list.length) { closeModal(); return; }
+  M.id = M.list[Math.min(Math.max(i, 0), M.list.length - 1)];
+  paintModal(true);
 }
 
 /* ---------- actions ---------- */
@@ -6274,14 +6386,25 @@ const A = {
     if (S.entry?.mid) loadEntry(S.entry.mid);
   },
   /* match repair */
-  pick: (v, t) => { const id = t.dataset.s; mst(id).pick = +v; paintMatch(id); },
-  msearch: (v) => {
-    const input = $(`#mq-${CSS.escape(v)}`), text = (input?.value || "").trim(), m = mst(v);
-    m.q = text;
-    if (!text) return;
-    const hit = text.match(/anilist\.co\/anime\/(\d+)/) || text.match(/^(\d+)$/);
-    hit ? commitMatch(v, +hit[1]) : runSearch(v, text);
+  pick: (v, t) => { const id = t.dataset.s; mst(id).pick = +v; paintMatch(id); $("#modal [data-a=match]")?.focus(); },
+  mopen: (v, t) => {
+    /* From the list: every folder in turn, starting at this one. From a folder's own page: just that one. */
+    const all = unmatchedShows().map((x) => x.id), list = all.includes(v) && !t?.closest?.(".mtease") ? all : [v];
+    autoSuggest(list.map(showById).filter(Boolean));
+    openModal({ t: "match", id: v, list });
   },
+  mnext: () => { const M = S.modal; if (M?.t !== "match") return; M.id = M.list[(M.list.indexOf(M.id) + 1) % M.list.length]; paintModal(true); },
+  mdone: () => closeModal(),
+  mhit: (v) => {
+    const id = S.modal?.id, m = mst(id), x = (m.sres || [])[+v];
+    if (!x) return;
+    /* The pick becomes the question; the guesses keep their place after it. */
+    m.cands = [x, ...(m.cands || []).filter((y) => y.id !== x.id)]; m.pick = 0;
+    m.sq = ""; m.sres = null; m.sel = 0;
+    paintModal(true);
+  },
+  mlink: () => { const id = S.modal?.id, hit = ANILINK((mst(id).sq || "").trim()); if (hit) commitMatch(id, +hit[1]); },
+  mclear: () => { const f = $("#mdq"); if (f) { f.value = ""; mdqInput(""); $("#mdq")?.focus(); } },
   match: (v) => { const m = mst(v), c = (m.cands || [])[m.pick]; if (c) commitMatch(v, c.id); },
   numsave: (v, t) => {
     const card = t.closest(".nums"), numbers = {};
@@ -6302,7 +6425,8 @@ const A = {
     t.disabled = true;
     api("/api/keep-local", { show_id: v, keep }).then((r) => {
       if (r && r.error) { t.disabled = false; toast(r.error); return; }
-      toast(keep ? "Kept on this PC only — you can still match it from its page" : "Back in To match");
+      toast(keep ? "Kept on this PC only — you can still match it from its page" : "Back in Needs a look");
+      if (keep) matchAdvance(v); else paintModal();
       reload();
     }).catch(() => { t.disabled = false; toast("Could not save — is the hub running?"); });
   },
@@ -7031,6 +7155,15 @@ document.addEventListener("keydown", (e) => {
   /* e.target too: search blurs its field on Enter before this runs. */
   const inInput = [document.activeElement, e.target].some((x) => /^(INPUT|TEXTAREA|SELECT)$/.test(x.tagName));
   if (S.modal) {
+    if (document.activeElement.id === "mdq" && ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
+      const m = mst(S.modal.id), n = Math.min(8, (m.sres || []).length);
+      if (e.key === "Escape" && !m.sq) { e.preventDefault(); closeModal(); return; }
+      e.preventDefault();
+      if (e.key === "Escape") A.mclear();
+      else if (e.key === "Enter") { if (ANILINK((m.sq || "").trim())) A.mlink(); else if (n) A.mhit(m.sel); }
+      else if (n) { m.sel = (m.sel + (e.key === "ArrowDown" ? 1 : n - 1)) % n; paintMres(); }
+      return;
+    }
     if (e.key === "Escape") { e.preventDefault(); const t = S.modal.t; t === "tour" ? finishTour(true) : t === "rec" ? recDone() : t === "done" ? A.dnskip() : closeModal(); }
     else if (e.key === "Tab") {
       const f = $$("#modal :is(button,select,input):not(:disabled)"), i = f.indexOf(document.activeElement);
@@ -7038,10 +7171,10 @@ document.addEventListener("keydown", (e) => {
     } else if (e.key === "Enter" && document.activeElement.id === "tok") { e.preventDefault(); $("[data-a=anitoken]")?.click(); }
     else if (e.key === "Enter" && document.activeElement.id === "libpath-tour") { e.preventDefault(); A.dirbrowse(null, document.activeElement); }
     else if (e.key === "Enter" && document.activeElement.id === "slq") { e.preventDefault(); A.slsearch(); }
+    else if (S.modal.t === "match" && !inInput && !e.ctrlKey && !e.altKey && !e.metaKey && /^[1-9]$/.test(e.key)) { const b = $$("#modal .moth")[+e.key - 1]; if (b) { e.preventDefault(); b.click(); } }
     return;
   }
   if (e.key === "Enter" && /^libpath-(settings|extra)$/.test(document.activeElement.id)) { e.preventDefault(); A.dirbrowse(null, document.activeElement); return; }
-  if (e.key === "Enter" && document.activeElement.id?.startsWith("mq-")) { e.preventDefault(); A.msearch(document.activeElement.id.slice(3)); return; }
   if (e.key === "Escape" && document.activeElement?.id === "setq") { e.preventDefault(); e.stopImmediatePropagation(); if (S.setQ) A.setclear(); else document.activeElement.blur(); return; }
   if (e.key === "/" && !inInput && $("#setq")) { e.preventDefault(); $("#setq").focus(); return; }
   if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }

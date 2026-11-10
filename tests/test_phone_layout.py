@@ -246,7 +246,7 @@ class PhonePolish(unittest.TestCase):
 
     def test_small_fixes(self):
         self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top
-        self.assertIn(".match.mc .guess.none{display:block", CSS)
+        self.assertIn(".dialog.match>*{min-width:0}", CSS)  # the match sheet's guesses row doesn't widen it past the screen
         self.assertIn(".rview .rrb .seg{display:flex;flex-wrap:wrap", CSS)  # remote choices wrap, not run off the edge
         self.assertIn("#pal .plist{-webkit-mask:linear-gradient", CSS)
 
