@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
+from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -505,6 +505,14 @@ class Handler(BaseHTTPRequestHandler):
                 # background work — a card's hover prefetch.
                 peek = parse_qs(urlparse(self.path).query).get("peek", ["0"])[0] == "1"
                 self.send_json(pages.franchise_view(mid, peek=peek))
+        elif route == "/api/recap":
+            # Additive (TODO 133, Decision 85): before the first episode of a
+            # season, whether to remind of the season before, and with what.
+            ep = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            if not ep:
+                self._bad("'id' must be an episode id")
+            else:
+                self.send_json(recap.for_episode(ep))
         elif route == "/api/about":
             # The show page's About extras (TODO 172): genres, tags,
             # characters. Public AniList data, no login needed.
@@ -720,6 +728,11 @@ class Handler(BaseHTTPRequestHandler):
                         player.answer_aniskip(body["id"], aniskip_ok)
                     player.remember_accent(body["id"], accent)
                     self.send_json(player.start_play(body["id"], body.get("version", 0), from_start=start))
+        elif route == "/api/recap":
+            # Additive (Decision 85): the popup was answered for this season.
+            if self._fields(body, ints=("media_id",)):
+                recap.mark_done(body["media_id"])
+                self.send_json({"ok": True})
         elif route == "/api/prepare":
             # Additive: Home's Continue banner gets its online episode ready.
             if self._fields(body, strings=("id",)):
@@ -730,14 +743,15 @@ class Handler(BaseHTTPRequestHandler):
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
                     "upscale_banners", "hide_spoilers", "update_check", "update_vpn_only", "update_asked", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online", "phone_play_both",
-                    "keep_running", "start_at_login")
+                    "keep_running", "start_at_login", "recap_ask")
             # ani-cli bridge preferences: closed vocabularies.
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
                        **{key: settings.MPV_MODES for key in settings.MPV_OPTIONS},
                        "mpv_look": tuple(settings.PLAYER_LOOKS),
                        **{key: allowed for key, (_, allowed) in settings.MPV_CHOICES.items()},
-                       "upscale_style": tuple(upscale.STYLES), "update_channel": update.CHANNELS}
+                       "upscale_style": tuple(upscale.STYLES), "update_channel": update.CHANNELS,
+                       "recap_after": recap.AFTER_CHOICES}
             for key in keys:
                 if key in body and not isinstance(body[key], bool):
                     self._bad("'%s' must be a boolean" % key)

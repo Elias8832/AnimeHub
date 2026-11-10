@@ -3,6 +3,7 @@ Windows port). The rest of the hub asks these helpers instead of checking
 sys.platform itself; on Linux every helper does what the code did before."""
 
 import errno
+import json
 import os
 import re
 import shutil
@@ -288,7 +289,8 @@ def ipc_remove(address):
 
 def ipc_exchange(address, payload, timeout):
     """Send one request line to mpv and return the bytes it answered, up to
-    the first newline. Every failure is an OSError (missing socket/pipe,
+    and including its reply line. mpv may send event lines first (it tells
+    every client about a seek); they are read past (TODO 149). Every failure is an OSError (missing socket/pipe,
     refused, timed out), the one error the watcher treats as "not there"."""
     if WINDOWS:
         return _pipe_exchange(str(address), payload, timeout)
@@ -297,19 +299,30 @@ def ipc_exchange(address, payload, timeout):
     try:
         s.connect(str(address))
         s.sendall(payload)
-        return _read_line(s.recv)
+        return _read_reply(s.recv)
     finally:
         s.close()
 
 
-def _read_line(read):
+def _read_reply(read):
+    """Read until a whole line that isn't an mpv event, or the end."""
     buf = b""
-    while b"\n" not in buf:
+    while True:
+        lines = buf.split(b"\n")
+        if any(not _is_event(line) for line in lines[:-1]):
+            return buf
         chunk = read(4096)
         if not chunk:
-            break
+            return buf
         buf += chunk
-    return buf
+
+
+def _is_event(line):
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        return False
+    return isinstance(msg, dict) and "event" in msg
 
 
 def _pipe_open(path, timeout):
@@ -342,7 +355,7 @@ def _pipe_exchange(path, payload, timeout):
     def run():
         try:
             f.write(payload)
-            result["buf"] = _read_line(f.read)
+            result["buf"] = _read_reply(f.read)
         except OSError as e:
             result["err"] = e
         finally:

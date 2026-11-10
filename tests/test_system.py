@@ -175,6 +175,16 @@ class WindowsIpcTests(unittest.TestCase):
         f.write.assert_called_once_with(b"req\n")
         f.close.assert_called_once()
 
+    def test_exchange_reads_past_events(self):
+        """mpv tells every client about a seek; that line came back instead
+        of the reply, so a phone button got no position (TODO 149)."""
+        f = MagicMock()
+        f.read.side_effect = [b'{"event":"seek"}\n{"event":"playback-res', b'tart"}\n',
+                              b'{"data":42.0,"error":"success"}\n', b""]
+        with patch("builtins.open", return_value=f):
+            buf = system.ipc_exchange(system.ipc_address("x"), b"req\n", 2.0)
+        self.assertTrue(buf.endswith(b'{"data":42.0,"error":"success"}\n'))
+
     def test_silent_mpv_times_out_as_oserror(self):
         import threading
         block = threading.Event()
