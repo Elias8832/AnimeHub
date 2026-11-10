@@ -45,6 +45,7 @@ const ICONS = {
   minus: ['<path d="M5 12h14"/>'],
   clock: ['<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'],
   tv: ['<rect x="3" y="5.5" width="18" height="12" rx="2.5"/><path d="M8 21h8"/>'],
+  phone: ['<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/>'],
   search: ['<circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.6-3.6"/>'],
   refresh: ['<path d="M20 11a8 8 0 0 0-14.3-4.6L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.6L20 15.5M20 20v-4.5h-4.5"/>'],
   undo: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/>'],
@@ -1141,11 +1142,17 @@ function plBoxMenu(id, x, y, home) {
 }
 /* Right-click (long-press on touch) a show in Home's Continue watching or its
    big card: play, open, or take it off until it plays again (Decision 81). */
+function playMenu(b, x, y) {
+  const id = b.dataset.v, ctx = findEpContext(id), m = $("#cm");
+  const cap = ctx ? `${ctx.s.title} · ${epCode(ctx.sea, ctx.ep)}` : b.textContent.trim() || "Episode";
+  m.innerHTML = `<div class="cap">${esc(cap)}</div>${cmRow(b.dataset.a, id, "play", ctx && resumable(ctx.ep) ? "Resume" : "Play", "↵")}${cmOther(id)}`;
+  cmShow(m, x, y);
+}
 function contMenu(id, epId, x, y) {
   const s = showById(id), ctx = epId && findEpContext(epId);
   if (!s) return;
   const ep = ctx?.ep, m = $("#cm");
-  m.innerHTML = `<div class="cap">${esc(s.title)}</div>${ep ? cmRow("play", ep.id, "play", `${resumable(ep) ? "Resume" : "Play"} ${esc(epCode(ctx.sea, ep))}`, "↵") : ""}${cmRow("open", s.id, "arrowr", "Open show", "O")}<div class="sep"></div>${cmRow("cwhide", s.id, "close", "Remove from Home", "R")}`;
+  m.innerHTML = `<div class="cap">${esc(s.title)}</div>${ep ? cmRow("play", ep.id, "play", `${resumable(ep) ? "Resume" : "Play"} ${esc(epCode(ctx.sea, ep))}`, "↵") + cmOther(ep.id) : ""}${cmRow("open", s.id, "arrowr", "Open show", "O")}<div class="sep"></div>${cmRow("cwhide", s.id, "close", "Remove from Home", "R")}`;
   cmShow(m, x, y);
 }
 async function contHide(id, hide) {
@@ -2029,11 +2036,20 @@ function cmShow(m, x, y) {
   m.style.top = Math.max(8, Math.min(y / z, innerHeight / z - h - 8)) + "px";
   m.querySelector(".mi")?.classList.add("sel");
 }
+/* A phone with a set Play button: every menu that starts an episode also
+   offers the other place (Elias, 2026-11-10; Decision 71). "" elsewhere. */
+function cmOther(id) {
+  const pw = awayDevice() ? playWhere() : null;
+  if (!pw) return "";
+  const to = pw === "phone" ? "pc" : "phone";
+  return cmRow("playon", id, to === "pc" ? "tv" : "phone", to === "pc" ? "Play on the PC" : "Play on this phone", "", "", `data-where="${to}"`);
+}
 function cmItems({ id, ep, files, verId, online, onlineId, other, local, dl, fix, playable = true }) {
   const vpn = S.data?.vpn, vpnTag = !vpn?.known ? "" : vpn.active ? '<span class="v ok">vpn ✓</span>' : '<span class="v warn">no vpn</span>';
   const res = resumable(ep), rows = [];
   if (playable) rows.push(cmRow("playep", id, "play", res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"));
   if (playable && res) rows.push(cmRow("playstart", id, "undo", "Play from the start"));
+  if (playable) rows.push(cmOther(id));
   if (files.length > 1) files.forEach((fl, i) => rows.push(cmRow("playep", verId, "play", `Play ${esc(fl.label)}`, "", "", `data-ver="${i}"`)));
   if (local && online) rows.push(cmRow("playep", onlineId, "play", "Play online"));
   if (online) rows.push(cmRow("playmode", onlineId, "play", `Play ${other === "dub" ? "dubbed" : "subbed"}`, "A", "", `data-m="${other}"`));
@@ -5317,7 +5333,11 @@ function accentHex(show) {
    watched, AniList, auto-next). Online episodes come through the PC (the relay). */
 /* A phone: paired over the Wi-Fi, or a touch screen reaching the hub from
    elsewhere (Tailscale). A PC through Tailscale is not one (Elias, 2026-11-07). */
-const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && !matchMedia("(any-pointer:fine)").matches);
+/* A phone: paired, or away from 127.0.0.1 with touch as its main pointer. Only
+   the main pointer counts: a phone with a pen (Galaxy S23 Ultra's S Pen) also
+   reports a fine pointer, which read it as a PC (Elias, 2026-11-10). A touch
+   laptop's main pointer is its mouse or trackpad, so it stays a PC. */
+const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && matchMedia("(hover:none)").matches);
 const playWhere = () => { const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; };
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
 function WhereDlg() {
@@ -6008,6 +6028,7 @@ const A = {
   },
   playmode: (v, t) => play(v, 0, t.dataset.m),
   playstart: (v) => play(v, 0, undefined, false, true),
+  playon: (v, t) => play(v, 0, undefined, false, undefined, undefined, t.dataset.where),
   unavail: (v, t, e) => (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey) ? selToggle(v, e?.shiftKey) : toast(S.data.stream_ready ? "This episode isn't available to watch online." : "Install ani-cli to watch this online."),
   dlep: (v) => { const [, mid, ep] = v.split(":"); download(+mid, [ep]); },
   dlmany: (v, t) => download(+v, JSON.parse(t.dataset.eps || "[]")),
@@ -6773,6 +6794,10 @@ document.addEventListener("contextmenu", (e) => {
   /* A show in Home's Continue watching or the big card (Decision 81). */
   const cw = e.target.closest("[data-cw]");
   if (cw) { e.preventDefault(); contMenu(cw.dataset.cw, cw.dataset.cwep, e.clientX, e.clientY); return; }
+  /* Any other Play button (show page, This week, …): on a phone, a long-press
+     offers the other place (Elias, 2026-11-10: every screen an episode starts from). */
+  const pb = e.target.closest("[data-a=play][data-v], [data-a=deckplay][data-v]");
+  if (pb && cmOther(pb.dataset.v)) { e.preventDefault(); playMenu(pb, e.clientX, e.clientY); return; }
   /* A playlist box (Library or Home): its own menu (Decision 64). */
   const box = e.target.closest(".plbox[data-pl]");
   if (box) { e.preventDefault(); plBoxMenu(box.dataset.pl, e.clientX, e.clientY, box.dataset.a === "plgoto"); return; }
@@ -7256,6 +7281,10 @@ document.addEventListener("touchstart", (e) => {
     if (ep && !pull?.side && !pull?.live && $("#cm").style.display !== "block") { buzz(); openCm(ep.dataset.v, x, y); }
     const cw = !ep && t.closest?.("[data-cw]");
     if (cw && !pull?.side && !pull?.live && $("#cm").style.display !== "block") { buzz(); contMenu(cw.dataset.cw, cw.dataset.cwep, x, y); }
+    /* Any other Play button (the show page's Play bar, This week, …): the
+       other place, when the phone has one (Elias, 2026-11-10). */
+    const pb = !ep && !cw && t.closest?.("[data-a=play][data-v], [data-a=deckplay][data-v]");
+    if (pb && cmOther(pb.dataset.v) && !pull?.side && !pull?.live && $("#cm").style.display !== "block") { buzz(); playMenu(pb, x, y); }
   }, 480) };
 }, { passive: true, capture: true });
 document.addEventListener("touchmove", (e) => { if (lp && Math.hypot(e.touches[0].clientX - lp.x, e.touches[0].clientY - lp.y) > 10) { clearTimeout(lp.timer); lp = null; } }, { passive: true, capture: true });
