@@ -577,7 +577,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .ep.pick .dots{display:none}.ep.pick .eplay{display:none}
 .ep.sel{outline:2px solid var(--accent);outline-offset:-2px}.ep.sel .selbox{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 #selbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:10px;width:min(820px,calc(100vw - 32px));padding:10px 12px 10px 18px;background:color-mix(in srgb,var(--s2) 94%,transparent);backdrop-filter:blur(16px);border:1px solid var(--line-hi);border-radius:var(--r-l);box-shadow:var(--sh-pop);animation:selIn .25s var(--ease) both}@keyframes selIn{from{opacity:0;transform:translate(-50%,12px)}}
-#selbar b{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}#selbar .link-btn{font-size:13px}
+#selbar b{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}#selbar .link-btn{font-size:13px}#selbar .selbr{display:none}
 /* Library range filters (year, score) */
 .rng{min-width:180px}.rng .rv{font-weight:600;color:var(--ink-2);font-variant-numeric:tabular-nums}.rng.set .rv{color:var(--accent-hi)}
 .rt{position:relative;height:32px}
@@ -2195,6 +2195,21 @@ body.has-side #app{padding-left:340px}
   .pbar .btn .kb{display:none}
   body.rmt-on .pbar{bottom:calc(72px + var(--dock) + env(safe-area-inset-bottom))}
   body.rmt-open .pbar,body.deck-open .pbar,body.srch .pbar{visibility:hidden}
+  /* Selecting episodes: the bar takes the Play row's place, flush on the dock, two rows */
+  body.sel-on .pbar{visibility:hidden}
+  body.sel-on #tabbar .tb{border-radius:0 0 26px 26px;box-shadow:0 14px 38px -10px rgba(0,0,0,.7),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.07)}
+  body.sel-on #tabbar:before{display:none}
+  #selbar{left:12px;right:12px;width:auto;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom));transform:none;animation:rmtIn .35s var(--ease) both;flex-wrap:wrap;gap:4px 6px;padding:8px;border:0;border-radius:26px 26px 0 0;background:var(--dockbg);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13);transition:bottom .3s var(--ease)}
+  #selbar:before{content:"";position:absolute;z-index:-1;left:-12px;right:-12px;top:-34px;bottom:calc(-200px - env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--bg) 58px);pointer-events:none}
+  #selbar .selbr{display:block;flex-basis:100%;height:0}
+  #selbar .selbr~.btn:not([data-a=selmode]){order:2;flex:1 1 0;min-width:0;flex-direction:column;gap:3px;height:56px;padding:0 4px;font:600 12px var(--ui);background:rgba(255,255,255,.08);box-shadow:none;border-radius:16px}
+  #selbar .selbr~.btn:not([data-a=selmode]) .ico{width:20px;height:20px;margin:0}
+  #selbar .selbr{order:2}
+  #selbar>b{margin-left:8px}
+  #selbar [data-a=selmode]{width:40px;height:40px;padding:0;border-radius:50%;background:none;box-shadow:none}
+  body.rmt-on #selbar{bottom:calc(72px + var(--dock) + env(safe-area-inset-bottom))}
+  body.rmt-open #selbar,body.deck-open #selbar,body.srch #selbar{visibility:hidden}
+  body.sel-on .sp2,body.sel-on .sp2.frpage{padding-bottom:250px}
   .sp2{padding-bottom:180px}
   /* library: three posters across, filters in a sheet */
   .lib2 .tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}.lib2 .tabs::-webkit-scrollbar{display:none}
@@ -2609,7 +2624,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   #nav .setb{background:rgba(14,15,18,.72)}
   #tabbar .tb{background:#1c1d22}
   body{--dockbg:#1c1d22}
-  .pbar{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  .pbar,#selbar{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
   #toast{background:#1c1d22}
   #totop{background:var(--glass-pop)}
   body.srch #app,body.srch #status{filter:brightness(.55)}
