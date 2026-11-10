@@ -157,8 +157,34 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 #nr .pop{top:auto;bottom:40px;transform-origin:bottom left}
 #nr .pop.dl{left:0;right:auto}
 #nr .rgt .pop{left:auto;right:0;transform-origin:bottom right}
-.keys{display:grid;grid-template-columns:1fr auto;gap:8px 22px;padding:6px 6px 4px;font:400 13px var(--ui);color:var(--ink-2);white-space:nowrap}
-.keys kbd{justify-self:end}
+/* the keys sheet (? anywhere, Decision 84): a full-screen cheat sheet over the blurred page */
+#keys{position:fixed;inset:0;z-index:58;display:none;overflow-y:auto;overscroll-behavior:contain;background:radial-gradient(120% 90% at 0 0,color-mix(in srgb,var(--accent) 9%,transparent),transparent 60%),rgba(8,9,11,.72);backdrop-filter:blur(24px) saturate(1.1)}
+#keys:not(:empty){display:block}
+#keys.in{animation:fadein .2s both}#keys.leave{animation:fadeout .18s both;pointer-events:none}
+.kbox{max-width:1560px;margin:0 auto;padding:clamp(40px,8vh,84px) 64px 80px}
+.kbox header{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px 26px}
+.kbox h1{font:700 clamp(64px,8vw,112px)/.82 var(--display);text-transform:uppercase;color:var(--ink);margin:0}
+.kh{display:flex;align-items:center;gap:8px;padding-bottom:6px;font:400 14px var(--mono);color:var(--ink-2)}
+.kcols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:44px 72px;margin-top:clamp(36px,7vh,64px)}
+.kcol{display:grid;gap:36px;align-content:start;min-width:0}
+#keys.in header{animation:rise .38s var(--ease) both}
+#keys.in .kcol{animation:rise .42s var(--ease) both;animation-delay:calc(70ms + var(--i)*55ms)}
+.kg h3{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 12px var(--mono);letter-spacing:.06em;color:var(--mute)}
+.kg.acc h3{color:var(--accent-hi)}
+.kr{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:44px;font:400 15px var(--ui);color:var(--ink-2);box-shadow:0 -1px 0 rgba(255,255,255,.05)}
+.kr:first-of-type{box-shadow:none}
+.kr>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .15s}
+.kg.acc .kr{color:var(--ink)}
+.kr:hover>span:first-child{color:var(--ink)}
+.kcs{display:inline-flex;align-items:center;gap:5px;flex:none}
+.kc{display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 7px;border-radius:7px;font:600 13px/1 var(--ui);color:var(--ink);background:linear-gradient(#36373e,#27282e);box-shadow:inset 0 1px 0 rgba(255,255,255,.13),0 2px 0 #0a0a0c,0 4px 8px rgba(0,0,0,.25);transition:transform .12s var(--ease),box-shadow .12s var(--ease)}
+.kr:hover .kc{transform:translateY(1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.13),0 1px 0 #0a0a0c,0 2px 4px rgba(0,0,0,.25)}
+.kc.s{font-size:15px;font-weight:500}
+.kh .kc{min-width:24px;height:24px;font-size:12px}
+.kn{display:block;margin:14px 0 0;padding:0;text-align:left;font:400 12.5px/1.55 var(--mono);color:var(--mute)}
+button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
+@media (max-width:1180px){.kcols{grid-template-columns:repeat(2,minmax(0,1fr))}.kcol:last-child{grid-column:1/-1;max-width:calc(50% - 36px)}}
+@media (max-width:760px){.kbox{padding:40px 20px 60px}.kcols{grid-template-columns:minmax(0,1fr)}.kcol:last-child{max-width:none}}
 
 /* ───────── overlays: popovers, context menu, toast ───────── */
 .pop{position:absolute;top:46px;background:color-mix(in srgb,var(--s2) 94%,transparent);backdrop-filter:blur(16px);border:1px solid var(--line-hi);border-radius:var(--r-l);box-shadow:var(--sh-pop);z-index:12;transform-origin:top center}
@@ -1447,7 +1473,6 @@ body.srch #pal{display:grid}
 .set2 .srow.flash{animation:rowflash 1.8s ease}
 @keyframes rowflash{0%,35%{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:0 0 0 10px color-mix(in srgb,var(--accent) 16%,transparent);border-radius:14px}}
 .set2 .adv2.dis{opacity:.55}
-.keys.big{grid-template-columns:1fr auto;max-width:520px;padding:12px 0 22px;font-size:14px;white-space:normal}
 .set2 .srow{border:0}
 .sline{display:none}
 /* A value: ‹ [the app's own list] › */

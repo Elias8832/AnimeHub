@@ -3519,8 +3519,71 @@ function NextDlg() {
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
 const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"], ["week", "Calendar"]];
-const KEYS = [["Search or run a command", "/"], ["Home · Library · Journal · Calendar", "1 2 3 4"], ["Settings", ","], ["Move around", "← → ↑ ↓"], ["Open", "↵"], ["Back", "Esc"], ["Show page: play · edit entry", "↵ · E"], ["Show page: download · mark all", "D · ⇧W"], ["These keys", "?"]];
-const keysPop = () => `<div class="pop keyp"><div class="cap">Keys</div><div class="keys">${KEYS.map(([n, k]) => `<span>${n}</span><kbd class="kb">${k}</kbd>`).join("")}</div></div>`;
+/* The keys sheet (? anywhere, Decision 84): a full-screen cheat sheet in
+   three columns: this page's keys first (read from the buttons that are
+   really there), then everywhere, then your own player keys. */
+const KEYS_ALL = [["Search or run a command", ["/"]], ["Home, Library, Journal, Calendar", ["1", "2", "3", "4"]], ["Settings", [","]], ["Move around", ["←", "↑", "↓", "→"]], ["Open", ["↵"]], ["Back", ["Esc"]], ["These keys", ["?"]]];
+const KEYS_MENU = [["Move", ["↑", "↓"]], ["Pick", ["↵"]], ["Close", ["Esc"]]];
+const KEYS_HOME = [["Resume", ["↵"]], ["Open the show", ["O"]]];
+const KEYS_SHOW = [["Play", ["↵"]], ["Edit your entry", ["E"]], ["Download", ["D"]], ["Mark all watched", ["⇧", "W"]], ["Pick episodes", ["Ctrl", "click"]], ["Pick a run of episodes", ["⇧", "click"]]];
+/* An mpv key ("Ctrl+s", "M", "SPACE") as the caps you press: letters as on
+   the keyboard (M is ⇧ M), mods split off. */
+function mpvCaps(k) {
+  const plus = k.endsWith("+") && !k.endsWith("++") ? k.length - 1 : k.lastIndexOf("+", k.length - 2);
+  const mods = plus > 0 ? k.slice(0, plus).split("+").map((x) => (x === "Shift" ? "⇧" : x)) : [], base = plus > 0 ? k.slice(plus + 1) : k;
+  if (/^[a-z]$/.test(base)) return [...mods, base.toUpperCase()];
+  if (/^[A-Z]$/.test(base)) return [...mods.filter((x) => x !== "⇧"), "⇧", base];
+  return [...mods, HK_SHOWN[base] || base];
+}
+const keyCaps = (ks) => `<span class="kcs">${ks.map((k) => `<kbd class="kc${/^[←→↑↓]$/.test(k) ? " s" : ""}">${esc(k)}</kbd>`).join("")}</span>`;
+const keyRows = (list) => list.map(([n, ks]) => `<div class="kr"><span>${esc(n)}</span>${keyCaps(ks)}</div>`).join("");
+const keyGroup = (h, list, cls = "") => list.length ? `<section class="kg${cls}"><h3>${h}</h3>${keyRows(list)}</section>` : "";
+/* This page's keys: only the ones whose button is on screen now. */
+function keysHere() {
+  const on = (sel) => { const b = $(`#app ${sel}`); return b && !b.disabled ? b : null; };
+  if (S.view === "home") {
+    const up = $("#app .upn"), t = up?.querySelector("h1")?.textContent, p = on('.upn [data-a="play"]');
+    return up ? [[`${p?.querySelector("span")?.textContent || "Play"} ${t}`, ["↵"]], [`Open ${t}`, ["O"]]] : [];
+  }
+  if (S.view === "show" || S.view === "fr") {
+    const p = on('.cta [data-a="play"]');
+    return [p && [p.querySelector("span")?.textContent || "Play", ["↵"]], on('[data-a="edit"]') && KEYS_SHOW[1], on('.cta [data-a="dlmany"]') && KEYS_SHOW[2], on('[data-a="frbulk"]') && KEYS_SHOW[3], ...($("#app .ep") ? KEYS_SHOW.slice(4) : [])].filter(Boolean);
+  }
+  if (S.view === "settings" && $("#setq")) return [["Search settings", ["/"]]];
+  return [];
+}
+const VIEW_NAME = { home: "Home", library: "Library", history: "Journal", stats: "Journal", week: "Calendar", settings: "Settings" };
+function keysPlayer() {
+  const m = S.settings?.mpv;
+  if (!m) return `<section class="kg"><h3>in the player</h3><p class="kn">Loading your player keys…</p></section>`;
+  if (m.design !== "on" || !m.keys) return `<section class="kg"><h3>in the player</h3><p class="kn">Your own mpv setup decides the player's keys.</p></section>`;
+  const list = HK_ACTIONS.filter(([a]) => m.keys[a]).map(([a, l]) => [l, mpvCaps(m.keys[a])]);
+  return `<section class="kg"><h3>in the player</h3>${keyRows(list)}<button class="kn lnk" data-a="setgo" data-t="player" data-v="Play / pause">${m.priority === "settings" ? "These win over your input.conf." : "A key in your input.conf still wins."} Change them in Settings → Player ›</button></section>`;
+}
+function keysSheet() {
+  const onShow = S.view === "show" || S.view === "fr", here = keysHere(), where = (onShow && $("#app h1")?.textContent) || VIEW_NAME[S.view] || "this page";
+  return `<div class="kbox"><header><h1>Keys</h1><span class="kh">press ${keyCaps(["?"])} or ${keyCaps(["Esc"])} to close</span></header>
+    <div class="kcols"><div class="kcol" style="--i:0">${keyGroup(`here · ${esc(where)}`, here, " acc")}${S.view !== "home" ? keyGroup("on Home", KEYS_HOME, " dim") : ""}${!onShow ? keyGroup("on a show page", KEYS_SHOW, " dim") : ""}</div>
+    <div class="kcol" style="--i:1">${keyGroup("everywhere", KEYS_ALL)}${keyGroup("in a menu or list", KEYS_MENU)}</div>
+    <div class="kcol" style="--i:2">${keysPlayer()}</div></div></div>`;
+}
+let keysLast = "", keysT = 0;
+function paintKeys() {
+  const box = $("#keys"), on = S.menu === "keys";
+  if (on && !S.settings) loadSettings(); // repaints the nav (and this) when it lands
+  clearTimeout(keysT);
+  if (!on) {
+    if (!box.firstChild) return;
+    box.classList.add("leave"); keysLast = "";
+    keysT = setTimeout(() => { box.classList.remove("leave", "in"); box.innerHTML = ""; }, 180);
+    return;
+  }
+  const html = keysSheet();
+  if (html === keysLast && !box.classList.contains("leave")) return;
+  const opening = !box.firstChild || box.classList.contains("leave");
+  box.classList.remove("leave"); box.innerHTML = html; keysLast = html;
+  if (opening) { box.classList.remove("in"); void box.offsetWidth; box.classList.add("in"); }
+}
 function paintNav() {
   paintTabbar(); paintSide(); paintTop();
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
@@ -3547,7 +3610,8 @@ function paintNav() {
     <div class="rel"><button class="st dlb${dlActive.length ? " on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive.length ? `<b>${dlActive.length}</b>${dlPct != null ? ` · ${Math.floor(dlPct)}%` : ""}` : "downloads"}</button>${S.menu === "dl" ? dlPop() : ""}</div>
     ${vpnChip()}${upChip()}
     ${S.outbox ? `<div class="rel"><button class="st sync warn" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : S.ani?.connected ? `<span class="st">${isMal() ? "mal" : "anilist"} synced</span>` : ""}
-    <div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button>${S.menu === "keys" ? keysPop() : ""}</div>`;
+    <div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button></div>`;
+  paintKeys();
   if (html === nrLast) {
     /* Only the playback percent moved: patch in place. */
     const pc = nr.querySelector(".np .pc");
@@ -6939,7 +7003,7 @@ document.addEventListener("keydown", (e) => {
     if (S.view === "show" || S.view === "fr") A.back(); else if (S.view !== "home") nav("home");
     return;
   }
-  if (inInput) return;
+  if (inInput || S.menu === "keys") return; // the keys sheet covers the page: no moving around behind it
   const dirs = { j: "down", k: "up", h: "left", l: "right", ArrowDown: "down", ArrowUp: "up", ArrowLeft: "left", ArrowRight: "right" }, dir = dirs[e.key];
   if (dir) { e.preventDefault(); if (fIdx < 0) { fIdx = 0; applyFocus(); } else moveFocus(dir); }
   else if (e.key === "Enter" && fIdx >= 0) focusables()[fIdx]?.click();
