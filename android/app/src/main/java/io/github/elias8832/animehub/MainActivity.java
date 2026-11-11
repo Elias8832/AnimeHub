@@ -27,6 +27,16 @@ import java.nio.file.Files;
 public class MainActivity extends Activity {
     static final String TAG = "AnimeHub";
     static String hub;  // http://127.0.0.1:<the app's own port>/
+    /** This start's secret: the hub answers only requests that carry it (a cookie only this WebView has). */
+    static final String KEY = newKey();
+
+    static String newKey() {
+        byte[] b = new byte[32];
+        new java.security.SecureRandom().nextBytes(b);
+        StringBuilder s = new StringBuilder();
+        for (byte x : b) s.append(String.format("%02x", x));
+        return s.toString();
+    }
     WebView web;
 
     @Override protected void onCreate(Bundle state) {
@@ -163,8 +173,11 @@ public class MainActivity extends Activity {
                     File code = unpack();
                     if (!Python.isStarted()) Python.start(new AndroidPlatform(this));
                     int port = Python.getInstance().getModule("animehub_start")
-                            .callAttr("run", code.getPath(), getFilesDir().getPath()).toInt();
+                            .callAttr("run", code.getPath(), getFilesDir().getPath(), KEY).toInt();
                     hub = "http://127.0.0.1:" + port + "/";
+                    android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
+                    cm.setCookie(hub, "animehub_app=" + KEY + "; Path=/; HttpOnly; SameSite=Strict");
+                    cm.flush();
                 }
             }
             for (int i = 0; i < 400; i++) {
@@ -184,6 +197,7 @@ public class MainActivity extends Activity {
         try {
             HttpURLConnection c = (HttpURLConnection) new URL(hub).openConnection();
             c.setConnectTimeout(300);
+            c.setRequestProperty("Cookie", "animehub_app=" + KEY);
             return c.getResponseCode() == 200;
         } catch (IOException e) {
             return false;

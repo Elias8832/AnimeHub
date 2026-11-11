@@ -3,6 +3,7 @@
 import contextlib
 import gzip
 import hashlib
+import hmac
 import html
 import json
 import mimetypes
@@ -13,6 +14,7 @@ import sys
 import threading
 import time
 from http.client import HTTPException
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.error import HTTPError
@@ -168,6 +170,9 @@ class Handler(BaseHTTPRequestHandler):
         `tailscale serve` (Decision 36); those match on any port, since the
         proxy, not this server, owns it."""
         host = self.headers.get("Host", "")
+        if system.ANDROID and android.app_key() and not self._app_page():
+            self.send_error(403)  # another app on the phone (Decision 88)
+            return False
         if host in (f"127.0.0.1:{config.PORT}", f"localhost:{config.PORT}"):
             return True
         name = host.rsplit(":", 1)[0] if ":" in host else host
@@ -175,6 +180,16 @@ class Handler(BaseHTTPRequestHandler):
             return True
         self.send_error(403)
         return False
+
+    def _app_page(self):
+        """The Android app's own page: it carries the app's secret cookie."""
+        jar = SimpleCookie()
+        try:
+            jar.load(self.headers.get("Cookie") or "")
+        except CookieError:
+            return False
+        got = jar.get(android.APP_COOKIE)
+        return bool(got) and hmac.compare_digest(got.value, android.app_key())
 
     def send_json(self, obj, code=200, etag=False):
         """JSON out. Gzipped when the browser takes it (TODO 61: the library

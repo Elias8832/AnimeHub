@@ -285,6 +285,51 @@ class AndroidUpdates(Base):
         self.assertFalse(update.apk_path().exists())
 
 
+class OnlyTheAppsPage(Base):
+    """Any app on the phone can reach 127.0.0.1: the hub answers only the
+    app's own page, which carries this start's secret as a cookie."""
+
+    def setUp(self):
+        super().setUp()
+        import threading
+        from animehub import server
+        from animehub.config import config
+        self.srv = system.http_server_class()(("127.0.0.1", 0), server.Handler)
+        self.srv.daemon_threads = True
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.server_close)
+        self.addCleanup(self.srv.shutdown)
+        self.host = f"127.0.0.1:{config.PORT}"
+        p = mock.patch.dict("os.environ", {"ANIMEHUB_APP_KEY": "k" * 64})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def get(self, cookie=None):
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(f"http://127.0.0.1:{self.srv.server_address[1]}/api/now", headers={"Host": self.host})
+        if cookie:
+            req.add_header("Cookie", cookie)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def test_the_apps_page_gets_in(self):
+        self.assertEqual(self.get("animehub_app=" + "k" * 64), 200)
+
+    def test_other_apps_do_not(self):
+        self.assertEqual(self.get(), 403)
+        self.assertEqual(self.get("animehub_app=guess"), 403)
+        self.assertEqual(self.get("animehub_app=" + "k" * 63), 403)
+        self.assertEqual(self.get('animehub_app="unclosed'), 403)
+
+    def test_the_pc_needs_no_cookie(self):
+        with mock.patch.object(system, "ANDROID", False):
+            self.assertEqual(self.get(), 200)
+
+
 class NotAndroid(unittest.TestCase):
     def test_the_pc_never_asks_termux(self):
         self.assertFalse(system.ANDROID)

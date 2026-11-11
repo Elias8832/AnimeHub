@@ -31,8 +31,10 @@ def _port(files_dir):
     raise OSError("no free port")
 
 
-def run(hub_dir, files_dir):
-    """Start the hub; returns its port."""
+def run(hub_dir, files_dir, key):
+    """Start the hub; returns its port. key: this start's secret, which only
+    the app's own page carries (a cookie), so other apps can't use the hub."""
+    os.environ["ANIMEHUB_APP_KEY"] = key
     for name in ("DATA", "CONFIG", "CACHE"):
         os.environ["XDG_%s_HOME" % name] = os.path.join(files_dir, name.lower())
     os.environ.setdefault("HOME", files_dir)

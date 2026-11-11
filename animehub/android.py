@@ -24,6 +24,16 @@ from pathlib import Path
 
 from .config import config
 
+# The app's own page carries this secret as a cookie (Decision 88): any app
+# on the phone can reach 127.0.0.1, only AnimeHub's WebView has the key. A
+# new one each start, from the app (animehub_start.run).
+APP_COOKIE = "animehub_app"
+
+
+def app_key():
+    return os.environ.get("ANIMEHUB_APP_KEY", "")
+
+
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 # What a hub-written script's "#!/bin/sh" becomes in Termux: Android has no
 # /bin/sh, and a RUN_COMMAND job can't count on termux-exec to fix it.
