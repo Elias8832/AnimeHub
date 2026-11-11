@@ -222,7 +222,7 @@ class WeekSection(unittest.TestCase):
 
     def test_calendar_week_and_month_polish(self):
         """Empty days still read as days, today's rail marks now, one summary for both views."""
-        self.assertIn('`<div class="airnone">${ico("cal")}</div>`', APP)  # a quiet empty slot, no plain text
+        self.assertIn('`<div class="airnone"><i></i></div>`', APP)  # a quiet empty slot, no plain text (a calendar mark drawn in CSS: sharp at 125 %)
         self.assertIn('<div class="airnow"><span>now ', APP)
         self.assertIn('<div class="sum airsum">${sum}</div>', APP)  # month and week alike
         self.assertIn('l.length ? "has" : ""', APP)  # empty month days sit back
@@ -230,6 +230,19 @@ class WeekSection(unittest.TestCase):
         self.assertIn("@container airts (max-width:150px){", (support.ROOT / "web" / "style.css").read_text(encoding="utf-8"))  # narrow days drop the text
         css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
         self.assertIn("@container (max-width:58px){.airt em{", css)  # no cut "Premiere" on small posters
+
+    def test_calendar_quieter_polish(self):
+        """TODO 208: the arrows stay put, past days step back, the day panel sits on the glow."""
+        css = (support.ROOT / "web" / "style.css").read_text(encoding="utf-8")
+        self.assertIn('<h1 class="hd"><span>${title}</span>${sizers}</h1>', APP)  # hidden widest titles keep its width
+        self.assertIn(".airhead .hd>[aria-hidden]{visibility:hidden}", css)
+        self.assertIn(".aird.is-past:not(.is-out,.is-sel,:hover){opacity:", css)
+        self.assertIn(".aircol.is-past:not(:hover){opacity:", css)
+        side = css.split(".airside{", 1)[1].split("}", 1)[0]
+        self.assertNotIn("backdrop-filter", side)  # no box behind the panel
+        self.assertIn('<span class="airnav"><button class="i" data-a="airgo" data-v="-1"', APP)  # ‹ Today › in one pill
+        self.assertIn('<span class="airtabs" role="group" aria-label="View">', APP)  # views look like the top bar's tabs
+        self.assertIn(".airtabs button.on{color:var(--ink);background:var(--pick)}", css)
 
     def test_keys_sheet(self):
         """? opens a full-screen keys sheet (Decision 84): this page first, then everywhere, then the player."""
@@ -301,6 +314,17 @@ class LibraryCards(unittest.TestCase):
         self.assertEqual(ids({"sort": "average"}), [2, 1, 3])  # no average goes last
         self.assertEqual(ids({"sort": "average", "average": [80, 100]}), [2])
         self.assertEqual(ids({"sort": "average", "average": [0, 75]}), [1])  # no average isn't a low one
+        # The reverse button: lowest first, and no average still goes last.
+        self.assertEqual(ids({"sort": "average", "average": "all", "rev": True}), [1, 2, 3])
+        self.assertEqual(ids({"sort": "title", "rev": True}), [3, 2, 1])
+
+    def test_a_filter_change_replays_the_cards_rise_in(self):
+        """TODO 210: every filter, the sort and the reverse button paint the
+        wall with its opening animation; a range only once it's let go."""
+        self.assertIn("filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === \"group\") { S.fadeNext = true; return render(); } paintWall(true);", APP)
+        self.assertIn("srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true);", APP)
+        self.assertIn('if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); paintWall(true);', APP)
+        self.assertNotIn("saveLib(); paintWall(); syncFilters();", APP)
 
 
 class Library(unittest.TestCase):
@@ -849,6 +873,40 @@ class ShowPageRedo(unittest.TestCase):
         self.assertIn('data-a="edit"', on)
         self.assertNotIn('data-a="efav"', on)  # Elias 2026-11-08: no heart on the page; it lives in the editor
         self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)", pc))  # before the read: Edit
+
+    def test_favourite_pill(self):
+        """The heart is a pill that says what it is (Elias picked B's pill in A's place, 2026-11-11)."""
+        a = APP.index("const favWord")
+        js = ('const ico = (n) => `<i data-ico="${n}"></i>`;' + APP[a:APP.index("function favSet", a)]
+              + 'console.log(JSON.stringify([favPill(true, \'data-a="efav"\'), favPill(false, \'id="dn-fav"\')]));')
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        on, off = json.loads(out.stdout)
+        self.assertIn('class="heart on"', on)
+        self.assertIn('aria-pressed="true"', on)
+        self.assertIn("<span>Favourite</span>", on)
+        self.assertIn('data-a="efav"', on)
+        self.assertIn("<span>Add to favourites</span>", off)
+        self.assertIn('aria-pressed="false"', off)
+        self.assertIn("favPill(false, 'id=\"dn-fav\" data-a=\"dnfav\"')", APP)  # the "you finished" dialog uses it too
+
+    def test_tenths_score_slider(self):
+        """Decimal 10-point: pills plus a slider in tenths, so 1.7 can be scored (Elias 2026-11-10)."""
+        pre = ('const scoreTxt = (v) => v ? (Math.round(v * 10) / 10).toFixed(1) : "–";'
+               'const sslFill = (v) => v ? `${Math.round(((v - 1) / 9) * 10000) / 100}%` : "0%";')
+        sl = lambda sc: self.run_fn("scoreSlider", f'scoreSlider("escore", {sc})', pre)
+        out = sl(1.7)
+        self.assertIn('step="0.1"', out)
+        self.assertIn('min="1" max="10"', out)  # 1 sits under pill 1, 10 under pill 10
+        self.assertIn('value="1.7"', out)
+        self.assertIn("--b:7.78%", out)  # the filled part of the track
+        self.assertIn("--b:100%", sl(10))
+        self.assertIn('<b class="ssv">1.7</b>', out)
+        self.assertIn('<b class="ssv">8.0</b>', sl(8))
+        self.assertIn('<b class="ssv">–</b>', sl(0))  # no score yet
+        self.assertIn('scoreSlider("escore", f.score)', APP)  # the editor shows it
+        self.assertIn('scoreSlider("dnfine", 0)', APP)  # and the "you finished" dialog
+        self.assertNotIn("unless a .5 is set", APP)  # a .5 no longer swaps the pills for a number field
 
     def stats(self, f, fe):
         pre = ("const frEntry = () => (" + json.dumps(fe) + "); const showById = () => null; const epTotal = () => 0; const epWatched = () => 0;"

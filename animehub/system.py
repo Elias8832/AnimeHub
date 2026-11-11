@@ -3,6 +3,7 @@ Windows port). The rest of the hub asks these helpers instead of checking
 sys.platform itself; on Linux every helper does what the code did before."""
 
 import errno
+import json
 import os
 import re
 import shutil
@@ -288,7 +289,8 @@ def ipc_remove(address):
 
 def ipc_exchange(address, payload, timeout):
     """Send one request line to mpv and return the bytes it answered, up to
-    the first newline. Every failure is an OSError (missing socket/pipe,
+    and including its reply line. mpv may send event lines first (it tells
+    every client about a seek); they are read past (TODO 149). Every failure is an OSError (missing socket/pipe,
     refused, timed out), the one error the watcher treats as "not there"."""
     if WINDOWS:
         return _pipe_exchange(str(address), payload, timeout)
@@ -297,19 +299,30 @@ def ipc_exchange(address, payload, timeout):
     try:
         s.connect(str(address))
         s.sendall(payload)
-        return _read_line(s.recv)
+        return _read_reply(s.recv)
     finally:
         s.close()
 
 
-def _read_line(read):
+def _read_reply(read):
+    """Read until a whole line that isn't an mpv event, or the end."""
     buf = b""
-    while b"\n" not in buf:
+    while True:
+        lines = buf.split(b"\n")
+        if any(not _is_event(line) for line in lines[:-1]):
+            return buf
         chunk = read(4096)
         if not chunk:
-            break
+            return buf
         buf += chunk
-    return buf
+
+
+def _is_event(line):
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        return False
+    return isinstance(msg, dict) and "event" in msg
 
 
 def _pipe_open(path, timeout):
@@ -342,7 +355,7 @@ def _pipe_exchange(path, payload, timeout):
     def run():
         try:
             f.write(payload)
-            result["buf"] = _read_line(f.read)
+            result["buf"] = _read_reply(f.read)
         except OSError as e:
             result["err"] = e
         finally:
@@ -490,7 +503,7 @@ def find_script(name):
     if not WINDOWS:
         return shutil.which(name)
     dirs = os.environ.get("PATH", "").split(os.pathsep)
-    dirs.append(str(Path.home() / "scoop" / "apps" / name / "current"))
+    dirs.append(str(scoop_root() / "apps" / name / "current"))
     for d in dirs:
         p = os.path.join(d, name)
         if d and os.path.isfile(p):
@@ -519,7 +532,7 @@ def git_bash():
     for var, *rel in (("PROGRAMFILES", "Git"), ("PROGRAMW6432", "Git"), ("LOCALAPPDATA", "Programs", "Git")):
         if os.environ.get(var):
             cands.append(Path(os.environ[var], *rel, "bin", "bash.exe"))
-    cands.append(Path.home() / "scoop" / "apps" / "git" / "current" / "bin" / "bash.exe")
+    cands.append(scoop_root() / "apps" / "git" / "current" / "bin" / "bash.exe")
     return next((str(c) for c in cands if c.is_file()), None)
 
 
@@ -559,6 +572,128 @@ def script_env():
     gets them; the hub's mpv flags are Windows paths already and must
     reach mpv untouched."""
     return {"MSYS2_ARG_CONV_EXCL": "--input-ipc-server=;--script="} if WINDOWS else {}
+
+
+# ---------- Windows sets itself up (Decision 87) ----------
+# The tools come from Scoop (scoop.sh), which installs into the user's own
+# folder without admin rights. A program installed while the hub runs is on
+# the PATH Windows keeps for the user, not on the one this process started
+# with, so the hub reads that PATH again after each step.
+
+def scoop_root():
+    """Where Scoop lives: %SCOOP% when the user moved it, else ~/scoop."""
+    return Path(os.environ.get("SCOOP") or Path.home() / "scoop")
+
+
+def scoop_script():
+    """Scoop's own scoop.ps1, or None when Scoop isn't installed."""
+    root = scoop_root()
+    for p in (root / "apps" / "scoop" / "current" / "bin" / "scoop.ps1", root / "shims" / "scoop.ps1"):
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def powershell():
+    """Windows PowerShell, which every Windows since 7 carries, or None."""
+    if not WINDOWS:
+        return None
+    builtin = Path(os.environ.get("SYSTEMROOT") or r"C:\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    return shutil.which("powershell.exe") or (str(builtin) if builtin.is_file() else None)
+
+
+def is_admin():
+    """Windows: this process runs with admin rights (Scoop's installer wants
+    to be told)."""
+    if not WINDOWS:
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except (OSError, AttributeError):
+        return False
+
+
+def stored_path_dirs():
+    """Windows: the folders on the PATH Windows keeps for this user and for
+    the PC (the registry), with %VARS% filled in. Elsewhere []."""
+    if not WINDOWS:
+        return []
+    import winreg
+    out = []
+    for hive, key in ((winreg.HKEY_CURRENT_USER, "Environment"),
+                      (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+        try:
+            with winreg.OpenKey(hive, key) as k:
+                value = winreg.QueryValueEx(k, "Path")[0]
+        except OSError:
+            continue
+        out += [winreg.ExpandEnvironmentStrings(d) for d in str(value).split(os.pathsep) if d.strip()]
+    return out
+
+
+def refresh_path(more=None):
+    """Put folders this process doesn't know yet on its PATH: Windows' stored
+    PATH, Scoop's shims and Scoop's mpv (which has no shim), plus `more`.
+    Only folders that exist, each once, after what is there. Returns the
+    folders added. Does nothing off Windows unless `more` is given."""
+    root = scoop_root()
+    wanted = list(more or [])
+    if WINDOWS:
+        wanted += stored_path_dirs() + [str(root / "shims"), str(root / "apps" / "mpv" / "current")]
+    have = os.environ.get("PATH", "").split(os.pathsep)
+    seen = {os.path.normcase(os.path.normpath(d)) for d in have if d}
+    added = []
+    for d in wanted:
+        key = os.path.normcase(os.path.normpath(d))
+        if d and key not in seen and os.path.isdir(d):
+            seen.add(key)
+            added.append(d)
+    if added:
+        os.environ["PATH"] = os.pathsep.join([d for d in have if d] + added)
+    return added
+
+
+def start_menu_folder():
+    """Windows: the user's Start menu "Programs" folder, or None."""
+    if not WINDOWS:
+        return None
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 0x02, None, 0, buf) == 0 and buf.value:  # CSIDL_PROGRAMS
+            return Path(buf.value)
+    except (OSError, AttributeError):
+        pass
+    base = os.environ.get("APPDATA")
+    return Path(base, "Microsoft", "Windows", "Start Menu", "Programs") if base else None
+
+
+SHORTCUT = "Anime Hub.lnk"
+_SHORTCUT_PS = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:ANIME_HUB_LNK); "
+                "$s.TargetPath = $env:ANIME_HUB_EXE; $s.WorkingDirectory = (Split-Path $env:ANIME_HUB_EXE); "
+                "$s.IconLocation = $env:ANIME_HUB_EXE + ',0'; "
+                "$s.Description = 'Your anime library, AniList sync and mpv playback'; $s.Save()")
+
+
+def add_start_menu(exe, folder=None):
+    """Windows: an "Anime Hub" shortcut to `exe` in the Start menu (or in
+    `folder`). True when the shortcut is there afterwards. The paths travel
+    in the environment, so no quoting can break on a folder's name."""
+    folder = Path(folder) if folder else start_menu_folder()
+    shell = powershell()
+    if not folder or not shell:
+        return False
+    link = folder / SHORTCUT
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        subprocess.run([shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", _SHORTCUT_PS],
+                       env={**os.environ, "ANIME_HUB_LNK": str(link), "ANIME_HUB_EXE": str(exe)},
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=60, **quiet())
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return link.is_file()
 
 
 # ---------- network adapters: the VPN check (TODO 74 item 8) ----------

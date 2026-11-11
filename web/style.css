@@ -282,7 +282,7 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 .card:hover .pw:after{opacity:1}.card:hover .hint{opacity:1;transform:none}
 .resume-tag{position:absolute;left:9px;top:9px;z-index:4;display:inline-flex;align-items:center;gap:5px;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:3px 10px 3px 8px;font-weight:700;font-size:12px;box-shadow:0 6px 14px -6px rgba(0,0,0,.7);font-variant-numeric:tabular-nums}
 .resume-tag .ico{width:10px;height:10px}
-.pw .fav{position:absolute;right:8px;bottom:8px;z-index:4;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#e0788a;background:rgba(0,0,0,.62)}.pw .fav .ico{width:14px;height:14px;fill:currentColor}
+.pw .fav{position:absolute;right:8px;bottom:8px;z-index:4;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#ff4f6d;background:rgba(0,0,0,.62)}.pw .fav .ico{width:14px;height:14px;fill:currentColor}
 .prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18);z-index:4}
 .prog i,.bar i,.hp i,.eprog i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-hi));transform-origin:left;border-radius:inherit}
 .card h3{font-size:14.5px;font-weight:600;margin:11px 0 5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;letter-spacing:-.01em}
@@ -406,7 +406,7 @@ aside .panel{padding:18px 20px}.note{margin-bottom:10px;color:var(--mute);font-s
 .pop2{animation:bmp .38s var(--spring)}@keyframes bmp{from{transform:scale(1.4);color:var(--accent-hi)}}
 .heart{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--mute);position:relative}
 .heart .ico{width:22px;height:22px}.heart:hover{color:var(--accent-hi);background:rgba(255,255,255,.05)}
-.heart.on{color:#e0788a}.heart.on .ico{fill:currentColor}.heart.pop1 .ico{animation:heartPop .55s var(--spring)}
+.heart.on{color:#ff4f6d}.heart.on .ico{fill:currentColor}.heart.pop1 .ico{animation:heartPop .55s var(--spring)}
 @keyframes heartPop{0%{transform:scale(.4)}60%{transform:scale(1.35)}}
 .bp{position:fixed;width:7px;height:7px;border-radius:50%;pointer-events:none;z-index:70}
 .avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-ink));color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;margin-right:10px}
@@ -534,7 +534,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .scol.setin>.group>:is(h3,.sub,.srow){animation:fin .32s var(--ease) backwards;animation-delay:calc(var(--g)*50ms + var(--r)*18ms + .03s)}
 /* Calendar (Elias, 2026-11-04, after the calendar polish merged): the head, then the month's days in a wave from the top left
    (--i = row + column), the week's days left to right, the picked day's shows */
-#app.nav-in .airhead>*{animation:up .36s .03s var(--ease) backwards}#app.nav-in .airhead>:is(.arr,.btn){animation-delay:.06s}#app.nav-in .airhead>.seg{animation-delay:.09s}
+#app.nav-in .airhead>*{animation:up .36s .03s var(--ease) backwards}#app.nav-in .airhead>.airnav{animation-delay:.06s}#app.nav-in .airhead>:is(.airtabs,.airdiv){animation-delay:.09s}
 #app.nav-in .airsum{animation:up .36s .08s var(--ease) backwards}
 #app.nav-in .airw{animation:soft .3s .08s var(--ease) backwards}
 #app.nav-in .aird{animation:rise .34s var(--ease) backwards;animation-delay:calc(var(--i,0)*24ms + .1s)}
@@ -603,7 +603,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .ep.pick .dots{display:none}.ep.pick .eplay{display:none}
 .ep.sel{outline:2px solid var(--accent);outline-offset:-2px}.ep.sel .selbox{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 #selbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:10px;width:min(820px,calc(100vw - 32px));padding:10px 12px 10px 18px;background:color-mix(in srgb,var(--s2) 94%,transparent);backdrop-filter:blur(16px);border:1px solid var(--line-hi);border-radius:var(--r-l);box-shadow:var(--sh-pop);animation:selIn .25s var(--ease) both}@keyframes selIn{from{opacity:0;transform:translate(-50%,12px)}}
-#selbar b{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}#selbar .link-btn{font-size:13px}
+#selbar b{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}#selbar .link-btn{font-size:13px}#selbar .selbr{display:none}
 /* Library range filters (year, score) */
 .rng{min-width:180px}.rng .rv{font-weight:600;color:var(--ink-2);font-variant-numeric:tabular-nums}.rng.set .rv{color:var(--accent-hi)}
 .rt{position:relative;height:32px}
@@ -733,6 +733,25 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .sp2 .srcl:empty{display:none}
 .sp2 .ctl .arr{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:var(--glass);box-shadow:var(--edge);color:var(--ink-2)}
 .sp2 .ctl .arr:hover:not(:disabled){background:var(--glass-h);color:var(--ink)}.sp2 .ctl .arr:disabled{opacity:.3}
+/* The episode row's controls (mockup A, 2026-11-10): Sub/Dub and the arrows
+   in one glass bar, the same build and size as the action bar above. */
+@media (min-width:701px){
+  .sp2 .eps-head .ctl{height:48px;gap:2px;padding:0 5px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+  .sp2 .eps-head .ctl:empty,.sp2 .eps-head .ctl:not(:has(>:not([hidden]))){height:auto;padding:0;background:none;box-shadow:none;backdrop-filter:none} /* stays as a spacer: the source line keeps its place */
+  .sp2 .eps-head .ctl .seg{padding:0;gap:2px;background:none;box-shadow:none;backdrop-filter:none}
+  .sp2 .eps-head .ctl .seg button{height:38px;min-width:64px;padding:0 16px;font:600 14.5px var(--ui);color:var(--ink-2);transition:background .18s,color .18s}
+  .sp2 .eps-head .ctl .seg button:hover:not(:disabled):not(.on){background:rgba(255,255,255,.1);color:var(--ink)}
+  .sp2 .eps-head .ctl .seg button.on{background:var(--ink);color:#111}
+  .sp2 .eps-head .ctl .seg .spin{border-color:rgba(255,255,255,.25);border-top-color:var(--ink)}
+  .sp2 .eps-head .ctl .arr{position:relative;width:38px;height:38px;border:0;background:none;box-shadow:none;color:var(--ink);transition:background .15s,opacity .15s}
+  .sp2 .eps-head .ctl .arr:hover:not(:disabled){background:rgba(255,255,255,.17)}
+  .sp2 .eps-head .ctl .arr[data-d="1"]{background:rgba(255,255,255,.1)} /* forward is the usual way: it gets the circle (mockup A) */
+  .sp2 .eps-head .ctl .arr:disabled{background:none;opacity:.3}
+  .sp2 .eps-head .ctl .arr[hidden]{display:none}
+  .sp2 .eps-head .ctl .arr .ico{width:18px;height:18px;stroke-width:2.8}
+  .sp2 .eps-head .ctl .seg+.arr:not([hidden]){margin-left:9px}
+  .sp2 .eps-head .ctl .seg+.arr:not([hidden])::before{content:"";position:absolute;left:-6px;top:9px;width:1px;height:20px;background:rgba(255,255,255,.14)} /* the action bar's .gsep */
+}
 .sp2 .eps.strip{display:flex;gap:16px;overflow-x:auto;overflow-y:visible;padding:8px 6px 14px;margin:0 -6px;scroll-behavior:smooth;scroll-snap-type:x proximity;scrollbar-width:none}
 .sp2 .eps.strip::-webkit-scrollbar{display:none}
 .sp2 .eps.strip.mr{-webkit-mask:linear-gradient(90deg,#000 88%,transparent);mask:linear-gradient(90deg,#000 88%,transparent)}
@@ -869,17 +888,29 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 #entrybox .pills button{height:36px;padding:0 15px;border-radius:999px;font:600 13px var(--ui);color:var(--ink-2);background:rgba(255,255,255,.05);box-shadow:var(--edge)}
 #entrybox .pills button:hover{color:var(--ink);background:rgba(255,255,255,.09)}
 #entrybox .pills button.on{background:var(--ink);color:#111;box-shadow:none}
-.scrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:38px} /* the heart's height, so AniList and MyAnimeList (no heart) match */
+.scrow{display:flex;align-items:center;gap:12px 18px;flex-wrap:wrap;min-height:38px} /* the heart's height, so AniList and MyAnimeList (no heart) match */
 .scrow .vs{width:1px;height:26px;background:rgba(255,255,255,.12)}
 .score{display:flex;gap:6px}
 .score button{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;font:600 13px var(--mono);background:rgba(255,255,255,.05);box-shadow:var(--edge);color:var(--mute)}
 .score button:hover{transform:translateY(-2px);color:var(--ink)}
 .score button.lo{background:color-mix(in srgb,var(--accent) 30%,transparent);color:var(--ink);box-shadow:none}
+/* The decimal format's tenths slider under the pills (reuses the filters' .rt track) */
+.ssl{display:flex;align-items:center;gap:14px;margin-top:10px}
+/* knob centres from pill 1's centre (17px) to pill 10's (377px): 34px pills, 6px gaps, 16px knob */
+.ssl .rt{flex:0 1 376px;min-width:0;margin-left:9px}
+.ssl .ssv{min-width:3ch;text-align:right;font:600 15px var(--mono);color:var(--accent-hi);font-variant-numeric:tabular-nums}
 .score button.pick{background:var(--accent);color:#111;box-shadow:none;position:relative;isolation:isolate}
 .score button.pick::after{content:"";position:absolute;inset:-6px;border-radius:999px;background:var(--accent);z-index:-1;opacity:0;transform:scale(.8);animation:breathe 3s ease-in-out infinite}
 @keyframes breathe{0%,100%{opacity:0;transform:scale(.8)}50%{opacity:.3;transform:scale(1)}}
-.scrow .heart{width:38px;height:38px;background:rgba(255,128,150,.1)}
-.scrow .heart:not(.on){background:rgba(255,255,255,.05)}
+/* The favourite pill (mockup B's look in A's place): words beside a round heart */
+.scrow .heart{width:auto;height:38px;padding:0 16px 0 12px;gap:8px;display:inline-flex;align-items:center;border-radius:999px;background:rgba(255,255,255,.06);box-shadow:var(--edge);color:var(--ink);font:600 13px var(--ui);white-space:nowrap;transition:background .2s,color .2s,box-shadow .2s}
+.scrow .heart .ico{width:19px;height:19px;stroke-width:1.9;transition:fill .2s}
+.scrow .heart:hover{background:rgba(255,255,255,.11);color:var(--ink)}.scrow .heart:hover .ico{color:#ff6d86}
+.scrow .heart.on{background:#ff4f6d;color:#fff;box-shadow:0 6px 22px rgba(255,79,109,.4)}
+.scrow .heart.on:hover{background:#ff6680}.scrow .heart.on:hover .ico{color:#fff}
+.scrow .heart.on.pop1::after{content:"";position:absolute;inset:0;border-radius:999px;border:2px solid #ff4f6d;pointer-events:none;animation:favRing .7s cubic-bezier(.1,1,.3,1) forwards}
+@keyframes favRing{from{transform:scale(1);opacity:.9}to{transform:scale(1.18,1.6);opacity:0}}
+@media (prefers-reduced-motion:reduce){.scrow .heart.on.pop1::after{display:none}}
 #entrybox .stepper{border:0;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:var(--edge);height:40px}
 #entrybox .stepper button{width:40px;height:40px;color:var(--ink);border-radius:999px}
 #entrybox .stepper b{min-width:76px;font:700 26px/1 var(--display);display:inline-flex;align-items:baseline;justify-content:center;gap:2px;position:relative;top:-2px} /* Barlow sits low in its line box */
@@ -889,6 +920,45 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 #entrybox .note{margin:0 0 16px}
 .dialog.entry .actions{display:flex;align-items:center;gap:10px;margin:0;padding:14px 22px;border-top:1px solid rgba(255,255,255,.08)}
 .dialog.entry .note2{flex:1;font-size:11px;color:var(--mute)}
+/* Remember the season before (TODO 133, Decision 85): the season's banner
+   on top, the question in the display font over its foot, then what to
+   watch first as rows, its characters, and Start. */
+.dialog.recap{width:min(780px,94vw);padding:0;overflow:hidden auto;max-height:94vh}
+.recap .rcpart{height:220px;background:center 30%/cover;position:relative;-webkit-mask:linear-gradient(180deg,#000 30%,transparent 94%);mask:linear-gradient(180deg,#000 30%,transparent 94%)}
+.recap .rcpart:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 20%,rgba(0,0,0,.5))}
+.recap .rcpin{padding:0 40px 28px;margin-top:-94px;position:relative}
+.dialog.recap h2{font:700 60px/.92 var(--display);text-transform:uppercase;margin:0 0 12px;text-shadow:0 4px 30px rgba(0,0,0,.7);overflow-wrap:anywhere}
+.dialog.recap h2.long{font-size:44px}
+.recap .lead{margin:0;font-size:16px;color:var(--ink-2);text-shadow:0 1px 12px rgba(0,0,0,.8)}.recap .lead b{color:var(--ink);font-weight:600}
+.recap h3{font:600 13px var(--ui);color:var(--mute);margin:22px 0 8px}
+.rcpo{display:flex;align-items:center;gap:16px;width:calc(100% + 20px);margin:0 -10px;padding:8px 14px 8px 8px;border:0;border-radius:16px;background:none;color:inherit;text-align:left;cursor:pointer;transition:background .2s}
+.rcpo:hover,.rcpo:focus-visible{background:rgba(255,255,255,.07)}
+.rcpo .th{width:136px;aspect-ratio:16/9;border-radius:10px;background:rgba(255,255,255,.06) center/cover;flex:none;position:relative;box-shadow:0 8px 20px -12px #000}
+.rcpo .th.p{width:51px;aspect-ratio:2/3;margin:-4px 42px}
+.rcpo .th .n{position:absolute;left:7px;bottom:7px;font:600 11px var(--mono);background:rgba(0,0,0,.62);padding:2px 7px;border-radius:6px}
+.rcpo .tx{flex:1;min-width:0}.rcpo b{display:block;font:600 16px/1.3 var(--ui);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rcpo small{display:block;margin-top:3px;font-size:13px;color:var(--mute)}.rcpo .seen{color:var(--ok)}
+.rcpo .go{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);flex:none;transition:background .2s,color .2s}
+.rcpo .go .ico{width:16px;height:16px}
+.rcpo:hover .go,.rcpo:focus-visible .go{background:var(--ink);color:#111}
+.rcpw{display:flex;gap:12px;align-items:flex-end}
+.rcpw .f{width:70px;flex:none}.rcpw .f.s{width:52px}.rcpw .gap{width:8px;flex:none}
+.rcpw i{display:block;aspect-ratio:3/4;border-radius:9px;background:rgba(255,255,255,.06) center 18%/cover;box-shadow:0 8px 18px -12px #000}
+.rcpw small{display:block;margin-top:6px;font:500 12px/1.25 var(--ui);color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rcpw .f.s small{font-size:11px;color:var(--mute)}
+.rcpf{display:flex;align-items:center;gap:12px;margin-top:24px;padding-top:18px;border-top:1px solid rgba(255,255,255,.07)}
+.rcpf .quiet{border:0;background:none;padding:6px 0;font:500 13px var(--ui);color:var(--mute);cursor:pointer;transition:color .2s}.rcpf .quiet:hover{color:var(--ink-2)}
+.rcpf .btn.pri{margin-left:auto}
+@media (max-width:700px){
+  .dialog.recap{width:100%;padding:0!important}
+  .dialog.recap>.grabber{position:absolute;left:50%;top:8px;margin-left:-20px;z-index:2}
+  .rcpo b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .recap .rcpart{height:150px}
+  .recap .rcpin{padding:0 20px 20px;margin-top:-60px}
+  .dialog.recap h2{font-size:42px}.dialog.recap h2.long{font-size:34px}
+  .rcpo .th{width:104px}.rcpo .th.p{width:40px;margin:-4px 32px}
+  .rcpw{overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 20px}
+  .rcpf{flex-wrap:wrap-reverse}.rcpf .btn.pri{flex:1 1 100%;margin:0}.rcpf .quiet{margin:0 auto}
+}
 .dialog.entry .btn .kb{margin-left:2px;background:rgba(0,0,0,.08);color:rgba(0,0,0,.55)}
 /* Dialogs + menus get the shared rounded glass now (their contents follow in step 7). */
 .overlay{background:rgba(8,9,11,.5);backdrop-filter:blur(8px)}
@@ -911,7 +981,6 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .seg button{height:26px;padding:0 12px;border-radius:999px;font:600 12px var(--ui);color:var(--ink-2);background:none;border:0}
 .seg button:hover:not(:disabled){color:var(--ink)}
 .seg button.on{background:var(--ink);color:#111}
-.sp2 .ctl .seg button{height:26px}
 .dialog .btn.pri:focus-visible,.dialog .btn:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 .edh .cap{color:var(--ink-2)}
 .sp2 .eps.strip.ml.mr,.sp2 .eps.strip.mr{-webkit-mask:linear-gradient(90deg,#000 93%,transparent);mask:linear-gradient(90deg,#000 93%,transparent)}
@@ -983,7 +1052,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .hstrip.mr{-webkit-mask:linear-gradient(90deg,#000 93%,transparent);mask:linear-gradient(90deg,#000 93%,transparent)}
 .hc{flex:none;width:272px;cursor:pointer;scroll-snap-align:start;transition:transform .3s var(--ease)}
 .hc:hover{transform:translateY(-6px)}
-.hc .epa{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:var(--s1);box-shadow:0 12px 28px rgba(0,0,0,.35),var(--edge)}
+.hc .epa{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:var(--s1);box-shadow:0 14px 22px -14px rgba(0,0,0,.6),var(--edge)} /* drop shadow stays inside the row's 8 px side padding, which clips it (Elias) */
 .hc .epimg{position:absolute;inset:0;background-size:cover;transition:transform .8s var(--ease)}
 .hc:hover .epimg{transform:scale(1.06)}
 .hc .enum{position:absolute;left:10px;bottom:9px;font:500 11px var(--mono);padding:3px 8px;border-radius:999px;background:var(--glass-h);backdrop-filter:blur(10px);box-shadow:var(--edge)}
@@ -1093,6 +1162,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .lib2 .rt input,.lib2 .rt input::-webkit-slider-runnable-track{height:28px}
 .lib2 .filters .btn{height:36px;padding:0 14px;font-size:13px}
 .lib2 .filters .btn.ic{width:36px;padding:0}
+.srev .ico{transition:transform .2s var(--ease)}.srev.on{color:var(--accent)!important}.srev.on .ico{transform:scaleX(-1)}
 .gwrap{position:relative}
 .lib2 .gtray{padding:12px 76px 0 0;gap:6px;max-height:38px;overflow:hidden}.lib2 .gtray.open{max-height:none}
 .gmore{position:absolute;right:0;top:12px;height:26px;padding:0 12px;border-radius:999px;font:500 12px var(--ui);color:var(--ink-2);background:rgba(255,255,255,.09);box-shadow:var(--edge)}.gmore:hover{color:var(--ink)}
@@ -1114,7 +1184,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .lib2 .tg{position:absolute;top:8px;z-index:4;font:500 10px var(--mono);padding:3px 8px;border-radius:999px;background:rgba(14,15,18,.78);box-shadow:var(--edge);color:var(--ink)}
 .lib2 .tg.src{left:8px}.lib2 .tg.sc{right:8px}
 .lib2 .tg.src.partial,.lib2 .tg.src.none{color:var(--warn)}
-.lib2 .card h3 .fav{position:static;display:inline-grid;vertical-align:-1px;width:auto;height:auto;margin-right:5px;background:none;color:#e0788a}.lib2 .card h3 .fav .ico{width:12px;height:12px;fill:currentColor}
+.lib2 .card h3 .fav{position:static;display:inline-grid;vertical-align:-1px;width:auto;height:auto;margin-right:5px;background:none;color:#ff4f6d}.lib2 .card h3 .fav .ico{width:12px;height:12px;fill:currentColor}
 .lib2 .card .prog{left:10px;right:10px;bottom:10px;height:4px;border-radius:4px;background:rgba(0,0,0,.45);overflow:hidden}
 .lib2 .card .prog i{background:var(--accent)}
 .lib2 .card h3{display:flex;align-items:center;gap:8px}.lib2 .card .ttl{min-width:0;overflow:hidden;text-overflow:ellipsis}.lib2 .card h3 .kb{flex:none;margin-left:auto;min-width:20px;height:20px}
@@ -1626,6 +1696,7 @@ body.srch #pal{display:grid}
 .setnone{padding:40px 0;text-align:center;color:var(--mute)}
 .set2 .settings{max-width:none;margin:0;animation:rise .4s var(--ease) both}
 .set2 .group{margin:0 0 38px;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+.set2 .srow+.group{margin-top:38px} /* a group inside one (Player: Before a new season, above Keys) */
 .set2 .group>h3{font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 4px;padding:0;border:0}
 .set2 .group>h3::before{display:none}
 .set2 .srow.flash{animation:rowflash 1.8s ease}
@@ -1768,7 +1839,6 @@ body.srch #pal{display:grid}
 .dn .facts{display:flex;align-items:center;flex-wrap:wrap;gap:10px;font:400 12px var(--mono);color:var(--ink-2)}
 .dn .sep{width:3px;height:3px;border-radius:50%;background:var(--mute);display:inline-block}
 .dn .scrow{margin-top:2px}
-.dn .heart{width:38px;height:38px;background:rgba(255,255,255,.05)}.dn .heart.on{background:rgba(255,128,150,.12)}
 .dnnext{display:flex;align-items:center;gap:14px;margin-top:20px;padding:12px;border-radius:18px;background:rgba(255,255,255,.04);box-shadow:var(--edge)}
 .dnnext .poster{width:40px;height:56px;padding:0;border-radius:9px;flex:none;font-size:0}
 .dnnext .tx{flex:1;min-width:0}.dnnext b{display:block;font:600 14px var(--ui)}.dnnext small{font:400 11px var(--mono);color:var(--mute)}
@@ -1919,6 +1989,11 @@ body.srch #pal{display:grid}
   .dialog{padding:22px 20px;width:calc(100vw - 20px)!important}
   .dn{grid-template-columns:minmax(0,1fr)}.dnp{display:none}.dn h2{font-size:40px}
   .score{flex-wrap:wrap}
+  /* the favourite pill goes under the slider, not between the pills and it */
+  #entrybox .ef:has(> .ssl){display:flex;flex-direction:column;align-items:flex-start}
+  #entrybox .ef:has(> .ssl) .scrow{display:contents}
+  #entrybox .ef > .ssl{order:2;align-self:stretch}
+  #entrybox .ef .scrow .heart{order:3;margin:14px 0 0}
   .nx2{grid-template-columns:minmax(0,1fr)}.nxa{width:100%}
   .dialog .choices{grid-template-columns:minmax(0,1fr)}
   .dialog .actions{flex-wrap:wrap}.dialog .actions .note2{flex-basis:100%}
@@ -2368,6 +2443,21 @@ body.has-side #app{padding-left:340px}
   .pbar .btn .kb{display:none}
   body.rmt-on .pbar{bottom:calc(72px + var(--dock) + env(safe-area-inset-bottom))}
   body.rmt-open .pbar,body.deck-open .pbar,body.srch .pbar{visibility:hidden}
+  /* Selecting episodes: the bar takes the Play row's place, flush on the dock, two rows */
+  body.sel-on .pbar{visibility:hidden}
+  body.sel-on #tabbar .tb{border-radius:0 0 26px 26px;box-shadow:0 14px 38px -10px rgba(0,0,0,.7),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.07)}
+  body.sel-on #tabbar:before{display:none}
+  #selbar{left:12px;right:12px;width:auto;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom));transform:none;animation:rmtIn .35s var(--ease) both;flex-wrap:wrap;gap:4px 6px;padding:8px;border:0;border-radius:26px 26px 0 0;background:var(--dockbg);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13);transition:bottom .3s var(--ease)}
+  #selbar:before{content:"";position:absolute;z-index:-1;left:-12px;right:-12px;top:-34px;bottom:calc(-200px - env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--bg) 58px);pointer-events:none}
+  #selbar .selbr{display:block;flex-basis:100%;height:0}
+  #selbar .selbr~.btn:not([data-a=selmode]){order:2;flex:1 1 0;min-width:0;flex-direction:column;gap:3px;height:56px;padding:0 4px;font:600 12px var(--ui);background:rgba(255,255,255,.08);box-shadow:none;border-radius:16px}
+  #selbar .selbr~.btn:not([data-a=selmode]) .ico{width:20px;height:20px;margin:0}
+  #selbar .selbr{order:2}
+  #selbar>b{margin-left:8px}
+  #selbar [data-a=selmode]{width:40px;height:40px;padding:0;border-radius:50%;background:none;box-shadow:none}
+  body.rmt-on #selbar{bottom:calc(72px + var(--dock) + env(safe-area-inset-bottom))}
+  body.rmt-open #selbar,body.deck-open #selbar,body.srch #selbar{visibility:hidden}
+  body.sel-on .sp2,body.sel-on .sp2.frpage{padding-bottom:250px}
   .sp2{padding-bottom:180px}
   /* library: three posters across, filters in a sheet */
   .lib2 .tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}.lib2 .tabs::-webkit-scrollbar{display:none}
@@ -2724,15 +2814,22 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 /* the desktop calendar */
 .airp2{padding:0 44px 60px;max-width:1800px;margin:0 auto}
 .airhead{display:flex;align-items:center;gap:10px;margin-top:8px}
-.airhead .hd{font:700 clamp(44px,5vw,64px)/1 var(--display);text-transform:uppercase;margin:0 16px 0 0;white-space:nowrap}.airhead .hd span{color:var(--mute);font-weight:500}
-.airhead .seg+.seg{margin-left:6px}
+.airhead .hd{font:700 clamp(44px,5vw,64px)/1 var(--display);text-transform:uppercase;margin:0 16px 0 0;white-space:nowrap;display:grid}.airhead .hd>span{grid-area:1/1}.airhead .hd>[aria-hidden]{visibility:hidden}.airhead .hd>span>span{color:var(--mute);font-weight:500}
+/* The head's buttons (TODO 208) look like the top bar: ‹ Today › in one glass pill, the views as its tabs. */
+.airnav{display:inline-flex;align-items:center;height:40px;padding:0 4px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+.airnav button{height:32px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink-2);transition:color .15s,background .15s}.airnav button:hover{color:var(--ink);background:rgba(255,255,255,.08)}
+.airnav .i{width:32px;padding:0}.airnav .ico{width:16px;height:16px}
+.airtabs{display:inline-flex;gap:2px}.airtabs button{height:36px;padding:0 14px;border-radius:999px;font:600 14.5px var(--ui);color:rgba(243,243,241,.6);text-shadow:0 1px 8px rgba(0,0,0,.5);transition:color .15s,background .2s}
+.airtabs button:hover{color:var(--ink)}.airtabs button.on{color:var(--ink);background:var(--pick)}
+.airdiv{width:1px;height:20px;margin:0 8px;background:rgba(255,255,255,.12)}
+.airnav button:active,.airtabs button:active{transform:scale(.95)}.airnav button,.airtabs button{transition:color .15s,background .2s,transform .16s var(--ease)}
 .airsum{display:flex;align-items:center;gap:10px;margin:4px 0 16px;font:400 12px var(--mono);color:var(--mute)}.airsum b{color:var(--ink)}.airsum .sep{width:3px;height:3px;border-radius:50%;background:var(--mute)}
 .airload{display:inline-flex;align-items:center;gap:8px;margin-left:10px;font:400 11px var(--mono)}
 .airbody{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:20px;align-items:start}
 .airgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:auto repeat(var(--rows),calc(max(84px,(100vh - 252px - var(--rows) * 7px) / var(--rows))));gap:7px}
 .airw{padding:0 8px;font:400 11px var(--mono);color:var(--ink-2);text-shadow:0 1px 8px rgba(0,0,0,.7)}
-.aird{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;padding:10px;border-radius:15px;text-align:left;background:rgba(12,13,16,.26);transition:background .15s,box-shadow .15s}.aird.has{background:rgba(12,13,16,.56)}
-.aird:hover{background:rgba(40,41,46,.6)}.aird.is-out{opacity:.34}.aird.is-past:not(.is-out)>.airn{color:var(--mute)}.aird.is-sel{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.42)}
+.aird{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;padding:10px;border-radius:15px;text-align:left;background:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);transition:background .15s,box-shadow .15s,opacity .2s}.aird.has{background:rgba(12,13,16,.5);box-shadow:none}
+.aird:hover{background:rgba(40,41,46,.6)}.aird.is-out{opacity:.34}.aird.is-past:not(.is-out)>.airn{color:var(--mute)}.aird.is-past:not(.is-out,.is-sel,:hover){opacity:.62}.aird.is-sel{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.42)}
 .airn{align-self:flex-start;min-width:22px;padding:4px 2px;font:600 13px/1 var(--mono);color:var(--ink-2)}.is-today>.airn{padding:4px 8px;border-radius:999px;text-align:center;color:#0b0c0e;background:var(--accent);font-weight:700}
 .airts{flex:1;min-height:0;display:flex;gap:5px}
 .airt{position:relative;display:block;height:100%;aspect-ratio:5/7;min-width:0;flex:0 1 auto;border-radius:9px;background:var(--s3) center/cover;box-shadow:0 6px 14px -8px #000;container-type:inline-size}
@@ -2742,18 +2839,23 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 /* Too narrow for the word: the tag becomes a bar along the bottom (the day panel says which). */
 @container (max-width:58px){.airt em{left:5px;right:5px;bottom:5px;height:4px;padding:0;font-size:0}}
 .airplus{display:grid;place-items:center;font:600 13px var(--mono);font-style:normal;color:var(--ink-2);background:rgba(255,255,255,.08)}
-.airside{position:sticky;top:84px;max-height:calc(100vh - 236px);overflow:auto;scrollbar-width:none;padding:20px;border-radius:24px;background:rgba(12,13,16,.68);backdrop-filter:blur(24px);box-shadow:var(--edge)}
+.airside{position:sticky;top:84px;max-height:calc(100vh - 236px);overflow:auto;scrollbar-width:none;padding:4px 0 0 20px;box-shadow:inset 1px 0 0 rgba(255,255,255,.08);text-shadow:0 1px 8px rgba(0,0,0,.6)}
 .airsel{margin:0 0 6px;font:400 12px var(--mono);color:var(--mute)}.airsel b{font-weight:500;color:var(--accent)}.airside h2{font:700 42px/1 var(--display);text-transform:uppercase;margin:0 0 18px}.airside h3{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:22px 0 10px}.airside .sub{margin:0;font-size:14px}
 .aircard{display:flex;gap:14px;width:100%;padding:8px;margin:0 -8px 6px;box-sizing:content-box;border-radius:16px;text-align:left;transition:background .15s}.aircard:hover{background:rgba(255,255,255,.06)}
-.airp{flex:none;width:104px;height:146px;border-radius:12px;background:var(--s3) center/cover}
+.airp{flex:none;width:120px;height:168px;border-radius:12px;background:var(--s3) center/cover}
 .airx{min-width:0;display:flex;flex-direction:column;gap:5px;padding-top:2px}.airx b{font-size:17px;font-weight:650;line-height:1.25;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.airx small{font:400 11px/1.5 var(--mono);color:var(--mute)}.airx .ac{color:var(--accent)}
 .airtags{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}.airtags u{padding:2px 8px;border-radius:999px;text-decoration:none;font:500 11px/1.5 var(--ui);color:var(--ink-2);background:rgba(255,255,255,.07)}.airtags u.is-hot{color:#0b0c0e;background:var(--accent)}
 .airwk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
-.aircol{min-width:0;min-height:calc(100vh - 290px);padding:12px;border-radius:20px;background:rgba(12,13,16,.22)}.aircol.is-today{background:rgba(12,13,16,.5);box-shadow:var(--edge)}
+.aircol{min-width:0;min-height:calc(100vh - 290px);padding:12px;border-radius:20px;transition:opacity .2s}.aircol.is-past:not(:hover){opacity:.6}.aircol.is-today{background:rgba(12,13,16,.5);box-shadow:var(--edge)}
 .aircolh{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:2px 2px 12px;box-shadow:inset 0 -1px 0 rgba(255,255,255,.08);text-shadow:0 1px 8px rgba(0,0,0,.7)}.aircolh b{font:700 38px/.9 var(--display);color:var(--ink)}
 .aircolh span{display:flex;flex-direction:column;gap:3px;min-width:0}.aircolh i{font:600 12px/1 var(--ui);font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink)}.aircolh small{font:400 11px/1 var(--mono);color:var(--mute)}
 .is-past .aircolh b,.is-past .aircolh i{color:var(--mute)}.is-today .aircolh{box-shadow:inset 0 -2px 0 var(--accent)}.is-today .aircolh b,.is-today .aircolh i{color:var(--accent)}
-.airnone{display:grid;place-items:center;aspect-ratio:5/7;border-radius:14px;background:rgba(255,255,255,.025);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);color:rgba(255,255,255,.2)}.airnone .ico{width:24px;height:24px;stroke-width:1.6}
+/* An empty day's calendar mark, drawn with boxes: the browser snaps borders to whole screen
+   pixels, so it stays sharp at 125 % scaling, where a thin SVG line always falls between two. */
+.airnone{display:grid;place-items:center;height:60px}
+.airnone i{position:relative;width:18px;height:16px;margin-top:6px;border:2px solid #fff;border-radius:4px;opacity:.35}
+.airnone i:after{content:"";position:absolute;left:0;right:0;top:3px;height:2px;background:#fff}
+.airnone i:before{content:"";position:absolute;top:-6px;left:2px;width:10px;height:5px;box-sizing:border-box;border:solid #fff;border-width:0 2px}
 .airts{container:airts/inline-size}.air1t{display:none}
 .is-one>.airt{flex:0 0 auto;aspect-ratio:5/7}.is-one>.airt em{display:none}
 .is-one .air1t{display:flex;flex-direction:column;justify-content:space-between;gap:6px;flex:1;min-width:0;padding:2px 2px 2px 6px}
@@ -2775,7 +2877,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   #nav .setb{background:rgba(14,15,18,.72)}
   #tabbar .tb{background:#1c1d22}
   body{--dockbg:#1c1d22}
-  .pbar{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  .pbar,#selbar{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
   #toast{background:#1c1d22}
   #totop{background:var(--glass-pop)}
   body.srch #app,body.srch #status{filter:brightness(.55)}
@@ -2908,6 +3010,9 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lib2 .lmain .filters .fl{color:#a4a4aa}
   .lib2 .lmain .filters .clr{height:32px;padding:0 12px;border:0;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:600 14px var(--ui)}
   .lib2 .lmain .filters .clr:hover{background:rgba(255,255,255,.06)}
+  /* reverse order: a plain icon left of the sort word, as far from it as show is from sort (-4px); lit and mirrored while on */
+  .lib2 .lmain .filters .srev{width:32px;height:32px;margin-right:-4px;border:0;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;color:var(--ink-2)}
+  .lib2 .lmain .filters .srev:hover{background:rgba(255,255,255,.06);color:var(--ink)}
   /* the filters as rows of the side list: name left, value right; a range opens in place */
   .lflt{display:flex;flex-direction:column;gap:2px}
   .lib2 .lflt .fl,.lflt .fdb{display:flex;align-items:center;justify-content:space-between;width:100%;height:34px;padding:0 0 0 14px;border-radius:12px;background:none;box-shadow:none;backdrop-filter:none;font:500 14px var(--ui);color:var(--ink-2);transition:background .2s,color .2s}
@@ -3097,6 +3202,7 @@ body.pp-open #modal{z-index:70}
   .lib2 .tabs .vs{margin:0 4px}
   .lsort{display:flex;align-items:center;gap:2px;margin:12px -6px 2px}
   .lsort .fill{flex:1}
+  .lsort .srev{width:34px;height:38px;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;color:var(--ink-2)}
   .lsort .srt{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 0 0 8px;color:var(--ink-2)}
   .lsort .srt .ico{width:16px;height:16px;flex:none}
   .lsort .srt select{height:38px;padding:0 24px 0 0;background-color:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;border-radius:0;font:600 14px var(--ui);color:var(--ink-2);background-position:right 4px center}
@@ -3527,3 +3633,10 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){.mhit .mm{display:none}.mhit .kb{display:none}.mlist{max-height:260px}}
 .mres:has(.mlist),.mres:has(>.mnone2),.mres:has(>.mhit){min-height:258px} /* typing doesn't make the dialog jump in size */
 @media (max-height:860px) and (min-width:701px){.mlist{max-height:236px}.mres:has(.mlist),.mres:has(>.mnone2),.mres:has(>.mhit){min-height:236px}}
+/* Windows sets itself up (Decision 87): one list, one footer */
+.tinst{margin-top:18px}.tinst .sum2{margin-top:0}
+.tpick .v{font:400 13px var(--ui);color:var(--mute);white-space:nowrap}.tpick .switch{margin-left:auto;flex:none}.tpick .spin{width:12px;height:12px}
+.tfoot{display:flex;align-items:center;gap:14px;margin-top:12px}.tfoot p{flex:1;color:var(--mute);font-size:13px}.tfoot p.swarn{color:var(--warn)}.tfoot .btn{flex:none}
+.set2 .tinst{padding:4px 16px 12px}
+.actions .aright{display:flex;gap:10px;margin-left:auto}
+@media (max-width:700px){.tpick .v{white-space:normal}}

@@ -190,6 +190,15 @@ class ShowPagePhone(unittest.TestCase):
         self.assertIn('descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }', APP)
         self.assertIn("body:has(.sp2.frpage) .cv-art{opacity:0!important}", CSS)
 
+    def test_select_bar_sits_on_the_dock(self):
+        # Elias, 2026-11-10: the select bar was drawn behind the dock on phones
+        self.assertIn('document.body.classList.toggle("sel-on", !!on)', APP)
+        self.assertIn('<span class="fill"></span><i class="selbr"></i>', APP)
+        self.assertIn("#selbar{left:12px;right:12px;width:auto;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom))", CSS)
+        self.assertIn("body.sel-on .pbar{visibility:hidden}", CSS)
+        self.assertIn("body.rmt-on #selbar{bottom:calc(72px + var(--dock)", CSS)
+        self.assertIn("#selbar .selbr{display:none}", CSS)  # one row on the PC
+
 
 class InstallAsApp(unittest.TestCase):
     """Phones install the app as an app: manifest icons Android asks for, a
@@ -251,7 +260,7 @@ class PhonePolish(unittest.TestCase):
         self.assertIn('data-a="fltopen">${ico("filter")}Filter', APP)
         self.assertIn('<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>', APP)
         self.assertIn(".fsheet .filters{gap:0;padding-top:12px;flex-wrap:nowrap}", CSS)  # a tall sheet wrapped into columns
-        self.assertIn('if (k === "group" || isPhone()) return render();', APP)
+        self.assertIn('if (k === "group" || isPhone()) { S.fadeNext = true; return render(); }', APP)
 
     def test_small_fixes(self):
         self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top

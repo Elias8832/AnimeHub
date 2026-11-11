@@ -61,7 +61,7 @@ def screenshots_folder(sock_path):
     old mpv takes no other. Forward slashes, on Windows too: mpv makes a
     missing parent folder only between those."""
     error = None
-    for _ in range(3):  # a reply can lag behind an event (TODO 149), or a pipe be busy
+    for _ in range(3):  # a pipe can be busy, or mpv not listening yet
         try:
             reply = mpv_ipc(sock_path, ["get_property", "screenshot-directory"])
             if reply and "data" in reply:

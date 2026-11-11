@@ -53,7 +53,10 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        # Openings/endings as marks on mpv's timeline (Decision 45).
                        "mpv_marks": True,
                        # Playing on the phone leaves mpv on the PC playing (Decision 71).
-                       "phone_play_both": False}
+                       "phone_play_both": False,
+                       # Play on a new season asks first when the season
+                       # before was a while ago (TODO 133, Decision 85).
+                       "recap_ask": True}
 
 
 # Opening/ending skipping in mpv (Decision 39): off, a prompt (Enter skips)
@@ -228,6 +231,11 @@ def _update_payload():
     return update.payload()
 
 
+def _tools_payload():
+    from . import tools  # tools.py needs this module
+    return tools.payload()
+
+
 def automation_enabled(key):
     default = AUTOMATION_DEFAULTS[key]
     raw = get_setting(key)
@@ -318,6 +326,9 @@ def settings_payload():
         "measure_lengths": automation_enabled("measure_lengths"),
         "remember_tracks": automation_enabled("remember_tracks"),
         "phone_play_both": automation_enabled("phone_play_both"),
+        # additive (Decision 85): the "Remember Season 1?" popup and its wait in months
+        "recap_ask": automation_enabled("recap_ask"),
+        "recap_after": get_setting("recap_after") if get_setting("recap_after") in ("1", "2", "3", "6", "12") else "2",
         # additive (Decision 45): mpv options, "on" / "off" / "own"
         "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks"),
                 "look": player_look(), "looks": list(PLAYER_LOOKS),
@@ -356,6 +367,8 @@ def settings_payload():
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
                    "check": anicli.anicli_check(), **anicli.anicli_status(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
+        # additive (Decision 87): Windows installs its tools on a click — can / missing / job
+        "tools_install": _tools_payload(),
     }
 
 

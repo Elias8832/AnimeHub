@@ -96,7 +96,7 @@ const LUCIDE = {
   "alarm-clock": '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M6.38 18.7 4 21"/><path d="M17.64 18.67 20 21"/>',
   "calendar-heart": '<path d="M12.127 21H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v5.125"/><path d="M14.62 17.8A2.25 2.25 0 1118 14.836a2.25 2.25 0 113.38 2.966l-2.626 2.856a.998.998 0 01-1.507 0z"/><path d="M16 2v3"/><path d="M3 9h18"/><path d="M8 2v3"/>',
   "eye": '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
-  "heart": '<path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/>',
+  "heart": '<path d="M12 20.6c-.4 0-.8-.1-1.1-.4C7.6 17.6 2.6 13.6 2.6 9 2.6 6 4.9 3.6 7.8 3.6c1.8 0 3.3.9 4.2 2.3.9-1.4 2.4-2.3 4.2-2.3 2.9 0 5.2 2.4 5.2 5.4 0 4.6-5 8.6-8.3 11.2-.3.3-.7.4-1.1.4z"/>',
   "heart-crack": '<path d="M12.409 5.824c-.702.792-1.15 1.496-1.415 2.166l2.153 2.156a.5.5 0 0 1 0 .707l-2.293 2.293a.5.5 0 0 0 0 .707L12 15"/><path d="M13.508 20.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5a5.5 5.5 0 0 1 9.591-3.677.6.6 0 0 0 .818.001A5.5 5.5 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5z"/>',
   "heart-handshake": '<path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762"/>',
   "sparkles": '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/>',
@@ -765,6 +765,13 @@ const SORT = {
   average: (a, b) => (b.average || 0) - (a.average || 0),
   year: (a, b) => (b.year || 0) - (a.year || 0), title: (a, b) => (a.title || "").localeCompare(b.title || ""),
 };
+/* The reverse button flips the order; shows with no score, average, year or
+   date stay last either way, so "lowest first" doesn't open on blanks. */
+const blankFor = (k, e) => k !== "title" && !e[k];
+function libSort(k, rev) {
+  const key = SORT[k] ? k : "updated", by = SORT[key];
+  return (a, b) => (blankFor(key, a) - blankFor(key, b)) || (rev ? by(b, a) : by(a, b));
+}
 const inProg = (st) => ["CURRENT", "REPEATING", "PAUSED"].includes(st);
 /* "Keep local" (TODO 12c) moves a folder from To match to Untracked. */
 const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id && !s.kept_local);
@@ -819,7 +826,7 @@ function libList(m) {
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
     && (!Array.isArray(f.average) || (e.average > 0 && inRange(f.average, e.average)))
-    && hasGenres(e, f.genres))).sort(SORT[f.sort] || SORT.updated);
+    && hasGenres(e, f.genres))).sort(libSort(f.sort, f.rev));
 }
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
 const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genres || []).includes(g));
@@ -1536,6 +1543,7 @@ function scanNote() {
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
 const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score", "average"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
+const revBtn = () => `<button type="button" class="btn ic srev${S.lib.rev ? " on" : ""}" data-a="srev" aria-pressed="${!!S.lib.rev}" aria-label="Reverse order" title="Reverse order">${ico("sort")}</button>`;
 const fsel = (k, label, opts, locked) => {
   const set = !locked && k !== "sort" && S.lib[k] !== "all";
   return `<label class="fl">${label}<select data-a="filt" data-k="${k}" class="${set ? "set" : ""}" ${locked ? "disabled" : ""}>${(locked ? [opts[1]] : opts).map(([v, l]) => `<option value="${esc(v)}" ${v === S.lib[k] || locked ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
@@ -1570,6 +1578,9 @@ function fdropClose(except) {
 document.addEventListener("mousedown", (e) => { if (!e.target.closest?.(".fdrop.open")) fdropClose(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".fdrop.open")) { e.stopImmediatePropagation(); const d = $(".fdrop.open"); fdropClose(); d.querySelector(".fdb")?.focus(); } }, true);
 let rngFrame = 0;
+/* Every filter change replays the cards' rise-in (Elias, TODO 210); a range
+   does it once, when it's let go, not on every step of the drag. */
+document.addEventListener("change", (e) => { if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); paintWall(true); syncFilters(); saveLib(); } });
 document.addEventListener("input", (e) => {
   const r = e.target.closest?.(".rng input");
   if (!r) return;
@@ -1636,10 +1647,10 @@ function Lib() {
       <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}
+      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
     const nf = [!srcLocked() && S.lib.src !== "all", S.lib.fmt !== "all", S.lib.air !== "all", ...["year", "score", "average"].map((k) => Array.isArray(S.lib[k])), S.lib.group !== "all"].filter(Boolean).length;
-    const fltb = !filters ? "" : ph ? `<div class="lsort"><label class="srt">${ico("sort")}<select data-a="filt" data-k="sort" aria-label="Sort">${[["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]].map(([v, l]) => `<option value="${v}" ${v === S.lib.sort ? "selected" : ""}>${l}</option>`).join("")}</select></label><span class="fill"></span>
+    const fltb = !filters ? "" : ph ? `<div class="lsort"><label class="srt">${ico("sort")}<select data-a="filt" data-k="sort" aria-label="Sort">${[["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]].map(([v, l]) => `<option value="${v}" ${v === S.lib.sort ? "selected" : ""}>${l}</option>`).join("")}</select></label>${revBtn()}<span class="fill"></span>
       <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
@@ -1804,12 +1815,13 @@ function selEps() {
 function paintSel() {
   let bar = $("#selbar");
   const on = (S.view === "show" || S.view === "fr") && S.sel && S.sel.show === selKey();
+  document.body.classList.toggle("sel-on", !!on); // phones: the bar takes the Play row's place on the dock
   if (!on) { bar?.remove(); return; }
   const eps = selEps(), n = eps.length;
   const fe = S.view === "fr" ? frEntry() : null, ok = !!(fe && S.data.stream_ready && fe.online.available);
   const dl = ok ? eps.filter((x) => x.online && !x.local && !dlJob(x.online.id)) : [];
   if (!bar) { bar = document.createElement("div"); bar.id = "selbar"; bar.setAttribute("role", "toolbar"); bar.setAttribute("aria-label", "Selected episodes"); document.body.append(bar); }
-  bar.innerHTML = `<b>${n} selected</b><button class="link-btn" data-a="selall">Select season</button><span class="fill"></span>
+  bar.innerHTML = `<b>${n} selected</b><button class="link-btn" data-a="selall">Select season</button><span class="fill"></span><i class="selbr"></i>
     <button class="btn" data-a="selmark" data-w="true" ${n ? "" : "disabled"}>${ico("check")}Mark watched</button>
     <button class="btn" data-a="selmark" data-w="false" ${n ? "" : "disabled"}>${ico("undo")}Mark unwatched</button>
     ${ok ? `<button class="btn" data-a="seldl" ${dl.length ? "" : "disabled"}>${ico("download")}Download${dl.length ? " " + dl.length : ""}</button>` : ""}
@@ -2090,7 +2102,7 @@ function Fran() {
   const seen = e.slots.filter((x) => playableSlot(e, x)), allW = seen.length > 0 && seen.every((x) => x.watched);
   const missing = ready && e.online.available ? e.slots.filter((x) => x.online && !x.local && !dlJob(x.online.id)) : [];
   const mBusy = S.modeBusy === e.id, curMode = e.online.mode || S.settings?.stream?.mode || "sub";
-  const modeSeg = ready && linked ? `<span class="seg${mBusy ? " busy" : ""}" role="group" aria-label="Audio for online episodes">${SLMODES.map(([m, l]) => `<button class="${curMode === m ? "on" : ""}" aria-pressed="${curMode === m}" data-a="smode" data-v="${m}" ${mBusy ? "disabled" : ""}>${mBusy && curMode !== m ? '<i class="spin"></i>' : ""}${l}</button>`).join("")}</span>` : "";
+  const modeSeg = ready && linked ? `<span class="seg${mBusy ? " busy" : ""}" role="group" aria-label="Audio for online episodes" title="Audio for online episodes">${SLMODES.map(([m, l]) => `<button class="${curMode === m ? "on" : ""}" aria-pressed="${curMode === m}" data-a="smode" data-v="${m}" ${mBusy ? "disabled" : ""}>${mBusy && curMode !== m ? '<i class="spin"></i>' : ""}${l}</button>`).join("")}</span>` : "";
   const local = e.slots.filter((x) => x.local).map((x) => x.number), online = e.slots.filter((x) => !x.local && x.online).map((x) => x.number);
   const span = (ns) => !ns.length ? "" : ns.length === 1 ? String(ns[0]) : `${ns[0]}–${ns[ns.length - 1]}`;
   const allDisk = local.length > 0 && local.length === e.slots.length;
@@ -2190,6 +2202,7 @@ function loadAbout(mid) {
     if (!r || r.error) return; // the extras are a bonus: the page reads fine without them
     aboutMemo[mid] = r;
     aboutPaint(mid);
+    if (S.modal?.t === "recap" && S.modal.r.prev.id === mid) paintModal();
   }).catch(() => {});
 }
 /* The episode row's heading is a dropdown of the page's entries, in watch
@@ -2385,16 +2398,46 @@ const entryLoadedFor = () => (S.entry?.svc || null) === entrySvc();
 /* The editor (Edit entry, E): status pills, score 1–10 pills with ♥ beside
    (other AniList score formats keep a number field), progress + rewatches,
    started + finished. Every change saves as you go. */
+/* Decimal 10-point: a slider under the pills in tenths, like the Library's range
+   filters (Elias: "inbetween 1.5 and 2 … a slider like in the filters, just more
+   steps"). Pills pick the whole number, the slider fine-tunes; it saves on release. */
+const scoreTxt = (v) => v ? (Math.round(v * 10) / 10).toFixed(1) : "–";
+/* 1–10 so each whole number's knob sits right under its pill (Elias: the end
+   stopped under the 9); no score yet = knob at 1, the number says "–". */
+const sslFill = (v) => v ? `${Math.round(((v - 1) / 9) * 10000) / 100}%` : "0%";
+function scoreSlider(a, sc) {
+  const v = Math.round((+sc || 0) * 10) / 10;
+  return `<div class="ssl" style="--a:0%;--b:${sslFill(v)}"><div class="rt"><input type="range" aria-label="Score, in tenths" min="1" max="10" step="0.1" value="${v || 1}" data-a="${a}"></div><b class="ssv">${scoreTxt(v)}</b></div>`;
+}
+/* While dragging: the track, the number and the pills follow; nothing saves yet. */
+document.addEventListener("input", (e) => {
+  const r = e.target.closest?.(".ssl input");
+  if (!r) return;
+  const v = +r.value, box = r.closest(".ssl"), n = Math.floor(v);
+  box.style.setProperty("--b", sslFill(v));
+  box.querySelector(".ssv").textContent = scoreTxt(v);
+  box.parentElement.querySelectorAll(".score > button").forEach((b, i) => { b.className = i + 1 < n ? "lo" : i + 1 === n ? "pick" : ""; b.setAttribute("aria-checked", i + 1 === n); });
+  const dn = $("#dn-score");
+  if (dn && box.closest(".dn")) dn.value = v || "";
+});
+/* The favourite pill at the end of the score row (Elias picked mockup B's pill in
+   A's place, 2026-11-11): says what it is, pink when on; a tap rings and sparks. */
+const favWord = (on) => on ? "Favourite" : "Add to favourites";
+const favPill = (on, attrs) => `<button class="heart${on ? " on" : ""}" aria-pressed="${on}" ${attrs}>${ico("heart")}<span>${favWord(on)}</span></button>`;
+function favSet(b, on) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); const w = b.querySelector("span"); if (w) w.textContent = favWord(on); }
 function entryHTML(f, pending) {
   const max = f.score_max || 10, dec = (f.score_format || "").includes("DECIMAL");
   const media = f.media || {}, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
   const stp = (k, v, lab, cap) => `<span class="stepper"><button aria-label="Decrease ${lab}" data-a="ebump" data-k="${k}" data-d="-1">${ico("minus")}</button><b data-k="${k}">${v}${cap ? `<small> / ${cap}</small>` : ""}</b><button aria-label="Increase ${lab}" data-a="ebump" data-k="${k}" data-d="1">${ico("plus")}</button></span>`;
   const pills = `<div class="pills" role="radiogroup" aria-label="Status">${LISTS.map(([v, l]) => `<button class="${f.status === v ? "on" : ""}" role="radio" aria-checked="${f.status === v}" data-a="eset" data-k="status" data-v="${v}">${l}</button>`).join("")}</div>`;
   /* MyAnimeList has no favourites API (Decision 75): no heart then. */
-  const heart = media.service === "mal" ? "" : `<i class="vs"></i><button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
-  const cur = f.score ? Math.round(f.score) : 0;
-  const score = max === 10 && (!dec || !f.score || f.score === Math.round(f.score)) // 1–10 pills (decimal 10-point too, unless a .5 is set)
-    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${heart}</div>`
+  const heart = media.service === "mal" ? "" : favPill(!!f.favourite, 'data-a="efav"');
+  /* Decimal 10-point lights the whole pill under the score (7.3 → 7) and adds the
+     tenths slider (Elias: "I can't score between 1 and 2"). */
+  const cur = f.score ? (dec ? Math.floor(f.score) : Math.round(f.score)) : 0;
+  const fine = dec ? scoreSlider("escore", f.score) : "";
+  const score = max === 10 // 1–10 pills
+    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${heart}</div>${fine}`
     : `<div class="scrow"><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:96px"><span class="dim">/ ${max}</span>${heart}</div>`;
   /* Discovery (Decision 9): a show off the lists says so and offers the one-click add. */
   const off = !f.status && !pending ? `<p class="note offlist">Not on your list yet. <button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></p>` : "";
@@ -2981,7 +3024,7 @@ function setSections(s) {
     ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, off))}</div>`,
     phone: s.phone ? "" : phoneGroup(),
     data: g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
-      + g("Tools", `${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
+      + g("Tools", `${toolsBox(s)}${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
       + g("Files", `${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}`)
       + g("Help", (isPhone() ? "" : srow("Keys", "Every shortcut. Press ? anywhere for this list.", pkdo('<button class="btn" data-a="menu" data-v="keys">Show keys</button>'))) + srow("First-run tour", "Walk through the library folder and AniList again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>'))),
   };
@@ -3278,6 +3321,9 @@ function playerGroup(s) {
   const m = s.mpv || {}, hub = m.design === "on";
   const w = playWhere();
   const here = awayDevice() ? `<div class="group"><h3>On this phone</h3>${srow("Play button", "Where episodes play when you tap Play here. Online ones come through the PC.", pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
+  const rc = `<div class="group"><h3>Before a new season</h3>
+    ${srow("Season reminder", "When you start a new season, see how the last one ended: its last episode, recaps and characters.", onoff("recap_ask", "Season reminder", s.recap_ask !== false))}
+    ${srow("Remind me after", "Only if you finished the last season at least this long ago.", pick("Remind me after", "spref", "recap_after", [["1", "1 month"], ["2", "2 months"], ["3", "3 months"], ["6", "6 months"], ["12", "1 year"]], s.recap_after || "2", { off: s.recap_ask === false }))}</div>`;
   return `${here}<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. A choice here wins over it; My config leaves it to your file.</p>
     ${srow("Fullscreen", "Start every episode in fullscreen.", mpvSeg(m, "fullscreen", "Fullscreen"))}
     ${srow("Starting volume", "Where I left it: the volume the last episode ended on.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Where I left it"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
@@ -3294,7 +3340,7 @@ function playerGroup(s) {
     ${srow("Right click", "Menu: subtitles, audio, episodes and more.", mpick(m, "right", "Right click on the picture", CLICKS))}
     ${srow("Right double-click", "", mpick(m, "right_double", "Right double-click on the picture", CLICKS))}
     ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}
-    ${m.keys ? hkGroup(m) : ""}` : ""}`;
+    ${rc}${m.keys ? hkGroup(m) : ""}` : rc}`;
 }
 function subsGroup(s) {
   const m = s.mpv || {}, st = s.stream || {};
@@ -3555,6 +3601,7 @@ const srRank = (t, ql) => { const l = String(t || "").toLowerCase(), i = l.index
    preview of the picked row and its keys. */
 const SETTINGS_INDEX = [
   ["Fullscreen", "player", "mpv fullscreen window player config"], ["Starting volume", "player", "mpv volume start remember last"], ["Player design", "player", "mpv controls design skin osc interface anime hub controls"], ["Player layout", "player", "mpv look layout design style float dock skin"],
+  ["Season reminder", "player", "recap recaps season before previous remind remember new season popup last episode", "recap_ask"], ["Remind me after", "player", "recap reminder season before months wait remember"],
   ["Smooth controls while playing", "player", "mpv smooth lag laggy video sync display refresh"], ["Loaded part on the seek bar", "player", "mpv buffer cache loaded preload seek bar"], ["Skip buttons jump", "player", "mpv skip seconds forward back length"], ["Click", "player", "mpv mouse click pause picture"], ["Double-click", "player", "mpv mouse double click fullscreen"], ["Scroll wheel", "player", "mpv mouse scroll wheel volume seek"], ["Right click", "player", "mpv mouse right click menu context pause fullscreen"], ["Right double-click", "player", "mpv mouse right double click menu pause fullscreen"], ["Play / pause", "player", "mpv keys hotkeys shortcuts keyboard bind keybind input space mouse button middle side"], ["Who wins", "player", "mpv input.conf priority config settings override clash conflict"],
   ["Sub or dub", "subs", "sub dub audio language online japanese english"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dual remember", "remember_tracks"], ["Size", "subs", "mpv subtitle size bigger smaller"], ["Colour", "subs", "mpv subtitle colour color white yellow"], ["Outline", "subs", "mpv subtitle outline border thick thin"], ["Styled subtitles", "subs", "mpv subtitle styled ass replace override style font"],
   ["Skip openings", "skipping", "skip opening op intro chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed outro chapter mpv"], ["Mark them on the seek bar", "skipping", "mpv timeline chapters marks opening ending seek bar", "mpv_marks"], ["Skip times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"],
@@ -4242,7 +4289,7 @@ function airWeek(c, days, today) {
     let body = l.map(big);
     if (k === tk && l.length) { const at = l.findIndex((x) => x.t > now); body.splice(at < 0 ? l.length : at, 0, `<div class="airnow"><span>now ${esc(airTime({ t: now }))}</span></div>`); }
     const n = l.filter((x) => !x.start).length, note = n ? `${n} episode${n === 1 ? "" : "s"}` : l.length ? "starts" : "no episodes";
-    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}" style="--i:${i}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone">${ico("cal")}</div>`}</div>`; }).join("")}</div>`;
+    return `<div class="aircol${k === tk ? " is-today" : k < tk ? " is-past" : ""}" style="--i:${i}"><div class="aircolh"><b>${d.getDate()}</b><span><i>${k === tk ? "Today" : DAYS[i]}</i><small>${note}</small></span></div>${body.join("") || `<div class="airnone"><i></i></div>`}</div>`; }).join("")}</div>`;
 }
 function CalDesk() {
   const now = Date.now(), today = new Date(now), c = (S.airCal ||= { y: today.getFullYear(), m: today.getMonth(), sel: airKey(today), scope: "all", mode: lsGet("airMode", "month") });
@@ -4259,12 +4306,16 @@ function CalDesk() {
   const next = [...days.values()].flat().filter((x) => x.t > now).sort((a, b) => a.t - b.t).filter((x) => !seen.has(x.e.id) && seen.add(x.e.id)).slice(0, 4);
   const seg = (a, cur, opts) => opts.map(([v, l]) => `<button class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" data-a="${a}" data-v="${v}">${l}</button>`).join("");
   const title = week ? `${esc(md(mon))} <span>– ${esc(sun.getMonth() === mon.getMonth() ? String(sun.getDate()) : md(sun))}</span>` : `${esc(monthName(first))} <span>${c.y}</span>`;
+  /* Hidden copies of every month's title share the title's grid cell, so it
+     is always as wide as the widest one and the arrows don't move. */
+  const mons = Array.from({ length: 12 }, (_, i) => new Date(c.y, i, 28));
+  const sizers = mons.map((d) => `<span aria-hidden="true">${week ? `${esc(md(d))} <span>– ${esc(md(d))}</span>` : `${esc(monthName(d))} <span>${c.y}</span>`}</span>`).join("");
   const rel = c.sel === tk ? "Today" : c.sel === airKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)) ? "Tomorrow" : "";
   const panel = `<aside class="airside"><p class="airsel">${esc(monthName(sel))}${rel ? ` · <b>${rel}</b>` : ""}</p><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
-  return `<div class="airp2"><div class="airhead"><h1 class="hd">${title}</h1>
-    <button class="arr" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button class="arr" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button><button class="btn sm" data-a="airtoday">Today</button>
+  return `<div class="airp2"><div class="airhead"><h1 class="hd"><span>${title}</span>${sizers}</h1>
+    <span class="airnav"><button class="i" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button data-a="airtoday">Today</button><button class="i" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button></span>
     ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
-    <span class="seg" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><span class="seg" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
+    <span class="airtabs" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><i class="airdiv"></i><span class="airtabs" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
     <div class="sum airsum">${sum}</div>
     ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
 }
@@ -4678,6 +4729,27 @@ function aniLine(s) {
 }
 /* Since ani-cli 5.1 the streaming site turns plain curl away (stream.needs names curl-impersonate); ani-cli's README says how to get it. */
 const IMP_BTN = '<button class="btn sm" data-a="ext" data-v="https://github.com/pystardust/ani-cli#fixing-errors">How to install</button>';
+/* Windows sets itself up (Decision 87): one click installs what's missing through Scoop, step by step. */
+/* Each group is a choice (Elias: ani-cli and yt-dlp must be optional); Downloads needs Online episodes. */
+const toolsPicked = (ti) => (ti.groups || []).filter((g) => S.toolSkip?.[g.id] !== true).map((g) => g.id);
+const TOOL_HINT = { play: "mpv · the video player, required", online: "ani-cli · streams episodes you don't own", download: "yt-dlp · saves streamed episodes as files" };
+const toolsBtn = (ti, cls) => { const failed = ti.job?.state === "failed";
+  return `<button class="${cls}" data-a="toolsinstall"${toolsPicked(ti).length || failed ? "" : " disabled"}>${failed ? "Try again" : "Install"}</button>`; };
+const toolsShown = (ti) => ti.can && (ti.groups?.length || ["working", "failed"].includes(ti.job?.state));
+/* In the tour, Install takes Continue's place in the dialog's own buttons (inTour). */
+function toolsBox(s, inTour) {
+  const ti = s.tools_install || {}, j = ti.job || {}, busy = j.state === "working", failed = j.state === "failed";
+  if (!toolsShown(ti)) return "";
+  const mark = (st) => st === "ok" ? ico("check") : st === "working" ? '<i class="spin"></i>' : st === "failed" ? "!" : "–";
+  const picked = toolsPicked(ti);
+  const rows = busy || failed
+    ? (j.steps || []).map((x) => `<div class="${x.state === "ok" ? "ok" : x.state === "failed" ? "bad" : "opt"}"><span class="okc">${mark(x.state)}</span><b>${esc(x.name)}</b><span class="v">${x.state === "working" ? "installing…" : x.state === "ok" ? "done" : x.state === "failed" ? "failed" : ""}</span></div>`).join("")
+    : ti.groups.map((g) => { const on = picked.includes(g.id);
+      return `<div class="${on ? "ok" : "opt"}"><b>${esc(g.name)}</b><span class="v">${esc(TOOL_HINT[g.id] || "")}</span><button class="switch" role="switch" aria-checked="${on}" aria-label="Install ${esc(g.name)}" data-a="toolpick" data-v="${g.id}"></button></div>`; }).join("");
+  const foot = busy ? "Installing… you can keep going." : failed ? j.error || "Something didn't install." : "No admin rights needed. The rest can come later.";
+  const btn = busy || inTour ? "" : toolsBtn(ti, "btn pri sm");
+  return `<div class="tinst"><div class="sum2 tpick">${rows}</div><div class="tfoot"><p class="${failed ? "swarn" : ""}">${esc(foot)}</p>${btn}</div></div>`;
+}
 function tourTools(s) {
   const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? `${ani && !st.outdated ? "." : ""} It also needs ${st.needs.join(", ")}.` : "";
   return [
@@ -4749,7 +4821,7 @@ function Tour() {
     `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what you watch on this PC.</span></button></div>`,
-    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
+    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p>${toolsShown(s.tools_install || {}) ? toolsBox(s, true) : `<div class="sum2">${tourTools(s)}</div>`}`,
     `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
     `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
     `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
@@ -4759,9 +4831,10 @@ function Tour() {
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
      <div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`,
   ], s);
-  const last = b.length - 1;
+  const last = b.length - 1, ti = s.tools_install || {};
+  const toolsHere = T.step === 3 && toolsShown(ti) && ti.job?.state !== "working";
   return `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b[T.step]}
-  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button></div>`;
+  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}${toolsHere ? `<span class="aright"><button class="btn" data-a="tournext">Continue</button>${toolsBtn(ti, "btn pri")}</span>` : `<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button>`}</div>`;
 }
 /* The connect dialog (Decisions 14, 48, 75; polish TODO 191): rows like
    Settings — the show, a line of its episodes, the value on the right.
@@ -4856,8 +4929,7 @@ function Done() {
     <span class="cap">you finished</span><h2 id="dt">${esc(c.title || "a show")}</h2>
     <div class="facts">${[e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on " + acct() : "saved on this PC"].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
     <span class="cap" style="margin-top:22px">how was it?</span>
-    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : `<i class="vs"></i>
-      <button class="heart" id="dn-fav" aria-label="Favourite" aria-pressed="false" data-a="dnfav">${ico("heart")}</button>`}</div>
+    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : favPill(false, 'id="dn-fav" data-a="dnfav"')}</div><div id="dn-fine" hidden>${scoreSlider("dnfine", 0)}</div>
     <input type="hidden" id="dn-score" value=""><input type="hidden" id="dn-status" value="COMPLETED"><span id="dn-max" hidden></span>
     ${nx ? `<div class="dnnext">${poster(nx.title || nx.label, nx.poster || null, { c: "t" })}<span class="tx"><b>${esc(nx.title || nx.label)}</b><small>${esc([nx.format_label, "next in this franchise", nxOn ? "on your list" : "not on your list"].filter(Boolean).join(" · "))}</small></span>${nxOn ? "" : `<button class="btn sm" data-a="dnplan" data-v="${nx.id}">+ Planning</button>`}</div>` : ""}
   </div></div>
@@ -4873,7 +4945,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, where: WhereDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, where: WhereDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -4895,7 +4967,7 @@ function paintModal(focus) {
       }
     }
   } else {
-    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "match" || m.t === "plfd" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "match" || m.t === "recap" || m.t === "plfd" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
   else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
@@ -4924,7 +4996,7 @@ function burstAt(el) {
   for (let i = 0; i < 10; i++) {
     const p = document.createElement("i"), a = (i / 10) * Math.PI * 2, d = 26 + Math.random() * 16;
     p.className = "bp";
-    p.style.cssText = `left:${cx - 3}px;top:${cy - 3}px;background:${i % 2 ? "#e0788a" : "var(--accent-hi)"}`;
+    p.style.cssText = `left:${cx - 3}px;top:${cy - 3}px;background:${i % 2 ? "#ff4f6d" : "var(--accent-hi)"}`;
     f.appendChild(p);
     p.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d}px) scale(0)`, opacity: 0 }],
       { duration: 600 + Math.random() * 200, easing: "cubic-bezier(.2,.8,.2,1)" }).onfinish = () => p.remove();
@@ -4953,7 +5025,11 @@ function recOpen(res) {
 }
 function recDone() { api("/api/reconcile/dismiss", {}).catch(() => {}); S.rec = null; closeModal(); reload(); }
 let lastCompletionKey = null;
-function dnPills(n) { $$("#dn-pills button").forEach((b, i) => { b.className = i + 1 < n ? "lo" : i + 1 === n ? "pick" : ""; b.setAttribute("aria-checked", i + 1 === n); }); }
+function dnPills(n) {
+  $$("#dn-pills > button").forEach((b, i) => { b.className = i + 1 < n ? "lo" : i + 1 === n ? "pick" : ""; b.setAttribute("aria-checked", i + 1 === n); });
+  const f = $("#dn-fine"), sc = +$("#dn-score")?.value || 0;
+  if (f) f.innerHTML = scoreSlider("dnfine", sc);
+}
 function maybeCompletion(c) {
   const key = `${c.media_id}:${c.count}`;
   if (key === lastCompletionKey || S.modal) return;
@@ -4964,8 +5040,10 @@ function maybeCompletion(c) {
     if (!res || res.error || !res.state || S.modal?.t !== "done") return;
     const st = res.state, e = st.entry || {}, max = st.score_max || 10;
     const sc = $("#dn-score");
-    if (e.score != null && e.score > 0) { sc.value = max === 10 ? Math.round(e.score) : e.score; dnPills(max === 10 ? Math.round(e.score) : 0); }
-    if (st.is_favourite && $("#dn-fav")) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
+    const dec = (st.score_format || "").includes("DECIMAL") && max === 10;
+    if (dec) $("#dn-fine").hidden = false;
+    if (e.score != null && e.score > 0) { sc.value = max === 10 && !dec ? Math.round(e.score) : e.score; dnPills(max === 10 ? (dec ? Math.floor(e.score) : Math.round(e.score)) : 0); }
+    if (st.is_favourite && $("#dn-fav")) favSet($("#dn-fav"), true);
   }).catch(() => {});
 }
 /* A tour pick shows at once (Elias: the outline lagged a second behind the
@@ -5653,6 +5731,41 @@ function WhereDlg() {
   <p class="sub">Episodes can play on this phone, online ones too (they come through the PC). Change it any time in Settings → Player.</p>
   <div class="actions"><button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button></div>`;
 }
+/* Remember the season before (TODO 133, Decision 85): Play on the first
+   episode of a new season asks first when you finished the season before a
+   while ago (Settings → Player: on/off and how long). Real data only — your
+   finish date and score, its last episode, AniList's recaps of it, its
+   characters. The hub decides (GET /api/recap); answering it once is enough. */
+const recapOn = () => S.settings?.recap_ask !== false;
+function recapCandidate(id) {
+  if (id.startsWith("stream:")) return /:1$/.test(id);
+  const c = findEpContext(id);
+  return !!c && c.sea.episodes[0]?.id === id;
+}
+const recapFor = (id) => Promise.race([api("/api/recap?id=" + encodeURIComponent(id)).catch(() => null), new Promise((r) => setTimeout(() => r(null), 2500))]);
+const agoText = (m) => { const y = Math.floor(m / 12), r = m % 12, w = (n, x) => `${n} ${x}${n === 1 ? "" : "s"}`; return [y && w(y, "year"), r && w(r, "month")].filter(Boolean).join(" and ") + " ago"; };
+function RecapDlg() {
+  const r = S.modal.r, p = r.prev, L = r.last, x = aboutMemo[p.id];
+  loadAbout(p.id);
+  const day = new Date(p.finished + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+  const score = p.score ? `, and gave it <b>${esc(p.score)}${p.score_max !== 10 ? " / " + p.score_max : ""}</b>` : "";
+  const sNo = /^Season (\d+)$/.exec(p.label)?.[1];
+  const row = (o) => `<button class="rcpo" data-a="${o.play ? "recapplay" : "recapopen"}" data-v="${esc(o.play || o.open)}"><span class="th${o.poster ? " p" : ""}"${o.img ? ` style="background-image:url('${esc(o.img)}')"` : ""}>${o.n ? `<span class="n">${esc(o.n)}</span>` : ""}</span><span class="tx"><b>${esc(o.t)}</b><small>${o.s}</small></span><span class="go">${ico(o.play ? "play" : "chevr")}</span></button>`;
+  const rows = [];
+  if (L) rows.push({ play: L.id, img: L.thumb || p.banner || p.poster, n: `${sNo ? "S" + sNo + " · " : ""}E${String(L.number).padStart(2, "0")}`,
+    t: L.episodes > 1 ? L.title || `Episode ${L.number}` : p.title, s: esc(L.episodes > 1 ? `The last episode of ${p.label}` : "What came before this season") });
+  for (const c of r.recaps) rows.push({ play: c.play, open: c.id, img: c.poster, poster: true, t: c.title,
+    s: [c.format === "MOVIE" ? "Recap movie" : `Recap · ${esc(c.format_label)}`, c.episodes === 1 && c.duration ? `${c.duration} min` : c.episodes > 1 ? `${c.episodes} episodes` : "", c.watched ? '<span class="seen">you watched it</span>' : ""].filter(Boolean).join(" · ") });
+  const main = (x?.characters || []).filter((c) => c.role === "MAIN").slice(0, 5), side = (x?.characters || []).filter((c) => c.role !== "MAIN").slice(0, 8 - main.length);
+  const face = (c, big) => `<span class="f${big ? "" : " s"}" title="${esc(c.name)}"><i${c.image ? ` style="background-image:url('${esc(c.image)}')"` : ""}></i><small>${esc(c.name.split(" ")[0])}</small></span>`;
+  const who = main.length || side.length ? `<h3>Characters from ${esc(p.label)}</h3><div class="rcpw">${main.map((c) => face(c, true)).join("")}${side.length && main.length ? '<span class="gap"></span>' : ""}${side.map((c) => face(c)).join("")}</div>` : "";
+  const start = r.entry.label.length <= 14 ? `Start ${esc(r.entry.label)}` : "Start episode 1";
+  return `<div class="rcpart"${p.banner || p.poster ? ` style="background-image:url('${esc(p.banner || p.poster)}')"` : ""}></div><div class="rcpin">
+  <h2 id="dt"${p.label.length > 16 ? ' class="long"' : ""}>Remember ${esc(p.label)}?</h2>
+  <p class="lead">You finished ${esc(p.label)} on <b>${day}</b>, ${agoText(p.months)}${score}.</p>
+  ${rows.length ? `<h3>Watch first?</h3>${rows.map(row).join("")}` : ""}${who}
+  <div class="rcpf"><button class="quiet" data-a="recapoff">Don’t show this again</button><button class="btn pri" data-a="recapgo">${ico("play")}<span>${start}</span></button></div></div>`;
+}
 const ppVideo = () => $("#pp video");
 /* The player opens at the tap (a tap lets it play with sound and go full
    screen later), then waits for the hub: a file at once, an online episode
@@ -6106,6 +6219,10 @@ function ppClose(fromBack, quiet) {
 document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); });
 /* where: "pc" or "phone" to skip the phone's "Play where?" (Decision 71). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
+  if (recapOn() && !S.recapPass?.has(id) && recapCandidate(id)) {
+    const r = await recapFor(id);
+    if (r?.show) return openModal({ t: "recap", r, go: () => { (S.recapPass ||= new Set()).add(id); play(id, version, mode, asked, fromStart, skipOk, where); } });
+  }
   const online = id.startsWith("stream:");
   if (awayDevice() && where !== "pc") {
     const w = where || playWhere();
@@ -6209,8 +6326,8 @@ const A = {
   fpick: (v, t) => {
     const k = t.dataset.k, d = t.closest(".fdrop");
     S.lib[k] = v; saveLib();
-    if (k === "group" || isPhone()) return render(); // phones: the sheet and the Filter count follow
-    paintWall(); syncFilters();
+    if (k === "group" || isPhone()) { S.fadeNext = true; return render(); } // phones: the sheet and the Filter count follow
+    paintWall(true); syncFilters();
     for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
   },
@@ -6222,7 +6339,7 @@ const A = {
     for (const b of $$(`[data-a=genre][data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     const gd = $('.fdrop[data-k="genres"]');
     if (gd) { gd.classList.toggle("set", S.lib.genres.length > 0); gd.querySelector(".fdb b").textContent = genLabel(); }
-    saveLib(); paintWall(); syncFilters();
+    saveLib(); paintWall(true); syncFilters();
   },
   go: (v, t) => {
     /* The settings icon again acts as back. */
@@ -6263,7 +6380,8 @@ const A = {
     S.lib.tab = v; if (v === "PLAYLISTS") S.lib.pl = null; saveLib(); S.fadeNext = true; render(true); // the side list stays put
     if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();
   },
-  filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") return render(); paintWall(); syncFilters(); },
+  srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true); $$(".srev").forEach((b) => { b.classList.toggle("on", S.lib.rev); b.setAttribute("aria-pressed", S.lib.rev); }); },
+  filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") { S.fadeNext = true; return render(); } paintWall(true); syncFilters(); },
   jtab: (v) => {
     const was = S.jTab; S.jTab = v; lsSet("jTab", v);
     if (!$("#app .jr2.phone .jpages")) return render(true);
@@ -6452,6 +6570,12 @@ const A = {
   },
   calnav: (v) => { if (!S.cal) return; const d = new Date(S.cal.y, S.cal.m + +v, 1); S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); entryPaint(S.entry.f, false); },
   calday: (v) => { const k = S.cal?.k; S.cal = null; if (k && v !== (S.entry?.f?.[k] || "")) entryPatch({ [k]: v }); else calClose(); },
+  escore: (v, t) => {
+    const n = Math.round(+v * 10) / 10, had = document.activeElement === t;
+    if (Number.isNaN(n) || n === (S.entry?.f?.score || 0)) return;
+    entryPatch({ score: n }, undefined, 450);
+    if (had) $("#entrybox .ssl input")?.focus(); // arrow keys keep working after the repaint
+  },
   ebump: (v, t) => {
     const k = t.dataset.k, f = S.entry?.f;
     if (!f) return;
@@ -6516,6 +6640,11 @@ const A = {
   vpngo: () => { const go = S.modal?.go; closeModal(); go?.(true); },
   vpnno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
   wherego: (v) => { lsSet("playWhere", v); const go = S.modal?.go; closeModal(); go?.(v); },
+  /* Remember the season before (Decision 85): any answer is the answer for this season. */
+  recapgo: () => { const m = S.modal; api("/api/recap", { media_id: m.r.entry.id }).catch(() => {}); closeModal(); m.go(); },
+  recapplay: (v) => { api("/api/recap", { media_id: S.modal.r.entry.id }).catch(() => {}); closeModal(); play(v); },
+  recapopen: (v) => { closeModal(); openFranchise(+v); },
+  recapoff: () => { const m = S.modal; setToggle("recap_ask", false); toast("Turned off. Settings → Player turns it back on."); closeModal(); m.go(); },
   playwhere: (v) => { lsSet("playWhere", v || null); render(true); },
   ppclose: () => ppClose(false),
   ppfull: () => { ppFull(false); setTimeout(() => { if (PP.panel === "menu") ppPanel("menu"); }, 400); },
@@ -6786,6 +6915,25 @@ const A = {
     if (S.view === "settings") render(true);
     toast("AnimeHub didn't come back. Open it again by hand.", "err");
   },
+  toolpick: (v) => {
+    const skip = S.toolSkip = { ...(S.toolSkip || {}) }, off = skip[v] !== true;
+    skip[v] = off;
+    if (v === "online" && off) skip.download = true; // downloads run through ani-cli
+    if (v === "download" && !off) skip.online = false;
+    if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
+  },
+  toolsinstall: async () => {
+    const r = await api("/api/tools-install", { groups: toolsPicked(S.settings?.tools_install || {}) }).catch(() => ({ error: "Could not reach the hub." }));
+    if (r.error) return toast(r.error, "err");
+    const paint = () => { if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true); };
+    do {
+      await loadSettings(); paint();
+      await sleep(1500);
+    } while (S.settings?.tools_install?.job?.state === "working");
+    await loadSettings(); paint();
+    const j = S.settings?.tools_install?.job;
+    toast(j?.state === "failed" ? j.error || "Something didn't install." : "Tools installed", j?.state === "failed" ? "err" : undefined);
+  },
   aniget: async () => {
     S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);
     const r = await api("/api/anicli-get", {}).catch(() => ({ error: "Could not reach the hub." }));
@@ -6844,6 +6992,7 @@ const A = {
     }).catch(() => { if (t) t.disabled = false; toast("Could not apply — is the hub running?"); });
   },
   dnscore: (v) => { $("#dn-score").value = v; dnPills(+v); },
+  dnfine: () => {}, // the input listener above already set #dn-score; it saves on Done
   recopen: (v) => openFranchise(+v),
   dlopen: (v) => { S.menu = null; paintNav(); openFranchise(+v); },
   recadd: (v, t) => {
@@ -6855,7 +7004,7 @@ const A = {
     }).catch(() => { t.disabled = false; t.classList.remove("busy"); toast("Could not add it — try again"); });
   },
   dnplan: (v, t) => { t.disabled = true; entrySave(+v, { status: "PLANNING" }).then((r) => { t.textContent = r && !r.error ? "✓ On Planning" : "Could not add"; refreshData(); }).catch(() => { t.textContent = "Could not add"; }); },
-  dnfav: (v, t) => { const on = !t.classList.contains("on"); t.classList.toggle("on", on); t.classList.add("pop1"); if (on) burstAt(t); t.setAttribute("aria-pressed", on); },
+  dnfav: (v, t) => { const on = !t.classList.contains("on"); favSet(t, on); t.classList.remove("pop1"); void t.offsetWidth; t.classList.add("pop1"); if (on) burstAt(t); },
   dnskip: () => { const c = S.modal.c; api("/api/completion-seen", { media_id: c.media_id, count: c.count }).catch(() => {}); closeModal(); },
   dnsave: (v, t) => {
     const c = S.modal.c, patch = { status: $("#dn-status").value }, sc = $("#dn-score").value;
