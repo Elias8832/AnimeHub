@@ -279,6 +279,39 @@ class RealPlayerScripts(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
+class RealArtCopies(unittest.TestCase):
+    def test_mpv_makes_the_smaller_copies(self):
+        """Decision 86: the phone's banner copy and a PNG cover's JPEG, made by
+        the real mpv (its encoder, on Windows too)."""
+        from animehub import artsize, upscale
+        mpv = system.find_program("mpv")
+        if not mpv:
+            raise AssertionError("ANIME_HUB_REAL_TOOLS is set but mpv is missing")
+        tmp = Path(tempfile.mkdtemp(dir=support.TMP))
+        posters = tmp / "posters"
+        posters.mkdir()
+        for name, value in (("POSTERS", posters), ("CACHE", tmp)):
+            self.addCleanup(setattr, config, name, getattr(config, name))
+            setattr(config, name, value)
+        self.addCleanup(artsize._swept.clear)
+        artsize._swept.append(1)
+        for name, size in (("a.banner.jpg", "3000x632"), ("c.jpg", "460x650")):
+            src = tmp / f"{name}.png"
+            subprocess.run([mpv, "--no-config", "--really-quiet", "--frames=1", f"--o={src}", "--ovc=png", "--ofopts=update=1",
+                            f"av://lavfi:testsrc2=s={size}:d=1"], capture_output=True, timeout=60, check=True)
+            src.rename(posters / name)  # saved art keeps .jpg, whatever is inside
+        got = artsize.pick(posters / "a.banner.jpg", 2400)
+        data = got.read_bytes()
+        self.assertEqual(got.parent, artsize.folder())
+        self.assertEqual(upscale.image_dimensions(data)[0], 2400)
+        self.assertEqual(data[:2], b"\xff\xd8")
+        self.assertFalse(upscale.jpeg_looks_blank(data))
+        cover = artsize.pick(posters / "c.jpg", 2400)
+        self.assertEqual(cover.read_bytes()[:2], b"\xff\xd8")
+        self.assertEqual(upscale.image_dimensions(cover.read_bytes()), (460, 650))
+
+
+@unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
 class RealMpv(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

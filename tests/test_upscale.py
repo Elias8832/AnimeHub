@@ -208,8 +208,13 @@ class Worker(unittest.TestCase):
         banner.write_bytes(real(1900, 400))
         upscale.upscale_banner(banner, self.tool)
         first = upscale.art["changed"][banner.name]
+        upscaled_at = int(banner.stat().st_mtime)
+        os.utime(upscale.original_of(banner), (upscaled_at, upscaled_at))  # saved in the same second
         upscale.restore_originals()
         self.assertGreater(upscale.art["changed"][banner.name], first)
+        # The file's own date moves too: the library's ?v= link is the date,
+        # and a cached upscale under the old link would stay on screen.
+        self.assertNotEqual(int(banner.stat().st_mtime), upscaled_at)
 
     def test_an_old_upscale_without_its_original_is_left_alone(self):
         (self.posters / "a.banner.jpg").write_bytes(real(7600, 1600))
@@ -283,7 +288,8 @@ class Worker(unittest.TestCase):
 
 class Served(unittest.TestCase):
     def test_an_upscaled_banner_reaches_the_browser(self):
-        """Banners revalidate (same name, new picture); posters keep the day cache."""
+        """Banners revalidate (same name, new picture); a link whose ?v= is
+        the file's date stays cached (Decision 86)."""
         posters = Path(tempfile.mkdtemp(dir=support.TMP))
         self.addCleanup(setattr, config, "POSTERS", config.POSTERS)
         config.POSTERS = posters
@@ -311,7 +317,10 @@ class Served(unittest.TestCase):
         code, headers, body = get("a.banner.jpg", tag)
         self.assertEqual((code, body), (200, big))
         (posters / "a.jpg").write_bytes(real(460, 650))
-        self.assertEqual(get("a.jpg")[1]["Cache-Control"], "max-age=86400")
+        self.assertEqual(get("a.jpg")[1]["Cache-Control"], "no-cache")
+        v = int((posters / "a.jpg").stat().st_mtime)
+        self.assertEqual(get(f"a.jpg?v={v}")[1]["Cache-Control"], "max-age=31536000, immutable")
+        self.assertEqual(get(f"a.jpg?v={v - 1}")[1]["Cache-Control"], "no-cache")
 
 
 class SwapInPage(unittest.TestCase):
