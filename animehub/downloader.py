@@ -1,12 +1,13 @@
 """The ani-cli download queue."""
 
+import json
 import os
 import re
 import subprocess
 import threading
 from pathlib import Path
 
-from . import anicli, database, library, metadata, streaming, system, util
+from . import anicli, database, library, metadata, settings, streaming, system, util
 from .config import config
 
 
@@ -130,6 +131,28 @@ def _dl_mark_dub(dest, token):
             return
 
 
+def _dl_pieces(n, stem):
+    """yt-dlp's own unfinished pieces of an episode: .part, its fragments, .ytdl."""
+    return stem + ".mp4.part" in n or n.endswith(stem + ".mp4.ytdl")
+
+
+def _dl_sweep(dest, token):
+    """A finished episode keeps no pieces. When yt-dlp gives up part way,
+    ani-cli fetches the episode again with ffmpeg: the file is whole, and
+    yt-dlp's half (over a gigabyte for a film) stayed beside it."""
+    stem = f" Episode {token}"
+    try:
+        names = os.listdir(dest)
+    except OSError:
+        return
+    for n in names:
+        if _dl_pieces(n, stem):
+            try:
+                (dest / n).unlink()
+            except OSError:
+                pass
+
+
 def _dl_cleanup(dest, token, had_file, created):
     """Remove what an unfinished download left: yt-dlp's .part/.ytdl
     fragments, the subtitle, and a partial .mp4 (ffmpeg writes in place)."""
@@ -139,7 +162,7 @@ def _dl_cleanup(dest, token, had_file, created):
     except OSError:
         return
     for n in names:
-        if (stem + ".mp4.part" in n or n.endswith(stem + ".mp4.ytdl") or n.endswith(stem + ".vtt")
+        if (_dl_pieces(n, stem) or n.endswith(stem + ".vtt")
                 or (not had_file and n.endswith(stem + ".mp4"))):
             try:
                 (dest / n).unlink()
@@ -160,6 +183,15 @@ def _dl_run(job):
     created = not dest.exists()
     dest.mkdir(parents=True, exist_ok=True)
     had_file = _dl_has_file(dest, job["token"])
+    _dl_note(dict(media_id=job["media_id"], token=job["token"], mode=job.get("mode"), show=job["show"],
+                  dest=str(dest), had_file=had_file, created=created))
+    try:
+        _dl_fetch(job, link, dest, had_file, created)
+    finally:
+        _dl_note(None)
+
+
+def _dl_fetch(job, link, dest, had_file, created):
     # ani-cli hands ANI_CLI_PLAYER_FLAGS to yt-dlp/ffmpeg when downloading;
     # the user's (mpv) flags would break them.
     mode = job.get("mode") or link["mode"]
@@ -198,6 +230,7 @@ def _dl_run(job):
         job.pop("proc", None)
         cancelled = job.get("cancel")
     if not cancelled and rc == 0 and _dl_has_file(dest, job["token"]):
+        _dl_sweep(dest, job["token"])
         if mode == "dub" and not had_file:
             _dl_mark_dub(dest, job["token"])
         with _dl_cv:
@@ -224,7 +257,47 @@ def _dl_adopt(media_id, dest):
             return
         with database.db() as c:
             known = c.execute("SELECT 1 FROM shows_meta WHERE show_id=?", (show["id"],)).fetchone()
-        if not known:
-            metadata.set_match(show["id"], media_id)
+        if known:
+            return
+        # Written down first: the title matcher can't make this match later
+        # (a film's one file reads as a show, and it never gives a show a
+        # film), so a try AniList didn't answer left the folder under Needs
+        # a look for good.
+        metadata.pin_match(show["path"], media_id)
+        r = metadata.set_match(show["id"], media_id)
+        if r.get("error"):
+            util.log("matching downloaded folder failed: %s" % r["error"])
     except Exception as e:
         util.log("matching downloaded folder failed: %s" % e)
+
+
+RUNNING_KEY = "download_running"
+CLOSED = "Anime Hub closed before this finished. Download it again."
+
+
+def _dl_note(job):
+    """The download that is running, kept where a restart finds it."""
+    try:
+        settings.set_setting(RUNNING_KEY, json.dumps(job) if job else "")
+    except Exception as e:
+        util.log("download note failed: %s" % e)
+
+
+def recover():
+    """At the start: the hub that ran last ended in the middle of a download
+    (closed, crashed, power cut), and ani-cli ended with it. Its pieces go,
+    and the downloads list says so."""
+    try:
+        was = json.loads(settings.get_setting(RUNNING_KEY) or "null")
+    except ValueError:
+        was = None
+    if not isinstance(was, dict) or not was.get("dest") or not was.get("token"):
+        return
+    _dl_note(None)
+    _dl_cleanup(Path(was["dest"]), str(was["token"]), bool(was.get("had_file")), bool(was.get("created")))
+    util.log("download %s E%s was cut off by the last close" % (was.get("media_id"), was["token"]))
+    with _dl_cv:
+        _dl_state["seq"] += 1
+        _downloads.append({"id": _dl_state["seq"], "media_id": was.get("media_id"), "token": str(was["token"]),
+                           "mode": was.get("mode"), "show": was.get("show"), "show_id": f"aid:{was.get('media_id')}",
+                           "dest": was["dest"], "status": "failed", "percent": 0, "error": CLOSED})

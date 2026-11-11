@@ -614,6 +614,15 @@ def set_kept_local(show_id, keep=True):
     return {"ok": True, "kept_local": keep}
 
 
+def pin_match(path, anilist_id):
+    """A folder's release, written down before anything is fetched: every
+    metadata pass reads it (refresh_meta), so a match AniList couldn't
+    answer for now is made on the next one."""
+    overrides = load_overrides()
+    overrides[path] = {"anilistId": anilist_id}
+    (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")
+
+
 def set_match(show_id, anilist_id=None, query=None):
     """Manual match repair (TODO 28 minimal): commit a user-chosen AniList
     id (or raw search query) for a show and refetch its metadata. The
@@ -633,9 +642,7 @@ def set_match(show_id, anilist_id=None, query=None):
         return {"error": f"AniList has no media with id {anilist_id}" if anilist_id is not None
                 else f"AniList has nothing for “{query}”"}
     anilist_id = m["id"]
-    overrides = load_overrides()
-    overrides[show.get("path") or show["title"]] = {"anilistId": anilist_id}
-    (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")
+    pin_match(show.get("path") or show["title"], anilist_id)
     with database.db() as c:
         c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
     store_show_meta(show, m)
