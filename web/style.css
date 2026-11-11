@@ -282,7 +282,7 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 .card:hover .pw:after{opacity:1}.card:hover .hint{opacity:1;transform:none}
 .resume-tag{position:absolute;left:9px;top:9px;z-index:4;display:inline-flex;align-items:center;gap:5px;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:3px 10px 3px 8px;font-weight:700;font-size:12px;box-shadow:0 6px 14px -6px rgba(0,0,0,.7);font-variant-numeric:tabular-nums}
 .resume-tag .ico{width:10px;height:10px}
-.pw .fav{position:absolute;right:8px;bottom:8px;z-index:4;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#e0788a;background:rgba(0,0,0,.62)}.pw .fav .ico{width:14px;height:14px;fill:currentColor}
+.pw .fav{position:absolute;right:8px;bottom:8px;z-index:4;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#ff4f6d;background:rgba(0,0,0,.62)}.pw .fav .ico{width:14px;height:14px;fill:currentColor}
 .prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18);z-index:4}
 .prog i,.bar i,.hp i,.eprog i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-hi));transform-origin:left;border-radius:inherit}
 .card h3{font-size:14.5px;font-weight:600;margin:11px 0 5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;letter-spacing:-.01em}
@@ -406,7 +406,7 @@ aside .panel{padding:18px 20px}.note{margin-bottom:10px;color:var(--mute);font-s
 .pop2{animation:bmp .38s var(--spring)}@keyframes bmp{from{transform:scale(1.4);color:var(--accent-hi)}}
 .heart{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--mute);position:relative}
 .heart .ico{width:22px;height:22px}.heart:hover{color:var(--accent-hi);background:rgba(255,255,255,.05)}
-.heart.on{color:#e0788a}.heart.on .ico{fill:currentColor}.heart.pop1 .ico{animation:heartPop .55s var(--spring)}
+.heart.on{color:#ff4f6d}.heart.on .ico{fill:currentColor}.heart.pop1 .ico{animation:heartPop .55s var(--spring)}
 @keyframes heartPop{0%{transform:scale(.4)}60%{transform:scale(1.35)}}
 .bp{position:fixed;width:7px;height:7px;border-radius:50%;pointer-events:none;z-index:70}
 .avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-ink));color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;margin-right:10px}
@@ -888,17 +888,29 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 #entrybox .pills button{height:36px;padding:0 15px;border-radius:999px;font:600 13px var(--ui);color:var(--ink-2);background:rgba(255,255,255,.05);box-shadow:var(--edge)}
 #entrybox .pills button:hover{color:var(--ink);background:rgba(255,255,255,.09)}
 #entrybox .pills button.on{background:var(--ink);color:#111;box-shadow:none}
-.scrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:38px} /* the heart's height, so AniList and MyAnimeList (no heart) match */
+.scrow{display:flex;align-items:center;gap:12px 18px;flex-wrap:wrap;min-height:38px} /* the heart's height, so AniList and MyAnimeList (no heart) match */
 .scrow .vs{width:1px;height:26px;background:rgba(255,255,255,.12)}
 .score{display:flex;gap:6px}
 .score button{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;font:600 13px var(--mono);background:rgba(255,255,255,.05);box-shadow:var(--edge);color:var(--mute)}
 .score button:hover{transform:translateY(-2px);color:var(--ink)}
 .score button.lo{background:color-mix(in srgb,var(--accent) 30%,transparent);color:var(--ink);box-shadow:none}
+/* The decimal format's tenths slider under the pills (reuses the filters' .rt track) */
+.ssl{display:flex;align-items:center;gap:14px;margin-top:10px}
+/* knob centres from pill 1's centre (17px) to pill 10's (377px): 34px pills, 6px gaps, 16px knob */
+.ssl .rt{flex:0 1 376px;min-width:0;margin-left:9px}
+.ssl .ssv{min-width:3ch;text-align:right;font:600 15px var(--mono);color:var(--accent-hi);font-variant-numeric:tabular-nums}
 .score button.pick{background:var(--accent);color:#111;box-shadow:none;position:relative;isolation:isolate}
 .score button.pick::after{content:"";position:absolute;inset:-6px;border-radius:999px;background:var(--accent);z-index:-1;opacity:0;transform:scale(.8);animation:breathe 3s ease-in-out infinite}
 @keyframes breathe{0%,100%{opacity:0;transform:scale(.8)}50%{opacity:.3;transform:scale(1)}}
-.scrow .heart{width:38px;height:38px;background:rgba(255,128,150,.1)}
-.scrow .heart:not(.on){background:rgba(255,255,255,.05)}
+/* The favourite pill (mockup B's look in A's place): words beside a round heart */
+.scrow .heart{width:auto;height:38px;padding:0 16px 0 12px;gap:8px;display:inline-flex;align-items:center;border-radius:999px;background:rgba(255,255,255,.06);box-shadow:var(--edge);color:var(--ink);font:600 13px var(--ui);white-space:nowrap;transition:background .2s,color .2s,box-shadow .2s}
+.scrow .heart .ico{width:19px;height:19px;stroke-width:1.9;transition:fill .2s}
+.scrow .heart:hover{background:rgba(255,255,255,.11);color:var(--ink)}.scrow .heart:hover .ico{color:#ff6d86}
+.scrow .heart.on{background:#ff4f6d;color:#fff;box-shadow:0 6px 22px rgba(255,79,109,.4)}
+.scrow .heart.on:hover{background:#ff6680}.scrow .heart.on:hover .ico{color:#fff}
+.scrow .heart.on.pop1::after{content:"";position:absolute;inset:0;border-radius:999px;border:2px solid #ff4f6d;pointer-events:none;animation:favRing .7s cubic-bezier(.1,1,.3,1) forwards}
+@keyframes favRing{from{transform:scale(1);opacity:.9}to{transform:scale(1.18,1.6);opacity:0}}
+@media (prefers-reduced-motion:reduce){.scrow .heart.on.pop1::after{display:none}}
 #entrybox .stepper{border:0;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:var(--edge);height:40px}
 #entrybox .stepper button{width:40px;height:40px;color:var(--ink);border-radius:999px}
 #entrybox .stepper b{min-width:76px;font:700 26px/1 var(--display);display:inline-flex;align-items:baseline;justify-content:center;gap:2px;position:relative;top:-2px} /* Barlow sits low in its line box */
@@ -1171,7 +1183,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .lib2 .tg{position:absolute;top:8px;z-index:4;font:500 10px var(--mono);padding:3px 8px;border-radius:999px;background:rgba(14,15,18,.78);box-shadow:var(--edge);color:var(--ink)}
 .lib2 .tg.src{left:8px}.lib2 .tg.sc{right:8px}
 .lib2 .tg.src.partial,.lib2 .tg.src.none{color:var(--warn)}
-.lib2 .card h3 .fav{position:static;display:inline-grid;vertical-align:-1px;width:auto;height:auto;margin-right:5px;background:none;color:#e0788a}.lib2 .card h3 .fav .ico{width:12px;height:12px;fill:currentColor}
+.lib2 .card h3 .fav{position:static;display:inline-grid;vertical-align:-1px;width:auto;height:auto;margin-right:5px;background:none;color:#ff4f6d}.lib2 .card h3 .fav .ico{width:12px;height:12px;fill:currentColor}
 .lib2 .card .prog{left:10px;right:10px;bottom:10px;height:4px;border-radius:4px;background:rgba(0,0,0,.45);overflow:hidden}
 .lib2 .card .prog i{background:var(--accent)}
 .lib2 .card h3{display:flex;align-items:center;gap:8px}.lib2 .card .ttl{min-width:0;overflow:hidden;text-overflow:ellipsis}.lib2 .card h3 .kb{flex:none;margin-left:auto;min-width:20px;height:20px}
@@ -1661,7 +1673,6 @@ body.srch #pal{display:grid}
 .dn .facts{display:flex;align-items:center;flex-wrap:wrap;gap:10px;font:400 12px var(--mono);color:var(--ink-2)}
 .dn .sep{width:3px;height:3px;border-radius:50%;background:var(--mute);display:inline-block}
 .dn .scrow{margin-top:2px}
-.dn .heart{width:38px;height:38px;background:rgba(255,255,255,.05)}.dn .heart.on{background:rgba(255,128,150,.12)}
 .dnnext{display:flex;align-items:center;gap:14px;margin-top:20px;padding:12px;border-radius:18px;background:rgba(255,255,255,.04);box-shadow:var(--edge)}
 .dnnext .poster{width:40px;height:56px;padding:0;border-radius:9px;flex:none;font-size:0}
 .dnnext .tx{flex:1;min-width:0}.dnnext b{display:block;font:600 14px var(--ui)}.dnnext small{font:400 11px var(--mono);color:var(--mute)}
@@ -1812,6 +1823,11 @@ body.srch #pal{display:grid}
   .dialog{padding:22px 20px;width:calc(100vw - 20px)!important}
   .dn{grid-template-columns:minmax(0,1fr)}.dnp{display:none}.dn h2{font-size:40px}
   .score{flex-wrap:wrap}
+  /* the favourite pill goes under the slider, not between the pills and it */
+  #entrybox .ef:has(> .ssl){display:flex;flex-direction:column;align-items:flex-start}
+  #entrybox .ef:has(> .ssl) .scrow{display:contents}
+  #entrybox .ef > .ssl{order:2;align-self:stretch}
+  #entrybox .ef .scrow .heart{order:3;margin:14px 0 0}
   .nx2{grid-template-columns:minmax(0,1fr)}.nxa{width:100%}
   .dialog .choices{grid-template-columns:minmax(0,1fr)}
   .dialog .actions{flex-wrap:wrap}.dialog .actions .note2{flex-basis:100%}
