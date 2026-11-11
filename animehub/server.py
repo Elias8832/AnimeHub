@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
+from . import LOADED_AT, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -975,6 +975,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(res, 200 if res.get("ok") else 400)
         elif route == "/api/anicli-get":
             self.send_json(anicli.fetch_anicli())
+        elif route == "/api/tools-install":
+            groups = body.get("groups")
+            r = tools.install([g for g in groups if isinstance(g, str)] if isinstance(groups, list) else None)
+            self.send_json(r, 400 if r.get("error") else 200)
         elif route == "/api/update-check":
             self.send_json(update.check())
         elif route == "/api/update-install":
@@ -1551,7 +1555,12 @@ def main():
     lengths.start()
     threading.Thread(target=background.refresh, daemon=True).start()
     update.tidy()
+    downloader.recover()
     threading.Thread(target=update.loop, daemon=True).start()
+    # Windows (Decision 87): tools installed since this session's PATH was
+    # made are found, and a zip copy puts itself in the Start menu once.
+    system.refresh_path()
+    threading.Thread(target=tools.start_menu_once, daemon=True).start()
     # The phone remote's Wi-Fi listener, when switched on (Decision 43).
     if remote.enabled():
         remote.start(RemoteHandler)

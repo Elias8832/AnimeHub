@@ -3468,3 +3468,10 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){.mhit .mm{display:none}.mhit .kb{display:none}.mlist{max-height:260px}}
 .mres:has(.mlist),.mres:has(>.mnone2),.mres:has(>.mhit){min-height:258px} /* typing doesn't make the dialog jump in size */
 @media (max-height:860px) and (min-width:701px){.mlist{max-height:236px}.mres:has(.mlist),.mres:has(>.mnone2),.mres:has(>.mhit){min-height:236px}}
+/* Windows sets itself up (Decision 87): one list, one footer */
+.tinst{margin-top:18px}.tinst .sum2{margin-top:0}
+.tpick .v{font:400 13px var(--ui);color:var(--mute);white-space:nowrap}.tpick .switch{margin-left:auto;flex:none}.tpick .spin{width:12px;height:12px}
+.tfoot{display:flex;align-items:center;gap:14px;margin-top:12px}.tfoot p{flex:1;color:var(--mute);font-size:13px}.tfoot p.swarn{color:var(--warn)}.tfoot .btn{flex:none}
+.set2 .tinst{padding:4px 16px 12px}
+.actions .aright{display:flex;gap:10px;margin-left:auto}
+@media (max-width:700px){.tpick .v{white-space:normal}}
