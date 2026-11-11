@@ -152,6 +152,15 @@ class BackAndSwipes(unittest.TestCase):
         self.assertIn("const top = OV.pop();\n  if (top) { top.close();", APP)
         self.assertIn("if (history.state?.ov) { OV.length = 0; history.replaceState(h, \"\", navUrl()); return; }", APP)
 
+    def test_back_from_a_playlist_lands_on_the_list(self):
+        """Elias: back inside a playlist left the Library. Opening one is its own
+        step and so is the Playlists tab (always the overview); landing inside one
+        from elsewhere, back goes where you came from."""
+        self.assertIn('history.pushState({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },', APP)
+        self.assertIn('if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();', APP)
+        self.assertIn('if (S.view === "library" && plCurrent() && history.state?.plStep) pull = { kind: "back"', APP)
+        self.assertIn('S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl;', APP)
+
     def test_swipes(self):
         for sel in ('sel: ".rview"', 'sel: "#deck .deck"', 'sel: "#pal .pbox"', 'sel: ".fsheet .filters"'):
             self.assertIn(sel, APP)

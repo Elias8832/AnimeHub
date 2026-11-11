@@ -28,7 +28,8 @@ class Storage(unittest.TestCase):
     def test_create_with_a_first_show(self):
         pid = playlists.create("  Winter   nights ", show())
         self.assertEqual(playlists.all_playlists(), [{"id": pid, "name": "Winter nights", "color": None, "note": "",
-                                                      "icon": "", "pinned": False, "items": [show()]}])
+                                                      "icon": "", "pinned": False, "head": "banner", "view": "list", "dim": False,
+                                                      "items": [show()]}])
 
     def test_a_bad_first_show_makes_no_playlist(self):
         with self.assertRaises(playlists.PlaylistError):
@@ -88,6 +89,23 @@ class Storage(unittest.TestCase):
         playlists.edit(pid, {"color": None, "note": "", "icon": "", "pinned": False})
         p = playlists.all_playlists()[0]
         self.assertEqual((p["color"], p["note"], p["icon"], p["pinned"]), (None, "", "", False))
+
+    def test_each_playlist_keeps_its_own_layout(self):
+        a, b = playlists.create("a"), playlists.create("b")
+        playlists.edit(a, {"head": "cover", "view": "posters"})
+        got = {p["id"]: (p["head"], p["view"]) for p in playlists.all_playlists()}
+        self.assertEqual(got, {a: ("cover", "posters"), b: ("banner", "list")})
+        for bad in ({"head": "big"}, {"view": None}, {"view": 1}, {"dim": 1}, {"dim": "yes"}):
+            with self.assertRaises(playlists.PlaylistError):
+                playlists.edit(a, bad)
+
+    def test_a_playlist_can_grey_out_its_finished_shows(self):
+        a, b = playlists.create("a"), playlists.create("b", looks={"dim": True})
+        dims = lambda: {p["id"]: p["dim"] for p in playlists.all_playlists()}
+        self.assertEqual(dims(), {a: False, b: True})
+        playlists.edit(a, {"dim": True})
+        playlists.edit(b, {"dim": False})
+        self.assertEqual(dims(), {a: True, b: False})
 
     def test_bad_looks_are_refused(self):
         pid = playlists.create("a")

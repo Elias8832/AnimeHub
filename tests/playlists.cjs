@@ -14,6 +14,7 @@ function context(mode, entries, shows, playlists = [], untracked = []) {
   const ctx = vm.createContext({
     S: { lib: { tab: "PLAYLISTS", pl: 1 }, data: { spine: { mode, entries, untracked }, playlists, shows, streams: [] } },
     aniMode: () => mode === "anilist", showById: show, allShows: () => shows,
+    isPhone: () => !!context.phone,
     entryCard: (e) => `entry:${e.id}`, showCard: (s) => `show:${s.id}`, FMT: { TV: "TV" },
     LUCIDE: { "cloud-rain": "<path/>" }, lu: (n) => `<svg data-icon="${n}"></svg>`,
     esc: (x) => String(x), ico: (n) => `[${n}]`, poster: (t, u) => `<img alt="${t}" src="${u}">`,
@@ -80,12 +81,12 @@ test("the banner's up next is the first show not finished, with its next episode
   assert.match(html, /data-a="plopen" data-v="sid:b"/); // the banner itself opens the show
 });
 
-test("a show with no episodes here gets Open show only; all finished gets no play", () => {
+test("a show with no episodes here gets no button (the banner opens it); all finished gets no play", () => {
   const api = context("local", [{ id: "x", media_id: 5, title: "Blue Box", progress: 5, episodes: 12, status: "CURRENT" }], []);
   const html = api.plHead({ id: 1, name: "x", items: [{ ref: "aid:5", title: "Blue Box" }] });
   assert.doesNotMatch(html, /data-a="play"/);
   assert.match(html, /5 of 12 watched/);
-  assert.match(html, /btn pri big" data-a="plopen"[^>]*>Open show/);
+  assert.doesNotMatch(html, /Open show|data-a="play"/); // the whole banner opens the show
   const done = context("local", [{ id: "y", media_id: 6, title: "Done", progress: 3, episodes: 3, status: "COMPLETED" }], []);
   const h2 = done.plHead({ id: 1, name: "x", items: [{ ref: "aid:6", title: "Done" }] });
   assert.match(h2, /finished/);
@@ -214,6 +215,31 @@ test("an empty playlist says so once, in the banner, with Add a show", () => {
   assert.match(html, /no shows yet/i);
   assert.match(html, /data-a="plfocus"/);
   assert.doesNotMatch(html, /In this order|class="plhd"/);
+});
+
+test("each playlist picks its layout: banner or cover on top, a list or posters below", () => {
+  const api = context("local", [], []);
+  const banner = api.plHead(list()), cover = api.plHead(list({ head: "cover", view: "posters" }));
+  assert.match(banner, /class="plhero/);
+  assert.match(banner, /data-a="pllayout"/);
+  assert.match(banner, /class="plhd"/);
+  assert.match(cover, /class="plcover2"[\s\S]*class="plcov/);
+  assert.doesNotMatch(cover, /class="plhero|class="plhd"/); // posters have no column heads
+  assert.match(cover, /drag a poster to move it/);
+  const post = api.plItemCard({ ref: "aid:7", title: "x" }, 9, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], -1, "posters");
+  assert.match(post, /class="plit plpost"[\s\S]*class="plbig two"[^>]*>10<[\s\S]*data-a="plrow"[\s\S]*data-a="plmove"/);
+  assert.doesNotMatch(post, /class="plr"|class="plit plrow/);
+});
+
+test("a phone gets the panel: cover, name, one wide Play for the up-next show, Pin · Layout · ⋯", () => {
+  context.phone = true;
+  try {
+    const api = context("local", [], []);
+    const html = api.plHead(list({ head: "banner" }));
+    assert.match(html, /class="plpanelh"[\s\S]*data-a="plback"[\s\S]*class="plcov[\s\S]*Playlist<\/small><h1>Rainy <days><\/h1>/); // esc is a stub here
+    assert.match(html, /<div class="plbtns">[\s\S]*data-a="plpin"[\s\S]*data-a="pllayout"[\s\S]*data-a="plmenu"/);
+    assert.doesNotMatch(html, /class="plhero|class="plsec|class="plhd"/); // no banner, no PC heading: the shows follow in the panel
+  } finally { context.phone = false; }
 });
 
 test("find shows: before typing, your Watching and Planning shows not on the list; typing searches", () => {
