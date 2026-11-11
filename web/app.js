@@ -51,6 +51,10 @@ const ICONS = {
   undo: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/>'],
   folder: ['<path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2.2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'],
   up: ['<path d="M12 19V5m-6 6 6-6 6 6"/>'],
+  down: ['<path d="M12 5v14m-6-6 6 6 6-6"/>'],
+  layout: ['<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 10h17M10 10v10.5"/>'],
+  banner: ['<rect x="3" y="4.5" width="18" height="11" rx="2"/><path d="M6.5 19.5h8"/>'],
+  cover: ['<rect x="3" y="6" width="8.5" height="12" rx="1.5"/><path d="M14.5 8h6.5M14.5 12h5M14.5 16h6"/>'],
   shield: ['<path d="M12 3.5 5 6.3v5.4c0 4.3 3 7.6 7 8.8 4-1.2 7-4.5 7-8.8V6.3z"/>'],
   pause: ['<rect x="6.5" y="5" width="3.8" height="14" rx="1"/><rect x="13.7" y="5" width="3.8" height="14" rx="1"/>', 1],
   rew: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/><text x="12" y="15.3" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">10</text>'],
@@ -898,25 +902,139 @@ function plAddCands(q, p) {
   for (const s of [...(sp ? (sp.untracked || []).map(showById) : S.data.shows || []), ...(S.data.streams || [])]) if (s) push(plShowRef(s), s.title, s.poster, "");
   return out.slice(0, 8);
 }
-/* The Library's own cards (Elias: "like in the library"); a show on no
-   list and no disk keeps the title and poster saved with it. */
-function plItemCard(it, i, all) {
+/* Where a show on a playlist stands (only what the data says): its progress
+   and list from AniList, else this PC's watched files. */
+function plState(it) {
   const { show, entry } = plFind(it.ref);
-  const card = entry ? entryCard(entry, i) : show ? showCard(show, i)
-    : `<button class="card" style="--i:${Math.min(i, 24)}" data-a="plopen" data-v="${esc(it.ref)}" data-poster="${esc(it.poster || "")}"><div class="pw">${poster(it.title, it.poster)}</div><h3><span class="ttl">${esc(it.title)}</span></h3></button>`;
-  return `<div class="plit" data-ref="${esc(it.ref)}" style="--i:${Math.min(i, 24)}">${card}<span class="plno">${i + 1}</span><button class="plx" data-a="plremove" data-v="${esc(it.ref)}" aria-label="Remove ${esc(it.title)} from the playlist" title="Remove from the playlist">${ico("close")}</button>
-    <div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico("chevl")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico("chevr")}</button></div></div>`;
+  if (entry) {
+    const done = entry.progress || 0, tot = entry.episodes || 0;
+    return { show, entry, done, tot, status: entry.status || "", fin: entry.status === "COMPLETED",
+      more: [FMT[entry.format] || entry.format, entry.airing === "RELEASING" ? "airing" : entry.year].filter(Boolean).join(" · ") };
+  }
+  const tot = show ? epTotal(show) : 0, done = show ? epWatched(show) : 0;
+  return { show, entry: null, done, tot, status: tot && done >= tot ? "COMPLETED" : done ? "CURRENT" : "", fin: !!tot && done >= tot, more: show?.collection || "" };
 }
-/* An open playlist's header: one slim bar (Elias took the big cover header out). */
+/* The first show on the list you haven't finished, and the episode its Play
+   button would start (none for a show with no episodes here). */
+function plNext(p) {
+  for (let i = 0; i < p.items.length; i++) {
+    const it = p.items[i], st = plState(it);
+    if (st.fin) continue;
+    const t = st.show ? pickTarget(st.show) : null;
+    return { i, it, st, t: t && t.kind !== "rewatch" ? t : null };
+  }
+  return null;
+}
+/* One show = one row (Elias picked mockup D, 2026-11-10): its place, poster,
+   name and facts, progress, list; the row opens the show, ⋯ or a right-click
+   has the rest. The up-next show's row is lit. Touch keeps arrows. */
+function plItemCard(it, i, all, next = -1, view = "list") {
+  const st = plState(it), pct = st.tot ? Math.min(100, Math.round((100 * st.done) / st.tot)) : 0;
+  const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
+  const art = st.entry?.poster || st.show?.poster || it.poster;
+  const ctl = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>
+    <div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  /* Posters (mockup B, Elias 2026-11-11: each playlist picks): a big outlined
+     place number behind each poster, like a top-10 row. */
+  if (view === "posters") return `<div class="plit plpost${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
+    <button class="plpc" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plbig${i >= 9 ? " two" : ""}" aria-hidden="true">${i + 1}</span><span class="plpi">${poster(it.title, art)}${st.tot ? `<i class="plbar"><i style="width:${pct}%"></i></i>` : ""}</span></button>
+    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small></div>${ctl}</div>`;
+  return `<div class="plit plrow${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
+    <button class="plr" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plno">${i + 1}</span><span class="plth">${poster(it.title, art)}</span>
+    <span class="plt"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b>${st.more ? `<small>${esc(st.more)}</small>` : ""}</span>
+    <span class="plp">${st.tot ? `<i class="plbar"><i style="width:${pct}%"></i></i>` : ""}<small>${esc(prog)}</small></span>
+    <span class="pls${st.status ? " s-" + st.status.toLowerCase() : " none"}">${st.fin ? ico("check") : ""}${st.status ? esc(statusLabel(st.status)) : aniMode() && !st.entry && st.show ? "not on a list" : ""}</span></button>
+    ${ctl}</div>`;
+}
+/* An open playlist (mockup D): a banner like Home's big card, the up-next
+   show's art behind the playlist's name, what's next with Resume and Open
+   show; pin and ⋯ (edit, delete) in its corner. Under it the rows' heading
+   with the add box. */
+/* Into a playlist the page slides in from the right, back out from the left;
+   the art settles and the shows rise one after another (Elias, 2026-11-11). */
+function plSlide(dir) {
+  const m = $("#app .lmain");
+  if (!m || reduceMotion()) return;
+  m.classList.remove("plin", "plout"); void m.offsetWidth; m.classList.add(dir);
+  clearTimeout(plSlide.t); plSlide.t = setTimeout(() => m.classList.remove(dir), 900);
+}
 function plHead(p) {
-  const facts = [plCount(p.items.length), p.note].filter(Boolean).map(esc).join(" · ");
-  return `<div class="plhead" style="--plc:${esc(plColor(p))}"><button class="btn sm" data-a="plback">${ico("chevl")}Playlists</button>
-    <div class="pltitle"><h2>${plIcon(p)}<span>${esc(p.name)}</span></h2><span class="plsum">${facts}${p.items.length > 1 ? '<span class="pltip"> · drag a poster to move it</span>' : ""}</span></div>
-    <span class="fill"></span>
-    <div class="pladd"><span class="pai">${ico("plus")}</span><input id="plq" type="search" autocomplete="off" placeholder="Add a show" aria-label="Add a show to this playlist" value="${esc(S.plq || "")}"><div class="plres" id="plres"></div></div>
-    <button class="btn sm${p.pinned ? " on" : ""}" data-a="plpin" aria-pressed="${p.pinned}" title="${p.pinned ? "Shown on Home" : "Show this playlist on Home"}">${ico("pin")}${p.pinned ? "On Home" : "Pin to Home"}</button>
-    <button class="btn sm ic" data-a="pledit" aria-label="Edit the playlist" title="Name, icon, description, colour">${ico("edit")}</button><button class="btn sm ic" data-a="pldelete" aria-label="Delete the playlist" title="Delete">${ico("trash")}</button></div>`;
+  const n = p.items.length, nx = plNext(p), lead = nx?.it || p.items[0], art = lead ? plArt(lead).url : null;
+  /* Two calm groups with room between them (Elias: the first try was too dense,
+     the second too bare): who the playlist is (name, note, one facts line), then
+     what's next (label, show, its episode, the buttons). */
+  const fin = p.items.filter((it) => plState(it).fin).length;
+  const facts = [plCount(n), fin ? (fin === n ? "all finished" : `${fin} finished`) : ""].filter(Boolean).join(" · ");
+  let next = "";
+  if (!n) next = `<div class="plup"><div class="cta"><button class="btn pri big" data-a="plfocus">${ico("plus")}Add a show</button></div></div>`;
+  else if (nx) {
+    const t = nx.t, s = nx.st.show, verb = t ? (resumable(t.ep) ? "Resume" : "Play") : "";
+    const name = t && epName(s, t.sea, t.ep);
+    const sub = t ? epCode(t.sea, t.ep) + (name ? ` · ${name}` : "") : nx.st.done ? `${nx.st.done}${nx.st.tot ? ` of ${nx.st.tot}` : ""} watched` : "";
+    next = `<div class="plup"><div class="plupt"><small>up next</small><b>${esc(nx.it.title)}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</div>
+    ${t ? `<div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(t.ep.id)}">${ico("play")}<span>${verb}</span></button></div>` : ""}</div>`; // no Open show (Elias): the whole banner opens it
+  }
+  const go = (nx?.it || p.items[0])?.ref; // a click anywhere on the banner opens this show (Elias), like Home's big card
+  /* A phone gets mockup C's panel (Elias picked it for phones, 2026-11-10):
+     back, the cover, PLAYLIST, name, note, facts, one wide Play/Resume for the
+     up-next show, then Pin · Layout · ⋯; the shows sit inside the same panel
+     (Lib) with Add a show at its foot. Top (banner/cover) is a PC choice. */
+  if (isPhone()) {
+    const t = nx?.t, verb = t ? (resumable(t.ep) ? "Resume" : "Play") : "";
+    return `<div class="plpanelh"><button class="plcrumb" data-a="plback">${ico("chevl")}Playlists</button>
+    <span class="plcov${art ? "" : " noart"}"${go ? ` data-a="plopen" data-v="${esc(go)}" title="Open ${esc((nx?.it || p.items[0]).title)}"` : ""}>${art ? `<i style="--art:${esc(cssUrl(art))}"></i>` : plIcon(p) || `<span class="plico">${ico("list")}</span>`}</span>
+    <small class="pllab">${plIcon(p)}Playlist</small><h1${p.name.length > 18 ? ' class="long"' : ""}>${esc(p.name)}</h1>${p.note ? `<p class="plnote2">${esc(p.note)}</p>` : ""}<div class="plfacts">${n ? esc(facts) : "no shows yet"}</div>
+    ${t ? `<button class="btn pri big plcont" data-a="play" data-v="${esc(t.ep.id)}">${ico("play")}<span>${verb} · ${esc(nx.it.title)} ${esc(epCode(t.sea, t.ep))}</span></button>` : ""}
+    <div class="plbtns"><button class="btn${p.pinned ? " on" : ""}" data-a="plpin" aria-pressed="${!!p.pinned}">${ico("pin")}${p.pinned ? "On Home" : "Pin to Home"}</button>${n ? `<button class="btn ic" data-a="pllayout" aria-label="Layout" title="List or posters">${ico("layout")}</button>` : ""}<button class="btn ic" data-a="plmenu" data-v="${p.id}" aria-label="More for this playlist">${ico("dots")}</button></div></div>`;
+  }
+  const body = `<div class="plhc"><button class="plcrumb" data-a="plback">${ico("chevl")}Playlists</button>
+    <h1${p.name.length > 22 ? ' class="long"' : ""}>${plIcon(p)}${esc(p.name)}</h1>${p.note ? `<p class="plnote2">${esc(p.note)}</p>` : ""}<div class="plfacts">${n ? esc(facts) : "no shows yet"}</div>${next}</div>`;
+  /* Each playlist picks its top (Elias, 2026-11-11, Layout button): the banner
+     (mockup B) or a cover beside the name (mockup A); only the cover opens the show there. */
+  const top = p.head === "cover"
+    ? `<div class="plcover2" style="--plc:${esc(plColor(p))}"><span class="plcov${art ? "" : " noart"}"${go ? ` data-a="plopen" data-v="${esc(go)}" title="Open ${esc((nx?.it || p.items[0]).title)}"` : ""}>${art ? `<i style="--art:${esc(cssUrl(art))}"></i>` : (plIcon(p) || `<span class="plico">${ico("list")}</span>`)}</span>${body}`
+    : `<div class="plhero${art ? "" : " noart"}" style="--plc:${esc(plColor(p))}"${go ? ` data-a="plopen" data-v="${esc(go)}"` : ""}>${art ? `<i class="pla" style="--art:${esc(cssUrl(art))}"></i>` : ""}${body}`;
+  return `${top}
+    <div class="pltools"><button class="btn ic${p.pinned ? " on" : ""}" data-a="plpin" aria-pressed="${!!p.pinned}" aria-label="${p.pinned ? "Take off Home" : "Pin to Home"}" title="${p.pinned ? "On Home · click to take it off" : "Pin to Home"}">${ico("pin")}</button><button class="btn ic" data-a="plmenu" data-v="${p.id}" aria-label="More for this playlist" title="Edit, delete">${ico("dots")}</button></div></div>
+  ${n ? `<div class="plsec"><h2>In this order</h2>${n > 1 ? `<span class="pltip">drag a ${p.view === "posters" ? "poster" : "row"} to move it</span>` : ""}<span class="fill"></span>
+    <button class="btn" data-a="plfocus">${ico("plus")}Add a show</button><button class="btn ic" data-a="pllayout" aria-label="Layout" title="Layout: banner or cover, list or posters">${ico("layout")}</button></div>` : ""}
+  ${n && p.view !== "posters" ? `<div class="plhd" aria-hidden="true"><span>#</span><span>Show</span><span>Progress</span><span>List</span></div>` : ""}`;
 }
+/* Add shows to this playlist (Elias picked mockup A of the add-box overhaul,
+   2026-11-10, after Spotify's; then asked for it as a popup behind the Add a
+   show button): a dialog with a search field. Before you type, shows from your
+   Watching and Planning lists; typing searches the library. Each row has its
+   own Add and the dialog stays open, so several go on in one go; a show added
+   here keeps its row ("Added", click again to take it off). */
+function plFindGroups(q, p) {
+  const just = (S.plJust2 ||= new Set()), rest = { ...p, items: p.items.filter((x) => !just.has(x.ref)) };
+  if (q.trim()) { const rows = plAddCands(q, rest); return rows.length ? [{ cap: "", rows }] : []; }
+  const on = new Set(rest.items.map((x) => x.ref)), ents = S.data.spine?.entries || [];
+  const mk = (e) => ({ ref: plEntryRef(e), title: e.title, poster: e.poster || null, sub: [FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ") });
+  /* Only a few before you type (Elias: "why already so many"): what you're watching, then planning. */
+  const seen = new Set(), rank = (e) => (e.status === "CURRENT" || e.status === "REPEATING" ? 0 : 1);
+  let rows = ents.filter((e) => ["CURRENT", "REPEATING", "PLANNING"].includes(e.status)).sort((a, b) => rank(a) - rank(b)).map(mk).filter((x) => !on.has(x.ref) && !seen.has(x.ref) && seen.add(x.ref));
+  if (!ents.length) rows = (S.data.shows || []).map((x) => ({ ref: plShowRef(x), title: x.title, poster: x.poster || null, sub: x.collection || "" })).filter((x) => !on.has(x.ref));
+  return rows.length ? [{ cap: "Suggestions", rows: rows.slice(0, 4) }] : [];
+}
+function plFindRow(x, i, p) {
+  const st = plState(x), added = (S.plJust2 || new Set()).has(x.ref) && plHolds(p, x.ref); // taken off elsewhere: Add again
+  const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
+  const sub = [st.status ? statusLabel(st.status) : "", prog].filter(Boolean).join(" · ") || x.sub;
+  return `<button class="plfr${added ? " added" : ""}${i === 0 && (S.plq || "").trim() ? " sel" : ""}" data-a="plfadd" data-v="${esc(x.ref)}" data-t="${esc(x.title)}" data-p="${esc(x.poster || "")}" aria-pressed="${added}"><span class="plth">${poster(x.title, x.poster)}</span>
+    <span class="plt"><b>${esc(x.title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="plfa" title="${added ? "Added · click to take it off" : "Add"}">${ico(added ? "check" : "plus")}<i>${added ? "Added" : "Add"}</i></span></button>`;
+}
+function plFindList(p) {
+  const q = S.plq || "", groups = plFindGroups(q, p);
+  if (!groups.length) return `<p class="plnone">${q.trim() ? `Nothing in your library called “${esc(q.trim())}”${p.items.length ? " that isn't on here already" : ""}.` : "Type a name to search your library."}</p>`;
+  let i = 0;
+  return groups.map((g) => `${g.cap ? `<div class="plfcap">${g.cap}</div>` : ""}${g.rows.map((x) => plFindRow(x, i++, p)).join("")}`).join("");
+}
+const plFindHTML = (p) => `<div class="plfind" style="--plc:${esc(plColor(p))}"><h2 id="dt">Add shows</h2><p class="sub">To ${plIcon(p)}<b>${esc(p.name)}</b>. Each one goes to the end.</p>
+  <label class="plfq">${ico("search")}<input id="plq" type="search" autocomplete="off" spellcheck="false" placeholder="Search your library" aria-label="Find a show for this playlist" value="${esc(S.plq || "")}"></label>
+  <div class="plres" id="plres">${plFindList(p)}</div>
+  <div class="actions"><span class="note2"></span><button class="btn" data-a="close">Done</button></div></div>`;
+const PlFindDlg = () => { const p = plCurrent(); return p ? plFindHTML(p) : ""; };
 const plTip = (coarse) => (coarse ? "open it and use Add to playlist in its ⋯ menu" : "right-click its poster, or use ⋯ on its page");
 const plHolds = (p, ref) => p.items.some((x) => x.ref === ref);
 const plById = (v) => (v ? (S.data.playlists || []).find((p) => p.id === +v) || null : null);
@@ -950,17 +1068,12 @@ function plMenuRows(all, ref, q, just) {
 /* @pl:end */
 function plWall() {
   const cur = plCurrent();
-  if (cur) return cur.items.map(plItemCard);
+  if (cur) { const nx = plNext(cur)?.i ?? -1; return cur.items.map((it, i, all) => plItemCard(it, i, all, nx, cur.view)); }
   return [...(S.data.playlists || []).map((p, i) => plBox(p, i)), plNewBox()]; // not .map(plBox): map's third argument would become the action
 }
 function plResPaint() {
   const box = $("#plres"), p = plCurrent();
-  if (!box || !p) return;
-  const c = plAddCands(S.plq || "", p);
-  S.plCands = c;
-  box.classList.toggle("on", !!(S.plq || "").trim());
-  box.innerHTML = !(S.plq || "").trim() ? "" : c.length ? c.map((x, i) => `<button class="mi${i ? "" : " sel"}" data-a="pladdq" data-v="${i}">${poster(x.title, x.poster, { c: "t" })}<span><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ""}</span></button>`).join("")
-    : `<p class="plnone">Nothing in your library by that name${p.items.length ? " that isn't on here already" : ""}.</p>`;
+  if (box && p) box.innerHTML = plFindList(p);
 }
 /* Flip a stack by one card. Forward: the front card drops away and the next
    rises; back: the previous card comes up from below. Only data-pos changes,
@@ -1033,7 +1146,7 @@ let plDrag = null, plDropped = 0;
 document.addEventListener("pointerdown", (e) => {
   if (e.pointerType !== "mouse" || e.button !== 0 || plDrag) return;
   const it = e.target.closest?.("#wall .plit, #wall .plbox[data-pl]");
-  if (!it || e.target.closest(".plctl, .plx") || !!plCurrent() !== it.classList.contains("plit")) return;
+  if (!it || e.target.closest(".plctl, .plx, .plmore") || !!plCurrent() !== it.classList.contains("plit")) return;
   plDrag = { it, x: e.clientX, y: e.clientY, on: false, id: e.pointerId };
 });
 document.addEventListener("dragstart", (e) => { if (e.target.closest?.("#wall .plit, #wall .plbox")) e.preventDefault(); }); // the poster image's own drag
@@ -1107,7 +1220,7 @@ async function plDragEnd(keep) {
   } else if (keep && p && to !== d.from) {
     const ref = p.items[d.from].ref;
     p.items = plReorder(p.items, d.from, to);
-    paintWall();
+    render(true); // the banner's up-next and the numbers follow the new order
     if (!(await plPost({ op: "move", id: p.id, ref, by: to - d.from }))) refreshData().then(() => render(true));
   } else if (d.pending) render(true);
   if (d.pending && keep && to !== d.from) render(true);
@@ -1140,11 +1253,34 @@ function plMenuPaint() {
   sel?.classList.add("sel");
 }
 /* Right-click on a playlist box: open, edit, pin, delete. */
-function plBoxMenu(id, x, y, home) {
+function plBoxMenu(id, x, y, home, open = false) {
   const p = plById(id);
   if (!p) return;
   const m = $("#cm");
-  m.innerHTML = `<div class="cap plcapm" style="--plc:${esc(plColor(p))}">${plIcon(p)}${esc(p.name)}</div>${cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open")}${cmRow("pledit", p.id, "edit", "Edit")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home")}<div class="sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "", "", 'data-danger="1"')}`;
+  m.innerHTML = `<div class="cap plcapm" style="--plc:${esc(plColor(p))}">${plIcon(p)}${esc(p.name)}</div>${open ? "" : cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open")}${cmRow("pledit", p.id, "edit", "Edit")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home")}<div class="sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "", "", 'data-danger="1"')}`;
+  cmShow(m, x, y);
+}
+/* Layout (Elias, 2026-11-11): each playlist picks its top and how its shows
+   look; the page changes behind the menu, which stays open. */
+function plLayoutMenu(x, y) {
+  const p = plCurrent();
+  if (!p) return;
+  const seg = (key, opts) => `<div class="plseg" role="radiogroup">${opts.map(([v, l, ic]) => `<button class="${p[key] === v ? "on" : ""}" data-a="plset" data-v="${key}:${v}" role="radio" aria-checked="${p[key] === v}">${ico(ic)}${l}</button>`).join("")}</div>`;
+  const m = $("#cm");
+  m.innerHTML = `<div class="pllay" style="--plc:${esc(plColor(p))}"><div class="cap">Layout of ${esc(p.name)}</div>${isPhone() ? "" : `<small>Top</small>${seg("head", [["banner", "Banner", "banner"], ["cover", "Cover", "cover"]])}`}<small>Shows</small>${seg("view", [["list", "List", "list"], ["posters", "Posters", "grid"]])}
+    <button class="pltog" data-a="plset" data-v="dim" role="switch" aria-checked="${!!p.dim}"><span>Grey out finished shows</span><i class="switch" aria-checked="${!!p.dim}"></i></button></div>`;
+  cmShow(m, x, y);
+}
+/* A row on an open playlist (⋯ or right-click): open or play it, put it on
+   another playlist, take it off this one. */
+function plRowMenu(ref, x, y) {
+  const p = plCurrent(), it = p?.items.find((q) => q.ref === ref);
+  if (!it) return;
+  const st = plState(it), t = st.show && !st.fin ? pickTarget(st.show) : null, m = $("#cm");
+  const play = t && t.kind !== "rewatch" ? cmRow("play", t.ep.id, "play", `${resumable(t.ep) ? "Resume" : "Play"} ${esc(epCode(t.sea, t.ep))}`) : "";
+  /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
+  const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
+  m.innerHTML = `<div class="cap">${esc(it.title)}</div>${play}${cmRow("plopen", ref, "arrowr", "Open show")}${cmRow("pladd", ref, "list", "Add to another playlist", "", "", `data-r="${esc(ref)}" data-t="${esc(it.title)}" data-p="${esc(it.poster || "")}"`)}${move}<div class="sep"></div>${cmRow("plremove", ref, "close", "Remove from this playlist", "", "", 'data-danger="1"')}`;
   cmShow(m, x, y);
 }
 /* Right-click (long-press on touch) a show in Home's Continue watching or its
@@ -1496,7 +1632,8 @@ function Lib() {
   const tabs = m.tabs.length ? `<div class="tabs" data-glide="libtabs">${m.tabs.filter((t) => !t.side).map(tab).join("")}${m.tabs.some((t) => t.side) ? '<i class="vs"></i>' : ""}${m.tabs.filter((t) => t.side).map(tab).join("")}</div>` : "";
   const cur = m.tabs.find((t) => t.k === S.lib.tab), lhead = cur && !isPhone() ? `<h2 class="lh">${esc(cur.k === "ALL" ? "All shows" : cur.l)}<span class="n">${cur.n}</span></h2>` : "";
   let main;
-  if (isPl) main = `${plCur ? plHead(plCur) : `<p class="intro plintro">Your own lists of shows, in your order.<span>To add a show, ${plTip(mq("(pointer:coarse)"))}.${mq("(pointer:coarse)") ? "" : " Drag a box to move it."}</span></p>`}<div id="wall"></div>`;
+  if (isPl && plCur && isPhone()) main = `<div class="plpage" style="--plc:${esc(plColor(plCur))}">${plHead(plCur)}<div id="wall"></div><button class="plfoot" data-a="plfocus">${ico("plus")}Add a show to this playlist</button></div>`;
+  else if (isPl) main = `${plCur ? plHead(plCur) : `<p class="intro plintro">Your own lists of shows, in your order.<span>To add a show, ${plTip(mq("(pointer:coarse)"))}.${mq("(pointer:coarse)") ? "" : " Drag a box to move it."}</span></p>`}<div id="wall"></div>`;
   else if (isMatch) {
     autoSuggest(m.unmatched);
     main = `${m.unmatched.length ? `<p class="intro mintro">These folders aren't matched to AniList yet. Say which show each one is and it joins your library.${m.unmatched.length > 1 ? `<button class="btn sm" data-a="mopen" data-v="${esc(m.unmatched[0].id)}">Go through all ${m.unmatched.length}${ico("arrowr")}</button>` : ""}</p><div class="wall mwall">${m.unmatched.map(matchCard).join("")}</div>` : ""}
@@ -1518,8 +1655,10 @@ function Lib() {
     main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
   const solo = m.cold ? `<div class="lsolo"><div class="lhw"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${mrow}</div>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
+    : plCur ? (mrow ? `<div class="lsolo"><div class="lhw">${mrow}</div></div>` : "")
     : (isPl || isMatch || isUn) && lhead ? `<div class="lsolo"><div class="lhw">${lhead}${mrow}</div></div>` : "";
-  return `<div class="lib2">${notes.join("")}<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${fetching && !mrow ? `<div class="lload mload inl">${metaLoad(true)}</div>` : ""}${main}</div></div></div>`;
+  const plPh = plCur && isPhone(); // an open playlist on a phone: its panel is the page (Elias: the tabs crowded it); ‹ Playlists goes back
+  return `<div class="lib2${plPh ? " plph" : ""}">${notes.join("")}${plPh ? "" : `<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}`}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${fetching && !mrow ? `<div class="lload mload inl">${metaLoad(true)}</div>` : ""}${main}</div></div></div>`;
 }
 /* The filter controls; on the PC they live in the side list (Elias,
    2026-11-06: "most of them could easily be in the left panel"). */
@@ -1589,11 +1728,13 @@ function paintWall(fade) {
   const m = libModel();
   const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
   let html = cards.join("");
-  const empty = S.lib.tab === "PLAYLISTS" ? `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("list")}</div><b>Nothing on this playlist yet.</b><span>Type a name in the box above. ${mq("(pointer:coarse)") ? "Or open a show and use Add to playlist in its ⋯ menu." : "Or right-click a show's poster in the Library."}</span><button class="btn pri" data-a="plfocus">${ico("plus")}Add a show</button></div>` : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
+  const empty = S.lib.tab === "PLAYLISTS" ? "" /* the open playlist's banner says it's empty and has the Add button */ : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
   const lc = $(".lmain .filters .lh .n"); // the heading counts what the filters leave
   if (lc) lc.textContent = cards.length;
   const fx = fade && !reduceMotion();
-  w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !plCurrent() && !m.cold ? " plgrid" : "") + (fx ? " fade" : "");
+  const plc = S.lib.tab === "PLAYLISTS" && !m.cold ? plCurrent() : null;
+  w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !m.cold ? (plc ? (plc.view === "posters" ? " plposters" : " plrows") + (plc.dim ? " pldim" : "") : " plgrid") : "") + (fx ? " fade" : "");
+  if (plc) w.style.setProperty("--plc", plColor(plc)); else w.style.removeProperty("--plc"); // the rows take the playlist's colour
   clearTimeout(paintWall.more);
   /* A fresh wall shows its first screenful at once and the rest in batches
      over the next frames — building all ~300 cards in one go froze the page
@@ -1788,7 +1929,7 @@ function openFranchise(mid, fromShow = null) {
    the background only after you rest on it (~0.45 s), so sweeping is calm. */
 let libRest = 0;
 document.addEventListener("pointerover", (e) => {
-  const c = e.target.closest?.("#app .lib2 .card");
+  const c = e.target.closest?.("#app .lib2 .card, #app .lib2 .plit"); // a playlist's rows too (Elias, 2026-11-10)
   if (!c || e.pointerType === "touch" || c === libRest.el) return;
   clearTimeout(libRest.t); clearTimeout(libRest.a);
   const art = { blur: c.dataset.poster || null, sharp: null, color: c.dataset.color || colorOfId(+c.dataset.v) || null };
@@ -2133,6 +2274,7 @@ function cmRow(a, v, icon, label, key, extra = "", attrs = "") {
 function cmHide() {
   const m = $("#cm");
   if (m.style.display !== "block" || m.classList.contains("closing")) return;
+  cmHide.at = Date.now(); cmHide.was = m.querySelector(".pllay") ? "pllay" : "";
   if (!isPhone() || reduceMotion()) { m.style.display = "none"; return; }
   m.classList.add("closing");
   cmHide.t = setTimeout(() => { m.classList.remove("closing"); m.style.display = "none"; }, 190);
@@ -4803,7 +4945,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, fonts: FontDlg, where: WhereDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, where: WhereDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -4825,7 +4967,7 @@ function paintModal(focus) {
       }
     }
   } else {
-    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "match" || m.t === "recap" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "match" || m.t === "recap" || m.t === "plfd" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
   else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
@@ -5218,10 +5360,13 @@ function render(inPlace = false) {
   /* An in-place update leaves the entrance animation running. */
   const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
   if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !reduceMotion()); app.innerHTML = html; }
+  /* The entrance is over after ~2.5 s: drop its class, or every element a later
+     in-place update swaps in rose again (the side list's rows flickered, Elias). */
+  if (fresh) { clearTimeout(render.navInT); render.navInT = setTimeout(() => app.classList.remove("nav-in"), 2500); }
   if (railTop) { const r = $(".lnav"); if (r) r.scrollTop = railTop; }
   app._view = viewKey();
   if (S.view === "fr") frLastSig = frSig();
-  if (S.view === "library") { paintWall(!morph && S.fadeNext); S.fadeNext = false; startMetaWatch(); }
+  if (S.view === "library") { paintWall(!!S.fadeNext); S.fadeNext = false; startMetaWatch(); }
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
   strips(); ambient(); artDim();
@@ -6226,7 +6371,15 @@ const A = {
     const sid = e.local_show_id || (showById(e.stream_show_id) ? e.stream_show_id : null);
     if (sid) openShow(sid); else if (e.media_id) openFranchise(e.media_id);
   },
-  tab: (v) => { S.lib.tab = v; saveLib(); S.fadeNext = true; render(); },
+  /* The Playlists tab opens on the overview and is its own step: back goes to
+     the tab before it (Elias, 2026-11-11). Other tabs just switch. */
+  tab: (v) => {
+    if (v === "PLAYLISTS" && S.lib.tab === v && plCurrent()) return A.plback(); // inside one: same as ‹ Playlists
+    const step = v === "PLAYLISTS" && S.lib.tab !== v && S.view === "library";
+    if (step) navKeep();
+    S.lib.tab = v; if (v === "PLAYLISTS") S.lib.pl = null; saveLib(); S.fadeNext = true; render(true); // the side list stays put
+    if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();
+  },
   srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true); $$(".srev").forEach((b) => { b.classList.toggle("on", S.lib.rev); b.setAttribute("aria-pressed", S.lib.rev); }); },
   filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") { S.fadeNext = true; return render(); } paintWall(true); syncFilters(); },
   jtab: (v) => {
@@ -6887,8 +7040,13 @@ const A = {
   descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }, // phones: the summary opens in place
   frbulk: (v, t) => { const e = frEntry(); if (e) frMark(e, null, t.dataset.w === "true"); },
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
-  plgo: (v) => { S.lib.pl = +v; S.plq = ""; saveLib(); S.fadeNext = true; render(); scrollTo(0, 0); },
-  plback: () => { S.lib.pl = null; S.plq = ""; saveLib(); S.fadeNext = true; render(); },
+  /* Opening a playlist is a step back can undo (Elias: back quit the Library):
+     it gets its own history entry, and ‹ Playlists goes back through it. */
+  plgo: (v) => { navKeep(); S.lib.pl = +v; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plin"); scrollTo(0, 0); history.pushState({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },
+  plback: () => {
+    if (history.state?.plStep && history.state.pl === S.lib.pl) return history.back(); // the list we came from, scrolled where it was
+    S.lib.pl = null; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plout"); navKeep();
+  },
   plopen: (v) => {
     const { show } = plFind(v), id = v.startsWith("aid:") ? +v.slice(4) : null;
     if (id && (aniMode() || !show)) return openFranchise(id);
@@ -6896,6 +7054,20 @@ const A = {
   },
   plmove: async (v, t) => { if (await plPost({ op: "move", id: S.lib.pl, ref: v, by: +t.dataset.d })) render(); },
   plremove: (v) => { const p = plCurrent(); if (p) plRemove(p, v); },
+  plrow: (v, t) => { const r = t.getBoundingClientRect(); plRowMenu(v, r.right - 8, r.bottom + 4); },
+  pllayout: (v, t) => {
+    if (cmHide.was === "pllay" && Date.now() - cmHide.at < 300) return; // a second click on Layout closes it (Elias); this click already did
+    const r = t.getBoundingClientRect(); plLayoutMenu(r.right - 260, r.bottom + 8);
+  },
+  plset: async (v) => {
+    const p = plCurrent(), [k, raw] = v.split(":"), val = k === "dim" ? !p?.dim : raw; // dim is a switch: each press flips it
+    if (!p || p[k] === val) return;
+    p[k] = val; render(true); // at once; the save follows
+    $$("#cm .plseg button").forEach((b) => { const on = b.dataset.v.split(":")[0] !== k ? b.classList.contains("on") : b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+    $$("#cm .pltog, #cm .pltog .switch").forEach((b) => b.setAttribute("aria-checked", !!p.dim));
+    if (!(await plPost({ op: "edit", id: p.id, [k]: val }))) refreshData().then(() => render(true));
+  },
+  plmenu: (v, t) => { const r = t.getBoundingClientRect(); plBoxMenu(v, r.right - 8, r.bottom + 4, false, true); },
   /* From the ⋯ menu the row is already hidden (no size): open where that menu was. */
   pladd: (v, t) => {
     const r = t.getBoundingClientRect(), m = $("#cm"), z = zoomGet() / 100;
@@ -6921,13 +7093,17 @@ const A = {
     if (S.view === "library" || S.view === "home") render(true);
     if (plPicking()) plMenuPaint();
   },
-  pladdq: async (v) => {
-    const p = plCurrent(), it = S.plCands?.[+v];
-    if (!p || !it) return;
-    if (await plPost({ op: "add", id: p.id, item: { ref: it.ref, title: it.title, poster: it.poster } })) {
-      render(true); plResPaint();
-      const q = $("#plq"); q?.focus(); toast(`Added ${it.title}`);
-    }
+  /* Add from the find section; a second click takes it off again. The box keeps its focus and words. */
+  plfadd: async (v, t) => {
+    const p = plCurrent(), just = (S.plJust2 ||= new Set());
+    if (!p) return;
+    const typing = document.activeElement?.id === "plq";
+    if (plHolds(p, v)) { if (!(await plPost({ op: "remove", id: p.id, ref: v }))) return; just.delete(v); }
+    else { if (!(await plPost({ op: "add", id: p.id, item: { ref: v, title: t.dataset.t, poster: t.dataset.p || null } }))) return; just.add(v); }
+    const y = $("#plres")?.scrollTop || 0; // the list keeps its place while you add several
+    render(true); plResPaint();
+    const box = $("#plres"); if (box) box.scrollTop = y;
+    if (typing) $("#plq")?.focus({ preventScroll: true });
   },
   plflip: (v, t) => { const st = t.closest(".plstack"); if (st) plFlip(st, 1); },
   cwhide: async (v) => { const s = showById(v); if (await contHide(v, true)) toastUndo(`${s?.title || "Show"} removed until you play it again`, () => contHide(v, false)); },
@@ -6944,7 +7120,7 @@ const A = {
     if (o) g.scrollTop = o.getBoundingClientRect().top - g.getBoundingClientRect().top - 40;
   },
   plicon: (v) => { plDlgRead(); S.modal.icon = v; const y = $(".plicons")?.scrollTop || 0; paintModal(); const g = $(".plicons"); if (g) g.scrollTop = y; }, // the list is long: stay where the click was
-  plfocus: () => { const q = $("#plq"); if (q) { q.scrollIntoView({ block: "center", behavior: "smooth" }); q.focus({ preventScroll: true }); } },
+  plfocus: () => { if (!plCurrent()) return; S.plq = ""; S.plJust2 = null; openModal({ t: "plfd" }); },
   plcol: (v) => { // in place, so the icons fade to the colour and the list keeps its scroll
     S.modal.color = v || null;
     const g = $(".plicons");
@@ -6972,7 +7148,7 @@ const A = {
     if (!p || !(await plPost({ op: "delete", id: p.id }))) return;
     if (wasOpen) { S.lib.pl = null; saveLib(); S.fadeNext = true; render(); } else render(true);
     toastUndo(`Deleted ${p.name}`, async () => {
-      const r = await plPost({ op: "create", name: p.name, looks: { color: p.color, note: p.note, icon: p.icon, pinned: p.pinned }, items: p.items, at });
+      const r = await plPost({ op: "create", name: p.name, looks: { color: p.color, note: p.note, icon: p.icon, pinned: p.pinned, head: p.head, view: p.view, dim: !!p.dim }, items: p.items, at });
       if (!r) return;
       if (wasOpen && S.view === "library") { S.lib.pl = r.created; saveLib(); render(); } else render(true);
     });
@@ -6998,7 +7174,7 @@ const A = {
 /* ---------- events ---------- */
 const isField = (t) => /^(SELECT|INPUT)$/.test(t.tagName);
 document.addEventListener("click", (e) => {
-  if ($("#cm").style.display === "block" && !$("#cm").classList.contains("closing") && !(plPicking() && e.target.closest?.("#cm"))) { cmHide(); ovClosed("cm"); }
+  if ($("#cm").style.display === "block" && !$("#cm").classList.contains("closing") && !((plPicking() || $("#cm .pllay")) && e.target.closest?.("#cm"))) { cmHide(); ovClosed("cm"); }
   if (S.menu && !e.target.closest(".rel,#srb,#pal .pbox")) { S.menu = null; paintNav(); }
   if (S.cal && !e.target.closest(".datef")) calClose();
   const t = e.target.closest("[data-a]");
@@ -7010,21 +7186,19 @@ document.addEventListener("keydown", (e) => {
   else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.target.classList?.contains("plbox") && e.target.querySelector(".plstack[data-n]")) { e.preventDefault(); plFlip(e.target.querySelector(".plstack[data-n]"), e.key === "ArrowUp" ? 1 : -1); }
   else if (e.key === "Enter" && e.target.classList?.contains("plbox") && e.target.dataset.pl) { e.preventDefault(); A[e.target.dataset.a](e.target.dataset.v); }
   else if (e.target.id === "plq") {
-    const rows = $$("#plres .mi"), cur = rows.findIndex((r) => r.classList.contains("sel"));
+    const rows = $$("#plres .plfr"), cur = rows.findIndex((r) => r.classList.contains("sel"));
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const n = (cur + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % (rows.length || 1);
       rows.forEach((r, k) => r.classList.toggle("sel", k === n));
-    } else if (e.key === "Enter" && rows.length) { e.preventDefault(); A.pladdq(rows[Math.max(0, cur)].dataset.v); }
-    else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); S.plq = ""; e.target.value = ""; plResPaint(); e.target.blur(); }
+    } else if (e.key === "Enter" && rows.length) { e.preventDefault(); const b = rows[Math.max(0, cur)]; A.plfadd(b.dataset.v, b); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); if (e.target.value) { S.plq = ""; e.target.value = ""; plResPaint(); } else closeModal(); }
   }
 }, true);
 document.addEventListener("input", (e) => {
   if (e.target.id === "plq") { S.plq = e.target.value; plResPaint(); }
   else if (e.target.id === "fontq" && S.modal?.t === "fonts") { S.modal.q = e.target.value; $("#fontlist").innerHTML = fontListRows(); }
 });
-document.addEventListener("focusout", (e) => { if (e.target.id === "plq") setTimeout(() => { if (!document.activeElement?.closest?.(".pladd")) $("#plres")?.classList.remove("on"); }, 150); });
-document.addEventListener("focusin", (e) => { if (e.target.id === "plq" && (S.plq || "").trim()) plResPaint(); });
 document.addEventListener("change", (e) => {
   const t = e.target.closest("[data-a]");
   if (t && isField(t) && A[t.dataset.a]) A[t.dataset.a](t.value, t, e);
@@ -7136,6 +7310,8 @@ document.addEventListener("contextmenu", (e) => {
   const pb = e.target.closest("[data-a=play][data-v], [data-a=deckplay][data-v]");
   if (pb && cmOther(pb.dataset.v)) { e.preventDefault(); playMenu(pb, e.clientX, e.clientY); return; }
   /* A playlist box (Library or Home): its own menu (Decision 64). */
+  const row = e.target.closest("#wall .plit[data-ref]");
+  if (row) { e.preventDefault(); plRowMenu(row.dataset.ref, e.clientX, e.clientY); return; }
   const box = e.target.closest(".plbox[data-pl]");
   if (box) { e.preventDefault(); plBoxMenu(box.dataset.pl, e.clientX, e.clientY, box.dataset.a === "plgoto"); return; }
   /* A poster in the Library: add it to a playlist (Decision 64). */
@@ -7495,7 +7671,8 @@ document.addEventListener("touchstart", (e) => {
   } else if (t.closest?.(".rbar") && !t.closest("button")) pull = { kind: "rbar", y };
   else if (isPhone() && inApp && x > 24 && x < innerWidth - 24) { // the outer edges are the system's back gesture
     const ptrOK = scrollY <= 0 && ["home", "library", "history", "stats", "week"].includes(S.view) && !ptrBusy;
-    if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK, jp: !!t.closest(".jr2.phone .jpages") };
+    if (S.view === "library" && plCurrent() && history.state?.plStep) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
+    else if (["home", "library", "history", "stats", "week"].includes(S.view)) pull = { kind: "tab", x, y, t: Date.now(), ptrOK, jp: !!t.closest(".jr2.phone .jpages") };
     else if (["show", "fr", "settings"].includes(S.view) && history.length > 1) pull = { kind: "back", x, y, t: Date.now(), ptrOK };
   }
 }, { passive: true });
@@ -7646,8 +7823,11 @@ const grab = '<i class="grabber" aria-hidden="true"></i>';
 
 /* ---------- browser history (back/forward, mouse side buttons, #deep links) ---------- */
 let navSeeded = false;
-const navSnap = () => ({ view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY });
+const navSnap = () => ({ view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY,
+  lt: S.view === "library" ? S.lib.tab : undefined, pl: S.view === "library" && S.lib.tab === "PLAYLISTS" ? S.lib.pl ?? null : undefined });
 const navUrl = () => location.pathname + location.search + (S.view === "show" ? "#show=" + encodeURIComponent(S.showId) : S.view === "fr" ? "#f=" + S.fr.eid : VIEWS.includes(S.view) && S.view !== "home" ? "#" + S.view : "");
+/* The page as it is now, into its own history entry (keeps how it was reached). */
+const navKeep = () => history.replaceState({ ...history.state, ...navSnap() }, "", navUrl());
 function pushNav() {
   const h = navSnap();
   /* Going somewhere from inside a layer (a result in search, Details in the
@@ -7656,9 +7836,16 @@ function pushNav() {
   if (navSeeded) history.pushState({ ...h, inApp: true }, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
 }
 function applyNav(h) {
-  S.navIn = true; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";
+  const stay = S.view === "library" && h.view === "library"; // a step inside the Library: the side list stays put (Elias)
+  const wasPl = stay && !!plCurrent();
+  S.navIn = !stay; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";
   if (S.view === "fr") S.fr = { eid: h.fr, page: frKnown(h.fr), err: null };
-  clearSearch(); render();
+  if (S.view === "library" && h.lt) { // back/forward between a Library tab, the playlists and one playlist
+    if (h.pl && !(S.data.playlists || []).some((p) => p.id === h.pl)) h.pl = null; // deleted since
+    S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true;
+  }
+  clearSearch(); render(stay);
+  if (stay && wasPl !== !!plCurrent()) plSlide(wasPl ? "plout" : "plin");
   if (S.view === "fr") frLoad(h.fr);
   history.replaceState(h, "", navUrl());
   scrollTo(0, h.scroll || 0);
@@ -7686,7 +7873,7 @@ reload().then(() => {
   const hashRel = hashShow && decodeURIComponent(hashShow[1]).match(/^aid:(\d+)$/);
   if (hashRel) { openFranchise(+hashRel[1]); return; } // an old #show=aid:<id> link
   if (hashShow && showById(decodeURIComponent(hashShow[1]))) { S.showId = decodeURIComponent(hashShow[1]); S.view = "show"; const s = showById(S.showId), t = pickTarget(s); S.seasonIdx = t ? Math.max(0, s.seasons.indexOf(t.sea)) : 0; S.navIn = true; render(); }
-  else if (hashView) { S.view = hashView[1]; S.navIn = true; render(); }
+  else if (hashView) { S.view = hashView[1]; S.navIn = true; render(); history.replaceState(navSnap(), "", navUrl()); }
 }).then(pollNow).then(loadSettings).then(maybeTour).then(maybeAskUpdates);
 
 addEventListener("error", (e) => { if (e.target === window) toast("UI error: " + e.message); });

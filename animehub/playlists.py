@@ -5,7 +5,8 @@ it is, the same way curation does: "aid:<AniList id>", else "sid:<library
 show id>", so it survives connecting or leaving AniList. Each item keeps its
 title and poster, so a show that is on no list and on no disk still has a card.
 A playlist has a name and, if the user sets them, a colour, a short note, an
-icon (a Lucide icon's name, drawn by the page) and a pin to Home; the lists
+icon (a Lucide icon's name, drawn by the page), a pin to Home and how its
+page looks (head: "banner" or "cover", view: "list" or "posters"); the lists
 themselves are in the user's order too."""
 
 import re
@@ -16,6 +17,7 @@ REF_RE = re.compile(r"^(aid:[0-9]+|sid:.+)$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 ICON_RE = re.compile(r"^[a-z0-9-]{1,32}$")
 NAME_MAX, NOTE_MAX = 60, 140
+HEADS, VIEWS = ("banner", "cover"), ("list", "posters")  # the first is the default
 
 
 class PlaylistError(ValueError):
@@ -24,7 +26,7 @@ class PlaylistError(ValueError):
 
 def all_playlists():
     with database.db() as c:
-        lists = c.execute("SELECT id, name, color, note, icon, pinned FROM playlists "
+        lists = c.execute("SELECT id, name, color, note, icon, pinned, head, view, dim FROM playlists "
                           "ORDER BY pos, id").fetchall()
         items = c.execute("SELECT playlist_id, ref, title, poster FROM playlist_items "
                           "ORDER BY playlist_id, pos").fetchall()
@@ -32,8 +34,9 @@ def all_playlists():
     for pid, ref, title, poster in items:
         by_list.setdefault(pid, []).append({"ref": ref, "title": title, "poster": poster})
     return [{"id": pid, "name": name, "color": color, "note": note or "", "icon": icon or "",
-             "pinned": bool(pinned), "items": by_list.get(pid, [])}
-            for pid, name, color, note, icon, pinned in lists]
+             "pinned": bool(pinned), "head": head if head in HEADS else HEADS[0],
+             "view": view if view in VIEWS else VIEWS[0], "dim": bool(dim), "items": by_list.get(pid, [])}
+            for pid, name, color, note, icon, pinned, head, view, dim in lists]
 
 
 def _name(raw):
@@ -66,10 +69,16 @@ def _looks(body):
         if v not in (None, "") and not (isinstance(v, str) and ICON_RE.match(v)):
             raise PlaylistError("That isn't an icon.")
         out["icon"] = v or ""
-    if "pinned" in body:
-        if not isinstance(body["pinned"], bool):
-            raise PlaylistError("'pinned' must be true or false.")
-        out["pinned"] = int(body["pinned"])
+    for key in ("pinned", "dim"):
+        if key in body:
+            if not isinstance(body[key], bool):
+                raise PlaylistError(f"'{key}' must be true or false.")
+            out[key] = int(body[key])
+    for key, ok in (("head", HEADS), ("view", VIEWS)):
+        if key in body:
+            if body[key] not in ok:
+                raise PlaylistError(f"'{key}' is one of: {', '.join(ok)}.")
+            out[key] = body[key]
     return out
 
 
@@ -138,7 +147,7 @@ def create(name, item=None, looks=None, items=(), at=None):
 
 
 def edit(pid, body):
-    """Name, colour, note, icon, pin: whichever the body carries."""
+    """Name, colour, note, icon, pin, head, view, dim: whichever the body carries."""
     looks = _looks(body)
     if "name" in body:
         looks["name"] = _name(body["name"])
