@@ -265,7 +265,13 @@ def restore_originals():
                 dims = _dims(banner)
                 if (dims and dims[0] >= UPSCALED_WIDTH and banner.name in rec
                         and rec[banner.name].get("size") == banner.stat().st_size):
+                    was = int(banner.stat().st_mtime)
                     system.replace(orig, banner)
+                    # The original was saved in the second the upscale was
+                    # written: a later date keeps their ?v= links apart, or a
+                    # browser would keep showing the upscale (Decision 86).
+                    t = max(time.time(), was + 1)
+                    os.utime(banner, (t, t))
                     _changed(banner)
                 else:
                     orig.unlink()
@@ -273,6 +279,8 @@ def restore_originals():
                 continue  # still upscaled: keep its record
             rec.pop(banner.name, None)
         _save_records(rec)
+    from . import artsize  # artsize imports this module
+    artsize.clear()
 
 
 # The worker: one banner at a time (each run fills the GPU), paused while

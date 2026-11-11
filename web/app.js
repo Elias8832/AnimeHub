@@ -3768,6 +3768,16 @@ function paintKeys() {
   box.classList.remove("leave"); box.innerHTML = html; keysLast = html;
   if (opening) { box.classList.remove("in"); void box.offsetWidth; box.classList.add("in"); }
 }
+/* The search results alone. Typing and AniList's answers redraw only
+   these: the whole bar (paintNav) measured the page twice per letter,
+   ~40 ms each time on a phone, against ~3 ms for the results themselves. */
+function paintSr() {
+  const sr = $("#sr"), srHad = !!sr.firstElementChild;
+  const keep = $("#sr .mi.sel")?.dataset.i;
+  sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";
+  if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
+  if (S.menu === "sr") srPreview(keep != null && srPv[keep] ? keep : 0);
+}
 function paintNav() {
   paintTabbar(); paintSide(); paintTop();
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
@@ -3777,11 +3787,7 @@ function paintNav() {
   $("#setb").classList.toggle("on", cur === "settings");
   const ph = alSearchable() ? "search library or AniList" : "search your library";
   $("#q").placeholder = ph; $("#srph").textContent = ph;
-  const sr = $("#sr"), srHad = !!sr.firstElementChild;
-  const keep = $("#sr .mi.sel")?.dataset.i;
-  sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";
-  if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
-  if (S.menu === "sr") srPreview(keep != null && srPv[keep] ? keep : 0);
+  paintSr();
   const wasOpen = document.body.classList.contains("srch");
   document.body.classList.toggle("srch", S.menu === "sr");
   fitPal();
@@ -4250,7 +4256,16 @@ function paintSide() {
    their ancestors (fixed would then mean "fixed to the page"), so both are
    drawn in their own layer outside #app: copies whose data-a actions work
    the same. Redrawn after every render and patch. */
+/* What the page shows, as classes on <body> for the CSS (pg-*). They were
+   body:has(...) rules: every change anywhere on the page then re-checked
+   the whole page's styles, ~300 ms of a phone's Library switch (TODO 213). */
+const PAGE_MARKS = [["pg-fr", ".frpage"], ["pg-sfr", ".sp2.frpage"], ["pg-uph", ".home2.has-uph"],
+  ["pg-back", ".sp2 .backbtn:not([data-a=rmtclose]), .set2 .sback"]];
+function pageMarks() {
+  for (const [cls, sel] of PAGE_MARKS) document.body.classList.toggle(cls, !!document.querySelector(sel));
+}
 function paintPortals() {
+  pageMarks();
   const el = $("#portal");
   if (!el) return;
   let html = "";
@@ -6350,13 +6365,13 @@ const A = {
      details quietly, once typing has paused; before the list is here it is
      AniList's own search, with the spinner. */
   alsearch: async () => {
-    const mine = S.alq = S.q.trim(); S.alBusy = true; paintNav();
+    const mine = S.alq = S.q.trim(); S.alBusy = true; paintSr();
     let local = false;
     try {
       const r = await api("/api/title-search", { query: mine });
       if (S.alq !== mine) return; // a newer search took over
       if (r?.ready && r.hits?.length) {
-        local = true; S.alres = r.hits; S.alBusy = false; paintNav();
+        local = true; S.alres = r.hits; S.alBusy = false; paintSr();
         if (!r.hits.some((x) => x.stub)) return;
         await new Promise((ok) => setTimeout(ok, 300)); // still typing? spare AniList the request
         if (S.alq !== mine || S.q.trim() !== mine) return;
@@ -6369,7 +6384,7 @@ const A = {
     S.alBusy = false;
     if (local && !res.length) return; // AniList busy or offline: the list's rows stay
     S.alres = res;
-    if (S.q.trim() === mine) paintNav();
+    if (S.q.trim() === mine) paintSr();
   },
   catpick: (v) => {
     const x = S.alres[+v];
@@ -7215,9 +7230,10 @@ document.addEventListener("pointerover", (e) => { const m = e.target.closest?.("
 const q = $("#q");
 let alTimer = 0;
 q.addEventListener("input", () => {
+  const open = S.menu === "sr";
   S.q = q.value; S.menu = "sr";
   if (!S.q.trim()) { S.alres = null; S.alq = null; }
-  paintNav();
+  if (open) paintSr(); else paintNav();
   clearTimeout(alTimer);
   if (alSearchable() && S.q.trim().length >= 2) alTimer = setTimeout(() => { if (S.q.trim() !== S.alq) A.alsearch(); }, 150);
 });

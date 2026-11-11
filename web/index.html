@@ -16,6 +16,8 @@
 <link rel="preload" href="/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/barlow-condensed-700-latin.woff2" as="font" type="font/woff2" crossorigin>
+<!-- Artwork sized for a phone (Decision 86): its longest side in device pixels; the PC sends it smaller copies of pictures wider than that. A PC or tablet says nothing and gets every picture as it is. -->
+<script>try{var ph=matchMedia("(pointer:coarse)").matches&&Math.min(screen.width,screen.height)<600;document.cookie="artw="+(ph?Math.round(Math.max(screen.width,screen.height)*(devicePixelRatio||1))+"; max-age=31536000":"; max-age=0")+"; path=/; SameSite=Strict"}catch(e){}</script>
 <!-- Appearance (Decision 38): device preferences, applied before the stylesheet so nothing flashes. -->
 <script>try{var d=document.documentElement,g=function(k){return JSON.parse(localStorage.getItem(k))};d.dataset.motion=g("motion")||"full";d.dataset.art=g("art")||"full";d.dataset.bar=g("bar")||"tabs";d.dataset.grain=g("grain")===false?"off":"on";var a=g("accent");if(a&&a!=="follow")d.style.setProperty("--fixed",a);var f=g("fontCss");if(f){if(f.ui)d.style.setProperty("--ui",f.ui);if(f.display)d.style.setProperty("--display",f.display);if(f.css){var st=document.createElement("style");st.id="ufonts";st.textContent=f.css;document.head.appendChild(st)}}}catch(e){}</script>
 <link rel="stylesheet" href="/style.css?v=auto">

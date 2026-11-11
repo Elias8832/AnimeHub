@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
+from . import LOADED_AT, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -211,24 +211,30 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_file_body(body, ctype, cache)
 
-    def send_banner(self, path):
-        """A banner can be swapped for its upscaled version under the same
-        name, so the browser asks again each time (a bodiless 304 while
-        unchanged) instead of keeping the old picture for a day."""
+    def send_art(self, path):
+        """A poster or banner, sized for the screen that asks (artsize,
+        Decision 86). A banner can be swapped for its upscaled version under
+        the same name; the page's ?v= is the file's date, so a link whose ?v=
+        matches is that picture for good and stays in the browser's cache.
+        Any other link asks again each time (a bodiless 304 while unchanged)."""
         try:
             st = Path(path).stat()
         except OSError:
             self.send_error(404)
             return
-        tag = '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+        tier = artsize.tier_of(self.headers.get("Cookie"))
+        tag = '"%x-%x-%x"' % (st.st_mtime_ns, st.st_size, tier or 0)
+        v = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+        cache = "max-age=31536000, immutable" if v == str(int(st.st_mtime)) else "no-cache"
         if self.headers.get("If-None-Match") == tag:
             self.send_response(304)
             self.send_header("ETag", tag)
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", cache)
+            self.send_header("Vary", "Cookie")
             self.end_headers()
             return
         try:
-            body = system.read_bytes(path)
+            body = system.read_bytes(artsize.pick(path, tier))
         except OSError:
             self.send_error(404)
             return
@@ -236,7 +242,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("ETag", tag)
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache)
+        self.send_header("Vary", "Cookie")
         self.end_headers()
         self.wfile.write(body)
 
@@ -534,12 +541,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json(about)
         elif route.startswith("/img/"):
-            name = os.path.basename(route)
-            p = config.POSTERS / name
-            if name.endswith(".banner.jpg"):
-                self.send_banner(p)
-            else:
-                self.send_file(p, "image/jpeg", cache=True)
+            self.send_art(config.POSTERS / os.path.basename(route))
         elif route == "/api/phone/video":
             # The phone player's file (Decision 71): by episode id, never a path.
             q = parse_qs(urlparse(self.path).query)

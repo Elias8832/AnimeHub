@@ -55,7 +55,7 @@ class PhoneLayout(unittest.TestCase):
 
     def test_show_page_stays_clean(self):
         # TODO 140: no logo over the art, one row of tabs, a ring that isn't cut off, a shade behind Play.
-        self.assertIn("body:has(.frpage) #nav .brand{visibility:hidden}", CSS)
+        self.assertIn("body.pg-fr #nav .brand{visibility:hidden}", CSS)
         self.assertIn(".frpage .tabs2{display:flex;flex-direction:row", CSS)
         self.assertIn(".sp2 .ep.resume .epa:after", CSS)
         self.assertIn(".pbar:before", CSS)
@@ -179,7 +179,7 @@ class ShowPagePhone(unittest.TestCase):
         self.assertIn(".sp2.frpage .hp{display:block;grid-column:1;grid-row:1/3;align-self:end;width:auto;height:auto;overflow:visible", CSS)
         self.assertIn(".sp2.frpage .eps.strip{flex-direction:row", CSS)
         self.assertIn('descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }', APP)
-        self.assertIn("body:has(.sp2.frpage) .cv-art{opacity:0!important}", CSS)
+        self.assertIn("body.pg-sfr .cv-art{opacity:0!important}", CSS)
 
     def test_select_bar_sits_on_the_dock(self):
         # Elias, 2026-11-10: the select bar was drawn behind the dock on phones
@@ -298,8 +298,8 @@ class PhonePolish(unittest.TestCase):
     def test_home_hero_meets_a_plain_background(self):
         # Elias: scrolling Home showed an edge under the hero — the blurred art and the
         # accent glow behind the page were lighter than the colour the hero fades to
-        self.assertIn("body:has(.home2.has-uph) #canvas>i:not(.cv-grain){opacity:0!important}", CSS)
-        self.assertIn("body:has(.home2.has-uph) #canvas{background:var(--bg)}", CSS)
+        self.assertIn("body.pg-uph #canvas>i:not(.cv-grain){opacity:0!important}", CSS)
+        self.assertIn("body.pg-uph #canvas{background:var(--bg)}", CSS)
 
     def test_rails_hide_the_previous_tile(self):
         # Elias: a snapped tile left 6 px of the one before showing; above the strip's own edge fades (.ml/.mr)

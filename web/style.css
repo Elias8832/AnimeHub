@@ -105,7 +105,7 @@ button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
    sets --sd (0 at the top, 1 one screen down) on this layer alone; only its
    opacity changes, cheap on phones. */
 .cv-wash:after{content:"";position:absolute;inset:0;background:rgba(13,14,17,.9);opacity:0}
-body:has(.frpage) .cv-wash:after{opacity:var(--sd,0)}
+body.pg-fr .cv-wash:after{opacity:var(--sd,0)}
 :root[data-art=soft] .cv-art,:root[data-art=off] .cv-art,:root[data-art=off] .cv-blur{display:none!important}
 :root[data-art=soft] .cv-blur{inset:-200px;filter:blur(140px) saturate(1.3) brightness(.5)}
 :root[data-grain=off] .cv-grain{display:none}
@@ -2467,9 +2467,9 @@ body.has-side #app{padding-left:340px}
   .frpage .tabs2{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:2px;flex:none}
   /* Round 2 (TODO 140): no logo over the art, back lines up with settings,
      one action per job (AniList sits in ⋯). */
-  body:has(.frpage) #nav{pointer-events:none}
-  body:has(.frpage) #nav>*{pointer-events:auto}
-  body:has(.frpage) #nav .brand{visibility:hidden}
+  body.pg-fr #nav{pointer-events:none}
+  body.pg-fr #nav>*{pointer-events:auto}
+  body.pg-fr #nav .brand{visibility:hidden}
   .sp2.frpage .backbtn{display:flex;width:fit-content;margin:-62px 0 0!important;background:rgba(10,11,13,.55)}
   .frpage .meta .sep,.frpage .meta .alk{display:none}
   .frpage .meta,.frpage .desc,.frpage .mline,.frpage .ahead{text-shadow:0 1px 2px rgba(0,0,0,.8),0 0 14px rgba(0,0,0,.7)}
@@ -3079,7 +3079,7 @@ body.pp-open #modal{z-index:70}
   .sp2 .backbtn:not([data-a=rmtclose]) .ico,.set2 .sback .ico{width:19px;height:19px}
   .sp2:not(.frpage) .backbtn:not([data-a=rmtclose]){margin:-62px 0 24px!important}
   .set2 .sback{margin:-66px 0 26px!important}
-  body:has(.sp2 .backbtn:not([data-a=rmtclose])) #nav .brand,body:has(.set2 .sback) #nav .brand{visibility:hidden}
+  body.pg-back #nav .brand{visibility:hidden}
 }
 @media (max-width:700px),(pointer:coarse){
   /* results fade out above the search field instead of showing through it (phone polish) */
@@ -3164,8 +3164,8 @@ body.pp-open #modal{z-index:70}
 }
 @media (max-width:700px){
   /* the show page's art goes soft behind the poster header, so the title and summary read on bright art (Show C) */
-  body:has(.sp2.frpage) .cv-art{opacity:0!important}
-  body:has(.sp2.frpage) .cv-blur{filter:blur(28px) saturate(1.3) brightness(.55)}
+  body.pg-sfr .cv-art{opacity:0!important}
+  body.pg-sfr .cv-blur{filter:blur(28px) saturate(1.3) brightness(.55)}
 }
 /* ───────── phone Home: hero + rails (TODO 177, Elias picked Home A) ───────── */
 .uph,.crail{display:none}
@@ -3225,8 +3225,8 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){
   /* Home's hero is the art: the blurred art behind the page made a lighter band the
      hero's fade didn't meet, an edge under Play while scrolling (Elias). Plain dark here. */
-  body:has(.home2.has-uph) #canvas>i:not(.cv-grain){opacity:0!important}
-  body:has(.home2.has-uph) #canvas{background:var(--bg)} /* and the accent glow at the top */
+  body.pg-uph #canvas>i:not(.cv-grain){opacity:0!important}
+  body.pg-uph #canvas{background:var(--bg)} /* and the accent glow at the top */
 }
 /* Show page episode tiles (Elias): the art may not zoom past its outline, and the
    progress bar follows the art's 16px corners instead of 4px ones */
