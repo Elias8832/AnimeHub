@@ -13,6 +13,7 @@ The newest build of master, rebuilt after every change that passes the tests. Ne
 
 - Linux: \`AnimeHub-x86_64.AppImage\`. In the app, Settings → System → Updates from → Unstable updates it with a click.
 - Windows: \`AnimeHub-windows-x64.zip\`. In the app, the same switch updates it with a click too. Not tested on Windows between releases.
+- Android: \`AnimeHub-android.apk\`. In the app, Settings → System → Updates from → Unstable; Android asks before it installs. Online episodes need Termux with ani-cli.
 
 Commit: $sha
 

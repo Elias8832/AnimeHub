@@ -2835,10 +2835,10 @@ const upName = (f) => f.label || "v" + f.version;
 function updateRows(s) {
   const u = s.update || {}, f = u.found, j = u.job || {}, one = !!u.installable, busy = j.state === "working", done = j.state === "done";
   const more = f?.url ? `<button class="btn" data-a="upnotes">What's new</button>` : "";
-  const how = done ? (S.upRestart ? "Restarting… the page reloads when the new version answers." : `Updated. Restart AnimeHub to start the new version.${j.note ? " " + esc(j.note) : ""}`)
+  const how = done ? (u.kind === "android" ? "Downloaded. Android asks you to install it: tap Update. Your data stays." : S.upRestart ? "Restarting… the page reloads when the new version answers." : `Updated. Restart AnimeHub to start the new version.${j.note ? " " + esc(j.note) : ""}`)
     : busy ? (u.kind === "git" ? "Getting it with git…" : `Downloading… ${j.percent || 0}%`)
     : j.state === "failed" ? esc(j.error || "Nothing changed.")
-    : one ? ({ git: "Moves this copy ahead with git. Your data stays.", windows: "Swaps in the new files. Your data stays." }[u.kind] || "Replaces this AppImage. Your data stays.")
+    : one ? ({ git: "Moves this copy ahead with git. Your data stays.", windows: "Swaps in the new files. Your data stays.", android: "Downloads the new app, then Android asks to install it. Your data stays." }[u.kind] || "Replaces this AppImage. Your data stays.")
     : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
@@ -2849,7 +2849,7 @@ function updateRows(s) {
     : "Every numbered release on GitHub.";
   return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
     + (f ? srow(`${esc(upName(f))} is out${j.state === "failed" ? swarn("Failed") : ""}`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : j.state === "failed" ? "Try again" : "Install"}</button>`
-      : done ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
+      : done && u.kind !== "android" ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
     + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
     + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
 }
@@ -2882,8 +2882,7 @@ function setSections(s) {
     ${srow("Send watched episodes", `Sends your highest watched episode to ${acct()}.`, onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, off))}
     ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, off))}</div>`,
     phone: s.phone ? "" : phoneGroup(),
-    data: s.android ? g("About", srow("Version", `AnimeHub v${esc(s.update?.version || "")} for Android. New versions come as a new app file for now.`, "")
-      + srow("Data folder", `<code>${esc(s.data_dir)}</code>`, ""))
+    data: s.android ? g("Updates", updateRows(s)) + g("About", srow("Data folder", `<code>${esc(s.data_dir)}</code>`, ""))
       + g("Help", srow("First-run tour", "Walk through AniList and Termux again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>')))
     : g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
       + g("Tools", `${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
@@ -2915,7 +2914,7 @@ function privacyGroup(s) {
     <div class="group"><h3>Ask first without a VPN</h3><p class="sub">Each one asks before it goes out while no VPN is on.</p>
     ${srow("Online episodes and downloads", "The streaming site sees your IP address.", onoff("vpn_warn", "Online episodes and downloads", s.vpn_warn !== false, noAni))}
     ${srow("AniSkip", "AniSkip sees the episode, its length and your IP address. Only when Skip times from AniSkip is on (Skipping).", onoff("aniskip_vpn_warn", "AniSkip", s.aniskip_vpn_warn !== false, s.aniskip !== true))}
-    ${s.android ? "" : srow("Update checks", "No update check or download at all without a VPN.", onoff("update_vpn_only", "Update checks", s.update?.vpn_only))}</div>`;
+    ${srow("Update checks", "No update check or download at all without a VPN.", onoff("update_vpn_only", "Update checks", s.update?.vpn_only))}</div>`;
 }
 /* The filter: every word must be in a row's title, text or search words.
    A group whose name matches stays whole. */
@@ -4371,7 +4370,7 @@ function setSummary(k, s) {
     // The Android app's sections (Decision 88): no mpv, folder or desktop parts.
     const and = { player: `season reminder: ${s.recap_ask !== false ? "on" : "off"}`, subs: `${st.mode === "dub" ? "dub" : "sub"} · remember tracks`,
       online: termuxReady(s) ? `quality: ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "Termux not set up yet",
-      library: s.files_ok ? s.library_root || "no folder chosen yet" : "your files: not allowed yet", data: "version, tour" };
+      library: s.files_ok ? s.library_root || "no folder chosen yet" : "your files: not allowed yet", data: "updates, tour" };
     if (and[k]) return and[k];
   }
   return {

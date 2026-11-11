@@ -8,8 +8,37 @@ plugins {
 def repo = rootDir.parentFile
 def hubVersion = (file("$repo/animehub/__init__.py").text =~ /VERSION = "([^"]+)"/)[0][1]
 
+// The release key (Decision 88): every APK is signed with the same key, or
+// Android won't install a new one over the old. GitHub gets it from the
+// repo's secrets (ANDROID_KEYSTORE, ANDROID_KEY_PASSWORD); a local build
+// from local.properties (animehub.keystore, animehub.keypass). Without it
+// the build falls back to the machine's own debug key.
+def localProps = new Properties()
+if (rootProject.file("local.properties").exists()) rootProject.file("local.properties").withInputStream { localProps.load(it) }
+def keystore = System.getenv("ANDROID_KEYSTORE") ?: localProps.getProperty("animehub.keystore")
+def keypass = System.getenv("ANDROID_KEY_PASSWORD") ?: localProps.getProperty("animehub.keypass")
+def signed = keystore && keypass && file(keystore).exists()
+
 android {
     namespace "io.github.elias8832.animehub"
+    signingConfigs {
+        if (signed) {
+            animehub {
+                storeFile file(keystore)
+                storePassword keypass
+                keyAlias "animehub"
+                keyPassword keypass
+            }
+        }
+    }
+    buildTypes {
+        // Test builds use the same key, so either installs over the other.
+        debug { if (signed) signingConfig signingConfigs.animehub }
+        release {
+            minifyEnabled false
+            if (signed) signingConfig signingConfigs.animehub
+        }
+    }
     compileSdk 35
     defaultConfig {
         applicationId "io.github.elias8832.animehub"
@@ -34,7 +63,7 @@ chaquopy {
 def copyHub = tasks.register("copyHub", Sync) {
     from(repo) {
         include "hub.py", "animehub/**", "web/**", "mpv/**"
-        exclude "**/__pycache__/**", "animehub/build.json"
+        exclude "**/__pycache__/**"  // animehub/build.json comes along when CI stamped the build (Decision 76)
     }
     into layout.buildDirectory.dir("hub-assets/hub")
 }

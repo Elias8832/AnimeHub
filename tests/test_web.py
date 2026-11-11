@@ -578,7 +578,7 @@ class Polish(unittest.TestCase):
         self.assertIn('if (s.android) return `<div class="group"><h3>Termux</h3>', APP)
         self.assertIn('library: s.android && !s.files_ok ? g("Your files", filesAsk())', APP)
         self.assertIn('DirPick("settings") + (s.android ? "" : lengthRow(s))', APP)  # no mpv to measure with
-        self.assertIn('data: s.android ? g("About"', APP)
+        self.assertIn('data: s.android ? g("Updates", updateRows(s))', APP)  # updates in the app (Decision 88)
         self.assertIn("if (S.settings?.android) { location.href = url; return; }", APP)
 
     def test_the_android_tour(self):

@@ -33,6 +33,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         TermuxBridge.ctx = getApplicationContext();
         NetCheck.ctx = getApplicationContext();
+        Updater.ctx = getApplicationContext();
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);

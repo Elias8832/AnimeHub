@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import support  # noqa: F401
-from animehub import android, anicli, downloader, phoneplay, prepare, settings, streaming, system
+from animehub import android, anicli, downloader, phoneplay, prepare, settings, streaming, system, update
 
 FAKE_ANICLI = r"""#!/bin/sh
 # fake ani-cli for the tests: the settings and menus the hub checks for
@@ -239,6 +239,50 @@ class AndroidFiles(Base):
             self.assertTrue(settings.settings_payload()["files_ok"])
         with mock.patch.object(android, "files_probe", side_effect=RuntimeError("no context")):
             self.assertFalse(android.files_ok())
+
+
+class AndroidUpdates(Base):
+    APK = {"name": "AnimeHub-android.apk", "digest": "sha256:" + "ab" * 32,
+           "browser_download_url": update.DOWNLOADS + "unstable/AnimeHub-android.apk"}
+
+    def releases(self):
+        return [{"tag_name": "unstable", "body": "notes\n<!-- build 900 0123456789abcdef0123456789abcdef01234567 2026-11-12T10:00:00Z -->",
+                 "html_url": "https://github.com/Elias8832/AnimeHub/releases/tag/unstable", "assets": [self.APK]},
+                {"tag_name": "v0.4", "published_at": "2026-10-31T00:00:00Z", "assets": []}]
+
+    def test_the_app_updates_with_its_apk(self):
+        self.assertEqual(update.kind(), "android")
+        found = update.pick_unstable(self.releases(), "0.4", {"number": 800, "commit": "x"}, "android")
+        self.assertEqual(found["download"], self.APK["browser_download_url"])
+        self.assertEqual(found["sha256"], "ab" * 32)
+        self.assertTrue(update.installable(found, "android"))
+
+    def test_a_release_without_an_apk_is_not_offered(self):
+        rel = self.releases()
+        rel[0]["assets"] = []
+        self.assertIsNone(update.pick_unstable(rel, "0.4", {"number": 800, "commit": "x"}, "android"))
+
+    def run_apk(self, head):
+        handed = []
+
+        def fetch(found, path, share=99):
+            Path(path).write_bytes(head + b"rest")
+            return head
+
+        with mock.patch.object(update, "_fetch", fetch), mock.patch.object(update, "apk_installer", handed.append):
+            update._apk({"download": "x", "sha256": "y"})
+        return handed, dict(update._job)
+
+    def test_a_checked_apk_goes_to_androids_installer(self):
+        handed, job = self.run_apk(b"PK\x03\x04")
+        self.assertEqual(handed, [update.apk_path()])
+        self.assertEqual(job["state"], "done")
+
+    def test_anything_else_is_refused(self):
+        handed, job = self.run_apk(b"<html")
+        self.assertEqual(handed, [])
+        self.assertEqual(job["state"], "failed")
+        self.assertFalse(update.apk_path().exists())
 
 
 class NotAndroid(unittest.TestCase):
