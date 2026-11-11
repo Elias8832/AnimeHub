@@ -5,8 +5,8 @@ Start: double-click AnimeHub.exe. Keep this folder together - AnimeHub.exe
 needs python\ and app\ beside it. Closing the window quits the app, unless
 you switch on "Keep running after closing" in Settings > Phone remote.
 
-Start menu: double-click "Add to Start menu.cmd" once (again after moving
-this folder).
+Start menu: Anime Hub adds itself the first time it starts, and again
+after you move this folder. "Add to Start menu.cmd" does the same by hand.
 
 Windows may warn "Windows protected your PC" the first time (the program
 is not signed): click "More info", then "Run anyway".
@@ -16,16 +16,17 @@ What to install
 ---------------
 Anime Hub brings its own Python. It plays everything in mpv, and online
 episodes and downloads go through your own ani-cli, which runs in Git for
-Windows' bash. The easiest way is Scoop (https://scoop.sh). In PowerShell:
+Windows' bash. The first-run tour has an "Install what's missing" button
+(also in Settings > System > Tools): it installs Scoop (https://scoop.sh),
+Git, mpv, ani-cli and yt-dlp into your own user folder, no admin rights
+needed. What it printed is in %LOCALAPPDATA%\anime-hub\tools-install.log.
 
-    winget install Git.Git
+By hand instead, in PowerShell:
+
+    Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+    scoop install git
     scoop bucket add extras
-    scoop install ani-cli yt-dlp
-
-ani-cli brings mpv along. Only local files? Then mpv alone is enough:
-
-    scoop bucket add extras
-    scoop install mpv
+    scoop install extras/mpv ani-cli yt-dlp
 
 The window is a Microsoft Edge app window (Edge comes with Windows); an
 installed Chrome or Brave is used first.

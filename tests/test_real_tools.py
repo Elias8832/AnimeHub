@@ -243,6 +243,24 @@ class RealDisk(unittest.TestCase):
                                capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    @unittest.skipUnless(system.WINDOWS, "Windows")
+    def test_a_start_menu_shortcut_is_made(self):
+        """Decision 87: a real .lnk through PowerShell, in a folder with a space
+        and an apostrophe, pointing at the exe."""
+        folder = Path(tempfile.mkdtemp(dir=support.TMP)) / "Start Menu's Programs"
+        exe = Path(sys.executable)
+        self.assertTrue(system.add_start_menu(exe, folder))
+        r = subprocess.run([system.powershell(), "-NoProfile", "-Command",
+                            "(New-Object -ComObject WScript.Shell).CreateShortcut($env:L).TargetPath"],
+                           env={**os.environ, "L": str(folder / system.SHORTCUT)}, capture_output=True, text=True)
+        self.assertEqual(os.path.normcase(r.stdout.strip()), os.path.normcase(str(exe)))
+
+    @unittest.skipUnless(system.WINDOWS, "Windows")
+    def test_the_stored_path_is_read(self):
+        """Decision 87: Windows' own PATH from the registry holds System32."""
+        dirs = [os.path.normcase(d.rstrip("\\")) for d in system.stored_path_dirs()]
+        self.assertIn(os.path.normcase(os.path.join(os.environ["SystemRoot"], "System32")), dirs)
+
 
 @unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
 class RealPlayerScripts(unittest.TestCase):

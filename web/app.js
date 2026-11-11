@@ -2882,7 +2882,7 @@ function setSections(s) {
     ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, off))}</div>`,
     phone: s.phone ? "" : phoneGroup(),
     data: g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
-      + g("Tools", `${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
+      + g("Tools", `${toolsBox(s)}${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
       + g("Files", `${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}`)
       + g("Help", (isPhone() ? "" : srow("Keys", "Every shortcut. Press ? anywhere for this list.", pkdo('<button class="btn" data-a="menu" data-v="keys">Show keys</button>'))) + srow("First-run tour", "Walk through the library folder and AniList again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>'))),
   };
@@ -4587,6 +4587,27 @@ function aniLine(s) {
 }
 /* Since ani-cli 5.1 the streaming site turns plain curl away (stream.needs names curl-impersonate); ani-cli's README says how to get it. */
 const IMP_BTN = '<button class="btn sm" data-a="ext" data-v="https://github.com/pystardust/ani-cli#fixing-errors">How to install</button>';
+/* Windows sets itself up (Decision 87): one click installs what's missing through Scoop, step by step. */
+/* Each group is a choice (Elias: ani-cli and yt-dlp must be optional); Downloads needs Online episodes. */
+const toolsPicked = (ti) => (ti.groups || []).filter((g) => S.toolSkip?.[g.id] !== true).map((g) => g.id);
+const TOOL_HINT = { play: "mpv · the video player, required", online: "ani-cli · streams episodes you don't own", download: "yt-dlp · saves streamed episodes as files" };
+const toolsBtn = (ti, cls) => { const failed = ti.job?.state === "failed";
+  return `<button class="${cls}" data-a="toolsinstall"${toolsPicked(ti).length || failed ? "" : " disabled"}>${failed ? "Try again" : "Install"}</button>`; };
+const toolsShown = (ti) => ti.can && (ti.groups?.length || ["working", "failed"].includes(ti.job?.state));
+/* In the tour, Install takes Continue's place in the dialog's own buttons (inTour). */
+function toolsBox(s, inTour) {
+  const ti = s.tools_install || {}, j = ti.job || {}, busy = j.state === "working", failed = j.state === "failed";
+  if (!toolsShown(ti)) return "";
+  const mark = (st) => st === "ok" ? ico("check") : st === "working" ? '<i class="spin"></i>' : st === "failed" ? "!" : "–";
+  const picked = toolsPicked(ti);
+  const rows = busy || failed
+    ? (j.steps || []).map((x) => `<div class="${x.state === "ok" ? "ok" : x.state === "failed" ? "bad" : "opt"}"><span class="okc">${mark(x.state)}</span><b>${esc(x.name)}</b><span class="v">${x.state === "working" ? "installing…" : x.state === "ok" ? "done" : x.state === "failed" ? "failed" : ""}</span></div>`).join("")
+    : ti.groups.map((g) => { const on = picked.includes(g.id);
+      return `<div class="${on ? "ok" : "opt"}"><b>${esc(g.name)}</b><span class="v">${esc(TOOL_HINT[g.id] || "")}</span><button class="switch" role="switch" aria-checked="${on}" aria-label="Install ${esc(g.name)}" data-a="toolpick" data-v="${g.id}"></button></div>`; }).join("");
+  const foot = busy ? "Installing… you can keep going." : failed ? j.error || "Something didn't install." : "No admin rights needed. The rest can come later.";
+  const btn = busy || inTour ? "" : toolsBtn(ti, "btn pri sm");
+  return `<div class="tinst"><div class="sum2 tpick">${rows}</div><div class="tfoot"><p class="${failed ? "swarn" : ""}">${esc(foot)}</p>${btn}</div></div>`;
+}
 function tourTools(s) {
   const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? `${ani && !st.outdated ? "." : ""} It also needs ${st.needs.join(", ")}.` : "";
   return [
@@ -4658,7 +4679,7 @@ function Tour() {
     `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
       <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
       <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what you watch on this PC.</span></button></div>`,
-    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p><div class="sum2">${tourTools(s)}</div>`,
+    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p>${toolsShown(s.tools_install || {}) ? toolsBox(s, true) : `<div class="sum2">${tourTools(s)}</div>`}`,
     `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
     `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
     `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
@@ -4668,9 +4689,10 @@ function Tour() {
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
      <div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`,
   ], s);
-  const last = b.length - 1;
+  const last = b.length - 1, ti = s.tools_install || {};
+  const toolsHere = T.step === 3 && toolsShown(ti) && ti.job?.state !== "working";
   return `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b[T.step]}
-  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button></div>`;
+  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}${toolsHere ? `<span class="aright"><button class="btn" data-a="tournext">Continue</button>${toolsBtn(ti, "btn pri")}</span>` : `<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button>`}</div>`;
 }
 /* The connect dialog (Decisions 14, 48, 75; polish TODO 191): rows like
    Settings — the show, a line of its episodes, the value on the right.
@@ -6739,6 +6761,25 @@ const A = {
     S.upRestart = false;
     if (S.view === "settings") render(true);
     toast("AnimeHub didn't come back. Open it again by hand.", "err");
+  },
+  toolpick: (v) => {
+    const skip = S.toolSkip = { ...(S.toolSkip || {}) }, off = skip[v] !== true;
+    skip[v] = off;
+    if (v === "online" && off) skip.download = true; // downloads run through ani-cli
+    if (v === "download" && !off) skip.online = false;
+    if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
+  },
+  toolsinstall: async () => {
+    const r = await api("/api/tools-install", { groups: toolsPicked(S.settings?.tools_install || {}) }).catch(() => ({ error: "Could not reach the hub." }));
+    if (r.error) return toast(r.error, "err");
+    const paint = () => { if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true); };
+    do {
+      await loadSettings(); paint();
+      await sleep(1500);
+    } while (S.settings?.tools_install?.job?.state === "working");
+    await loadSettings(); paint();
+    const j = S.settings?.tools_install?.job;
+    toast(j?.state === "failed" ? j.error || "Something didn't install." : "Tools installed", j?.state === "failed" ? "err" : undefined);
   },
   aniget: async () => {
     S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);
