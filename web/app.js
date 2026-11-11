@@ -92,7 +92,7 @@ const LUCIDE = {
   "alarm-clock": '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M6.38 18.7 4 21"/><path d="M17.64 18.67 20 21"/>',
   "calendar-heart": '<path d="M12.127 21H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v5.125"/><path d="M14.62 17.8A2.25 2.25 0 1118 14.836a2.25 2.25 0 113.38 2.966l-2.626 2.856a.998.998 0 01-1.507 0z"/><path d="M16 2v3"/><path d="M3 9h18"/><path d="M8 2v3"/>',
   "eye": '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
-  "heart": '<path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/>',
+  "heart": '<path d="M12 20.6c-.4 0-.8-.1-1.1-.4C7.6 17.6 2.6 13.6 2.6 9 2.6 6 4.9 3.6 7.8 3.6c1.8 0 3.3.9 4.2 2.3.9-1.4 2.4-2.3 4.2-2.3 2.9 0 5.2 2.4 5.2 5.4 0 4.6-5 8.6-8.3 11.2-.3.3-.7.4-1.1.4z"/>',
   "heart-crack": '<path d="M12.409 5.824c-.702.792-1.15 1.496-1.415 2.166l2.153 2.156a.5.5 0 0 1 0 .707l-2.293 2.293a.5.5 0 0 0 0 .707L12 15"/><path d="M13.508 20.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5a5.5 5.5 0 0 1 9.591-3.677.6.6 0 0 0 .818.001A5.5 5.5 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5z"/>',
   "heart-handshake": '<path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762"/>',
   "sparkles": '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/>',
@@ -2256,16 +2256,46 @@ const entryLoadedFor = () => (S.entry?.svc || null) === entrySvc();
 /* The editor (Edit entry, E): status pills, score 1–10 pills with ♥ beside
    (other AniList score formats keep a number field), progress + rewatches,
    started + finished. Every change saves as you go. */
+/* Decimal 10-point: a slider under the pills in tenths, like the Library's range
+   filters (Elias: "inbetween 1.5 and 2 … a slider like in the filters, just more
+   steps"). Pills pick the whole number, the slider fine-tunes; it saves on release. */
+const scoreTxt = (v) => v ? (Math.round(v * 10) / 10).toFixed(1) : "–";
+/* 1–10 so each whole number's knob sits right under its pill (Elias: the end
+   stopped under the 9); no score yet = knob at 1, the number says "–". */
+const sslFill = (v) => v ? `${Math.round(((v - 1) / 9) * 10000) / 100}%` : "0%";
+function scoreSlider(a, sc) {
+  const v = Math.round((+sc || 0) * 10) / 10;
+  return `<div class="ssl" style="--a:0%;--b:${sslFill(v)}"><div class="rt"><input type="range" aria-label="Score, in tenths" min="1" max="10" step="0.1" value="${v || 1}" data-a="${a}"></div><b class="ssv">${scoreTxt(v)}</b></div>`;
+}
+/* While dragging: the track, the number and the pills follow; nothing saves yet. */
+document.addEventListener("input", (e) => {
+  const r = e.target.closest?.(".ssl input");
+  if (!r) return;
+  const v = +r.value, box = r.closest(".ssl"), n = Math.floor(v);
+  box.style.setProperty("--b", sslFill(v));
+  box.querySelector(".ssv").textContent = scoreTxt(v);
+  box.parentElement.querySelectorAll(".score > button").forEach((b, i) => { b.className = i + 1 < n ? "lo" : i + 1 === n ? "pick" : ""; b.setAttribute("aria-checked", i + 1 === n); });
+  const dn = $("#dn-score");
+  if (dn && box.closest(".dn")) dn.value = v || "";
+});
+/* The favourite pill at the end of the score row (Elias picked mockup B's pill in
+   A's place, 2026-11-11): says what it is, pink when on; a tap rings and sparks. */
+const favWord = (on) => on ? "Favourite" : "Add to favourites";
+const favPill = (on, attrs) => `<button class="heart${on ? " on" : ""}" aria-pressed="${on}" ${attrs}>${ico("heart")}<span>${favWord(on)}</span></button>`;
+function favSet(b, on) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); const w = b.querySelector("span"); if (w) w.textContent = favWord(on); }
 function entryHTML(f, pending) {
   const max = f.score_max || 10, dec = (f.score_format || "").includes("DECIMAL");
   const media = f.media || {}, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
   const stp = (k, v, lab, cap) => `<span class="stepper"><button aria-label="Decrease ${lab}" data-a="ebump" data-k="${k}" data-d="-1">${ico("minus")}</button><b data-k="${k}">${v}${cap ? `<small> / ${cap}</small>` : ""}</b><button aria-label="Increase ${lab}" data-a="ebump" data-k="${k}" data-d="1">${ico("plus")}</button></span>`;
   const pills = `<div class="pills" role="radiogroup" aria-label="Status">${LISTS.map(([v, l]) => `<button class="${f.status === v ? "on" : ""}" role="radio" aria-checked="${f.status === v}" data-a="eset" data-k="status" data-v="${v}">${l}</button>`).join("")}</div>`;
   /* MyAnimeList has no favourites API (Decision 75): no heart then. */
-  const heart = media.service === "mal" ? "" : `<i class="vs"></i><button class="heart ${f.favourite ? "on" : ""}" aria-label="Favourite" aria-pressed="${f.favourite}" data-a="efav">${ico("heart")}</button>`;
-  const cur = f.score ? Math.round(f.score) : 0;
-  const score = max === 10 && (!dec || !f.score || f.score === Math.round(f.score)) // 1–10 pills (decimal 10-point too, unless a .5 is set)
-    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${heart}</div>`
+  const heart = media.service === "mal" ? "" : favPill(!!f.favourite, 'data-a="efav"');
+  /* Decimal 10-point lights the whole pill under the score (7.3 → 7) and adds the
+     tenths slider (Elias: "I can't score between 1 and 2"). */
+  const cur = f.score ? (dec ? Math.floor(f.score) : Math.round(f.score)) : 0;
+  const fine = dec ? scoreSlider("escore", f.score) : "";
+  const score = max === 10 // 1–10 pills
+    ? `<div class="scrow"><div class="score" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button class="${i + 1 < cur ? "lo" : i + 1 === cur ? "pick" : ""}" role="radio" aria-checked="${i + 1 === cur}" data-a="eset" data-k="score" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${heart}</div>${fine}`
     : `<div class="scrow"><input type="number" aria-label="Score" min="0" max="${max}" step="${dec ? 0.1 : 1}" value="${f.score ?? ""}" placeholder="–" data-a="eset" data-k="score" style="width:96px"><span class="dim">/ ${max}</span>${heart}</div>`;
   /* Discovery (Decision 9): a show off the lists says so and offers the one-click add. */
   const off = !f.status && !pending ? `<p class="note offlist">Not on your list yet. <button class="btn pri" data-a="eadd">${ico("plus")}Add to Planning</button></p>` : "";
@@ -4735,8 +4765,7 @@ function Done() {
     <span class="cap">you finished</span><h2 id="dt">${esc(c.title || "a show")}</h2>
     <div class="facts">${[e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on " + acct() : "saved on this PC"].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
     <span class="cap" style="margin-top:22px">how was it?</span>
-    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : `<i class="vs"></i>
-      <button class="heart" id="dn-fav" aria-label="Favourite" aria-pressed="false" data-a="dnfav">${ico("heart")}</button>`}</div>
+    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : favPill(false, 'id="dn-fav" data-a="dnfav"')}</div><div id="dn-fine" hidden>${scoreSlider("dnfine", 0)}</div>
     <input type="hidden" id="dn-score" value=""><input type="hidden" id="dn-status" value="COMPLETED"><span id="dn-max" hidden></span>
     ${nx ? `<div class="dnnext">${poster(nx.title || nx.label, nx.poster || null, { c: "t" })}<span class="tx"><b>${esc(nx.title || nx.label)}</b><small>${esc([nx.format_label, "next in this franchise", nxOn ? "on your list" : "not on your list"].filter(Boolean).join(" · "))}</small></span>${nxOn ? "" : `<button class="btn sm" data-a="dnplan" data-v="${nx.id}">+ Planning</button>`}</div>` : ""}
   </div></div>
@@ -4803,7 +4832,7 @@ function burstAt(el) {
   for (let i = 0; i < 10; i++) {
     const p = document.createElement("i"), a = (i / 10) * Math.PI * 2, d = 26 + Math.random() * 16;
     p.className = "bp";
-    p.style.cssText = `left:${cx - 3}px;top:${cy - 3}px;background:${i % 2 ? "#e0788a" : "var(--accent-hi)"}`;
+    p.style.cssText = `left:${cx - 3}px;top:${cy - 3}px;background:${i % 2 ? "#ff4f6d" : "var(--accent-hi)"}`;
     f.appendChild(p);
     p.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d}px) scale(0)`, opacity: 0 }],
       { duration: 600 + Math.random() * 200, easing: "cubic-bezier(.2,.8,.2,1)" }).onfinish = () => p.remove();
@@ -4832,7 +4861,11 @@ function recOpen(res) {
 }
 function recDone() { api("/api/reconcile/dismiss", {}).catch(() => {}); S.rec = null; closeModal(); reload(); }
 let lastCompletionKey = null;
-function dnPills(n) { $$("#dn-pills button").forEach((b, i) => { b.className = i + 1 < n ? "lo" : i + 1 === n ? "pick" : ""; b.setAttribute("aria-checked", i + 1 === n); }); }
+function dnPills(n) {
+  $$("#dn-pills > button").forEach((b, i) => { b.className = i + 1 < n ? "lo" : i + 1 === n ? "pick" : ""; b.setAttribute("aria-checked", i + 1 === n); });
+  const f = $("#dn-fine"), sc = +$("#dn-score")?.value || 0;
+  if (f) f.innerHTML = scoreSlider("dnfine", sc);
+}
 function maybeCompletion(c) {
   const key = `${c.media_id}:${c.count}`;
   if (key === lastCompletionKey || S.modal) return;
@@ -4843,8 +4876,10 @@ function maybeCompletion(c) {
     if (!res || res.error || !res.state || S.modal?.t !== "done") return;
     const st = res.state, e = st.entry || {}, max = st.score_max || 10;
     const sc = $("#dn-score");
-    if (e.score != null && e.score > 0) { sc.value = max === 10 ? Math.round(e.score) : e.score; dnPills(max === 10 ? Math.round(e.score) : 0); }
-    if (st.is_favourite && $("#dn-fav")) { const f = $("#dn-fav"); f.classList.add("on"); f.setAttribute("aria-pressed", "true"); }
+    const dec = (st.score_format || "").includes("DECIMAL") && max === 10;
+    if (dec) $("#dn-fine").hidden = false;
+    if (e.score != null && e.score > 0) { sc.value = max === 10 && !dec ? Math.round(e.score) : e.score; dnPills(max === 10 ? (dec ? Math.floor(e.score) : Math.round(e.score)) : 0); }
+    if (st.is_favourite && $("#dn-fav")) favSet($("#dn-fav"), true);
   }).catch(() => {});
 }
 /* A tour pick shows at once (Elias: the outline lagged a second behind the
@@ -6360,6 +6395,12 @@ const A = {
   },
   calnav: (v) => { if (!S.cal) return; const d = new Date(S.cal.y, S.cal.m + +v, 1); S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); entryPaint(S.entry.f, false); },
   calday: (v) => { const k = S.cal?.k; S.cal = null; if (k && v !== (S.entry?.f?.[k] || "")) entryPatch({ [k]: v }); else calClose(); },
+  escore: (v, t) => {
+    const n = Math.round(+v * 10) / 10, had = document.activeElement === t;
+    if (Number.isNaN(n) || n === (S.entry?.f?.score || 0)) return;
+    entryPatch({ score: n }, undefined, 450);
+    if (had) $("#entrybox .ssl input")?.focus(); // arrow keys keep working after the repaint
+  },
   ebump: (v, t) => {
     const k = t.dataset.k, f = S.entry?.f;
     if (!f) return;
@@ -6757,6 +6798,7 @@ const A = {
     }).catch(() => { if (t) t.disabled = false; toast("Could not apply — is the hub running?"); });
   },
   dnscore: (v) => { $("#dn-score").value = v; dnPills(+v); },
+  dnfine: () => {}, // the input listener above already set #dn-score; it saves on Done
   recopen: (v) => openFranchise(+v),
   dlopen: (v) => { S.menu = null; paintNav(); openFranchise(+v); },
   recadd: (v, t) => {
@@ -6768,7 +6810,7 @@ const A = {
     }).catch(() => { t.disabled = false; t.classList.remove("busy"); toast("Could not add it — try again"); });
   },
   dnplan: (v, t) => { t.disabled = true; entrySave(+v, { status: "PLANNING" }).then((r) => { t.textContent = r && !r.error ? "✓ On Planning" : "Could not add"; refreshData(); }).catch(() => { t.textContent = "Could not add"; }); },
-  dnfav: (v, t) => { const on = !t.classList.contains("on"); t.classList.toggle("on", on); t.classList.add("pop1"); if (on) burstAt(t); t.setAttribute("aria-pressed", on); },
+  dnfav: (v, t) => { const on = !t.classList.contains("on"); favSet(t, on); t.classList.remove("pop1"); void t.offsetWidth; t.classList.add("pop1"); if (on) burstAt(t); },
   dnskip: () => { const c = S.modal.c; api("/api/completion-seen", { media_id: c.media_id, count: c.count }).catch(() => {}); closeModal(); },
   dnsave: (v, t) => {
     const c = S.modal.c, patch = { status: $("#dn-status").value }, sc = $("#dn-score").value;

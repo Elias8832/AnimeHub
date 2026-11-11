@@ -874,6 +874,40 @@ class ShowPageRedo(unittest.TestCase):
         self.assertNotIn('data-a="efav"', on)  # Elias 2026-11-08: no heart on the page; it lives in the editor
         self.assertIn('data-a="edit"', self.run_fn("entryActs", "entryActs(null, false)", pc))  # before the read: Edit
 
+    def test_favourite_pill(self):
+        """The heart is a pill that says what it is (Elias picked B's pill in A's place, 2026-11-11)."""
+        a = APP.index("const favWord")
+        js = ('const ico = (n) => `<i data-ico="${n}"></i>`;' + APP[a:APP.index("function favSet", a)]
+              + 'console.log(JSON.stringify([favPill(true, \'data-a="efav"\'), favPill(false, \'id="dn-fav"\')]));')
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        on, off = json.loads(out.stdout)
+        self.assertIn('class="heart on"', on)
+        self.assertIn('aria-pressed="true"', on)
+        self.assertIn("<span>Favourite</span>", on)
+        self.assertIn('data-a="efav"', on)
+        self.assertIn("<span>Add to favourites</span>", off)
+        self.assertIn('aria-pressed="false"', off)
+        self.assertIn("favPill(false, 'id=\"dn-fav\" data-a=\"dnfav\"')", APP)  # the "you finished" dialog uses it too
+
+    def test_tenths_score_slider(self):
+        """Decimal 10-point: pills plus a slider in tenths, so 1.7 can be scored (Elias 2026-11-10)."""
+        pre = ('const scoreTxt = (v) => v ? (Math.round(v * 10) / 10).toFixed(1) : "–";'
+               'const sslFill = (v) => v ? `${Math.round(((v - 1) / 9) * 10000) / 100}%` : "0%";')
+        sl = lambda sc: self.run_fn("scoreSlider", f'scoreSlider("escore", {sc})', pre)
+        out = sl(1.7)
+        self.assertIn('step="0.1"', out)
+        self.assertIn('min="1" max="10"', out)  # 1 sits under pill 1, 10 under pill 10
+        self.assertIn('value="1.7"', out)
+        self.assertIn("--b:7.78%", out)  # the filled part of the track
+        self.assertIn("--b:100%", sl(10))
+        self.assertIn('<b class="ssv">1.7</b>', out)
+        self.assertIn('<b class="ssv">8.0</b>', sl(8))
+        self.assertIn('<b class="ssv">–</b>', sl(0))  # no score yet
+        self.assertIn('scoreSlider("escore", f.score)', APP)  # the editor shows it
+        self.assertIn('scoreSlider("dnfine", 0)', APP)  # and the "you finished" dialog
+        self.assertNotIn("unless a .5 is set", APP)  # a .5 no longer swaps the pills for a number field
+
     def stats(self, f, fe):
         pre = ("const frEntry = () => (" + json.dumps(fe) + "); const showById = () => null; const epTotal = () => 0; const epWatched = () => 0;"
                "function aheadLine() { return ''; }")
