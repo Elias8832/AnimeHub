@@ -231,6 +231,11 @@ def _update_payload():
     return update.payload()
 
 
+def _tools_payload():
+    from . import tools  # tools.py needs this module
+    return tools.payload()
+
+
 def automation_enabled(key):
     default = AUTOMATION_DEFAULTS[key]
     raw = get_setting(key)
@@ -362,6 +367,8 @@ def settings_payload():
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
                    "check": anicli.anicli_check(), **anicli.anicli_status(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
+        # additive (Decision 87): Windows installs its tools on a click — can / missing / job
+        "tools_install": _tools_payload(),
     }
 
 
