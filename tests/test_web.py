@@ -568,7 +568,30 @@ class Polish(unittest.TestCase):
         """A switch or card updates in place; only a new page animates."""
         self.assertIn('if (m.t === "tour" && !focus) morphHTML(dlg, body);', APP)
         self.assertIn("tourback: () => { S.tour.step--; paintModal(true); }", APP)
-        self.assertIn("if (T.step < (S.settings?.background_ok ? 8 : 7)) { T.step++; return paintModal(true); }", APP)
+        self.assertIn("if (T.step < tourBlocks().length - 1) { T.step++; return paintModal(true); }", APP)
+
+    def test_android_settings_have_no_pc_parts(self):
+        """Decision 88: no mpv, library folder, desktop updates or tools on Android."""
+        self.assertIn("if (s.android) return rc; // the Android app has no mpv", APP)
+        self.assertIn('${s.android ? "" : `<div class="group"><h3>Subtitle look</h3>', APP)
+        self.assertIn('${s.android ? "" : srow("Mark them on the seek bar"', APP)
+        self.assertIn('if (s.android) return `<div class="group"><h3>Termux</h3>', APP)
+        self.assertIn('library: s.android && !s.files_ok ? g("Your files", filesAsk())', APP)
+        self.assertIn('DirPick("settings") + (s.android ? "" : lengthRow(s))', APP)  # no mpv to measure with
+        self.assertIn('data: s.android ? g("About"', APP)
+        self.assertIn("if (S.settings?.android) { location.href = url; return; }", APP)
+
+    def test_the_android_tour(self):
+        """Decision 88: no folder, mpv or phone remote pages; Termux setup instead."""
+        fn = APP[APP.index("function tourAndroid("):APP.index("function Tour() {")]
+        self.assertIn("${termuxBox(s)}", fn)
+        self.assertIn("tourSearch(),", fn)
+        for pc_only in ("tourTools(", "tourLooks(", "tourMpv(", "bgRows("):
+            self.assertNotIn(pc_only, fn)
+        # own files: optional, and only after Android's file access
+        self.assertIn('${s.files_ok ? `<div class="path">${libPath("tour", s)}', fn)
+        self.assertIn(": filesAsk()}", fn)
+        self.assertIn("if (s.android) return tourAndroid(T, s, a);", APP)
 
     def test_a_tour_pick_shows_before_it_saves(self):
         """The outline moves on click; a failed save puts the old pick back."""
@@ -583,7 +606,7 @@ class Polish(unittest.TestCase):
     def test_tour_explains_search(self):
         """Its own page, before the last one, and the phone page keeps its slot."""
         self.assertIn("    tourSearch(),\n    `<h2 id=\"dt\">You're set</h2>", APP)
-        pages = APP[APP.index("const b = tourPages(["):APP.index("tourSearch(),\n")]
+        pages = APP[APP.index("  return tourPages(["):APP.index("tourSearch(),\n")]
         self.assertEqual(pages.count('<h2 id="dt">'), 7)
         self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`,"))
 

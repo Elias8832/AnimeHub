@@ -767,7 +767,8 @@ def full_library():
             "meta_total": metadata._meta_status["total"],  # additive: the bar's whole (TODO 199)
             "meta_running": metadata._meta_status["running"],
             "meta_current": metadata._meta_status["current"],
-            "meta_phase": metadata._meta_status["phase"]}
+            "meta_phase": metadata._meta_status["phase"],
+            "meta_matching": list(metadata._meta_status["matching"])}  # additive (TODO 222)
 
 
 def episode_by_id(eid):

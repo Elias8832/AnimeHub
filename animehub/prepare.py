@@ -207,8 +207,11 @@ def _fire(key, args):
 
 def request(key, link, token, mode, sock, mpv_env, delay=0.0):
     """Prepare this episode, in place of whatever was prepared. Asking for
-    the same one again does nothing: pages are read often."""
+    the same one again does nothing: pages are read often. Android has
+    no mpv to prepare (Decision 88): the phone player asks when played."""
     global _want, _timer
+    if system.ANDROID:
+        return
     with _lock:
         if key == _want or (_slot and _slot["key"] == key):
             return

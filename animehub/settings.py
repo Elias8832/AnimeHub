@@ -7,7 +7,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import anicli, background, database, lengths, library, system, upscale
+from . import android, anicli, background, database, lengths, library, system, upscale
 from .config import config, CONFIG, CONFIG_PATH, PLAYER_LOOKS
 
 
@@ -257,6 +257,8 @@ def vpn_status():
     networks (Tailscale, ZeroTier) and container bridges don't count."""
     if system.WINDOWS:
         return _vpn_status_windows()
+    if system.ANDROID:
+        return android.vpn_status()  # Android hides /sys/class/net from apps (Decision 88)
     try:
         names = sorted(os.listdir("/sys/class/net"))
     except OSError:
@@ -362,6 +364,13 @@ def settings_payload():
         "stream": {**anicli.stream_prefs(), "version": anicli.anicli_version(),
                    "check": anicli.anicli_check(), **anicli.anicli_status(),
                    "qualities": list(anicli.STREAM_QUALITIES)},
+        # additive (Decision 88): the hub runs inside the Android app; with no
+        # PC, every episode plays in the phone player. termux: why ani-cli
+        # can't be reached in Termux, "" when it can.
+        "android": system.ANDROID,
+        # additive (Decision 88): the app may read the phone's files (Android's "All files access").
+        "files_ok": system.ANDROID and android.files_ok(),
+        "termux": android.problem() if system.ANDROID else "",
     }
 
 
@@ -418,7 +427,7 @@ def browse_dirs(path=None):
     this lists nothing the user's file manager wouldn't. Places are the
     usual Linux mount spots plus home, for drives outside $HOME."""
     if path in (None, ""):
-        base = config.LIBRARY if config.LIBRARY and config.LIBRARY.is_dir() else Path.home()
+        base = config.LIBRARY if config.LIBRARY and config.LIBRARY.is_dir() else system.browse_start()
     else:
         base = _user_dir(path)
     try:

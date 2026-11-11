@@ -1,0 +1,45 @@
+// The Android app (Decision 88): a WebView over the same hub as the PC app.
+// The hub's code and icon are copied in from the repo at build time.
+plugins {
+    id "com.android.application"
+    id "com.chaquo.python"
+}
+
+def repo = rootDir.parentFile
+def hubVersion = (file("$repo/animehub/__init__.py").text =~ /VERSION = "([^"]+)"/)[0][1]
+
+android {
+    namespace "io.github.elias8832.animehub"
+    compileSdk 35
+    defaultConfig {
+        applicationId "io.github.elias8832.animehub"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName hubVersion
+        ndk { abiFilters "arm64-v8a", "x86_64" }
+    }
+    sourceSets {
+        main {
+            assets.srcDirs += [layout.buildDirectory.dir("hub-assets").get().asFile]
+            res.srcDirs += [layout.buildDirectory.dir("hub-res").get().asFile]
+        }
+    }
+}
+
+chaquopy {
+    defaultConfig { delegate.version = "3.13" }
+}
+
+def copyHub = tasks.register("copyHub", Sync) {
+    from(repo) {
+        include "hub.py", "animehub/**", "web/**", "mpv/**"
+        exclude "**/__pycache__/**", "animehub/build.json"
+    }
+    into layout.buildDirectory.dir("hub-assets/hub")
+}
+def copyIcon = tasks.register("copyIcon", Copy) {
+    from("$repo/web/icon-512.png") { rename { "ic_launcher.png" } }
+    into layout.buildDirectory.dir("hub-res/mipmap-xxxhdpi")
+}
+tasks.named("preBuild") { dependsOn copyHub, copyIcon }

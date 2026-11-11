@@ -1,5 +1,5 @@
 # Every push: the whole suite on real Windows and on Linux, the real mpv tests,
-# and the Windows zip (TODO 148). Download the zip from the run's Artifacts.
+# the Windows zip (TODO 148) and the Android APK (Decision 88). Download the zip from the run's Artifacts.
 # A green push to master also builds the AppImage and publishes both to the
 # rolling "unstable" release, the Unstable update channel (Decision 76).
 name: Tests
@@ -89,6 +89,32 @@ jobs:
           python-version: "3.12"
       - name: Tests
         run: python -m unittest
+
+  # The Android app (Decision 88): the same hub inside an APK. Every push, so a
+  # change that breaks the Android build shows up at once.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      # Chaquopy compiles the hub to the app's Python version with a matching one.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Build the APK
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk AnimeHub-android.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          path: android/AnimeHub-android.apk
+          archive: false
+          retention-days: 30
 
   appimage:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'

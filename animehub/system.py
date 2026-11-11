@@ -17,6 +17,9 @@ import time
 from pathlib import Path
 
 WINDOWS = sys.platform == "win32"
+# The Android app (Decision 88): Python 3.13 says "android"; older builds
+# only have the API-level call.
+ANDROID = sys.platform == "android" or hasattr(sys, "getandroidapilevel")
 
 # Windows has no SIGKILL; Popen.send_signal(SIGTERM) is TerminateProcess
 # there, which already is the hard stop.
@@ -445,11 +448,28 @@ def pictures_dir():
     return path if path.is_absolute() and path != home else home / "Pictures"
 
 
+# The phone's own storage, as the Android app sees it with file access (Decision 88).
+ANDROID_STORAGE = Path("/storage/emulated/0")
+
+
+def browse_start():
+    """Where the folder picker opens with no folder chosen yet."""
+    return ANDROID_STORAGE if ANDROID else Path.home()
+
+
 def browse_places():
     """The folder picker's shortcuts (Decision 32): Home plus where other
     disks show up — /mnt, /media, /run/media/$USER on Linux, the drive
-    letters on Windows. Only folders that exist are offered."""
+    letters on Windows. Only folders that exist are offered. Android: the
+    phone's storage and any SD card (/storage/XXXX-XXXX)."""
     home = Path.home()
+    if ANDROID:
+        cards = []
+        try:
+            cards = sorted(p for p in Path("/storage").iterdir() if p.name not in ("emulated", "self"))
+        except OSError:
+            pass
+        return [("Phone", ANDROID_STORAGE)] + [("SD card", p) for p in cards if p.is_dir()]
     if WINDOWS:
         places = [("Home", home)] + [(f"{d}:", Path(f"{d}:\\")) for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
     else:

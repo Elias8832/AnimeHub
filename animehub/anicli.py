@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from . import settings, system
+from . import android, settings, system
 from .config import config
 
 
@@ -81,7 +81,12 @@ def own_anicli():
 
 
 def anicli_path():
-    """The copy Get ani-cli fetched, else the installed one."""
+    """The copy Get ani-cli fetched, else the installed one. Android: the
+    copy of Termux's script (Decision 88); ani-cli itself runs in Termux."""
+    if system.ANDROID:
+        # No copy yet (first start, Termux set up later): ask Termux now. An
+        # answer comes in about a second; a refusal at once; at most every 20 s.
+        return str(android.anicli_copy()) if android.anicli_copy().is_file() or android.fetch_anicli() else None
     if not system.WINDOWS and own_anicli().is_file():
         return str(own_anicli())
     return system.find_script("ani-cli")
@@ -93,7 +98,9 @@ def anicli_outdated():
 
 
 def anicli_too_old_message():
-    how = "update it with Scoop: scoop update ani-cli" if system.WINDOWS else "update ani-cli in Settings → Online episodes"
+    how = ("update it with Scoop: scoop update ani-cli" if system.WINDOWS
+           else "update it in Termux: pkg upgrade -y" if system.ANDROID
+           else "update ani-cli in Settings → Online episodes")
     return (f"ani-cli {anicli_version()} is too old — Anime Hub needs {'.'.join(map(str, MIN_VERSION))} or newer; "
             f"{how}.")
 
@@ -105,15 +112,15 @@ def anicli_curl_needs():
     names the builds it tries, so the list comes from its own text."""
     check = anicli_check() or {}
     curls = check.get("curls") or []
-    if system.WINDOWS or not curls or any(system.find_program(c) for c in curls):
+    if system.WINDOWS or system.ANDROID or not curls or any(system.find_program(c) for c in curls):
         return []
     return ["curl-impersonate"]
 
 
 def anicli_status():
     """Additive in /api/settings: stream.own / outdated / can_get / needs."""
-    return {"own": anicli_path() == str(own_anicli()), "outdated": anicli_outdated(), "can_get": not system.WINDOWS,
-            "needs": system.script_needs(ANICLI_TOOLS) + anicli_curl_needs()}
+    return {"own": anicli_path() == str(own_anicli()), "outdated": anicli_outdated(), "can_get": not system.WINDOWS and not system.ANDROID,
+            "needs": [] if system.ANDROID else system.script_needs(ANICLI_TOOLS) + anicli_curl_needs()}
 
 
 def fetch_anicli():
@@ -122,6 +129,8 @@ def fetch_anicli():
     can drive; a failure leaves what was there."""
     if system.WINDOWS:
         return {"error": "On Windows, update ani-cli with Scoop."}
+    if system.ANDROID:
+        return {"error": "On Android, update ani-cli in Termux: pkg upgrade -y"}
     try:
         req = Request(ANICLI_URL, headers={"User-Agent": "anime-hub/1.0"})
         with urlopen(req, timeout=20) as r:
@@ -148,6 +157,8 @@ _anicli_versions = {}
 
 
 def anicli_version():
+    if system.ANDROID:
+        return android.anicli_version()
     exe = anicli_path()
     if not exe:
         return None
@@ -262,6 +273,10 @@ def anicli_spawn(args, env, stdout, stderr):
     either is installed. The pty stays open until anicli_release. Windows
     has no pty (and no rofi/dmenu): stdin is empty there."""
     exe = anicli_path()
+    if not exe and system.ANDROID:
+        if not android.fetch_anicli(force=True):
+            raise AniCliError(android.problem() or android.NO_TERMUX)
+        exe = anicli_path()
     if not exe:
         raise AniCliError("ani-cli was not found — install ani-cli and make sure it is on PATH.")
     check = anicli_check()
@@ -270,6 +285,8 @@ def anicli_spawn(args, env, stdout, stderr):
     if anicli_outdated():
         # Settings and the tour say so too, but a play click is where it's felt.
         raise AniCliError(anicli_too_old_message())
+    if system.ANDROID:
+        return android.TermuxRun(args, env, stdout, stderr)  # one Termux job, Popen-shaped
     try:
         argv = [*system.script_argv(exe), *args]
     except FileNotFoundError as e:

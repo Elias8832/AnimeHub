@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
+from . import LOADED_AT, android, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -66,6 +66,7 @@ if (!t) {
     body: JSON.stringify({ access_token: t, expires_in: Number(h.get("expires_in")) || null }) })
   .then((r) => r.json())
   .then((j) => {
+    if (j.ok && window.AnimeHubApp) return location.replace("/");  // the Android app: back to the hub (Decision 88)
     if (j.ok) { m.innerHTML = "AniList connected as <b></b> — you can close this tab."; m.querySelector("b").textContent = j.user; setTimeout(() => window.close(), 3000); }
     else m.textContent = "Connect failed: " + (j.error || "unknown reason");
   })
@@ -80,7 +81,8 @@ def mal_callback_page(r):
     did start it (another port), it finishes there."""
     if r.get("ok"):
         msg = "MyAnimeList connected as <b>%s</b> — you can close this tab." % html.escape(r.get("user") or "")
-        script = 'history.replaceState(null, "", "/auth/mal/callback"); setTimeout(() => window.close(), 3000);'
+        script = ('history.replaceState(null, "", "/auth/mal/callback"); '
+                  'if (window.AnimeHubApp) location.replace("/"); else setTimeout(() => window.close(), 3000);')
     elif r.get("foreign"):
         msg = ("This Anime Hub didn't start that connection. If another Anime Hub window asked, copy this "
                "page's address and paste it there: Settings → Account → MyAnimeList.")
@@ -388,7 +390,7 @@ class Handler(BaseHTTPRequestHandler):
             # toggles + running config + detected tools, never the token.
             # additive (Decision 43): on a paired phone, Settings hides what
             # a phone can't change.
-            self.send_json({**settings.settings_payload(), "phone": self.remote_device is not None,
+            self.send_json({**settings.settings_payload(), "phone": self.remote_device is not None or system.ANDROID,
                             "fonts": fonts.all_fonts()})  # additive (TODO 122)
         elif route == "/api/browse":
             # Decision 32: the library folder picker walks one level at a time.
@@ -420,7 +422,8 @@ class Handler(BaseHTTPRequestHandler):
             # Additive (TODO 61): the metadata pass's progress while it runs,
             # so the library note follows it without refetching the library.
             meta = ({"running": True, "pending": metadata._meta_status["pending"], "total": metadata._meta_status["total"],
-                     "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"]}
+                     "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"],
+                     "matching": list(metadata._meta_status["matching"])}  # additive (TODO 222)
                     if metadata._meta_status["running"] else None)
             phone_now = phoneplay.now()
             # Additive (Decision 75): the lists' stamp and, while they are
@@ -800,7 +803,7 @@ class Handler(BaseHTTPRequestHandler):
                     settings.set_automation(key, body[key])
                     if key == "measure_lengths" and body[key]:
                         lengths.turned_on()
-            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None})
+            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None or system.ANDROID})
         elif route == "/api/phone/play":
             # The phone plays a file itself (Decision 71).
             if self._fields(body, strings=("id",), opt_ints=("version",)):
@@ -1008,6 +1011,13 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     res = metadata.set_kept_local(body["show_id"], body.get("keep", True))
                     self.send_json(res, 200 if res.get("ok") else 400)
+        elif route == "/api/termux-check":
+            # The Android app's "Check again" (Decision 88): read Termux's ani-cli now.
+            if not system.ANDROID:
+                self.send_json({"error": "Only in the Android app."}, 400)
+            else:
+                ok = android.fetch_anicli(force=True)
+                self.send_json({"ok": ok, "problem": android.problem()})
         elif route == "/api/title-search":
             # The search box's instant half (Decision 68): the local title
             # list only, no AniList. ready=false until the list is here.
@@ -1550,6 +1560,9 @@ def main():
     threading.Thread(target=background.refresh, daemon=True).start()
     update.tidy()
     threading.Thread(target=update.loop, daemon=True).start()
+    if system.ANDROID:
+        # Termux's ani-cli may have changed since the last start (Decision 88).
+        threading.Thread(target=android.fetch_anicli, kwargs={"force": True}, daemon=True).start()
     # The phone remote's Wi-Fi listener, when switched on (Decision 43).
     if remote.enabled():
         remote.start(RemoteHandler)
