@@ -1277,8 +1277,10 @@ function plLayoutMenu(x, y) {
 function plRowMenu(ref, x, y) {
   const p = plCurrent(), it = p?.items.find((q) => q.ref === ref);
   if (!it) return;
-  const st = plState(it), t = st.show && !st.fin ? pickTarget(st.show) : null, m = $("#cm");
-  const play = t && t.kind !== "rewatch" ? cmRow("play", t.ep.id, "play", `${resumable(t.ep) ? "Resume" : "Play"} ${esc(epCode(t.sea, t.ep))}`) : "";
+  /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
+  const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
+  const again = st.fin || t?.kind === "rewatch";
+  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`) : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
   m.innerHTML = `<div class="cap">${esc(it.title)}</div>${play}${cmRow("plopen", ref, "arrowr", "Open show")}${cmRow("pladd", ref, "list", "Add to another playlist", "", "", `data-r="${esc(ref)}" data-t="${esc(it.title)}" data-p="${esc(it.poster || "")}"`)}${move}<div class="sep"></div>${cmRow("plremove", ref, "close", "Remove from this playlist", "", "", 'data-danger="1"')}`;
