@@ -64,6 +64,17 @@ class Frontend(unittest.TestCase):
         self.assertEqual(self.filtered(genres=["Action", "Drama"]), [1])
         self.assertEqual(self.filtered(genres=[]), [1, 2, 3, 4])
 
+    def test_source_format_airing_take_several_picks(self):
+        """Elias, 2026-11-12: two formats or two airing states at once; a show
+        passes when it matches any pick. A single pick saved before still works."""
+        self.assertEqual(self.filtered(air=["RELEASING", "HIATUS"]), [1, 3])
+        self.assertEqual(self.filtered(air="FINISHED"), [2])
+        self.assertEqual(self.filtered(air="all"), [1, 2, 3, 4])
+        self.assertEqual(run_js("S.lib.fmt = ['TV', 'MOVIE']; return [fhas('fmt', 'TV'), fhas('fmt', 'OVA'), fval('fmt', FOPTS_T)];"
+                                .replace("FOPTS_T", '[["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"]]')),
+                         [True, False, "TV, Movie"])
+        self.assertEqual(run_js("S.lib.fmt = ['TV', 'MOVIE', 'OVA']; return fval('fmt', [['all', 'any']]);"), "3 picked")
+
     def test_genre_tray_counts_the_open_tab(self):
         m = json.dumps({"entries": ENTRIES})
         self.assertEqual(run_js(f"return genreCounts({m});"), [["Action", 2], ["Drama", 2]])
@@ -368,7 +379,13 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn("#app.nav-in .lib2 .lmain .filters{animation:rise", block)
         self.assertIn("if (railTop) { const r = $(\".lnav\"); if (r) r.scrollTop = railTop; }", APP)
         # source / format / airing open in place as chips in the side list, no popup
-        self.assertIn("const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel;", APP)
+        self.assertIn('const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}', APP)
+        # several can be picked (Elias, 2026-11-12); the list stays open on a phone too
+        self.assertIn('const FMULTI = new Set(["src", "fmt", "air"]);', APP)
+        self.assertIn('S.lib[k] = next.length ? next : "all";', APP)
+        self.assertIn('(multi ? opts.filter(([v]) => v !== "all") : opts)', APP)  # nothing ticked = any, no "any" row
+        self.assertIn('const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);', APP)
+        self.assertIn(".lib2 .filters>.fdrop .fpanel{display:none;position:absolute;", CSS)
         self.assertIn('data-a="fpick" data-k="${k}"', APP)
         self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills
         # the drop-down list: a caption, a check on the picked one, hung from a right-hand chip's right edge
@@ -400,7 +417,7 @@ class SearchPalette(unittest.TestCase):
         self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)
         self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
         self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
-        self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone);', APP)
+        self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone || s.android)', APP)
         self.assertIn('<nav class="snav" aria-label="Settings sections">${isPhone() ? "" : setSearch()}${tabs.map(', APP)
         self.assertIn("r.classList.add(\"flash\")", APP)
 
@@ -568,7 +585,30 @@ class Polish(unittest.TestCase):
         """A switch or card updates in place; only a new page animates."""
         self.assertIn('if (m.t === "tour" && !focus) morphHTML(dlg, body);', APP)
         self.assertIn("tourback: () => { S.tour.step--; paintModal(true); }", APP)
-        self.assertIn("if (T.step < (S.settings?.background_ok ? 8 : 7)) { T.step++; return paintModal(true); }", APP)
+        self.assertIn("if (T.step < tourBlocks().length - 1) { T.step++; return paintModal(true); }", APP)
+
+    def test_android_settings_have_no_pc_parts(self):
+        """Decision 88: no mpv, library folder, desktop updates or tools on Android."""
+        self.assertIn("if (s.android) return rc; // the Android app has no mpv", APP)
+        self.assertIn('${s.android ? "" : `<div class="group"><h3>Subtitle look</h3>', APP)
+        self.assertIn('${s.android ? "" : srow("Mark them on the seek bar"', APP)
+        self.assertIn('if (s.android) return `<div class="group"><h3>Termux</h3>', APP)
+        self.assertIn('library: s.android && !s.files_ok ? g("Your files", filesAsk())', APP)
+        self.assertIn('DirPick("settings") + (s.android ? "" : lengthRow(s))', APP)  # no mpv to measure with
+        self.assertIn('data: s.android ? g("Updates", updateRows(s))', APP)  # updates in the app (Decision 88)
+        self.assertIn("if (S.settings?.android) { location.href = url; return; }", APP)
+
+    def test_the_android_tour(self):
+        """Decision 88: no folder, mpv or phone remote pages; Termux setup instead."""
+        fn = APP[APP.index("function tourAndroid("):APP.index("function Tour() {")]
+        self.assertIn("${termuxBox(s)}", fn)
+        self.assertIn("tourSearch(),", fn)
+        for pc_only in ("tourTools(", "tourLooks(", "tourMpv(", "bgRows("):
+            self.assertNotIn(pc_only, fn)
+        # own files: optional, and only after Android's file access
+        self.assertIn('${s.files_ok ? `<div class="path">${libPath("tour", s)}', fn)
+        self.assertIn(": filesAsk()}", fn)
+        self.assertIn("if (s.android) return tourAndroid(T, s, a);", APP)
 
     def test_a_tour_pick_shows_before_it_saves(self):
         """The outline moves on click; a failed save puts the old pick back."""
@@ -583,7 +623,7 @@ class Polish(unittest.TestCase):
     def test_tour_explains_search(self):
         """Its own page, before the last one, and the phone page keeps its slot."""
         self.assertIn("    tourSearch(),\n    `<h2 id=\"dt\">You're set</h2>", APP)
-        pages = APP[APP.index("const b = tourPages(["):APP.index("tourSearch(),\n")]
+        pages = APP[APP.index("  return tourPages(["):APP.index("tourSearch(),\n")]
         self.assertEqual(pages.count('<h2 id="dt">'), 7)
         self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`,"))
 

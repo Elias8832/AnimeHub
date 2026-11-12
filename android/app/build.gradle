@@ -1,0 +1,74 @@
+// The Android app (Decision 88): a WebView over the same hub as the PC app.
+// The hub's code and icon are copied in from the repo at build time.
+plugins {
+    id "com.android.application"
+    id "com.chaquo.python"
+}
+
+def repo = rootDir.parentFile
+def hubVersion = (file("$repo/animehub/__init__.py").text =~ /VERSION = "([^"]+)"/)[0][1]
+
+// The release key (Decision 88): every APK is signed with the same key, or
+// Android won't install a new one over the old. GitHub gets it from the
+// repo's secrets (ANDROID_KEYSTORE, ANDROID_KEY_PASSWORD); a local build
+// from local.properties (animehub.keystore, animehub.keypass). Without it
+// the build falls back to the machine's own debug key.
+def localProps = new Properties()
+if (rootProject.file("local.properties").exists()) rootProject.file("local.properties").withInputStream { localProps.load(it) }
+def keystore = System.getenv("ANDROID_KEYSTORE") ?: localProps.getProperty("animehub.keystore")
+def keypass = System.getenv("ANDROID_KEY_PASSWORD") ?: localProps.getProperty("animehub.keypass")
+def signed = keystore && keypass && file(keystore).exists()
+
+android {
+    namespace "io.github.elias8832.animehub"
+    signingConfigs {
+        if (signed) {
+            animehub {
+                storeFile file(keystore)
+                storePassword keypass
+                keyAlias "animehub"
+                keyPassword keypass
+            }
+        }
+    }
+    buildTypes {
+        // Test builds use the same key, so either installs over the other.
+        debug { if (signed) signingConfig signingConfigs.animehub }
+        release {
+            minifyEnabled false
+            if (signed) signingConfig signingConfigs.animehub
+        }
+    }
+    compileSdk 35
+    defaultConfig {
+        applicationId "io.github.elias8832.animehub"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName hubVersion
+        ndk { abiFilters "arm64-v8a", "x86_64" }
+    }
+    sourceSets {
+        main {
+            assets.srcDirs += [layout.buildDirectory.dir("hub-assets").get().asFile]
+            res.srcDirs += [layout.buildDirectory.dir("hub-res").get().asFile]
+        }
+    }
+}
+
+chaquopy {
+    defaultConfig { delegate.version = "3.13" }
+}
+
+def copyHub = tasks.register("copyHub", Sync) {
+    from(repo) {
+        include "hub.py", "animehub/**", "web/**", "mpv/**"
+        exclude "**/__pycache__/**"  // animehub/build.json comes along when CI stamped the build (Decision 76)
+    }
+    into layout.buildDirectory.dir("hub-assets/hub")
+}
+def copyIcon = tasks.register("copyIcon", Copy) {
+    from("$repo/web/icon-512.png") { rename { "ic_launcher.png" } }
+    into layout.buildDirectory.dir("hub-res/mipmap-xxxhdpi")
+}
+tasks.named("preBuild") { dependsOn copyHub, copyIcon }

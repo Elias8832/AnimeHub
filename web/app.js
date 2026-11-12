@@ -739,7 +739,7 @@ function Home() {
   if (!up && !L.length) {
     body = `<div class="emptyx"><div class="eico">${ico("tv")}</div>${d.shows.length
       ? `<b>Nothing watched yet</b><span>Your library is waiting.</span><button class="btn pri" data-a="go" data-v="library">Browse library</button>`
-      : d.stream_ready ? `<b>Nothing watched yet</b><span>Search for a show to start watching — or add your anime folder in Settings → Library.</span>`
+      : d.stream_ready || S.settings?.android ? `<b>Nothing watched yet</b><span>Search for a show to start watching${S.settings?.android ? "." : " — or add your anime folder in Settings → Library."}</span>`
       : `<b>Your library is empty</b><span>Choose your anime folder in Settings → Library.</span>`}</div>` + body;
   }
   return `<div class="home2"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${up ? heroHTML(up) : ""}${body}</div>`;
@@ -795,7 +795,8 @@ function libSort(k, rev) {
 }
 const inProg = (st) => ["CURRENT", "REPEATING", "PAUSED"].includes(st);
 /* "Keep local" (TODO 12c) moves a folder from To match to Untracked. */
-const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id && !s.kept_local);
+/* Shows the matching pass hasn't reached yet aren't "Needs a look" (TODO 222): a first scan put every show there for a while. */
+const unmatchedShows = () => S.data.shows.filter((s) => !s.meta?.anilist_id && !s.kept_local && !(S.data.meta_matching || []).includes(s.id));
 /* Folders with files their names give no episode number for: numbered in
    file order until you check them (Needs a look). */
 const unclearShows = () => S.data.shows.filter((s) => (s.seasons || []).some((sea) => sea.episodes.some((e) => e.guessed)));
@@ -841,14 +842,22 @@ function fixTab(m) {
 function libList(m) {
   const f = S.lib;
   return libCards(m.entries.filter((e) => (f.tab === "ALL" || e.status === f.tab)
-    && (srcLocked() || f.src === "all" || e.capability === f.src)
-    && (f.fmt === "all" || e.format === f.fmt)
-    && (f.air === "all" || e.airing === f.air)
+    && (srcLocked() || fhas("src", e.capability))
+    && fhas("fmt", e.format)
+    && fhas("air", e.airing)
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
     && (!Array.isArray(f.average) || (e.average > 0 && inRange(f.average, e.average)))
     && hasGenres(e, f.genres))).sort(libSort(f.sort, f.rev));
 }
+/* Source, format and airing take several picks (Elias, 2026-11-12, Decision 13):
+   a show passes when it matches any of them. "all" = nothing picked; a saved
+   single pick (a string, from before) still reads as one. */
+const FMULTI = new Set(["src", "fmt", "air"]);
+const fpicked = (k) => { const v = S.lib[k]; return v === "all" || v == null ? [] : Array.isArray(v) ? v : [v]; };
+const fhas = (k, x) => { const p = fpicked(k); return !p.length || p.includes(x); };
+/* The chip's value: the picks by name, or how many once that gets long. */
+const fval = (k, opts) => { const p = fpicked(k); return !p.length ? opts[0][1] : p.length > 2 ? `${p.length} picked` : p.map((v) => (opts.find(([o]) => o === v) || [v, v])[1]).join(", "); };
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
 const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genres || []).includes(g));
 /* The tray: genres in the open tab, most cards first (one per franchise). */
@@ -953,13 +962,15 @@ function plItemCard(it, i, all, next = -1, view = "list") {
   const st = plState(it), pct = st.tot ? Math.min(100, Math.round((100 * st.done) / st.tot)) : 0;
   const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
   const art = st.entry?.poster || st.show?.poster || it.poster;
-  const ctl = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>
-    <div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const more = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>`;
+  const arrows = `<div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const ctl = more + arrows;
+  /* Posters: ⋯ follows the facts line's text, so it never floats on its own (Elias, 2026-11-12). */
   /* Posters (mockup B, Elias 2026-11-11: each playlist picks): a big outlined
      place number behind each poster, like a top-10 row. */
   if (view === "posters") return `<div class="plit plpost${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plpc" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plbig${i >= 9 ? " two" : ""}" aria-hidden="true">${i + 1}</span><span class="plpi">${poster(it.title, art)}${st.tot ? `<i class="plbar"><i style="width:${pct}%"></i></i>` : ""}</span></button>
-    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small></div>${ctl}</div>`;
+    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><span class="plpf"><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small>${more}</span></div>${arrows}</div>`;
   return `<div class="plit plrow${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plr" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plno">${i + 1}</span><span class="plth">${poster(it.title, art)}</span>
     <span class="plt"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b>${st.more ? `<small>${esc(st.more)}</small>` : ""}</span>
@@ -1297,8 +1308,10 @@ function plLayoutMenu(x, y) {
 function plRowMenu(ref, x, y) {
   const p = plCurrent(), it = p?.items.find((q) => q.ref === ref);
   if (!it) return;
-  const st = plState(it), t = st.show && !st.fin ? pickTarget(st.show) : null, m = $("#cm");
-  const play = t && t.kind !== "rewatch" ? cmRow("play", t.ep.id, "play", `${resumable(t.ep) ? "Resume" : "Play"} ${esc(epCode(t.sea, t.ep))}`) : "";
+  /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
+  const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
+  const again = st.fin || t?.kind === "rewatch";
+  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`) : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
   m.innerHTML = `<div class="cap">${esc(it.title)}</div>${play}${cmRow("plopen", ref, "arrowr", "Open show")}${cmRow("pladd", ref, "list", "Add to another playlist", "", "", `data-r="${esc(ref)}" data-t="${esc(it.title)}" data-p="${esc(it.poster || "")}"`)}${move}<div class="sep"></div>${cmRow("plremove", ref, "close", "Remove from this playlist", "", "", 'data-danger="1"')}`;
@@ -1556,7 +1569,7 @@ function scanNote() {
   if (!scan) return null;
   const bits = [];
   if (scan.root === "changed") bits.push("Your library folder changed — reconnect the new folder to pick your shows back up.");
-  if (scan.state === "unconfigured") bits.push("No library folder is configured yet — choose one in Settings.");
+  if (scan.state === "unconfigured" && !S.settings?.android) bits.push("No library folder is configured yet — choose one in Settings.");
   if (scan.state === "missing") bits.push("The library folder is not accessible right now.");
   else if (scan.state === "partial") bits.push("Some folders could not be read — part of the library may be missing.");
   return bits.length ? bits.join(" ") : null;
@@ -1587,11 +1600,14 @@ function fdrop(k, label, inner, val, set = Array.isArray(S.lib[k]), locked = fal
 /* Side list: a pick-one filter opens in place as a list of its options, one per row (no pills, Elias) (Elias: "make the
    upper three expand downwards like the bottom three, I don't like the popup"). */
 function fchoice(k, label, opts, locked) {
+  const multi = FMULTI.has(k) && !locked, p = fpicked(k);
   const cur = locked ? opts[1] : opts.find(([v]) => v === S.lib[k]) || opts[0];
-  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => {
-    const on = v === cur[0];
+  const isOn = (v) => multi ? (v === "all" ? !p.length : p.includes(v)) : v === cur[0];
+  /* no "any" row where several can be ticked: nothing ticked is any (Elias) */
+  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${(multi ? opts.filter(([v]) => v !== "all") : opts).map(([v, l]) => {
+    const on = isOn(v);
     return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="fpick" data-k="${k}" data-v="${esc(v)}"><span>${esc(l)}</span>${ico("check")}</button>`;
-  }).join("")}</div>`, cur[1], !locked && cur[0] !== "all", locked);
+  }).join("")}</div>`, multi ? fval(k, opts) : cur[1], multi ? p.length > 0 : !locked && cur[0] !== "all", locked);
 }
 function fdropClose(except) {
   for (const d of $$(".fdrop.open")) if (d !== except) { d.classList.toggle("open", false); d.querySelector(".fdb")?.setAttribute("aria-expanded", "false"); }
@@ -1664,7 +1680,7 @@ function Lib() {
     /* Phones (TODO 177): the sheet lists the filters as rows, like the PC's side
        list; sort sits on the line above the grid. */
     const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
-    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
+    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>
       <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
@@ -1687,9 +1703,9 @@ const FOPTS = () => ({
   src: [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]],
   fmt: [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]],
   air: [["all", "any"], ...Object.entries(AIR)] });
-const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel; return `${pick("src", cap("source"), o.src, srcLocked())}
-      ${pick("fmt", cap("format"), o.fmt)}
-      ${pick("air", cap("airing"), o.air)}
+const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}
+      ${fchoice("fmt", cap("format"), o.fmt)}
+      ${fchoice("air", cap("airing"), o.air)}
       ${fdrop("year", cap("year"), frng("year", "year", ...yearBounds(), 1, String))}
       ${fdrop("score", cap("my score"), frng("score", "my score", 0, 10, 0.5, (x) => String(x)))}
       ${fdrop("average", cap("average"), frng("average", "average", 0, 100, 5, (x) => String(x)))}`; };
@@ -1711,7 +1727,7 @@ function libRail(m, sum, loading) {
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
     ${loading ? head(acct() + " lists") + `<div class="lghost" style="--i:${n++}" aria-hidden="true">${[58, 76, 88, 70].map((w) => `<i><b style="width:${w}px"></b><u></u></i>`).join("")}</div><div class="lload" style="--i:${n++}">${listLoad()}</div>` : ""}
-    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
+    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1))}${gen}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
 }
@@ -1749,7 +1765,7 @@ function paintWall(fade) {
   const m = libModel();
   const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
   let html = cards.join("");
-  const empty = S.lib.tab === "PLAYLISTS" ? "" /* the open playlist's banner says it's empty and has the Add button */ : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : "<span>Check your library folder, then rescan.</span>"}</div>`;
+  const empty = S.lib.tab === "PLAYLISTS" ? "" /* the open playlist's banner says it's empty and has the Add button */ : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : S.settings?.android ? "<span>Shows you watch show up here. Search to find one.</span>" : "<span>Check your library folder, then rescan.</span>"}</div>`;
   const lc = $(".lmain .filters .lh .n"); // the heading counts what the filters leave
   if (lc) lc.textContent = cards.length;
   const fx = fade && !reduceMotion();
@@ -2314,7 +2330,7 @@ function cmShow(m, x, y) {
 /* A phone with a set Play button: every menu that starts an episode also
    offers the other place (Elias, 2026-11-10; Decision 71). "" elsewhere. */
 function cmOther(id) {
-  const pw = awayDevice() ? playWhere() : null;
+  const pw = awayDevice() && !S.settings?.android ? playWhere() : null; // no PC to offer in the Android app
   if (!pw) return "";
   const to = pw === "phone" ? "pc" : "phone";
   return cmRow("playon", id, to === "pc" ? "tv" : "phone", to === "pc" ? "Play on the PC" : "Play on this phone", "", "", `data-where="${to}"`);
@@ -2997,10 +3013,10 @@ const upName = (f) => f.label || "v" + f.version;
 function updateRows(s) {
   const u = s.update || {}, f = u.found, j = u.job || {}, one = !!u.installable, busy = j.state === "working", done = j.state === "done";
   const more = f?.url ? `<button class="btn" data-a="upnotes">What's new</button>` : "";
-  const how = done ? (S.upRestart ? "Restarting… the page reloads when the new version answers." : `Updated. Restart AnimeHub to start the new version.${j.note ? " " + esc(j.note) : ""}`)
+  const how = done ? (u.kind === "android" ? "Downloaded. Android asks you to install it: tap Update. Your data stays." : S.upRestart ? "Restarting… the page reloads when the new version answers." : `Updated. Restart AnimeHub to start the new version.${j.note ? " " + esc(j.note) : ""}`)
     : busy ? (u.kind === "git" ? "Getting it with git…" : `Downloading… ${j.percent || 0}%`)
     : j.state === "failed" ? esc(j.error || "Nothing changed.")
-    : one ? ({ git: "Moves this copy ahead with git. Your data stays.", windows: "Swaps in the new files. Your data stays." }[u.kind] || "Replaces this AppImage. Your data stays.")
+    : one ? ({ git: "Moves this copy ahead with git. Your data stays.", windows: "Swaps in the new files. Your data stays.", android: "Downloads the new app, then Android asks to install it. Your data stays." }[u.kind] || "Replaces this AppImage. Your data stays.")
     : u.kind === "appimage" ? "Download the new AppImage and swap it for this one. Your data stays."
     : u.kind === "windows" ? "Download the new zip and replace the whole folder. Your data stays."
     : "Run <code>git pull</code>, then <code>cargo build --release &amp;&amp; ./install.sh</code> in <code>desktop/</code>. Your data stays.";
@@ -3011,7 +3027,7 @@ function updateRows(s) {
     : "Every numbered release on GitHub.";
   return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
     + (f ? srow(`${esc(upName(f))} is out${j.state === "failed" ? swarn("Failed") : ""}`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : j.state === "failed" ? "Try again" : "Install"}</button>`
-      : done ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
+      : done && u.kind !== "android" ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
     + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
     + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
 }
@@ -3035,16 +3051,18 @@ function setSections(s) {
       + srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]], "Background art"))
       + srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]], "Film grain"))
       + srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]], "Motion"))),
-    library: g("Folders", srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
-      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`, "wide") + DirPick("settings") + lengthRow(s))
+    library: s.android && !s.files_ok ? g("Your files", filesAsk()) + g("Shows", srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture.", onoff("hide_spoilers", "Hide spoilers", s.hide_spoilers)) + plFanRow()) : g("Folders", srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
+      `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`, "wide") + DirPick("settings") + (s.android ? "" : lengthRow(s)))
       + (s.library_root ? extraGroup(s) : "")
-      + g("Shows", srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture. Also in mpv's list.", onoff("hide_spoilers", "Hide spoilers", s.hide_spoilers)) + upscaleRow(s) + plFanRow()),
+      + g("Shows", srow("Hide spoilers", `Unstarted episodes show no title and a blurred picture.${s.android ? "" : " Also in mpv's list."}`, onoff("hide_spoilers", "Hide spoilers", s.hide_spoilers)) + (s.android ? "" : upscaleRow(s)) + plFanRow()),
     privacy: privacyGroup(s),
     anilist: accountGroup(ani) + `<div class="group adv2${off ? " dis" : ""}"><h3>While you watch</h3>${off ? '<p class="sub">Connect an account to use these.</p>' : ""}
     ${srow("Send watched episodes", `Sends your highest watched episode to ${acct()}.`, onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, off))}
     ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, off))}</div>`,
-    phone: s.phone ? "" : phoneGroup(),
-    data: g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
+    phone: s.android ? syncGroup() : s.phone ? "" : phoneGroup(),
+    data: s.android ? g("Updates", updateRows(s)) + g("About", srow("Data folder", `<code>${esc(s.data_dir)}</code>`, ""))
+      + g("Help", srow("First-run tour", "Walk through AniList and Termux again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>')))
+    : g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
       + g("Tools", `${toolsBox(s)}${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
       + g("Files", `${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}`)
       + g("Help", (isPhone() ? "" : srow("Keys", "Every shortcut. Press ? anywhere for this list.", pkdo('<button class="btn" data-a="menu" data-v="keys">Show keys</button>'))) + srow("First-run tour", "Walk through the library folder and AniList again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>'))),
@@ -3060,7 +3078,7 @@ function accountGroup(ani) {
     : on ? `In use: your ${name} lists are the sections of your library.${a.expires_at ? " Token expires " + new Date(a.expires_at * 1000).toLocaleDateString() + "." : ""}`
     : "Logged in, paused. Switch Lists from to use it.";
   const row = (name, a, act, on) => srow(name, txt(a, name, on), pkdo(a.user ? who(a.user) + `<button class="btn" data-a="${act}">Manage</button>` : `<button class="btn${use ? "" : " pri"}" data-a="${act}">Connect ${name}</button>`));
-  return `<div class="group"><h3>Account</h3><p class="sub">${use ? "Show info, art and airing times come from AniList either way." : "Not connected. Everything runs on what you watch on this PC."}</p>
+  return `<div class="group"><h3>Account</h3><p class="sub">${use ? "Show info, art and airing times come from AniList either way." : `Not connected. Everything runs on what you watch on this ${S.settings?.android ? "phone" : "PC"}.`}</p>
     ${row("AniList", al, "ani", use === "anilist")}${row("MyAnimeList", ml, "mal", use === "mal")}
     ${both ? srow("Lists from", "Your library's sections, and where watched episodes and scores go.", pick("Lists from", "acctuse", null, [["anilist", "AniList"], ["mal", "MyAnimeList"]], use)) : ""}
     ${use && ani.connected ? srow(`Compare with ${acct()}`, "The check you get when connecting, any time.", pkdo(`<button class="btn" data-a="reccheck">Compare</button>`)) : ""}</div>
@@ -3103,15 +3121,17 @@ function setResults(s, tabs) {
   return html.trim() ? (n ? `<p class="setcount">${n} ${n === 1 ? "setting" : "settings"}</p>` : "") + html : `<p class="setnone">Nothing for “${esc(S.setQ)}”. Try one word, like “subtitle” or “vpn”.</p>`;
 }
 const setClear = () => { S.setQ = ""; const f = $("#setq"); if (f) f.value = ""; };
+document.addEventListener("input", (e) => { if (e.target.id === "peeraddr") S.peerAddr = e.target.value; else if (e.target.id === "peercode") S.peerCode = e.target.value; }); // a redraw keeps what's typed (Decision 91)
 document.addEventListener("input", (e) => { if (e.target.id === "setq") { S.setQ = e.target.value; render(true); scrollTo(0, 0); } });
 const setSearch = () => `<label class="slsearch">${ico("search")}<input id="setq" type="search" value="${esc(S.setQ)}" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">${S.setQ ? `<button data-a="setclear" aria-label="Clear">${ico("close")}</button>` : `<kbd class="kb" aria-hidden="true">/</kbd>`}</label>`;
 /* Sections sorted by what you're after, under plain headings. */
-const setHeads = (tabs) => [...new Set(tabs.map((t) => t[2]))].map((g) => [g, tabs.filter((t) => t[2] === g)]);
+const setHeads = (tabs) => [...new Set(tabs.map((t) => t[2]))].map((g) => [S.settings?.android && g === "This PC" ? "This phone" : g, tabs.filter((t) => t[2] === g)]); // the Android app (Decision 88)
 function Sett() {
   const s = S.settings;
   if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
   /* Settings (Decision 38, regrouped in 61): one section at a time; every setting can be found from the box on top. */
-  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone); // a paired phone can't change the remote (Decision 43)
+  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone || s.android) // a paired phone can't change the remote (Decision 43)
+    .map((t) => s.android && t[0] === "phone" ? ["phone", "PC sync", t[2]] : t); // the app syncs with a PC there (Decision 91)
   if (isPhone() && !S.setOpen) return settingsList(tabs, s);
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
   let n = 1; // the side list's entrance order
@@ -3341,10 +3361,11 @@ window.addEventListener("keydown", (e) => {
 function playerGroup(s) {
   const m = s.mpv || {}, hub = m.design === "on";
   const w = playWhere();
-  const here = awayDevice() ? `<div class="group"><h3>On this phone</h3>${srow("Play button", "Where episodes play when you tap Play here. Online ones come through the PC.", pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
+  const here = awayDevice() && !S.settings?.android ? `<div class="group"><h3>On this phone</h3>${srow("Play button", "Where episodes play when you tap Play here. Online ones come through the PC.", pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
   const rc = `<div class="group"><h3>Before a new season</h3>
     ${srow("Season reminder", "When you start a new season, see how the last one ended: its last episode, recaps and characters.", onoff("recap_ask", "Season reminder", s.recap_ask !== false))}
     ${srow("Remind me after", "Only if you finished the last season at least this long ago.", pick("Remind me after", "spref", "recap_after", [["1", "1 month"], ["2", "2 months"], ["3", "3 months"], ["6", "6 months"], ["12", "1 year"]], s.recap_after || "2", { off: s.recap_ask === false }))}</div>`;
+  if (s.android) return rc; // the Android app has no mpv (Decision 88)
   return `${here}<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. A choice here wins over it; My config leaves it to your file.</p>
     ${srow("Fullscreen", "Start every episode in fullscreen.", mpvSeg(m, "fullscreen", "Fullscreen"))}
     ${srow("Starting volume", "Where I left it: the volume the last episode ended on.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Where I left it"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
@@ -3368,11 +3389,11 @@ function subsGroup(s) {
   return `<div class="group"><h3>Audio and subtitle tracks</h3>
     ${srow("Sub or dub", "For online episodes. Each episode's menu can play the other one.", pick("Sub or dub", "spref", "stream_mode", SLMODES, st.mode, { off: !s.tools?.["ani-cli"] }))}
     ${srow("Remember audio and subtitles", "Switch tracks once and the show's next episodes use the same ones.", onoff("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>
-    <div class="group"><h3>Subtitle look</h3><p class="sub">Little changes unless Styled subtitles is set to Replace.</p>
+    ${s.android ? "" : `<div class="group"><h3>Subtitle look</h3><p class="sub">Little changes unless Styled subtitles is set to Replace.</p>
     ${srow("Size", "", mpick(m, "sub_size", "Subtitle size", [["own", "My config"], ["small", "Small"], ["normal", "Normal"], ["large", "Large"]]))}
     ${srow("Colour", "", mpick(m, "sub_color", "Subtitle colour", [["own", "My config"], ["white", "White"], ["yellow", "Yellow"]]))}
     ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", [["own", "My config"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]]))}
-    ${srow("Styled subtitles", "Replace uses this style instead. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`;
+    ${srow("Styled subtitles", "Replace uses this style instead. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`}`;
 }
 function skipGroup(s) {
   const sk = s.skip || {};
@@ -3381,7 +3402,7 @@ function skipGroup(s) {
   return `<div class="group"><h3>Openings and endings</h3>
     ${srow("Skip openings", "Ask: shows a skip button. Auto: skips right away.", seg("op", "Skip openings"))}
     ${srow("Skip endings", "Anything after the ending still plays.", seg("ed", "Skip endings"))}
-    ${srow("Mark them on the seek bar", "Shows openings and endings on mpv's seek bar. Needs skipping on.", onoff("mpv_marks", "Mark them on the seek bar", m.marks !== false))}</div>
+    ${s.android ? "" : srow("Mark them on the seek bar", "Shows openings and endings on mpv's seek bar. Needs skipping on.", onoff("mpv_marks", "Mark them on the seek bar", m.marks !== false))}</div>
     <div class="group"><h3>AniSkip</h3>
     ${srow("Skip times from AniSkip", "For files without chapters and online episodes. AniSkip sees the episode, its length and your IP address. Privacy & VPN can ask first.", onoff("aniskip", "Skip times from AniSkip", s.aniskip === true))}</div>`;
 }
@@ -3401,13 +3422,40 @@ function phoneGroup() {
     : !r.address ? srow("Pair a phone", "This PC isn't on a network right now.", "")
     : code ? `<div class="pairbox"><div class="qr" aria-label="QR code with the pairing link">${code.qr}</div><div class="pairtxt"><b>Scan this with the phone's camera</b>
         <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
-        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
+        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone. The Android app takes the same address and code in its Settings → PC sync.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
     : srow("Pair a phone", "Shows a QR code to scan with the phone.", pkdo('<button class="btn pri" data-a="rmtcode">Pair a phone</button>'));
   const devs = r.devices.length ? r.devices.map((d) => srow(esc(d.name), `Paired ${esc(when(d.created))} · last used ${esc(when(d.last_seen))}`, pkdo(`<button class="btn" data-a="rmtdel" data-v="${d.id}">Remove</button>`))).join("")
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
     ${srow("Phone remote", "Control playback from your phone. Same Wi-Fi, no app.", pick("Phone remote", "rmton", null, [["on", "On"], ["off", "Off"]], r.on ? "on" : "off"))}
     ${pair}${r.on ? srow("Keep the PC playing", "Off: playing an episode on the phone stops mpv here. On: both play at once.", onoff("phone_play_both", "Keep the PC playing", S.settings?.phone_play_both)) : ""}${S.settings?.background_ok ? srow("When the window closes", "Keep running and Start at login are in System.", "") : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
+}
+/* Settings → PC sync in the Android app (Decision 91): pair once with the
+   PC's phone remote (address + code), then the two keep watched episodes,
+   stop points, history, playlists and your own list entries the same. */
+const syncAgo = (t) => { if (!t) return ""; const m = Math.round((Date.now() - new Date(t.replace(" ", "T") + "Z")) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t.replace(" ", "T") + "Z").toLocaleDateString(); };
+function syncGroup() {
+  const p = S.peer;
+  if (!p) { api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Sync with your PC</h3><p class="sub">Loading…</p></div>'; }
+  if (!p.paired) return `<div class="group"><h3>Sync with your PC</h3><p class="sub">Keeps what you watched and your playlists the same on both.</p>
+    ${srow("1. On the PC", "Settings → Phone → Pair a phone.", "")}
+    ${srow("2. Here", "Type the address and code it shows.", "")}
+      <div class="row peerform"><input id="peeraddr" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="192.168.2.31:8788" aria-label="The PC's address" value="${esc(S.peerAddr || "")}"><input id="peercode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Pairing code" value="${esc(S.peerCode || "")}"><button class="btn pri" data-a="peerpair"${S.peerBusy ? " disabled" : ""}>${S.peerBusy ? "Pairing…" : "Pair"}</button></div>
+    ${p.error ? `<p class="note">${swarn(esc(p.error))}</p>` : ""}</div>`;
+  const err = p.error && (!p.last_ok || (p.last_try || "") > p.last_ok) ? p.error : "";
+  const last = p.last_ok ? `Last synced ${syncAgo(p.last_ok)}.` : "Not synced yet.";
+  return `<div class="group"><h3>Sync with your PC</h3>
+    ${srow(esc(p.pc || "Your PC"), "", pkdo('<button class="btn" data-a="peerforget">Unpair</button>'))}
+    ${srow(`Sync${err ? swarn(p.vpn_blocked ? "VPN" : "Waiting") : ""}`, esc(err ? `${err} ${last}` : last), pkdo(`<button class="btn" data-a="peernow"${S.peerBusy || p.running ? " disabled" : ""}>${S.peerBusy || p.running ? "Syncing…" : "Sync now"}</button>`))}</div>`;
+}
+async function peerDo(body, done) {
+  S.peerBusy = true; render(true);
+  try {
+    const r = await api("/api/peer", body);
+    S.peer = r;
+    if (r.error) toast(r.error, "err"); else if (done) toast(done(r));
+  } catch { toast("Could not reach the hub.", "err"); }
+  S.peerBusy = false; render(true);
 }
 function phoneWatch() {
   phoneGroup.t = 0;
@@ -3429,6 +3477,9 @@ async function remoteSet(body) {
 const QLABEL = { best: "Best available", worst: "Smallest" };
 function streamGroup(s) {
   const st = s.stream || {}, off = !s.tools?.["ani-cli"];
+  if (s.android) return `<div class="group"><h3>Termux</h3><p class="sub">Anime Hub finds online episodes with ani-cli, which runs in the Termux app. Update it there with <code>pkg upgrade</code>.</p>${termuxBox(s)}</div>
+    <div class="group ${termuxReady(s) ? "" : "off"}"><h3>Online episodes</h3><p class="sub">Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>
+    ${srow("Quality", "For watching.", pick("Quality", "spref", "stream_quality", (st.qualities || []).map((q) => [q, QLABEL[q] || q + "p"]), st.quality, { off: !termuxReady(s) }))}</div>`;
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
   const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), pkdo(aniBtn(s))) : st.own ? srow("ani-cli", esc(aniLine(s)), pkdo(aniBtn(s))) : "";
   return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show. Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>${bad ? `<p class="note">${swarn("Update ani-cli.")} This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
@@ -3458,7 +3509,7 @@ function dirCrumbs(path) {
    places on the left like a file manager's, where you are in big letters, a
    find box that narrows the folders as you type, and the keyboard: ↑↓ move,
    Enter opens, Backspace goes up, Esc closes. The tour keeps the small one. */
-const dirName = (path) => path.split(/[\\/]/).filter(Boolean).pop() || path;
+const dirName = (path) => (path === "/storage/emulated/0" ? "Phone" : path.split(/[\\/]/).filter(Boolean).pop() || path); // Android names its storage "0" (Decision 88)
 const dirShown = (p) => { const q = (p.q || "").trim().toLowerCase(); return q ? (p.dirs || []).filter((d) => d.name.toLowerCase().includes(q)) : p.dirs || []; };
 const dirCount = (p) => { const n = p.dirs?.length || 0, m = dirShown(p).length; return !n ? "" : m < n ? `${m} of ${n} folders` : `${n} folder${n === 1 ? "" : "s"}`; };
 function dirRows(p) {
@@ -3571,11 +3622,20 @@ async function dirSet(path) {
   S.dir = null;
   toast("Library folder set — scanning…");
   await loadSettings();
-  await reload();
-  api("/api/refresh", {}).catch(() => {});
+  await refreshAndWatch();
   if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
 }
 /* Extra library folders (Decision 42): added through the same browser, removed from their row. */
+/* Scan and match (TODO 222): start the pass first, then load the library,
+   then follow the pass to its end on whatever page is open. Loading first
+   missed the pass: new shows sat under Needs a look although the hub had
+   matched them seconds later. */
+async function refreshAndWatch() {
+  await api("/api/refresh", {}).catch(() => {});
+  await sleep(700);
+  await reload();
+  if (S.data) { S.data.meta_running = true; startMetaWatch(); }
+}
 async function extraAdd(path) {
   let r;
   try { r = await api("/api/library-extra", { path }); } catch { r = { error: "Could not reach the hub." }; }
@@ -3584,8 +3644,7 @@ async function extraAdd(path) {
   S.dir = null;
   toast("Folder added — scanning…");
   await loadSettings();
-  await reload();
-  api("/api/refresh", {}).catch(() => {});
+  await refreshAndWatch();
   if (S.view === "settings") render(true);
 }
 async function extraRemove(id) {
@@ -3633,7 +3692,7 @@ const SETTINGS_INDEX = [
   ["Hide spoilers", "library", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Sharper banners", "library", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "library", "upscayl upscale banner natural digital art tta model"], ["Playlist stacks", "library", "playlist stack hover fan wide cascade peek open cards"],
   ["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"], ["Online episodes and downloads", "privacy", "vpn warn ask without streaming privacy", "vpn_warn"], ["AniSkip", "privacy", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Update checks", "privacy", "update updates vpn github ip only", "update_vpn_only"],
   ["AniList", "anilist", "anilist account connect token login disconnect"], ["MyAnimeList", "anilist", "myanimelist mal account connect login disconnect"], ["Send watched episodes", "anilist", "anilist progress sync track episodes", "auto_progress_sync"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
-  ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"], ["Keep the PC playing", "phone", "phone play both pc mpv stop", "phone_play_both"],
+  ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"], ["Sync with your PC", "phone", "sync pc computer desktop pair transfer watched history playlists"], ["Keep the PC playing", "phone", "phone play both pc mpv stop", "phone_play_both"],
   ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Updates from", "data", "update channel stable unstable beta nightly build"], ["Keep running after closing", "data", "keep running background server close phone tray", "keep_running"], ["Start at login", "data", "start login boot autostart server phone", "start_at_login"],
   ["mpv", "data", "mpv ani-cli upscayl tools player detected"], ["Config file", "data", "config file data folder server port"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["First-run tour", "data", "tour setup welcome"],
 ];
@@ -3673,7 +3732,10 @@ const srFuzzy = (hay, ql) => {
   return n;
 };
 const srMatch = (hay, ql) => srFuzzy(hay, ql) !== null;
-const srSets = (ql, n) => SETTINGS_INDEX.map((x) => [x, srFuzzy(`${x[0]} ${x[2]} ${x[1]}`, ql)]).filter(([, f]) => f !== null).sort((a, b) => a[1] - b[1]).slice(0, n).map(([x]) => x);
+/* The Android app's Phone section is PC sync (Decision 91): the remote's rows aren't there, the sync row only is. */
+const SYNC_ROW = "Sync with your PC", setsHere = () => SETTINGS_INDEX.filter(([t, tab]) => tab !== "phone" || (t === SYNC_ROW) === !!S.settings?.android);
+const setTabName = (k) => S.settings?.android && k === "phone" ? "PC sync" : SET_TABS.find(([x]) => x === k)[1];
+const srSets = (ql, n) => setsHere().map((x) => [x, srFuzzy(`${x[0]} ${x[2]} ${x[1]}`, ql)]).filter(([, f]) => f !== null).sort((a, b) => a[1] - b[1]).slice(0, n).map(([x]) => x);
 /* Library hits: the whole phrase first (srRank), then words in any order, then typos. */
 const srLocal = (ql, n) => (S.data?.shows || []).map((s) => {
   const hay = `${s.collection || ""} ${s.title}`, f = hay.toLowerCase().includes(ql) ? -1 : srFuzzy(hay, ql);
@@ -3705,7 +3767,7 @@ function srHTML() {
         { art: x.bannerImage || x.coverImage?.extraLarge, t: candLabel(x), m: sub, k: [["Open", "↵"]] }); }).join("");
   }
   const sets = q ? srSets(ql, 5) : [];
-  if (sets.length) h += `<div class="psec">settings</div>` + sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
+  if (sets.length) h += `<div class="psec">settings</div>` + sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = setTabName(tab);
     return row(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, `<span class="ic">⚙</span><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<span class="r"><button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button></span>` : ""}`,
       { t, m: `Settings → ${tl}`, k: key ? [["Switch", "click"], ["Open in Settings", "↵"]] : [["Open in Settings", "↵"]] }); }).join("");
   const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => !q || srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, q ? 4 : 7);
@@ -4075,7 +4137,7 @@ function HomePhone() {
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="fill"></span><button class="btn sm disc" data-a="deck" data-v="recs">${ico("up")}Discover</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
     `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
-  if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
+  if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : S.settings?.android ? "Search for a show to start watching." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
   return `<div class="home2 phone${up ? " has-uph" : ""}">${up ? "" : `<div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>`}${body}</div>`;
 }
 /* Tablet portrait: what you're watching and the week side by side. */
@@ -4494,7 +4556,7 @@ function srHTMLTouch() {
     if (remote.length) h += sec(`On AniList <small>${remote.length}</small>`) + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
       return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
     const sets = srSets(ql, 4);
-    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
+    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = setTabName(tab);
       return mi(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, "srrow set", `<i class="sic">${ico(SET_ICONS[tab] || "sliders")}</i><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : ico("chevr")}`); }).join("")}</div>`;
     const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, 3);
     if (cmds.length) h += sec("Do") + `<div class="srchips">${cmds.map(([[t], k]) => `<button class="chip" data-a="cmd" data-v="${k}">${ico("arrowr")}${esc(t)}</button>`).join("")}</div>`;
@@ -4531,6 +4593,13 @@ try { localStorage.removeItem("srRecent"); } catch {} // the old list of typed w
 /* Settings on a phone (S5): a grouped list; a section opens as its own page. */
 function setSummary(k, s) {
   const ani = S.ani || {}, st = s.stream || {}, sk = s.skip || {};
+  if (s.android) {
+    // The Android app's sections (Decision 88): no mpv, folder or desktop parts.
+    const and = { player: `season reminder: ${s.recap_ask !== false ? "on" : "off"}`, subs: `${st.mode === "dub" ? "dub" : "sub"} · remember tracks`,
+      online: termuxReady(s) ? `quality: ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "Termux not set up yet",
+      library: s.files_ok ? s.library_root || "no folder chosen yet" : "your files: not allowed yet", data: "updates, tour" };
+    if (and[k]) return and[k];
+  }
   return {
     player: `fullscreen: ${({ on: "on", off: "off", own: "my config" })[s.mpv?.fullscreen] || "on"}`,
     skipping: `openings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.op] || "ask"} · endings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.ed] || "ask"}`,
@@ -4540,7 +4609,7 @@ function setSummary(k, s) {
     library: s.library_root || "no folder chosen yet",
     privacy: S.data?.vpn?.active ? "a VPN is on" : "no VPN right now",
     anilist: ani.connected ? `${acct()} · ${ani.user || "you"}` : "not connected",
-    phone: "pair a phone with a QR code",
+    phone: s.android ? (S.peer?.paired ? `synced with ${S.peer.pc || "your PC"}` : "keep this phone and your PC the same") : "pair a phone with a QR code",
     data: "updates, tools, files",
   }[k] || "";
 }
@@ -4726,10 +4795,10 @@ function AniDlg() {
   const mal = !a.user && a0.service === "mal";
   const exp = a.expires_at ? new Date(a.expires_at * 1000).toLocaleDateString() : null;
   return `<h2 id="dt">AniList account</h2>
-  <p class="sub">${a.connected ? `Connected as <b>${esc(a.user)}</b>${exp ? ` · token expires ${exp}` : ""}${a0.service === "anilist" ? "" : ". Paused: MyAnimeList is in use."}` : a.expired ? "The saved token has expired — reconnect below." : mal ? "MyAnimeList is in use. Connecting AniList puts AniList in use; MyAnimeList stays logged in." : "Not connected. Everything runs on what you watch on this PC."}</p>
+  <p class="sub">${a.connected ? `Connected as <b>${esc(a.user)}</b>${exp ? ` · token expires ${exp}` : ""}${a0.service === "anilist" ? "" : ". Paused: MyAnimeList is in use."}` : a.expired ? "The saved token has expired — reconnect below." : mal ? "MyAnimeList is in use. Connecting AniList puts AniList in use; MyAnimeList stays logged in." : `Not connected. Everything runs on what you watch on this ${S.settings?.android ? "phone" : "PC"}.`}</p>
   ${a.connected ? '<div class="bulk"><button class="btn" data-a="aniout" data-v="anilist">Disconnect</button></div>' : ""}
   ${!a.connected && a.client_id_configured ? '<div class="bulk"><button class="btn pri" data-a="anioauth">Connect via AniList</button></div>' : ""}
-  ${!a.connected && location.port !== "8787" ? `<p class="hint-line">The hub runs on port ${esc(location.port || "80")}, but the bundled AniList client redirects to port 8787 — one-click connect needs the hub on its default port, or your own client registered for this port (add <code>anilist_client_id</code> to the config file).</p>` : ""}
+  ${!a.connected && location.port !== "8787" && !S.settings?.android ? `<p class="hint-line">The hub runs on port ${esc(location.port || "80")}, but the bundled AniList client redirects to port 8787 — one-click connect needs the hub on its default port, or your own client registered for this port (add <code>anilist_client_id</code> to the config file).</p>` : ""}
   ${!a.connected ? `<p class="hint-line">The browser flow opens anilist.co for one Authorize click. Prefer a token? AniList → Settings → Apps → Create New Token, then paste it below.</p>
     <div class="row" style="margin-top:12px"><input id="tok" type="text" placeholder="…or paste an AniList token" autocomplete="off" spellcheck="false"><button class="btn" data-a="anitoken">Use token</button></div>` : ""}
   <div class="msg" id="animsg"></div>
@@ -4846,10 +4915,13 @@ function tourSearch() {
   return `<h2 id="dt">What search can find</h2><p class="sub">${isPhone() ? "Tap the search button to open it." : 'Press <kbd class="kb">/</kbd> on any page to open it.'}</p>
     <div class="ptip">${row("folder", "Shows in your library", "Type part of a name to open a show.")}${row("search", "Shows you don't have", "Finds anything on AniList. Needs an AniList account or ani-cli.")}${row("sliders", "Settings", "Type a setting's name. Switches can be flipped right in the results.")}${row("arrowr", "Commands", "Go to a page, rescan your library or show your downloads.")}</div>`;
 }
-function Tour() {
+/* The tour's pages. The Android app (Decision 88) has no
+   library folder, mpv or phone remote: it sets up Termux instead. */
+function tourBlocks() {
   const T = S.tour, s = S.settings || {}, a = S.ani || {}, n = S.data.shows.length;
+  if (s.android) return tourAndroid(T, s, a);
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
-  const b = tourPages([
+  return tourPages([
     `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">It plays the anime on this computer in mpv.</p>
      <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
      <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
@@ -4867,10 +4939,54 @@ function Tour() {
     `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
      <div class="sum2">${tourFound(s, a, n, ok)}</div>
      ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
-     <div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`,
+     ${tourSwitches(s, a)}`,
   ], s);
+}
+const tourSwitches = (s, a) => `<div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`;
+/* Termux commands (Decision 88), the same words the hub's errors use. */
+const TERMUX_INSTALL = "pkg upgrade -y && pkg install -y ani-cli";
+const TERMUX_ALLOW = "mkdir -p ~/.termux && echo allow-external-apps=true >> ~/.termux/termux.properties && termux-reload-settings";
+const termuxReady = (s) => !!s.tools?.["ani-cli"] && !s.termux;
+/* Online episodes on Android: ready, or the setup steps with a live check. */
+/* Android (Decision 88): the app may not read the phone's files until Android's "All files access" is on. */
+const filesAsk = () => srow("Your anime files", "To play episodes saved on this phone, Anime Hub needs Android's file access. Online episodes work without it.", pkdo('<button class="btn pri" data-a="askfiles">Allow file access</button>'));
+/* Back from Android's file-access screen: fresh settings, same page (the tour keeps its step). */
+window.hubFilesBack = () => loadSettings().then(() => { if (S.modal) paintModal(); else render(true); }).catch(() => {});
+function termuxBox(s) {
+  if (termuxReady(s)) return `<div class="found"><i class="dot ok"></i>ani-cli ${esc(s.stream?.version || "")} found in Termux. Online episodes are ready.</div>`;
+  const cmd = (t) => `<div class="tcmd"><code>${esc(t)}</code><button class="btn sm" data-a="copy" data-v="${esc(t)}">Copy</button></div>`;
+  return `<ol class="tsteps">
+    <li>Install <b>Termux</b> from <a href="https://f-droid.org/packages/com.termux/" target="_blank" rel="noopener">F-Droid</a>. The Play Store's version is too old.</li>
+    <li>Open Termux and run:${cmd(TERMUX_INSTALL)}</li>
+    <li>Then run this, so Anime Hub may use it:${cmd(TERMUX_ALLOW)}</li>
+    <li>Come back here, tap Check again and allow Anime Hub when Android asks.</li></ol>
+    <div class="found"><i class="dot"></i><span>${esc(s.termux || "ani-cli not found in Termux yet.")}</span></div>
+    <div class="bulk"><button class="btn" data-a="termuxcheck" ${S.termuxBusy ? "disabled" : ""}>${S.termuxBusy ? "Checking…" : "Check again"}</button></div>`;
+}
+function tourAndroid(T, s, a) {
+  const row = tourRow, n = S.data.shows.length, ok = s.library_root && s.scan?.state === "ok";
+  return [
+    `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">Your anime on this phone, no PC needed.</p>
+     <div class="ptip"><div>${ico("download")}<span><b>Online episodes</b>Search any show and watch it. Set up once with the free Termux app.</span></div>
+     <div>${ico("play")}<span><b>Playback</b>Resumes where you stopped, skips openings and plays the next episode.</span></div>
+     <div>${ico("check")}<span><b>${acct()}</b>Your lists and progress, kept in sync. Optional.</span></div></div>`,
+    `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
+      <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
+      <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything stays on this phone.</span></button></div>`,
+    `<h2 id="dt">Online episodes</h2><p class="sub">Anime Hub finds episodes with ani-cli, which runs in Termux. You can do this later in Settings.</p>${termuxBox(s)}`,
+    `<h2 id="dt">Anime files on this phone?</h2><p class="sub">Optional. Episodes you keep on this phone or an SD card play here too. You can do this later in Settings → Library.</p>
+     ${s.files_ok ? `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}<div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"}` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>` : filesAsk()}`,
+    tourSearch(),
+    `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
+     <div class="sum2">${row(termuxReady(s) ? "ok" : "opt", "Online episodes", termuxReady(s) ? aniLine(s) : "Termux not set up yet")}${row(ok ? "ok" : "opt", "Your files", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : "none chosen")}${row(a.connected ? "ok" : "opt", acct(), a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected")}</div>
+     ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
+     ${tourSwitches(s, a)}`,
+  ];
+}
+function Tour() {
+  const T = S.tour, s = S.settings || {}, b = tourBlocks();
   const last = b.length - 1, ti = s.tools_install || {};
-  const toolsHere = T.step === 3 && toolsShown(ti) && ti.job?.state !== "working";
+  const toolsHere = !s.android && T.step === 3 && toolsShown(ti) && ti.job?.state !== "working";
   return `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b[T.step]}
   <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}${toolsHere ? `<span class="aright"><button class="btn" data-a="tournext">Continue</button>${toolsBtn(ti, "btn pri")}</span>` : `<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button>`}</div>`;
 }
@@ -5114,11 +5230,20 @@ function maybeTour() {
   openModal({ t: "tour" });
 }
 async function openExternal(url) {
+  if (S.settings?.android) { location.href = url; return; } // the app hands other sites to the phone's browser (Decision 88)
   try { const r = await api("/api/open", { url }); if (!r.ok) throw 0; } catch { window.open(url, "_blank", "noopener"); }
 }
 
 /* Wait for the OAuth callback bridge to report a connection (both the
    browser-tab flow and the shell flow's "approve in your browser" path). */
+/* The Android app (Decision 88): sign in inside the app itself. The app
+   brings AniList's (or MAL's) way back to its own hub, whose callback page
+   saves the login and returns here. */
+async function appOauth(route) {
+  const r = await api(route, {}).catch(() => null);
+  if (!r || r.error) return setMsg(r?.error || "Could not reach the hub.");
+  location.href = r.url;
+}
 async function pollOauth(want = "anilist") {
   const t = want === "mal" ? "mal" : "ani", name = want === "mal" ? "MyAnimeList" : "AniList";
   for (let i = 0; i < 150 && S.modal?.t === t; i++) {
@@ -5693,7 +5818,9 @@ function metaTick() {
   api("/api/now").then((now) => {
     const m = now && now.meta;
     if (!m) { metaWatch = null; reload(); return; } // final settle: posters flip in
-    Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_total: m.total, meta_current: m.current, meta_phase: m.phase });
+    const matched = S.data.meta_phase === "show metadata" && m.phase !== "show metadata"; // the matching step is over: fetch what it found
+    Object.assign(S.data, { meta_running: true, meta_pending: m.pending, meta_total: m.total, meta_current: m.current, meta_phase: m.phase, meta_matching: m.matching || [] });
+    if (matched) { reload(); metaWatch = setTimeout(metaTick, 2500); return; }
     if (S.view === "library") for (const n of $$(".mload")) { if (S.data.meta_pending > 0) loadPatch(n, metaLoadState()); else n.remove(); }
     /* Franchise cards fold together as the background build reaches them. */
     if (m.phase === "franchises" && S.view === "library" && byFranchise() && Date.now() - metaFold > 15e3) { metaFold = Date.now(); reload(); }
@@ -5803,6 +5930,7 @@ async function pollNow() {
     if (!now.playing) S.live = null;
     else if (!S.live || S.live.ep !== now.episode_id) liveFrom(now);
     paintRemote();
+    if (!now.playing) { const st = now.synced || 0, seen = S.synced; S.synced = st; if (seen !== undefined && st !== seen) await reload(); } // the paired PC or app changed something here (Decision 91)
     if (!now.playing) listsWatch(now.lists);
     if (now.completed) maybeCompletion(now.completed);
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
@@ -5865,7 +5993,7 @@ function accentHex(show) {
    reports a fine pointer, which read it as a PC (Elias, 2026-11-10). A touch
    laptop's main pointer is its mouse or trackpad, so it stays a PC. */
 const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && matchMedia("(hover:none)").matches);
-const playWhere = () => { const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; };
+const playWhere = () => { if (S.settings?.android) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app has no PC (Decision 88)
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
 function WhereDlg() {
   return `<h2 id="dt">Play where?</h2>
@@ -6357,7 +6485,7 @@ function ppClose(fromBack, quiet) {
   if (!fromBack && typeof ovClosed === "function") ovClosed("pp");
   setTimeout(reload, 400);
 }
-document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); if (!document.hidden && S.settings?.android) api("/api/peer", { op: "soon" }).catch(() => {}); }); // back in the app: sync with the PC (Decision 91)
 /* where: "pc" or "phone" to skip the phone's "Play where?" (Decision 71). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   if (recapOn() && !S.recapPass?.has(id) && recapCandidate(id)) {
@@ -6465,12 +6593,23 @@ const A = {
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   fpick: (v, t) => {
-    const k = t.dataset.k, d = t.closest(".fdrop");
-    S.lib[k] = v; saveLib();
-    if (k === "group" || isPhone()) { S.fadeNext = true; return render(); } // phones: the sheet and the Filter count follow
+    const k = t.dataset.k, d = t.closest(".fdrop"), multi = FMULTI.has(k);
+    if (multi) { const p = fpicked(k), next = v === "all" ? [] : p.includes(v) ? p.filter((x) => x !== v) : [...p, v]; S.lib[k] = next.length ? next : "all"; }
+    else S.lib[k] = v;
+    saveLib();
+    if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow
+      const sc = $(".fsheet .filters")?.scrollTop;
+      S.fadeNext = true; render();
+      /* several can be picked: the list stays open for the next one */
+      const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);
+      if (nd) { nd.querySelector(".fpanel").style.animation = "none"; nd.classList.add("open"); nd.querySelector(".fdb").setAttribute("aria-expanded", "true"); }
+      const f = $(".fsheet .filters"); if (f && sc) f.scrollTop = sc;
+      return;
+    }
     paintWall(true); syncFilters();
-    for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
-    d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
+    const opts = FOPTS()[k];
+    for (const b of d.querySelectorAll(".fopt")) { const bv = b.dataset.v, on = multi ? (bv === "all" ? S.lib[k] === "all" : fpicked(k).includes(bv)) : b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    d.classList.toggle("set", S.lib[k] !== "all"); d.querySelector(".fdb b").textContent = multi ? fval(k, opts) : t.querySelector("span").textContent;
   },
   fdrop: (v, t) => { const d = t.closest(".fdrop"), open = !d.classList.contains("open"); fdropClose(d); d.classList.toggle("open", open); t.setAttribute("aria-expanded", open); if (open) d.querySelector(".fpanel input, .fpanel .fopt.on")?.focus({ preventScroll: true }); },
   totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
@@ -6659,7 +6798,7 @@ const A = {
   },
   ext: (v, t, e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button) return; e.preventDefault(); openExternal(v); },
   menu: (v) => { S.menu = S.menu === v ? null : v; paintNav(); },
-  rescan: (v, t) => { if (t.disabled) return; t.disabled = true; t.classList.add("busy"); api("/api/refresh", {}).catch(() => {}); toast("Rescanning + fetching metadata…"); setTimeout(() => { reload(); }, 2500); },
+  rescan: (v, t) => { if (t.disabled) return; t.disabled = true; t.classList.add("busy"); toast("Rescanning + fetching metadata…"); refreshAndWatch(); },
   adopt: (v, t) => { t.disabled = true; api("/api/adopt-root", {}).then((r) => { if (!r.ok) { toast(r.error || "Could not connect the folder."); t.disabled = false; return; } toast("Library folder connected."); loadSettings().then(reload); }).catch(() => { t.disabled = false; }); },
   /* The local title list answers at once (Decision 68): rows with the
      list's title, format and year ("stub"). AniList then adds posters and
@@ -6916,6 +7055,9 @@ const A = {
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
+  peerpair: () => { S.peerAddr = $("#peeraddr")?.value || ""; S.peerCode = $("#peercode")?.value || ""; peerDo({ op: "pair", address: S.peerAddr, code: S.peerCode }, () => { S.peerCode = ""; return "Paired. Syncing with the PC…"; }).then(() => setTimeout(() => api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}), 4000)); },
+  peernow: () => peerDo({ op: "now" }, (r) => r.last && (r.last.pulled || r.last.pushed) ? "Synced with the PC" : "Already the same as the PC"),
+  peerforget: () => peerDo({ op: "forget" }, () => "Unpaired. Remove it on the PC too: Settings → Phone."),
   rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },
   rmtclose: () => { S.rmtOpen = false; paintRemote(); paintCanvas(); ovClosed("rmt"); },
   rmtrow: (v) => { S.rmtRow = S.rmtRow === v ? null : v; paintRemote(); },
@@ -6937,6 +7079,7 @@ const A = {
   maloauth: async () => {
     /* As anioauth: the tab opens inside the click; the shell hands the
        address to the system browser. */
+    if (S.settings?.android) return appOauth("/api/auth/mal/start");
     if (SHELL) {
       const r0 = await api("/api/auth/mal/start", {}).catch(() => null);
       if (!r0 || r0.error) return setMsg(r0?.error || "Could not reach the hub.");
@@ -6981,6 +7124,7 @@ const A = {
     /* Open the tab inside the click so the browser keeps popup permission.
        In shell mode window.open would spawn a SECOND app window showing
        anilist.co — send the authorize URL to the system browser instead. */
+    if (S.settings?.android) return appOauth("/api/auth/start");
     if (SHELL) {
       const r0 = await api("/api/auth/start", {}).catch(() => null);
       if (!r0 || r0.error) return setMsg(r0?.error || "Could not reach the hub.");
@@ -7083,13 +7227,24 @@ const A = {
     if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
   },
   tourpick: (v) => { S.tour.choice = v; paintModal(); },
+  askfiles: () => window.AnimeHubApp?.askFiles?.(),
+  copy: (v) => { (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast("Copied"), () => toast("Couldn't copy. Select the text instead.")); },
+  /* Android (Decision 88): ask for the Termux permission if needed, read ani-cli again, show the result. */
+  termuxcheck: async () => {
+    if (S.termuxBusy) return;
+    window.AnimeHubApp?.askTermux?.();
+    S.termuxBusy = true; S.modal ? paintModal() : render(true);
+    await api("/api/termux-check", {}).catch(() => null);
+    await loadSettings().catch(() => {});
+    S.termuxBusy = false; S.modal ? paintModal() : render(true);
+  },
   tourmpv: (v) => { const x = v === "own" ? "own" : "on"; tourSave(v === "own" ? TOUR_OWN : TOUR_HUB, (m) => { m.fullscreen = x; m.smooth = x; }); },
   tourlook: (v) => tourSave(v === "own" ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }, (m) => { m.design = v === "own" ? "own" : "on"; if (v !== "own") m.look = v; }),
   tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),
   tournext: () => {
     const T = S.tour;
-    if (T.step < (S.settings?.background_ok ? 8 : 7)) { T.step++; return paintModal(true); }
+    if (T.step < tourBlocks().length - 1) { T.step++; return paintModal(true); }
     finishTour(false);
   },
   /* Page 3's Connect: finish the tour first (so bailing out of the AniList

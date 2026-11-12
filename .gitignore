@@ -2,3 +2,9 @@ __pycache__/
 desktop/target/
 mpv-shot*
 animehub/build.json
+
+# Android app build (Decision 88)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

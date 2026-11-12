@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from . import VERSION, settings, system, util
+from .config import config
 
 RELEASES = "https://api.github.com/repos/Elias8832/AnimeHub/releases?per_page=100"
 DOWNLOADS = "https://github.com/Elias8832/AnimeHub/releases/download/"
@@ -78,6 +79,8 @@ def number(tag):
 
 def kind():
     """How this copy got here, which is how it gets updated."""
+    if system.ANDROID:
+        return "android"  # Decision 88: a new APK, which Android installs on a tap
     path = os.environ.get("APPIMAGE")
     if path and os.path.isfile(path):
         return "appimage"
@@ -85,7 +88,8 @@ def kind():
 
 
 def asset_name(how):
-    return {"appimage": f"AnimeHub-{platform.machine()}.AppImage", "windows": "AnimeHub-windows-x64.zip"}.get(how)
+    return {"appimage": f"AnimeHub-{platform.machine()}.AppImage", "windows": "AnimeHub-windows-x64.zip",
+            "android": "AnimeHub-android.apk"}.get(how)
 
 
 def pick(releases, current, how):
@@ -116,7 +120,7 @@ def _offer(found, r, asset, how):
     found.update(url=r.get("html_url") or "", download=None, sha256=None)
     digest = (asset or {}).get("digest") or ""
     link = (asset or {}).get("browser_download_url") or ""
-    if how in ("appimage", "windows") and digest.startswith("sha256:") and link.startswith(DOWNLOADS):
+    if how in ("appimage", "windows", "android") and digest.startswith("sha256:") and link.startswith(DOWNLOADS):
         found.update(download=link, sha256=digest[7:])
     return found
 
@@ -329,6 +333,8 @@ def installable(found, how=None):
         return bool(found.get("download"))
     if how == "windows":
         return bool(found.get("download")) and zip_copy()
+    if how == "android":
+        return bool(found.get("download"))
     return how == "git" and git_copy() and (found.get("build") is None or bool(_commit(found)))
 
 
@@ -348,6 +354,8 @@ def install():
         threading.Thread(target=_pull, args=(found,), daemon=True).start()
     elif how == "windows":
         threading.Thread(target=_swap_zip, args=(found, ROOT), daemon=True).start()
+    elif how == "android":
+        threading.Thread(target=_apk, args=(found,), daemon=True).start()
     else:
         threading.Thread(target=_replace, args=(found, Path(os.environ.get("APPIMAGE") or "")), daemon=True).start()
     return {"ok": True}
@@ -460,6 +468,45 @@ def _replace(found, target):
         tmp.unlink(missing_ok=True)
     with _lock:
         _job.update(state="failed" if error else "done", percent=0 if error else 100, error=error)
+
+
+def apk_path():
+    return config.DATA / "update" / "AnimeHub-android.apk"
+
+
+# Hands the checked APK to Android's installer, which asks the user (Decision
+# 88). The app replaces itself; tests swap it.
+def _java_install(path):
+    from java import jclass
+    jclass("io.github.elias8832.animehub.Updater").install(str(path))
+
+
+apk_installer = _java_install
+
+
+def _apk(found):
+    """The Android app: download the new APK, check it against GitHub's
+    sha256 and that it is an APK (a zip), then Android asks to install it.
+    A failure leaves the app as it is."""
+    path = apk_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    error = None
+    try:
+        head = _fetch(found, path)
+        if head[:4] != b"PK\x03\x04":
+            raise ValueError
+        apk_installer(path)
+    except ValueError:
+        error = "That download didn't look right, so nothing changed."
+    except (OSError, HTTPException):
+        error = "The download failed, so nothing changed."
+    except Exception as e:  # Android's installer refused
+        error = f"Android couldn't start the install: {e}"
+    if error:
+        path.unlink(missing_ok=True)
+    with _lock:
+        _job.update(state="failed" if error else "done", percent=0 if error else 100, error=error,
+                    note=None if error else "Android asks you to install it.")
 
 
 def zip_copy():

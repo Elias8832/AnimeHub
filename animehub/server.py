@@ -3,6 +3,7 @@
 import contextlib
 import gzip
 import hashlib
+import hmac
 import html
 import json
 import mimetypes
@@ -13,12 +14,13 @@ import sys
 import threading
 import time
 from http.client import HTTPException
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, alpics, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
+from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -66,6 +68,7 @@ if (!t) {
     body: JSON.stringify({ access_token: t, expires_in: Number(h.get("expires_in")) || null }) })
   .then((r) => r.json())
   .then((j) => {
+    if (j.ok && window.AnimeHubApp) return location.replace("/");  // the Android app: back to the hub (Decision 88)
     if (j.ok) { m.innerHTML = "AniList connected as <b></b> — you can close this tab."; m.querySelector("b").textContent = j.user; setTimeout(() => window.close(), 3000); }
     else m.textContent = "Connect failed: " + (j.error || "unknown reason");
   })
@@ -80,7 +83,8 @@ def mal_callback_page(r):
     did start it (another port), it finishes there."""
     if r.get("ok"):
         msg = "MyAnimeList connected as <b>%s</b> — you can close this tab." % html.escape(r.get("user") or "")
-        script = 'history.replaceState(null, "", "/auth/mal/callback"); setTimeout(() => window.close(), 3000);'
+        script = ('history.replaceState(null, "", "/auth/mal/callback"); '
+                  'if (window.AnimeHubApp) location.replace("/"); else setTimeout(() => window.close(), 3000);')
     elif r.get("foreign"):
         msg = ("This Anime Hub didn't start that connection. If another Anime Hub window asked, copy this "
                "page's address and paste it there: Settings → Account → MyAnimeList.")
@@ -171,6 +175,10 @@ MANIFEST = {"id": "/", "name": "Anime Hub", "short_name": "Anime Hub", "start_ur
                       {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]}
 
 
+# Changes the Android app hands to its PC soon after (Decision 91).
+SYNC_SOON = ("/api/watched", "/api/bulk-watched", "/api/entry-watched", "/api/playlists", "/api/entry", "/api/reset")
+
+
 class Handler(BaseHTTPRequestHandler):
     # The paired phone a request on the Wi-Fi listener comes from
     # (RemoteHandler, Decision 43); None on the main server.
@@ -198,6 +206,9 @@ class Handler(BaseHTTPRequestHandler):
         `tailscale serve` (Decision 36); those match on any port, since the
         proxy, not this server, owns it."""
         host = self.headers.get("Host", "")
+        if system.ANDROID and android.app_key() and not self._app_page():
+            self.send_error(403)  # another app on the phone (Decision 88)
+            return False
         if host in (f"127.0.0.1:{config.PORT}", f"localhost:{config.PORT}"):
             return True
         name = host.rsplit(":", 1)[0] if ":" in host else host
@@ -205,6 +216,16 @@ class Handler(BaseHTTPRequestHandler):
             return True
         self.send_error(403)
         return False
+
+    def _app_page(self):
+        """The Android app's own page: it carries the app's secret cookie."""
+        jar = SimpleCookie()
+        try:
+            jar.load(self.headers.get("Cookie") or "")
+        except CookieError:
+            return False
+        got = jar.get(android.APP_COOKIE)
+        return bool(got) and hmac.compare_digest(got.value, android.app_key())
 
     def send_json(self, obj, code=200, etag=False):
         """JSON out. Gzipped when the browser takes it (TODO 61: the library
@@ -512,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
             # toggles + running config + detected tools, never the token.
             # additive (Decision 43): on a paired phone, Settings hides what
             # a phone can't change.
-            self.send_json({**settings.settings_payload(), "phone": self.remote_device is not None,
+            self.send_json({**settings.settings_payload(), "phone": self.remote_device is not None or system.ANDROID,
                             "fonts": fonts.all_fonts()})  # additive (TODO 122)
         elif route == "/api/browse":
             # Decision 32: the library folder picker walks one level at a time.
@@ -544,7 +565,8 @@ class Handler(BaseHTTPRequestHandler):
             # Additive (TODO 61): the metadata pass's progress while it runs,
             # so the library note follows it without refetching the library.
             meta = ({"running": True, "pending": metadata._meta_status["pending"], "total": metadata._meta_status["total"],
-                     "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"]}
+                     "current": metadata._meta_status["current"], "phase": metadata._meta_status["phase"],
+                     "matching": list(metadata._meta_status["matching"])}  # additive (TODO 222)
                     if metadata._meta_status["running"] else None)
             phone_now = phoneplay.now()
             # Additive (Decision 75): the lists' stamp and, while they are
@@ -586,6 +608,8 @@ class Handler(BaseHTTPRequestHandler):
                         payload["art"] = art
                     if lists:
                         payload["lists"] = lists
+                    if peersync.stamp():  # additive (Decision 91): a sync changed this device
+                        payload["synced"] = peersync.stamp()
                     self.send_json(payload)
                     return
                 a = next(iter(player._active.values()))
@@ -734,6 +758,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file(config.EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
         elif route == "/api/remote":
             self.send_json(remote.payload())
+        elif route == "/api/sync/facts":
+            # The Android app asks for this PC's watching (Decision 91).
+            self.send_json(peersync.facts_payload())
+        elif route == "/api/peer":
+            # Settings → PC in the Android app (Decision 91).
+            self.send_json(peersync.status())
         elif route == "/manifest.webmanifest":
             self.send_file_body(json.dumps(MANIFEST).encode(), "application/manifest+json")
         elif route == "/icon.svg":
@@ -811,7 +841,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "invalid Content-Length"}, 400)
             return
         # An imported font travels as base64 (TODO 122): up to 16 MB of file.
-        if length > (22_000_000 if route == "/api/fonts/import" else 1_000_000):
+        if length > (22_000_000 if route == "/api/fonts/import" else 16_000_000 if route == "/api/sync/apply" else 1_000_000):
             self.send_json({"error": "request body too large"}, 413)
             return
         try:
@@ -824,6 +854,12 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             self.send_json({"error": "request body must be a JSON object"}, 400)
             return
+        self._post(route, body)
+        # A change worth handing to the paired PC soon (Decision 91).
+        if route in SYNC_SOON or route == "/api/phone/progress" and (body.get("stop") or body.get("ended")):
+            peersync.soon()
+
+    def _post(self, route, body):
         if route == "/api/play":
             if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
@@ -921,7 +957,7 @@ class Handler(BaseHTTPRequestHandler):
                     settings.set_automation(key, body[key])
                     if key == "measure_lengths" and body[key]:
                         lengths.turned_on()
-            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None})
+            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None or system.ANDROID})
         elif route == "/api/phone/play":
             # The phone plays a file itself (Decision 71).
             if self._fields(body, strings=("id",), opt_ints=("version",)):
@@ -965,6 +1001,32 @@ class Handler(BaseHTTPRequestHandler):
                 return
             r = player.control(body["action"], body.get("value"))
             self.send_json(r, 400 if r.get("error") and r["error"] != "nothing is playing" else 200)
+        elif route == "/api/sync/apply":
+            # The Android app's merge for this PC (Decision 91).
+            bad = peersync.check_apply(body)
+            if bad:
+                self._bad(bad)
+                return
+            self.send_json(peersync.apply_payload(body))
+        elif route == "/api/peer":
+            # Settings → PC in the Android app: {op: "pair", address, code} / "now" / "forget".
+            op = body.get("op")
+            try:
+                if op == "pair":
+                    self.send_json(peersync.pair(body.get("address"), body.get("code")))
+                elif op == "now":
+                    peersync.sync_once()
+                    self.send_json(peersync.status())
+                elif op == "soon":
+                    peersync.soon(0)
+                    self.send_json(peersync.status())
+                elif op == "forget":
+                    peersync.forget()
+                    self.send_json(peersync.status())
+                else:
+                    self._bad("'op' is one of: pair, now, soon, forget")
+            except peersync.SyncError as e:
+                self.send_json({**peersync.status(), "error": str(e)}, 400)
         elif route == "/api/remote":
             # Settings → Phone remote: {on}, {new_code: true} or {remove: id}.
             if "on" in body:
@@ -1133,6 +1195,13 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     res = metadata.set_kept_local(body["show_id"], body.get("keep", True))
                     self.send_json(res, 200 if res.get("ok") else 400)
+        elif route == "/api/termux-check":
+            # The Android app's "Check again" (Decision 88): read Termux's ani-cli now.
+            if not system.ANDROID:
+                self.send_json({"error": "Only in the Android app."}, 400)
+            else:
+                ok = android.fetch_anicli(force=True)
+                self.send_json({"ok": ok, "problem": android.problem()})
         elif route == "/api/title-search":
             # The search box's instant half (Decision 68): the local title
             # list only, no AniList. ready=false until the list is here.
@@ -1676,10 +1745,15 @@ def main():
     update.tidy()
     downloader.recover()
     threading.Thread(target=update.loop, daemon=True).start()
+    if system.ANDROID:
+        # Termux's ani-cli may have changed since the last start (Decision 88).
+        threading.Thread(target=android.fetch_anicli, kwargs={"force": True}, daemon=True).start()
     # Windows (Decision 87): tools installed since this session's PATH was
     # made are found, and a zip copy puts itself in the Start menu once.
     system.refresh_path()
     threading.Thread(target=tools.start_menu_once, daemon=True).start()
+    # The Android app syncs with its paired PC (Decision 91); idle until paired.
+    peersync.start()
     # The phone remote's Wi-Fi listener, when switched on (Decision 43).
     if remote.enabled():
         remote.start(RemoteHandler)
