@@ -907,7 +907,7 @@ function plArt(it) {
 const plPos = (i, k, n) => { const r = (i - k + n) % n; return r < 3 ? String(r) : "hide"; };
 function plStack(p) {
   const shows = p.items.slice(0, PL_STACK_MAX), n = shows.length;
-  if (!n) return `<div class="plstack empty n0"><div class="plcard" data-pos="0"><span class="plnone2">${plIcon(p) || `<span class="plico">${ico("list")}</span>`}<small>No shows yet</small></span></div></div>`;
+  if (!n) return `<div class="plstack empty n0"><div class="plcard" data-pos="0"><span class="plnone2">${plIcon(p) || `<span class="plico">${ico("list")}</span>`}</span></div></div>`;
   const k = Math.min((S.plFlip ||= {})[p.id] || 0, n - 1);
   const card = (it, i) => {
     const art = plArt(it);
