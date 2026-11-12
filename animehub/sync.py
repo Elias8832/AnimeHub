@@ -102,6 +102,8 @@ def outbox_items():
     with database.db() as c:
         rows = c.execute("SELECT id, media_id, payload, attempts, next_try, created, account_id"
                          " FROM outbox ORDER BY id").fetchall()
+        if not rows:  # nothing queued (the usual case): no titles to look up
+            return []
         media = c.execute("SELECT id, data FROM media").fetchall()
         titles = dict(c.execute("SELECT media_id, title FROM stream_links WHERE title IS NOT NULL"))
         titles.update(c.execute("SELECT anilist_id, title FROM shows_meta"

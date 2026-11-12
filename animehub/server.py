@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, android, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
+from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -131,16 +131,39 @@ document.getElementById("f").onsubmit = (ev) => {
 ASSET_STAMP = re.compile(r"/(app\.js|style\.css)\?v=auto")
 
 
+def asset_code(body):
+    return hashlib.sha1(body).hexdigest()[:10]
+
+
 def index_html():
     page = system.read_bytes(WEB / "index.html").decode("utf-8")
 
     def stamp(m):
         try:
-            code = hashlib.sha1(system.read_bytes(WEB / m.group(1))).hexdigest()[:10]
+            code = asset_code(system.read_bytes(WEB / m.group(1)))
         except OSError:
             return m.group(0)
         return f"/{m.group(1)}?v={code}"
     return ASSET_STAMP.sub(stamp, page).encode("utf-8")
+
+
+# The page's own files, squeezed once per version: {content code: gzipped
+# body}. app.js and style.css are ~1 MB together and a phone fetched them
+# whole on every open.
+_packed = {}
+_packed_lock = threading.Lock()
+
+
+def packed(code, body):
+    with _packed_lock:
+        hit = _packed.get(code)
+    if hit is None:
+        hit = gzip.compress(body, compresslevel=9)
+        with _packed_lock:
+            while len(_packed) >= 8:  # old versions of a file being edited
+                _packed.pop(next(iter(_packed)))
+            _packed[code] = hit
+    return hit
 
 
 MANIFEST = {"id": "/", "name": "Anime Hub", "short_name": "Anime Hub", "start_url": "/", "scope": "/", "display": "standalone",
@@ -160,6 +183,15 @@ class Handler(BaseHTTPRequestHandler):
     # The paired phone a request on the Wi-Fi listener comes from
     # (RemoteHandler, Decision 43); None on the main server.
     remote_device = None
+    # Answers say HTTP/1.1: Chrome only asks "has this changed?" (ETag, a
+    # bodiless 304) of a 1.1 server; to a 1.0 one it fetched every picture
+    # and the whole library again. Each answer still closes its connection,
+    # as before, so one without a Content-Length (a relayed stream) ends.
+    protocol_version = "HTTP/1.1"
+
+    def end_headers(self):
+        self.send_header("Connection", "close")
+        super().end_headers()
 
     def log_message(self, fmt, *args):
         pass
@@ -225,12 +257,38 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_file(self, path, ctype, cache=False):
+        """A file as it is. `cache`: the browser keeps it for a day, and it
+        carries its date and size, so after that day an unchanged one is a
+        bodiless 304 (fonts and episode pictures were fetched whole again
+        every day)."""
+        tag = None
+        if cache:
+            try:
+                st = Path(path).stat()
+            except OSError:
+                self.send_error(404)
+                return
+            tag = '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+            if self.headers.get("If-None-Match") == tag:
+                self.send_response(304)
+                self.send_header("ETag", tag)
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                return
         try:
             body = system.read_bytes(path)
         except OSError:
             self.send_error(404)
             return
-        self.send_file_body(body, ctype, cache)
+        self.send_file_body(body, ctype, cache, tag)
+
+    def send_web(self, name, ctype):
+        try:
+            body = system.read_bytes(WEB / name)
+        except OSError:
+            self.send_error(404)
+            return
+        self.send_page_file(body, ctype)
 
     def send_art(self, path):
         """A poster or banner, sized for the screen that asks (artsize,
@@ -265,6 +323,37 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("ETag", tag)
         self.send_header("Cache-Control", cache)
         self.send_header("Vary", "Cookie")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_alpic(self, rel):
+        """One of AniList's PNG pictures as a JPEG, for a phone (alpics,
+        Decision 90). AniList names a picture after its content, so the
+        copy is that picture for good. No copy (a PC asking, see-through,
+        AniList or mpv not there): on to AniList's own link."""
+        url = alpics.source(rel)
+        if not url:
+            self.send_error(404)
+            return
+        out = alpics.copy(rel) if artsize.tier_of(self.headers.get("Cookie")) else None
+        body = None
+        if out:
+            try:
+                body = system.read_bytes(out)
+            except OSError:
+                pass
+        if body is None:
+            self.send_response(302)
+            self.send_header("Location", url)
+            self.send_header("Content-Length", "0")
+            # A see-through one stays AniList's: the phone needn't ask again today.
+            self.send_header("Cache-Control", "max-age=86400" if alpics.kept(rel) else "no-store")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=31536000, immutable")
         self.end_headers()
         self.wfile.write(body)
 
@@ -344,10 +433,38 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, HTTPException):
                 pass  # the phone jumped elsewhere, or the site stopped
 
-    def send_file_body(self, body, ctype, cache=False):
+    def send_page_file(self, body, ctype):
+        """One of the page's own text files (the page, app.js, style.css,
+        sw.js). Gzipped when the browser takes it, and a copy the browser
+        already has is a bodiless 304. A link whose ?v= is this content's
+        code (Decision 72) is that file for good: the browser keeps it and
+        doesn't ask again. Any other link asks each time, as before."""
+        code = asset_code(body)
+        v = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+        zipped = len(body) > 1024 and "gzip" in (self.headers.get("Accept-Encoding") or "")
+        tag = '"%s%s"' % (code, "-gz" if zipped else "")
+        fresh = self.headers.get("If-None-Match") != tag
+        if fresh and zipped:
+            body = packed(code, body)
+        self.send_response(200 if fresh else 304)
+        if fresh:
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            if zipped:
+                self.send_header("Content-Encoding", "gzip")
+        self.send_header("ETag", tag)
+        self.send_header("Cache-Control", "max-age=31536000, immutable" if v == code else "no-cache")
+        self.send_header("Vary", "Accept-Encoding")
+        self.end_headers()
+        if fresh:
+            self.wfile.write(body)
+
+    def send_file_body(self, body, ctype, cache=False, etag=None):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if etag:
+            self.send_header("ETag", etag)
         if cache:
             self.send_header("Cache-Control", "max-age=86400")
         else:
@@ -566,6 +683,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(about)
         elif route.startswith("/img/"):
             self.send_art(config.POSTERS / os.path.basename(route))
+        elif route.startswith("/alpic/"):
+            self.send_alpic(route[len("/alpic/"):])
         elif route == "/api/phone/video":
             # The phone player's file (Decision 71): by episode id, never a path.
             q = parse_qs(urlparse(self.path).query)
@@ -655,7 +774,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/sw.js":
             # Lets phones install the app (Decision 44); never cached, so an
             # update reaches the phone on its next visit.
-            self.send_file(WEB / "sw.js", "text/javascript")
+            self.send_web("sw.js", "text/javascript")
         elif route in ("/icon-180.png", "/icon-192.png", "/icon-512.png"):
             self.send_file(WEB / route.lstrip("/"), "image/png", cache=True)
         elif route in ("/", "/index.html"):
@@ -664,11 +783,11 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 self.send_error(404)
                 return
-            self.send_file_body(body, "text/html; charset=utf-8")
+            self.send_page_file(body, "text/html; charset=utf-8")
         elif route == "/style.css":
-            self.send_file(WEB / "style.css", "text/css")
+            self.send_web("style.css", "text/css")
         elif route == "/app.js":
-            self.send_file(WEB / "app.js", "text/javascript")
+            self.send_web("app.js", "text/javascript")
         elif route == "/api/fonts":
             # Additive (TODO 122, Decision 69): the fonts imported in Settings → Appearance.
             self.send_json({"fonts": fonts.all_fonts()})

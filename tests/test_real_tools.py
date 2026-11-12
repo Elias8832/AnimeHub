@@ -20,7 +20,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import support
-from animehub import anicli, database, downloader, lengths, library, player, prepare, streaming, system
+from animehub import anicli, database, downloader, lengths, library, player, prepare, settings, streaming, system
 from animehub.config import apply_config, config, CONFIG
 
 # ani-cli as the bridge sees it: its version, its two menus, its player and
@@ -312,6 +312,44 @@ class RealArtCopies(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
+class RealAniListCopies(unittest.TestCase):
+    def test_mpv_tells_see_through_from_solid_and_copies_the_solid_one(self):
+        """Decision 90: AniList's PNG covers as JPEGs for a phone. The real
+        mpv reads a PNG's alpha (raw output, on Windows too) and makes the
+        copy; a see-through picture is left alone."""
+        from animehub import alpics, upscale
+        mpv = system.find_program("mpv")
+        if not mpv:
+            raise AssertionError("ANIME_HUB_REAL_TOOLS is set but mpv is missing")
+        tmp = Path(tempfile.mkdtemp(dir=support.TMP))
+        self.addCleanup(setattr, config, "CACHE", config.CACHE)
+        config.CACHE = tmp
+        self.addCleanup(alpics._swept.clear)
+        alpics._swept.append(1)
+        self.addCleanup(alpics._failed.clear)
+        pngs = {}
+        for name, source in (("solid", "testsrc2=s=460x650:d=1,format=rgba"),
+                             ("clear", "testsrc2=s=460x650:d=1,format=rgba,colorchannelmixer=aa=0.4")):
+            src = tmp / f"{name}.png"
+            subprocess.run([mpv, "--no-config", "--really-quiet", "--frames=1", f"--o={src}", "--ovc=png", "--ofopts=update=1",
+                            "--vf=format=rgba", f"av://lavfi:{source}"], capture_output=True, timeout=60, check=True)
+            pngs[name] = src.read_bytes()
+            self.assertEqual(pngs[name][25], 6, "the test picture has no alpha channel")  # IHDR colour type: RGBA
+            self.assertIs(alpics._opaque(src), name == "solid")
+        for name, rel in (("solid", "media/anime/cover/large/bx1-solid.png"), ("clear", "media/anime/cover/large/bx2-clear.png")):
+            with mock.patch.object(alpics.metadata, "_fetch_image", return_value=pngs[name]):
+                out = alpics.copy(rel)
+            if name == "solid":
+                data = out.read_bytes()
+                self.assertEqual((data[:2], upscale.image_dimensions(data)), (b"\xff\xd8", (460, 650)))
+                self.assertFalse(upscale.jpeg_looks_blank(data))
+            else:
+                self.assertIsNone(out)
+                self.assertTrue(alpics.kept(rel))
+        self.assertEqual(sorted(p.suffix for p in alpics.folder().iterdir()), [".jpg", ".keep"])  # nothing left over
+
+
+@unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
 class RealMpv(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -321,7 +359,8 @@ class RealMpv(unittest.TestCase):
         base = Path(tempfile.mkdtemp(dir=support.TMP))
         home = base / "mpv-home"
         home.mkdir()
-        (home / "mpv.conf").write_text("vo=null\nao=null\n", encoding="utf-8")
+        # vo: a list whose first one always works, so a run started ahead can tell it got it back (TODO 214)
+        (home / "mpv.conf").write_text("vo=null,gpu\nao=null\n", encoding="utf-8")
         patcher = mock.patch.dict(os.environ, {"MPV_HOME": str(home)})
         patcher.start()
         cls.addClassCleanup(patcher.stop)
@@ -528,6 +567,53 @@ class RealMpv(unittest.TestCase):
         self.press("stop")
         self.assertTrue(wait_for(lambda: not self.session(), 12))
         self.assertIsNotNone(proc.poll())
+
+    def ahead(self, media_id):
+        """A prepared run whose mpv started ahead (TODO 214), and a way to ask it."""
+        self.online(media_id)
+        for patcher in (mock.patch.object(settings, "site_ok", return_value=True),
+                        mock.patch.dict(settings.AUTOMATION_DEFAULTS, {"prepare_online": True})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.addCleanup(prepare.discard)
+        streaming.stream_refresh(media_id)  # its episode list: preparing only takes an episode it lists
+        streaming.prepare_episode(f"stream:{media_id}:2")
+        slot = wait_for(lambda: prepare._slot, 10)
+        self.assertTrue(slot, "nothing was prepared")
+
+        def ask(name):
+            try:
+                return (player.mpv_ipc(slot["sock"], ["get_property", name]) or {}).get("data")
+            except OSError:
+                return None
+        self.assertTrue(wait_for(lambda: ask("pause") is True, 20), "no paused mpv ahead")
+        return slot, ask
+
+    def test_an_online_episode_started_ahead(self):
+        """mpv runs before the click, paused, without a picture and reading
+        30 s ahead; the click shows it, plays it and gives mpv.conf's reading
+        back. Through bash and a named pipe on Windows too."""
+        slot, ask = self.ahead(900003)
+        self.assertTrue(wait_for(lambda: ask("duration"), 20), "the episode never opened ahead")
+        # No picture anywhere yet: the dummy output, or none made yet (Windows makes it later)
+        self.assertIn(ask("current-vo"), (None, "null"))
+        self.assertEqual((ask("cache-secs"), ask("demuxer-readahead-secs")), (30, 30))
+        self.assertEqual([v["name"] for v in ask("vo")], ["null"])
+        self.assertEqual(streaming.start_stream("stream:900003:2").get("error"), None)
+        a = self.playing("stream:900003:2")
+        self.assertIs(a["proc"], slot["proc"])  # the run from before the click, not a new one
+        self.assertTrue(wait_for(lambda: ask("pause") is False, 8))
+        # mpv.conf's own output (vo=null here) and reading back
+        self.assertTrue(wait_for(lambda: [v["name"] for v in ask("vo") or []] == ["null", "gpu"] and ask("cache-secs") not in (None, 30), 8),
+                        (ask("vo"), ask("cache-secs")))
+        self.assertEqual(ask("demuxer-readahead-secs"), 1)  # mpv's default
+
+    def test_an_mpv_started_ahead_ends_on_the_stop_file(self):
+        """A run being ended can slip past taskkill on Windows: its mpv then
+        quits by itself, as the wait script does (AHEAD_LUA)."""
+        slot, _ = self.ahead(900004)
+        (slot["dir"] / "go.stop").touch()
+        self.assertTrue(wait_for(lambda: slot["proc"].poll() is not None, 10), "mpv kept running")
 
     def test_a_download_for_a_title_windows_refuses(self):
         self.online(900002, "Kaguya-sama: Love is War?")
