@@ -594,7 +594,10 @@ class RealMpv(unittest.TestCase):
         30 s ahead; the click shows it, plays it and gives mpv.conf's reading
         back. Through bash and a named pipe on Windows too."""
         slot, ask = self.ahead(900003)
-        self.assertEqual((ask("current-vo"), ask("cache-secs"), ask("demuxer-readahead-secs")), ("null", 30, 30))
+        self.assertTrue(wait_for(lambda: ask("duration"), 20), "the episode never opened ahead")
+        # No picture anywhere yet: the dummy output, or none made yet (Windows makes it later)
+        self.assertIn(ask("current-vo"), (None, "null"))
+        self.assertEqual((ask("cache-secs"), ask("demuxer-readahead-secs")), (30, 30))
         self.assertEqual([v["name"] for v in ask("vo")], ["null"])
         self.assertEqual(streaming.start_stream("stream:900003:2").get("error"), None)
         a = self.playing("stream:900003:2")
