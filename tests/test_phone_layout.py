@@ -258,9 +258,9 @@ class PhonePolish(unittest.TestCase):
     def test_library_sort_line_and_row_sheet(self):
         self.assertIn('<div class="lsort"><label class="srt">', APP)
         self.assertIn('data-a="fltopen">${ico("filter")}Filter', APP)
-        self.assertIn('<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>', APP)
+        self.assertIn('<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>', APP)
         self.assertIn(".fsheet .filters{gap:0;padding-top:12px;flex-wrap:nowrap}", CSS)  # a tall sheet wrapped into columns
-        self.assertIn('if (k === "group" || isPhone()) { S.fadeNext = true; return render(); }', APP)
+        self.assertIn('if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow', APP)
 
     def test_small_fixes(self):
         self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top

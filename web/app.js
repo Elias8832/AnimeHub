@@ -821,14 +821,22 @@ function fixTab(m) {
 function libList(m) {
   const f = S.lib;
   return libCards(m.entries.filter((e) => (f.tab === "ALL" || e.status === f.tab)
-    && (srcLocked() || f.src === "all" || e.capability === f.src)
-    && (f.fmt === "all" || e.format === f.fmt)
-    && (f.air === "all" || e.airing === f.air)
+    && (srcLocked() || fhas("src", e.capability))
+    && fhas("fmt", e.format)
+    && fhas("air", e.airing)
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
     && (!Array.isArray(f.average) || (e.average > 0 && inRange(f.average, e.average)))
     && hasGenres(e, f.genres))).sort(libSort(f.sort, f.rev));
 }
+/* Source, format and airing take several picks (Elias, 2026-11-12, Decision 13):
+   a show passes when it matches any of them. "all" = nothing picked; a saved
+   single pick (a string, from before) still reads as one. */
+const FMULTI = new Set(["src", "fmt", "air"]);
+const fpicked = (k) => { const v = S.lib[k]; return v === "all" || v == null ? [] : Array.isArray(v) ? v : [v]; };
+const fhas = (k, x) => { const p = fpicked(k); return !p.length || p.includes(x); };
+/* The chip's value: the picks by name, or how many once that gets long. */
+const fval = (k, opts) => { const p = fpicked(k); return !p.length ? opts[0][1] : p.length > 2 ? `${p.length} picked` : p.map((v) => (opts.find(([o]) => o === v) || [v, v])[1]).join(", "); };
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
 const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genres || []).includes(g));
 /* The tray: genres in the open tab, most cards first (one per franchise). */
@@ -1571,11 +1579,14 @@ function fdrop(k, label, inner, val, set = Array.isArray(S.lib[k]), locked = fal
 /* Side list: a pick-one filter opens in place as a list of its options, one per row (no pills, Elias) (Elias: "make the
    upper three expand downwards like the bottom three, I don't like the popup"). */
 function fchoice(k, label, opts, locked) {
+  const multi = FMULTI.has(k) && !locked, p = fpicked(k);
   const cur = locked ? opts[1] : opts.find(([v]) => v === S.lib[k]) || opts[0];
-  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => {
-    const on = v === cur[0];
+  const isOn = (v) => multi ? (v === "all" ? !p.length : p.includes(v)) : v === cur[0];
+  /* no "any" row where several can be ticked: nothing ticked is any (Elias) */
+  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${(multi ? opts.filter(([v]) => v !== "all") : opts).map(([v, l]) => {
+    const on = isOn(v);
     return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="fpick" data-k="${k}" data-v="${esc(v)}"><span>${esc(l)}</span>${ico("check")}</button>`;
-  }).join("")}</div>`, cur[1], !locked && cur[0] !== "all", locked);
+  }).join("")}</div>`, multi ? fval(k, opts) : cur[1], multi ? p.length > 0 : !locked && cur[0] !== "all", locked);
 }
 function fdropClose(except) {
   for (const d of $$(".fdrop.open")) if (d !== except) { d.classList.toggle("open", false); d.querySelector(".fdb")?.setAttribute("aria-expanded", "false"); }
@@ -1648,7 +1659,7 @@ function Lib() {
     /* Phones (TODO 177): the sheet lists the filters as rows, like the PC's side
        list; sort sits on the line above the grid. */
     const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
-    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
+    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>
       <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
@@ -1671,9 +1682,9 @@ const FOPTS = () => ({
   src: [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]],
   fmt: [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]],
   air: [["all", "any"], ...Object.entries(AIR)] });
-const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel; return `${pick("src", cap("source"), o.src, srcLocked())}
-      ${pick("fmt", cap("format"), o.fmt)}
-      ${pick("air", cap("airing"), o.air)}
+const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}
+      ${fchoice("fmt", cap("format"), o.fmt)}
+      ${fchoice("air", cap("airing"), o.air)}
       ${fdrop("year", cap("year"), frng("year", "year", ...yearBounds(), 1, String))}
       ${fdrop("score", cap("my score"), frng("score", "my score", 0, 10, 0.5, (x) => String(x)))}
       ${fdrop("average", cap("average"), frng("average", "average", 0, 100, 5, (x) => String(x)))}`; };
@@ -1695,7 +1706,7 @@ function libRail(m, sum, loading) {
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
     ${loading ? head(acct() + " lists") + `<div class="lghost" style="--i:${n++}" aria-hidden="true">${[58, 76, 88, 70].map((w) => `<i><b style="width:${w}px"></b><u></u></i>`).join("")}</div><div class="lload" style="--i:${n++}">${listLoad()}</div>` : ""}
-    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
+    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1))}${gen}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
 }
@@ -6456,12 +6467,23 @@ const A = {
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   fpick: (v, t) => {
-    const k = t.dataset.k, d = t.closest(".fdrop");
-    S.lib[k] = v; saveLib();
-    if (k === "group" || isPhone()) { S.fadeNext = true; return render(); } // phones: the sheet and the Filter count follow
+    const k = t.dataset.k, d = t.closest(".fdrop"), multi = FMULTI.has(k);
+    if (multi) { const p = fpicked(k), next = v === "all" ? [] : p.includes(v) ? p.filter((x) => x !== v) : [...p, v]; S.lib[k] = next.length ? next : "all"; }
+    else S.lib[k] = v;
+    saveLib();
+    if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow
+      const sc = $(".fsheet .filters")?.scrollTop;
+      S.fadeNext = true; render();
+      /* several can be picked: the list stays open for the next one */
+      const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);
+      if (nd) { nd.querySelector(".fpanel").style.animation = "none"; nd.classList.add("open"); nd.querySelector(".fdb").setAttribute("aria-expanded", "true"); }
+      const f = $(".fsheet .filters"); if (f && sc) f.scrollTop = sc;
+      return;
+    }
     paintWall(true); syncFilters();
-    for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
-    d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
+    const opts = FOPTS()[k];
+    for (const b of d.querySelectorAll(".fopt")) { const bv = b.dataset.v, on = multi ? (bv === "all" ? S.lib[k] === "all" : fpicked(k).includes(bv)) : b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    d.classList.toggle("set", S.lib[k] !== "all"); d.querySelector(".fdb b").textContent = multi ? fval(k, opts) : t.querySelector("span").textContent;
   },
   fdrop: (v, t) => { const d = t.closest(".fdrop"), open = !d.classList.contains("open"); fdropClose(d); d.classList.toggle("open", open); t.setAttribute("aria-expanded", open); if (open) d.querySelector(".fpanel input, .fpanel .fopt.on")?.focus({ preventScroll: true }); },
   totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
