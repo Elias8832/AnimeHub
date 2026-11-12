@@ -312,6 +312,44 @@ class RealArtCopies(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
+class RealAniListCopies(unittest.TestCase):
+    def test_mpv_tells_see_through_from_solid_and_copies_the_solid_one(self):
+        """Decision 90: AniList's PNG covers as JPEGs for a phone. The real
+        mpv reads a PNG's alpha (raw output, on Windows too) and makes the
+        copy; a see-through picture is left alone."""
+        from animehub import alpics, upscale
+        mpv = system.find_program("mpv")
+        if not mpv:
+            raise AssertionError("ANIME_HUB_REAL_TOOLS is set but mpv is missing")
+        tmp = Path(tempfile.mkdtemp(dir=support.TMP))
+        self.addCleanup(setattr, config, "CACHE", config.CACHE)
+        config.CACHE = tmp
+        self.addCleanup(alpics._swept.clear)
+        alpics._swept.append(1)
+        self.addCleanup(alpics._failed.clear)
+        pngs = {}
+        for name, source in (("solid", "testsrc2=s=460x650:d=1,format=rgba"),
+                             ("clear", "testsrc2=s=460x650:d=1,format=rgba,colorchannelmixer=aa=0.4")):
+            src = tmp / f"{name}.png"
+            subprocess.run([mpv, "--no-config", "--really-quiet", "--frames=1", f"--o={src}", "--ovc=png", "--ofopts=update=1",
+                            "--vf=format=rgba", f"av://lavfi:{source}"], capture_output=True, timeout=60, check=True)
+            pngs[name] = src.read_bytes()
+            self.assertEqual(pngs[name][25], 6, "the test picture has no alpha channel")  # IHDR colour type: RGBA
+            self.assertIs(alpics._opaque(src), name == "solid")
+        for name, rel in (("solid", "media/anime/cover/large/bx1-solid.png"), ("clear", "media/anime/cover/large/bx2-clear.png")):
+            with mock.patch.object(alpics.metadata, "_fetch_image", return_value=pngs[name]):
+                out = alpics.copy(rel)
+            if name == "solid":
+                data = out.read_bytes()
+                self.assertEqual((data[:2], upscale.image_dimensions(data)), (b"\xff\xd8", (460, 650)))
+                self.assertFalse(upscale.jpeg_looks_blank(data))
+            else:
+                self.assertIsNone(out)
+                self.assertTrue(alpics.kept(rel))
+        self.assertEqual(sorted(p.suffix for p in alpics.folder().iterdir()), [".jpg", ".keep"])  # nothing left over
+
+
+@unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
 class RealMpv(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
