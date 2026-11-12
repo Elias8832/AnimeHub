@@ -1161,6 +1161,24 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .lib2 .rt:before{background:linear-gradient(90deg,rgba(255,255,255,.14) var(--a),var(--accent) var(--a),var(--accent) var(--b),rgba(255,255,255,.14) var(--b))}
 .lib2 .rt input::-webkit-slider-thumb{width:14px;height:14px;margin-top:7px;border:2px solid var(--accent)}
 .lib2 .rt input,.lib2 .rt input::-webkit-slider-runnable-track{height:28px}
+/* Narrower PC windows: source, format and airing are a chip that opens a short
+   list, several can be ticked (the side list and the phone sheet have their own). */
+.lib2 .filters>.fdrop:has(.fchips){display:block;position:relative}
+.lib2 .filters>.fdrop .fdb{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 14px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px);font:400 11px var(--mono);color:var(--mute);transition:background .2s}
+.lib2 .filters>.fdrop .fdb b{font:600 13px var(--ui);color:var(--ink);white-space:nowrap}
+.lib2 .filters>.fdrop .fdb .ico{width:12px;height:12px;stroke-width:2.6;color:#b0b0b4;transition:transform .2s var(--ease)}
+.lib2 .filters>.fdrop .fdb:hover{background:var(--glass-h)}
+.lib2 .filters>.fdrop.set .fdb,.lib2 .filters>.fdrop.open .fdb{background:var(--pick);color:var(--ink-2)}
+.lib2 .filters>.fdrop.open .fdb .ico{transform:rotate(180deg)}
+.lib2 .filters>.fdrop.locked .fdb{cursor:default}.lib2 .filters>.fdrop.locked .fdb .ico{display:none}
+.lib2 .filters>.fdrop .fpanel{display:none;position:absolute;top:42px;left:0;z-index:30;min-width:180px;padding:6px;border-radius:16px;background:var(--glass-pop);box-shadow:var(--sh-pop);backdrop-filter:blur(24px)}
+.lib2 .filters>.fdrop.open .fpanel{display:block;animation:popIn .18s var(--ease) both}
+.lib2 .filters>.fdrop .fchips{display:flex;flex-direction:column;gap:1px}
+.lib2 .filters>.fdrop .fopt{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 10px;border-radius:10px;font:500 13.5px var(--ui);color:var(--mute);text-align:left;white-space:nowrap;transition:background .15s,color .15s}
+.lib2 .filters>.fdrop .fopt:hover{background:rgba(255,255,255,.06);color:var(--ink)}
+.lib2 .filters>.fdrop .fopt.on{color:var(--ink);font-weight:600}
+.lib2 .filters>.fdrop .fopt .ico{margin-left:auto;width:14px;height:14px;stroke-width:2.4;color:var(--accent-hi);opacity:0}
+.lib2 .filters>.fdrop .fopt.on .ico{opacity:1}
 .lib2 .filters .btn{height:36px;padding:0 14px;font-size:13px}
 .lib2 .filters .btn.ic{width:36px;padding:0}
 .srev .ico{transition:transform .2s var(--ease)}.srev.on{color:var(--accent)!important}.srev.on .ico{transform:scaleX(-1)}
