@@ -595,6 +595,63 @@ def stream_shows(scan, links=None):
     return [_stream_show(link, rows) for link in links]
 
 
+_meta_asked = set()
+
+
+def _fetch_meta_later(mid):
+    """AniList's info for a release, in the background, once a run; open
+    pages reload when it is there."""
+    if mid in _meta_asked:
+        return
+    _meta_asked.add(mid)
+
+    def run():
+        try:
+            if release_meta(mid):
+                from . import peersync
+                peersync.changed()
+        except Exception as e:
+            util.log("release info for %s: %s" % (mid, e))
+    threading.Thread(target=run, daemon=True).start()
+
+
+def played_unlinked_shows(links, on_disk):
+    """Releases played but never linked by ani-cli here, and not on disk:
+    episodes another device played came over with a sync (Decision 91), so
+    Home and History show them, as the show page would (release_show: Play
+    links on the way). Only releases with a played episode count (a mark from
+    "Mark what you watched" has no play time). Uses AniList's info as stored;
+    a release without it is fetched once and shows a moment later."""
+    linked = {l["media_id"] for l in links}
+    rows = _stream_rows()
+    played = {}
+    for eid, r in rows.items():
+        if not r[3]:
+            continue
+        try:
+            _, mid, token = eid.split(":", 2)
+            mid, n = int(mid), float(token)
+        except ValueError:
+            continue
+        if mid not in linked and mid not in on_disk and n.is_integer():
+            played.setdefault(mid, set()).add(int(n))
+    out = []
+    for mid, nums in sorted(played.items()):
+        hit = database.cache_get_ts(f"release:v1:{mid}")
+        m = (hit[0] or {}).get("media") if hit else None
+        if not m:
+            if hit is None:
+                _fetch_meta_later(mid)
+            continue
+        link = {"media_id": mid, "query": None, "title": None, "mode": anicli.stream_prefs()["mode"],
+                "episodes": [str(n) for n in range(1, max([release_aired(m)] + list(nums)) + 1)],
+                "episodes_ts": time.time(), "meta": _release_display(m, None, art=False)}
+        ready = bool(anicli.anicli_path())
+        out.append(_stream_show(link, rows, {"provisional": True, "ready": ready,
+                                             "unavailable": not ready or mid in stream_missed_ids()}))
+    return out
+
+
 def library_shows():
     """(disk shows, online shows) — the one view of "a show" every episode
     lookup goes through."""

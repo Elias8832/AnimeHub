@@ -3023,7 +3023,7 @@ function setSections(s) {
     anilist: accountGroup(ani) + `<div class="group adv2${off ? " dis" : ""}"><h3>While you watch</h3>${off ? '<p class="sub">Connect an account to use these.</p>' : ""}
     ${srow("Send watched episodes", `Sends your highest watched episode to ${acct()}.`, onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, off))}
     ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, off))}</div>`,
-    phone: s.phone ? "" : phoneGroup(),
+    phone: s.android ? syncGroup() : s.phone ? "" : phoneGroup(),
     data: s.android ? g("Updates", updateRows(s)) + g("About", srow("Data folder", `<code>${esc(s.data_dir)}</code>`, ""))
       + g("Help", srow("First-run tour", "Walk through AniList and Termux again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>')))
     : g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
@@ -3085,6 +3085,7 @@ function setResults(s, tabs) {
   return html.trim() ? (n ? `<p class="setcount">${n} ${n === 1 ? "setting" : "settings"}</p>` : "") + html : `<p class="setnone">Nothing for “${esc(S.setQ)}”. Try one word, like “subtitle” or “vpn”.</p>`;
 }
 const setClear = () => { S.setQ = ""; const f = $("#setq"); if (f) f.value = ""; };
+document.addEventListener("input", (e) => { if (e.target.id === "peeraddr") S.peerAddr = e.target.value; else if (e.target.id === "peercode") S.peerCode = e.target.value; }); // a redraw keeps what's typed (Decision 91)
 document.addEventListener("input", (e) => { if (e.target.id === "setq") { S.setQ = e.target.value; render(true); scrollTo(0, 0); } });
 const setSearch = () => `<label class="slsearch">${ico("search")}<input id="setq" type="search" value="${esc(S.setQ)}" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">${S.setQ ? `<button data-a="setclear" aria-label="Clear">${ico("close")}</button>` : `<kbd class="kb" aria-hidden="true">/</kbd>`}</label>`;
 /* Sections sorted by what you're after, under plain headings. */
@@ -3093,7 +3094,8 @@ function Sett() {
   const s = S.settings;
   if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
   /* Settings (Decision 38, regrouped in 61): one section at a time; every setting can be found from the box on top. */
-  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone); // a paired phone can't change the remote (Decision 43)
+  const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone || s.android) // a paired phone can't change the remote (Decision 43)
+    .map((t) => s.android && t[0] === "phone" ? ["phone", "PC sync", t[2]] : t); // the app syncs with a PC there (Decision 91)
   if (isPhone() && !S.setOpen) return settingsList(tabs, s);
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
   let n = 1; // the side list's entrance order
@@ -3384,13 +3386,40 @@ function phoneGroup() {
     : !r.address ? srow("Pair a phone", "This PC isn't on a network right now.", "")
     : code ? `<div class="pairbox"><div class="qr" aria-label="QR code with the pairing link">${code.qr}</div><div class="pairtxt"><b>Scan this with the phone's camera</b>
         <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
-        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
+        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone. The Android app takes the same address and code in its Settings → PC sync.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
     : srow("Pair a phone", "Shows a QR code to scan with the phone.", pkdo('<button class="btn pri" data-a="rmtcode">Pair a phone</button>'));
   const devs = r.devices.length ? r.devices.map((d) => srow(esc(d.name), `Paired ${esc(when(d.created))} · last used ${esc(when(d.last_seen))}`, pkdo(`<button class="btn" data-a="rmtdel" data-v="${d.id}">Remove</button>`))).join("")
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
     ${srow("Phone remote", "Control playback from your phone. Same Wi-Fi, no app.", pick("Phone remote", "rmton", null, [["on", "On"], ["off", "Off"]], r.on ? "on" : "off"))}
     ${pair}${r.on ? srow("Keep the PC playing", "Off: playing an episode on the phone stops mpv here. On: both play at once.", onoff("phone_play_both", "Keep the PC playing", S.settings?.phone_play_both)) : ""}${S.settings?.background_ok ? srow("When the window closes", "Keep running and Start at login are in System.", "") : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
+}
+/* Settings → PC sync in the Android app (Decision 91): pair once with the
+   PC's phone remote (address + code), then the two keep watched episodes,
+   stop points, history, playlists and your own list entries the same. */
+const syncAgo = (t) => { if (!t) return ""; const m = Math.round((Date.now() - new Date(t.replace(" ", "T") + "Z")) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t.replace(" ", "T") + "Z").toLocaleDateString(); };
+function syncGroup() {
+  const p = S.peer;
+  if (!p) { api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Sync with your PC</h3><p class="sub">Loading…</p></div>'; }
+  if (!p.paired) return `<div class="group"><h3>Sync with your PC</h3><p class="sub">Keeps what you watched and your playlists the same on both.</p>
+    ${srow("1. On the PC", "Settings → Phone → Pair a phone.", "")}
+    ${srow("2. Here", "Type the address and code it shows.", "")}
+      <div class="row peerform"><input id="peeraddr" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="192.168.2.31:8788" aria-label="The PC's address" value="${esc(S.peerAddr || "")}"><input id="peercode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Pairing code" value="${esc(S.peerCode || "")}"><button class="btn pri" data-a="peerpair"${S.peerBusy ? " disabled" : ""}>${S.peerBusy ? "Pairing…" : "Pair"}</button></div>
+    ${p.error ? `<p class="note">${swarn(esc(p.error))}</p>` : ""}</div>`;
+  const err = p.error && (!p.last_ok || (p.last_try || "") > p.last_ok) ? p.error : "";
+  const last = p.last_ok ? `Last synced ${syncAgo(p.last_ok)}.` : "Not synced yet.";
+  return `<div class="group"><h3>Sync with your PC</h3>
+    ${srow(esc(p.pc || "Your PC"), "", pkdo('<button class="btn" data-a="peerforget">Unpair</button>'))}
+    ${srow(`Sync${err ? swarn(p.vpn_blocked ? "VPN" : "Waiting") : ""}`, esc(err ? `${err} ${last}` : last), pkdo(`<button class="btn" data-a="peernow"${S.peerBusy || p.running ? " disabled" : ""}>${S.peerBusy || p.running ? "Syncing…" : "Sync now"}</button>`))}</div>`;
+}
+async function peerDo(body, done) {
+  S.peerBusy = true; render(true);
+  try {
+    const r = await api("/api/peer", body);
+    S.peer = r;
+    if (r.error) toast(r.error, "err"); else if (done) toast(done(r));
+  } catch { toast("Could not reach the hub.", "err"); }
+  S.peerBusy = false; render(true);
 }
 function phoneWatch() {
   phoneGroup.t = 0;
@@ -3627,7 +3656,7 @@ const SETTINGS_INDEX = [
   ["Hide spoilers", "library", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Sharper banners", "library", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "library", "upscayl upscale banner natural digital art tta model"], ["Playlist stacks", "library", "playlist stack hover fan wide cascade peek open cards"],
   ["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"], ["Online episodes and downloads", "privacy", "vpn warn ask without streaming privacy", "vpn_warn"], ["AniSkip", "privacy", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Update checks", "privacy", "update updates vpn github ip only", "update_vpn_only"],
   ["AniList", "anilist", "anilist account connect token login disconnect"], ["MyAnimeList", "anilist", "myanimelist mal account connect login disconnect"], ["Send watched episodes", "anilist", "anilist progress sync track episodes", "auto_progress_sync"], ["Add shows automatically", "anilist", "anilist add automatically watching", "auto_add_watch"],
-  ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"], ["Keep the PC playing", "phone", "phone play both pc mpv stop", "phone_play_both"],
+  ["Phone remote", "phone", "phone remote mobile wifi pair qr android iphone ios control"], ["Sync with your PC", "phone", "sync pc computer desktop pair transfer watched history playlists"], ["Keep the PC playing", "phone", "phone play both pc mpv stop", "phone_play_both"],
   ["Tell me about new versions", "data", "update updates version new release github", "update_check"], ["Updates from", "data", "update channel stable unstable beta nightly build"], ["Keep running after closing", "data", "keep running background server close phone tray", "keep_running"], ["Start at login", "data", "start login boot autostart server phone", "start_at_login"],
   ["mpv", "data", "mpv ani-cli upscayl tools player detected"], ["Config file", "data", "config file data folder server port"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["First-run tour", "data", "tour setup welcome"],
 ];
@@ -3667,7 +3696,10 @@ const srFuzzy = (hay, ql) => {
   return n;
 };
 const srMatch = (hay, ql) => srFuzzy(hay, ql) !== null;
-const srSets = (ql, n) => SETTINGS_INDEX.map((x) => [x, srFuzzy(`${x[0]} ${x[2]} ${x[1]}`, ql)]).filter(([, f]) => f !== null).sort((a, b) => a[1] - b[1]).slice(0, n).map(([x]) => x);
+/* The Android app's Phone section is PC sync (Decision 91): the remote's rows aren't there, the sync row only is. */
+const SYNC_ROW = "Sync with your PC", setsHere = () => SETTINGS_INDEX.filter(([t, tab]) => tab !== "phone" || (t === SYNC_ROW) === !!S.settings?.android);
+const setTabName = (k) => S.settings?.android && k === "phone" ? "PC sync" : SET_TABS.find(([x]) => x === k)[1];
+const srSets = (ql, n) => setsHere().map((x) => [x, srFuzzy(`${x[0]} ${x[2]} ${x[1]}`, ql)]).filter(([, f]) => f !== null).sort((a, b) => a[1] - b[1]).slice(0, n).map(([x]) => x);
 /* Library hits: the whole phrase first (srRank), then words in any order, then typos. */
 const srLocal = (ql, n) => (S.data?.shows || []).map((s) => {
   const hay = `${s.collection || ""} ${s.title}`, f = hay.toLowerCase().includes(ql) ? -1 : srFuzzy(hay, ql);
@@ -3699,7 +3731,7 @@ function srHTML() {
         { art: x.bannerImage || x.coverImage?.extraLarge, t: candLabel(x), m: sub, k: [["Open", "↵"]] }); }).join("");
   }
   const sets = q ? srSets(ql, 5) : [];
-  if (sets.length) h += `<div class="psec">settings</div>` + sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
+  if (sets.length) h += `<div class="psec">settings</div>` + sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = setTabName(tab);
     return row(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, `<span class="ic">⚙</span><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<span class="r"><button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button></span>` : ""}`,
       { t, m: `Settings → ${tl}`, k: key ? [["Switch", "click"], ["Open in Settings", "↵"]] : [["Open in Settings", "↵"]] }); }).join("");
   const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => !q || srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, q ? 4 : 7);
@@ -4486,7 +4518,7 @@ function srHTMLTouch() {
     if (remote.length) h += sec(`On AniList <small>${remote.length}</small>`) + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
       return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
     const sets = srSets(ql, 4);
-    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = SET_TABS.find(([k]) => k === tab)[1];
+    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = setTabName(tab);
       return mi(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, "srrow set", `<i class="sic">${ico(SET_ICONS[tab] || "sliders")}</i><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : ico("chevr")}`); }).join("")}</div>`;
     const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, 3);
     if (cmds.length) h += sec("Do") + `<div class="srchips">${cmds.map(([[t], k]) => `<button class="chip" data-a="cmd" data-v="${k}">${ico("arrowr")}${esc(t)}</button>`).join("")}</div>`;
@@ -4539,7 +4571,7 @@ function setSummary(k, s) {
     library: s.library_root || "no folder chosen yet",
     privacy: S.data?.vpn?.active ? "a VPN is on" : "no VPN right now",
     anilist: ani.connected ? `${acct()} · ${ani.user || "you"}` : "not connected",
-    phone: "pair a phone with a QR code",
+    phone: s.android ? (S.peer?.paired ? `synced with ${S.peer.pc || "your PC"}` : "keep this phone and your PC the same") : "pair a phone with a QR code",
     data: "updates, tools, files",
   }[k] || "";
 }
@@ -5757,6 +5789,7 @@ async function pollNow() {
     if (!now.playing) S.live = null;
     else if (!S.live || S.live.ep !== now.episode_id) liveFrom(now);
     paintRemote();
+    if (!now.playing) { const st = now.synced || 0, seen = S.synced; S.synced = st; if (seen !== undefined && st !== seen) await reload(); } // the paired PC or app changed something here (Decision 91)
     if (!now.playing) listsWatch(now.lists);
     if (now.completed) maybeCompletion(now.completed);
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
@@ -6311,7 +6344,7 @@ function ppClose(fromBack, quiet) {
   if (!fromBack && typeof ovClosed === "function") ovClosed("pp");
   setTimeout(reload, 400);
 }
-document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); if (!document.hidden && S.settings?.android) api("/api/peer", { op: "soon" }).catch(() => {}); }); // back in the app: sync with the PC (Decision 91)
 /* where: "pc" or "phone" to skip the phone's "Play where?" (Decision 71). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   if (recapOn() && !S.recapPass?.has(id) && recapCandidate(id)) {
@@ -6870,6 +6903,9 @@ const A = {
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
+  peerpair: () => { S.peerAddr = $("#peeraddr")?.value || ""; S.peerCode = $("#peercode")?.value || ""; peerDo({ op: "pair", address: S.peerAddr, code: S.peerCode }, () => { S.peerCode = ""; return "Paired. Syncing with the PC…"; }).then(() => setTimeout(() => api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}), 4000)); },
+  peernow: () => peerDo({ op: "now" }, (r) => r.last && (r.last.pulled || r.last.pushed) ? "Synced with the PC" : "Already the same as the PC"),
+  peerforget: () => peerDo({ op: "forget" }, () => "Unpaired. Remove it on the PC too: Settings → Phone."),
   rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },
   rmtclose: () => { S.rmtOpen = false; paintRemote(); paintCanvas(); ovClosed("rmt"); },
   rmtrow: (v) => { S.rmtRow = S.rmtRow === v ? null : v; paintRemote(); },

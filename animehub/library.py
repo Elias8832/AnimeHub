@@ -680,6 +680,8 @@ def full_library():
     # health, matching and tombstones stay about the disk.
     links = streaming.stream_links_all()
     streams = streaming.stream_shows(scan, links)
+    # Played on the paired PC or app, not linked here yet (Decision 91).
+    streams += streaming.played_unlinked_shows(links, {u["media_id"] for s in scan for u in mapping.release_units(s)})
     # Spine (TODO 8, Decision 4): AniList lists merged with the library —
     # from the cache only, so the frequent library poll never waits on the
     # network. Absent until the first /api/anilist fetch or boot warm-up.

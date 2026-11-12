@@ -400,7 +400,7 @@ class SearchPalette(unittest.TestCase):
         self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)
         self.assertIn('<div id="pal" role="dialog" aria-label="Search">', HTML)
         self.assertIn('<button class="search" id="srb" data-a="sropen"', HTML)
-        self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone);', APP)
+        self.assertIn('const tabs = SET_TABS.filter(([k]) => k !== "phone" || !s.phone || s.android)', APP)
         self.assertIn('<nav class="snav" aria-label="Settings sections">${isPhone() ? "" : setSearch()}${tabs.map(', APP)
         self.assertIn("r.classList.add(\"flash\")", APP)
 

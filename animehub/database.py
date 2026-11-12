@@ -346,11 +346,29 @@ def migration_28(c):
             c.execute("ALTER TABLE playlists ADD COLUMN " + col)
 
 
+def migration_29(c):
+    """Sync between the Android app and a PC (peersync.py, Decision 91):
+    each playlist gets an id both devices share and when it last changed;
+    deleted playlists are remembered (`sync_gone`) so a delete reaches the
+    other device; `sync_peer` is the PC this device syncs with (one)."""
+    have = {r[1] for r in c.execute("PRAGMA table_info(playlists)")}
+    for col in ("uid TEXT", "changed TEXT"):
+        if col.split()[0] not in have:
+            c.execute("ALTER TABLE playlists ADD COLUMN " + col)
+    c.execute("UPDATE playlists SET uid = lower(hex(randomblob(8))) WHERE uid IS NULL")
+    c.execute("UPDATE playlists SET changed = ? WHERE changed IS NULL", (util.utc_stamp(),))
+    c.execute("""CREATE TABLE IF NOT EXISTS sync_gone(
+        kind TEXT NOT NULL, key TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY(kind, key))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS sync_peer(
+        id INTEGER PRIMARY KEY CHECK (id = 1), address TEXT NOT NULL, token TEXT NOT NULL,
+        pc TEXT, paired TEXT, snapshot TEXT, last_ok TEXT, last_try TEXT, last_error TEXT)""")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
               migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
-              migration_26, migration_27, migration_28]
+              migration_26, migration_27, migration_28, migration_29]
 
 
 def snapshot_before(target_version):

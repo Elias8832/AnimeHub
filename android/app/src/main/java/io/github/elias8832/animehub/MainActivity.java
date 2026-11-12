@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
         web.setBackgroundColor(0xff101114);
         if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
             WebView.setWebContentsDebuggingEnabled(true);  // test builds only: chrome://inspect
-        setContentView(web);
+        setContentView(fitted(web));
         if (state != null) web.restoreState(state);
         else web.loadData("<body style='background:#101114'></body>", "text/html", "utf-8");
         if (TermuxBridge.termuxInstalled() && !TermuxBridge.allowed())
@@ -154,6 +154,33 @@ public class MainActivity extends Activity {
                     requestPermissions(new String[]{TermuxBridge.PERMISSION}, 1);
             });
         }
+    }
+
+    /**
+     * Android 15 draws apps under the status bar, the gesture bar and the
+     * keyboard. The page sits inside them instead: padding as big as the
+     * bars (and the keyboard, so it never covers the search box), in the
+     * page's own background colour.
+     */
+    static android.view.View fitted(WebView web) {
+        android.widget.FrameLayout root = new android.widget.FrameLayout(web.getContext());
+        root.setBackgroundColor(0xff101114);
+        root.addView(web);
+        root.setOnApplyWindowInsetsListener((v, in) -> {
+            int l, t, r, b;
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = in.getInsets(android.view.WindowInsets.Type.systemBars()
+                        | android.view.WindowInsets.Type.displayCutout());
+                android.graphics.Insets ime = in.getInsets(android.view.WindowInsets.Type.ime());
+                l = bars.left; t = bars.top; r = bars.right; b = Math.max(bars.bottom, ime.bottom);
+            } else {
+                l = in.getSystemWindowInsetLeft(); t = in.getSystemWindowInsetTop();
+                r = in.getSystemWindowInsetRight(); b = in.getSystemWindowInsetBottom();
+            }
+            v.setPadding(l, t, r, b);
+            return in;
+        });
+        return root;
     }
 
     @Override protected void onSaveInstanceState(Bundle out) {

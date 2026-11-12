@@ -350,6 +350,7 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 .match{display:grid;gap:16px;max-width:900px;margin-top:24px;padding:20px;border:1px solid var(--line);border-radius:var(--r-l);background:var(--s1);animation:rise .4s var(--ease) both}
 .cands{display:flex;gap:12px;flex-wrap:wrap}
 .row{display:flex;gap:8px;flex-wrap:wrap}.row input{flex:1;max-width:480px;min-width:200px}
+.peerform{margin:6px 0 16px}.peerform #peercode{max-width:180px;min-width:140px;flex:0 1 180px;letter-spacing:.12em}
 .found{display:flex;gap:9px;align-items:center;margin-top:14px;color:var(--mute);font-size:14px}
 .msg{min-height:20px;color:var(--warn);font-size:14px;margin-top:10px}
 .hint-line{color:var(--mute);font-size:13px;margin-top:8px}.stat-note{color:var(--mute);font-size:13px;margin-top:10px}

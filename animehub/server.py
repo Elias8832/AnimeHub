@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, android, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
+from . import LOADED_AT, android, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -150,6 +150,10 @@ MANIFEST = {"id": "/", "name": "Anime Hub", "short_name": "Anime Hub", "start_ur
                       # Android's "Install app" wants PNGs of these two sizes.
                       {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
                       {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]}
+
+
+# Changes the Android app hands to its PC soon after (Decision 91).
+SYNC_SOON = ("/api/watched", "/api/bulk-watched", "/api/entry-watched", "/api/playlists", "/api/entry", "/api/reset")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -487,6 +491,8 @@ class Handler(BaseHTTPRequestHandler):
                         payload["art"] = art
                     if lists:
                         payload["lists"] = lists
+                    if peersync.stamp():  # additive (Decision 91): a sync changed this device
+                        payload["synced"] = peersync.stamp()
                     self.send_json(payload)
                     return
                 a = next(iter(player._active.values()))
@@ -633,6 +639,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file(config.EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
         elif route == "/api/remote":
             self.send_json(remote.payload())
+        elif route == "/api/sync/facts":
+            # The Android app asks for this PC's watching (Decision 91).
+            self.send_json(peersync.facts_payload())
+        elif route == "/api/peer":
+            # Settings → PC in the Android app (Decision 91).
+            self.send_json(peersync.status())
         elif route == "/manifest.webmanifest":
             self.send_file_body(json.dumps(MANIFEST).encode(), "application/manifest+json")
         elif route == "/icon.svg":
@@ -710,7 +722,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "invalid Content-Length"}, 400)
             return
         # An imported font travels as base64 (TODO 122): up to 16 MB of file.
-        if length > (22_000_000 if route == "/api/fonts/import" else 1_000_000):
+        if length > (22_000_000 if route == "/api/fonts/import" else 16_000_000 if route == "/api/sync/apply" else 1_000_000):
             self.send_json({"error": "request body too large"}, 413)
             return
         try:
@@ -723,6 +735,12 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             self.send_json({"error": "request body must be a JSON object"}, 400)
             return
+        self._post(route, body)
+        # A change worth handing to the paired PC soon (Decision 91).
+        if route in SYNC_SOON or route == "/api/phone/progress" and (body.get("stop") or body.get("ended")):
+            peersync.soon()
+
+    def _post(self, route, body):
         if route == "/api/play":
             if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
@@ -864,6 +882,32 @@ class Handler(BaseHTTPRequestHandler):
                 return
             r = player.control(body["action"], body.get("value"))
             self.send_json(r, 400 if r.get("error") and r["error"] != "nothing is playing" else 200)
+        elif route == "/api/sync/apply":
+            # The Android app's merge for this PC (Decision 91).
+            bad = peersync.check_apply(body)
+            if bad:
+                self._bad(bad)
+                return
+            self.send_json(peersync.apply_payload(body))
+        elif route == "/api/peer":
+            # Settings → PC in the Android app: {op: "pair", address, code} / "now" / "forget".
+            op = body.get("op")
+            try:
+                if op == "pair":
+                    self.send_json(peersync.pair(body.get("address"), body.get("code")))
+                elif op == "now":
+                    peersync.sync_once()
+                    self.send_json(peersync.status())
+                elif op == "soon":
+                    peersync.soon(0)
+                    self.send_json(peersync.status())
+                elif op == "forget":
+                    peersync.forget()
+                    self.send_json(peersync.status())
+                else:
+                    self._bad("'op' is one of: pair, now, soon, forget")
+            except peersync.SyncError as e:
+                self.send_json({**peersync.status(), "error": str(e)}, 400)
         elif route == "/api/remote":
             # Settings → Phone remote: {on}, {new_code: true} or {remove: id}.
             if "on" in body:
@@ -1589,6 +1633,8 @@ def main():
     # made are found, and a zip copy puts itself in the Start menu once.
     system.refresh_path()
     threading.Thread(target=tools.start_menu_once, daemon=True).start()
+    # The Android app syncs with its paired PC (Decision 91); idle until paired.
+    peersync.start()
     # The phone remote's Wi-Fi listener, when switched on (Decision 43).
     if remote.enabled():
         remote.start(RemoteHandler)
