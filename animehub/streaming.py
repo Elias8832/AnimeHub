@@ -311,8 +311,8 @@ def stream_match(m):
 def friendly_stream_error(msg, code="this episode"):
     """ani-cli's (and the site's) failures in the app's words."""
     m = (msg or "").lower()
-    if "update ani-cli" in m:
-        return msg  # anicli_check: the user has to act, keep the details
+    if "update ani-cli" in m or "termux" in m:
+        return msg  # anicli_check / Android's Termux setup: the user has to act, keep the details
     if "not released" in m:
         return f"{code} isn't out yet."
     if "curl-impersonate" in m:

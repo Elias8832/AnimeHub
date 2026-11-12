@@ -219,9 +219,10 @@ class Payload(Isolated, ServerMixin):
 
     def test_meta_progress_rides_now_while_it_runs(self):
         self.assertNotIn("meta", json.loads(self.get("/api/now")[2]))
-        with patch.dict(metadata._meta_status, running=True, pending=4, total=6, current="X", phase="posters"):
+        with patch.dict(metadata._meta_status, running=True, pending=4, total=6, current="X", phase="posters", matching=["a1"]):
             meta = json.loads(self.get("/api/now")[2])["meta"]
-        self.assertEqual(meta, {"running": True, "pending": 4, "total": 6, "current": "X", "phase": "posters"})
+        self.assertEqual(meta, {"running": True, "pending": 4, "total": 6, "current": "X", "phase": "posters",
+                                "matching": ["a1"]})  # additive (TODO 222)
 
 
 class ScanReuse(unittest.TestCase):

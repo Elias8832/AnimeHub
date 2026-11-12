@@ -20,7 +20,9 @@ EPISODE_META_TTL = 12 * 3600
 # what the background pass is doing — a guessing game between "not found"
 # and "still loading" is not acceptable. pending/current/phase feed
 # /api/library's meta_pending payload.
-_meta_status = {"running": False, "pending": 0, "total": 0, "current": None, "phase": None}
+# matching: the shows this pass is still matching to AniList (TODO 222): not
+# "Needs a look" yet, only once the pass couldn't place them.
+_meta_status = {"running": False, "pending": 0, "total": 0, "current": None, "phase": None, "matching": []}
 
 
 def load_overrides():
@@ -674,6 +676,7 @@ def refresh_meta():
         kept = kept_local()
         missing = [s for s in scan if not s.get("poster") and s["id"] not in kept]
         _meta_status["pending"] = _meta_status["total"] = len(missing)
+        _meta_status["matching"] = [s["id"] for s in missing]
         _meta_status["phase"] = "show metadata"
         for s in missing:
             try:
@@ -684,6 +687,7 @@ def refresh_meta():
             _meta_status["pending"] -= 1
             time.sleep(2.2)
         library.merge_db(scan)
+        _meta_status["matching"] = []
         _meta_status["phase"] = "franchises"
         _meta_status["current"] = None
         try:
@@ -708,3 +712,4 @@ def refresh_meta():
         _meta_status["pending"] = _meta_status["total"] = 0
         _meta_status["current"] = None
         _meta_status["phase"] = None
+        _meta_status["matching"] = []

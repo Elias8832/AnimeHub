@@ -42,6 +42,8 @@ def downloads_payload():
 
 
 def download_enqueue(media_id, tokens):
+    if system.ANDROID:
+        return {"error": "Downloads aren't in the Android app yet."}
     try:
         link = streaming.stream_autolink(media_id)
     except anicli.AniCliError as e:

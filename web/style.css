@@ -3633,6 +3633,9 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){.mhit .mm{display:none}.mhit .kb{display:none}.mlist{max-height:260px}}
 .mres:has(.mlist),.mres:has(>.mnone2),.mres:has(>.mhit){min-height:258px} /* typing doesn't make the dialog jump in size */
 @media (max-height:860px) and (min-width:701px){.mlist{max-height:236px}.mres:has(.mlist),.mres:has(>.mnone2),.mres:has(>.mhit){min-height:236px}}
+/* Android: Termux setup steps (Decision 88) */
+.tsteps{margin:4px 0 0;padding-left:20px;display:grid;gap:12px;color:var(--mute);font-size:14px}.tsteps b{color:var(--ink)}.tsteps a{color:var(--accent)}
+.tcmd{display:flex;gap:8px;align-items:center;margin-top:6px}.tcmd code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;font:400 12px var(--mono);color:var(--ink);background:rgba(255,255,255,.06);border-radius:10px;padding:9px 11px}
 /* Windows sets itself up (Decision 87): one list, one footer */
 .tinst{margin-top:18px}.tinst .sum2{margin-top:0}
 .tpick .v{font:400 13px var(--ui);color:var(--mute);white-space:nowrap}.tpick .switch{margin-left:auto;flex:none}.tpick .spin{width:12px;height:12px}
