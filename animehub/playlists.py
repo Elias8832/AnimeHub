@@ -7,9 +7,13 @@ title and poster, so a show that is on no list and on no disk still has a card.
 A playlist has a name and, if the user sets them, a colour, a short note, an
 icon (a Lucide icon's name, drawn by the page), a pin to Home and how its
 page looks (head: "banner" or "cover", view: "list" or "posters"); the lists
-themselves are in the user's order too."""
+themselves are in the user's order too. Each list has a `uid` the Android
+app and the PC share and the time it last `changed`; a delete is kept in
+`sync_gone` so it reaches the other device (peersync.py, Decision 91)."""
 
 import re
+import secrets
+from datetime import datetime, timezone
 
 from . import database
 
@@ -88,6 +92,16 @@ def _must_exist(c, pid):
         raise PlaylistError("That playlist is gone.")
 
 
+def stamp():
+    """When a list changed, to the microsecond: two edits on two devices in
+    the same second still have an order (the newer list wins a sync)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
+
+
+def touch(c, pid):
+    c.execute("UPDATE playlists SET changed=? WHERE id=?", (stamp(), pid))
+
+
 def _refs(c, pid):
     return [r[0] for r in c.execute("SELECT ref FROM playlist_items WHERE playlist_id=? ORDER BY pos", (pid,))]
 
@@ -131,8 +145,9 @@ def create(name, item=None, looks=None, items=(), at=None):
     if at is not None:
         _int(at, "at")
     with database.db() as c:
-        pid = c.execute("INSERT INTO playlists(name, pos) VALUES(?, "
-                        "(SELECT COALESCE(MAX(pos), 0) + 1 FROM playlists))", (name,)).lastrowid
+        pid = c.execute("INSERT INTO playlists(name, pos, uid, changed) VALUES(?, "
+                        "(SELECT COALESCE(MAX(pos), 0) + 1 FROM playlists), ?, ?)",
+                        (name, secrets.token_hex(8), stamp())).lastrowid
         for col, v in looks.items():
             c.execute(f"UPDATE playlists SET {col}=? WHERE id=?", (v, pid))
         seen = set()
@@ -155,6 +170,7 @@ def edit(pid, body):
         _must_exist(c, pid)
         for col, v in looks.items():
             c.execute(f"UPDATE playlists SET {col}=? WHERE id=?", (v, pid))
+        touch(c, pid)
 
 
 def rename(pid, name):
@@ -164,6 +180,10 @@ def rename(pid, name):
 def delete(pid):
     with database.db() as c:
         _must_exist(c, pid)
+        uid = c.execute("SELECT uid FROM playlists WHERE id=?", (pid,)).fetchone()[0]
+        if uid:
+            c.execute("INSERT INTO sync_gone(kind, key, ts) VALUES('playlist', ?, ?) "
+                      "ON CONFLICT(kind, key) DO UPDATE SET ts=excluded.ts", (uid, stamp()))
         c.execute("DELETE FROM playlist_items WHERE playlist_id=?", (pid,))
         c.execute("DELETE FROM playlists WHERE id=?", (pid,))
 
@@ -183,12 +203,14 @@ def add(pid, item, at=None):
                   (pid, ref, len(refs), title, poster))
         if at is not None:
             _set_order(c, pid, _place(refs + [ref], ref, at))
+        touch(c, pid)
 
 
 def remove(pid, ref):
     with database.db() as c:
         _must_exist(c, pid)
         c.execute("DELETE FROM playlist_items WHERE playlist_id=? AND ref=?", (pid, _ref(ref)))
+        touch(c, pid)
 
 
 def _set_order(c, pid, refs):
@@ -213,6 +235,7 @@ def move(pid, ref, by):
         if ref not in refs:
             raise PlaylistError("That show isn't on this playlist.")
         _set_order(c, pid, _place(refs, ref, refs.index(ref) + by))
+        touch(c, pid)
 
 
 def move_list(pid, by):
@@ -222,6 +245,7 @@ def move_list(pid, by):
         _must_exist(c, pid)
         ids = _list_ids(c)
         _set_list_order(c, _place(ids, pid, ids.index(pid) + by))
+        touch(c, pid)
 
 
 def apply(body):

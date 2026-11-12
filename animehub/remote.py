@@ -26,7 +26,8 @@ BLOCKED = ("/api/browse", "/api/library-root", "/api/library-extra", "/api/adopt
            "/api/open", "/api/open-folder", "/api/auth/start", "/api/auth/callback",
            "/api/auth/token", "/api/auth/logout", "/auth/callback",
            "/api/auth/mal/start", "/api/auth/mal/paste", "/auth/mal/callback", "/api/auth/use", "/api/remote", "/api/anicli-get", "/api/tools-install", "/api/update-check", "/api/update-install", "/api/update-restart",
-           "/api/fonts/import", "/api/fonts/add", "/api/fonts/delete", "/api/fonts/system")
+           "/api/fonts/import", "/api/fonts/add", "/api/fonts/delete", "/api/fonts/system",
+           "/api/peer")
 # What the pairing page itself needs before a phone is paired.
 OPEN = ("/pair", "/api/remote/pair", "/style.css", "/manifest.webmanifest", "/icon.svg", "/icon-180.png", "/icon-192.png", "/icon-512.png")
 
@@ -155,7 +156,7 @@ def device_name(ua):
     """A readable name from the phone's User-Agent ("iPhone", "Android
     phone", …)."""
     ua = ua or ""
-    for key, label in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android phone"),
+    for key, label in (("AnimeHub-App", "Android app"), ("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android phone"),
                        ("Windows", "Windows PC"), ("Macintosh", "Mac"), ("Linux", "Linux device")):
         if key in ua:
             return label
