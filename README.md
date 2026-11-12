@@ -53,17 +53,8 @@ An AniList account; ani-cli 5.1+ for online episodes (the app can fetch it, it n
 New zips only come with bigger releases (v0.4, v0.5, …), so Windows can be a little behind. Python is inside the zip.
 
 1. Download `AnimeHub-windows-x64.zip` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases) and unzip it anywhere. Keep the folder together.
-2. Install the tools in PowerShell ([Scoop](https://scoop.sh) and Git; ani-cli runs in Git's bash). Only local files? `scoop bucket add extras`, then `scoop install mpv`, is enough.
-
-   ```powershell
-   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-   Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
-   winget install Git.Git
-   scoop bucket add extras
-   scoop install ani-cli yt-dlp
-   ```
-
-3. Double-click `AnimeHub.exe`. If Windows warns you: "More info", then "Run anyway". `Add to Start menu.cmd` adds a menu entry.
+2. Double-click `AnimeHub.exe`. If Windows warns you: "More info", then "Run anyway". It adds itself to the Start menu.
+3. In the first-run tour, click **Install what's missing**. It installs [Scoop](https://scoop.sh), Git, mpv, ani-cli and yt-dlp for you, no admin rights needed. It's also in Settings → System → Tools.
 
 Won't start? Logs are in `%LOCALAPPDATA%\anime-hub-wrapper\`.
 

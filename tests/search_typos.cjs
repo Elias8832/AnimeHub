@@ -34,3 +34,11 @@ test("settings and commands forgive a slip too", () => {
   assert.ok(srMatch("go to library library shows", "libary"));
   assert.deepEqual(srSets("subtitel", 5).map((x) => x[0]), ["Subtitle language"]);
 });
+
+test("typing and AniList's answers redraw only the results, not the whole bar", () => {
+  const typing = block('q.addEventListener("input"', "\n});");
+  assert.match(typing, /if \(open\) paintSr\(\); else paintNav\(\);/);
+  const al = block("  alsearch: async () => {", "  catpick:");
+  assert.doesNotMatch(al, /paintNav\(/);
+  assert.match(block("function paintNav() {", "\n}"), /paintSr\(\);/);
+});

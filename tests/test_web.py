@@ -867,7 +867,7 @@ class ShowPagePolish(unittest.TestCase):
         self.assertIn('$$("#app .sp2 .rels")', APP)
 
     def test_art_dims_when_scrolled(self):
-        self.assertIn("body:has(.frpage) .cv-wash:after{opacity:var(--sd,0)}", CSS)  # Decision 67: fades with the scroll
+        self.assertIn("body.pg-fr .cv-wash:after{opacity:var(--sd,0)}", CSS)  # Decision 67: fades with the scroll
         self.assertIn('w.style.setProperty("--sd", S.view === "fr"', APP)
         self.assertIn("strips(); ambient(); artDim();", APP)
 
@@ -998,3 +998,14 @@ class TabEntrances(unittest.TestCase):
         for part in ("#app.nav-in .aird{", "#app.nav-in .aircol{", "#app.nav-in .airside{", "#app.nav-in .tline .tli{"):
             self.assertIn(part, CSS)
         self.assertNotIn("#app.nav-in .airside>", CSS)  # a click on a day swaps its cards at once
+
+
+class NoPageWideHas(unittest.TestCase):
+    def test_no_body_has_rules(self):
+        """TODO 213: a body:has(...) rule made every change on the page
+        re-check the whole page's styles (~300 ms of a phone's Library
+        switch). The page's state goes on <body> as pg-* classes instead,
+        set by pageMarks() in app.js."""
+        self.assertNotRegex(CSS, r"(^|[\s,}])(body|html|:root):has\(")
+        for cls in re.findall(r"body\.(pg-[a-z]+)", CSS):
+            self.assertIn(f'["{cls}", ', APP, cls)

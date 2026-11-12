@@ -335,11 +335,22 @@ def migration_27(c):
     c.execute("CREATE TABLE IF NOT EXISTS continue_hidden(show_id TEXT PRIMARY KEY, at TEXT NOT NULL)")
 
 
+def migration_28(c):
+    """How an open playlist looks, per playlist (Decision 64, TODO 209):
+    its top (the banner or a cover), its shows (a list or posters), and
+    whether finished shows are greyed out. Empty = the defaults: banner,
+    list, not greyed."""
+    have = {r[1] for r in c.execute("PRAGMA table_info(playlists)")}
+    for col in ("head TEXT", "view TEXT", "dim INTEGER"):
+        if col.split()[0] not in have:
+            c.execute("ALTER TABLE playlists ADD COLUMN " + col)
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
               migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
-              migration_26, migration_27]
+              migration_26, migration_27, migration_28]
 
 
 def snapshot_before(target_version):

@@ -105,7 +105,7 @@ button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
    sets --sd (0 at the top, 1 one screen down) on this layer alone; only its
    opacity changes, cheap on phones. */
 .cv-wash:after{content:"";position:absolute;inset:0;background:rgba(13,14,17,.9);opacity:0}
-body:has(.frpage) .cv-wash:after{opacity:var(--sd,0)}
+body.pg-fr .cv-wash:after{opacity:var(--sd,0)}
 :root[data-art=soft] .cv-art,:root[data-art=off] .cv-art,:root[data-art=off] .cv-blur{display:none!important}
 :root[data-art=soft] .cv-blur{inset:-200px;filter:blur(140px) saturate(1.3) brightness(.5)}
 :root[data-grain=off] .cv-grain{display:none}
@@ -1200,7 +1200,9 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .lib2 .wall.plgrid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:34px 26px}
 .plbox{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0;text-align:left;cursor:pointer;border-radius:var(--r-l)}
 .plbox:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
-.wall.fade .plbox{animation:rise .32s var(--ease) both;animation-delay:calc(var(--i)*24ms)}
+/* No scale in these entrances: a scaled picture is redrawn sharp when it ends, which flashed on a real GPU (Elias: the overview flickered) */
+@keyframes plUp{from{opacity:0;transform:translateY(10px)}}
+.wall.fade .plbox{animation:plUp .34s var(--ease) backwards;animation-delay:calc(min(var(--i),12)*30ms)}
 /* The picture: a stack of cards. The front one is a show's banner; the next
    two peek out above it, smaller and darker; scrolling flips (plFlip). With
    fewer than three shows, plain sheets stand in for the missing cards. */
@@ -1290,36 +1292,200 @@ html.pldragging .plstack{pointer-events:none}
 /* On Home: pinned playlists as the same boxes, side by side */
 .plhomegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:26px 22px;margin-top:14px}
 .plhome .plbox{max-width:340px}
-/* An open playlist: one slim bar — back, name and count, add box, pin/edit/delete */
-.plhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:22px 0 8px;padding:0 0 18px;border-bottom:1px solid var(--line)}
-.plhead>.fill{flex:1}
-.pltitle{display:flex;align-items:baseline;gap:12px;min-width:0;margin-left:8px;flex-wrap:wrap}
-.pltitle h2{display:flex;align-items:center;gap:9px;margin:0;font:700 28px/1 var(--display);text-transform:uppercase;min-width:0;overflow-wrap:anywhere}
-.pltitle h2 .plico .ico{width:20px;height:20px}
-.plhead .plsum{font:400 12px var(--mono);color:var(--mute)}
-.plhead .btn.on{background:color-mix(in srgb,var(--plc) 30%,transparent);color:var(--ink)}
-.pladd{position:relative;display:flex;align-items:center;width:min(280px,100%)}
-.pladd .pai{position:absolute;left:13px;color:var(--mute);display:grid;pointer-events:none}.pladd .pai .ico{width:16px;height:16px}
-.pladd input{width:100%;padding-left:36px;height:36px}
-.plres{display:none;position:absolute;right:0;top:calc(100% + 6px);width:max(100%,360px);z-index:25;padding:6px;border-radius:var(--r-l);background:var(--glass-pop);backdrop-filter:blur(16px);border:1px solid var(--line-hi);box-shadow:var(--sh-pop)}
-.plres.on{display:block}.plres .mi span{min-width:0}.plres .mi b,.plres .mi small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.plres .plnone{color:var(--mute);font-size:13px;padding:10px}
-/* Its shows: the Library's cards, the place number and × on the poster */
-.plit{position:relative;min-width:0}.plit .card{width:100%}
-.plno,.plx{position:absolute;top:8px;z-index:5;transition:transform .4s var(--ease),opacity .2s}
-.plno{left:8px;min-width:24px;height:24px;padding:0 7px;border-radius:999px;display:grid;place-items:center;font:600 11.5px var(--mono);color:#fff;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);pointer-events:none}
-.plx{right:8px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#fff;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);opacity:0}
-.plx .ico{width:14px;height:14px}.plx:hover{background:var(--bad,#d9534f)}
-.plit:hover .plx,.plx:focus-visible{opacity:1}
-.plit:hover .plno,.plit:hover .plx{transform:translateY(-5px)}
-.plctl{display:none;align-items:center;justify-content:space-between;margin-top:6px}
+/* An open playlist (Elias picked mockup D, 2026-11-10): a banner like Home's
+   big card with the up-next show's art, then the shows as numbered rows. */
+.plhero{position:relative;isolation:isolate;margin:0 0 26px;border-radius:26px;overflow:hidden;display:flex;align-items:flex-end;box-shadow:0 30px 70px rgba(0,0,0,.4);background:radial-gradient(90% 120% at 85% 0%,color-mix(in srgb,var(--plc) 30%,transparent),transparent 70%),var(--s1,#17181d)}
+.plhero .pla{position:absolute;inset:-1px;z-index:-1;border-radius:inherit;background:linear-gradient(90deg,rgba(10,11,14,.9),rgba(10,11,14,.55) 45%,rgba(10,11,14,.05) 80%),linear-gradient(0deg,rgba(10,11,14,.65),transparent 55%),var(--art) center 30%/cover;transition:scale 1.2s var(--ease)}
+.plhero:hover .pla{scale:1.02}
+.plhero[data-a]{cursor:pointer}
+#app.nav-in .plhero .pla{animation:artIn .8s var(--ease) backwards}
+/* Into a playlist and back (plSlide): the top slides in from the side you're heading,
+   the art settles, the shows rise one after another. */
+@keyframes plIn{from{opacity:0;transform:translateX(36px)}}
+@keyframes plOut{from{opacity:0;transform:translateX(-36px)}}
+@keyframes plArt{from{opacity:.4;scale:1.08}}
+.lmain.plin>:not(.lload,#wall){animation:plIn .42s var(--ease) backwards}
+.lmain.plout>:not(.lload,#wall){animation:plOut .42s var(--ease) backwards}
+.lmain.plin .plhero .pla,.lmain.plin .plcov i{animation:plArt .9s var(--ease) backwards}
+.wall.fade .plit{animation:plUp .34s var(--ease) backwards;animation-delay:calc(min(var(--i,0),12)*28ms + 90ms)}
+.plhc{padding:20px 32px 26px;min-width:0;max-width:min(860px,100%)}
+.plcrumb{display:inline-flex;align-items:center;gap:6px;margin:0 0 12px -6px;padding:5px 10px 5px 6px;border-radius:999px;font:500 12.5px var(--mono);color:var(--ink-2);transition:background .2s,color .2s}
+.plcrumb:hover,.plcrumb:focus-visible{background:rgba(255,255,255,.1);color:var(--ink)}.plcrumb .ico{width:15px;height:15px}
+.plhero h1{font:700 clamp(40px,4.6vw,66px)/.92 var(--display);text-transform:uppercase;margin:0 0 8px;letter-spacing:-.5px;overflow-wrap:anywhere;text-wrap:balance;text-shadow:0 2px 24px rgba(0,0,0,.35)}
+.plhero h1.long{font-size:clamp(32px,3.4vw,48px)}
+.plhero h1 .plico{display:inline-grid;vertical-align:.12em;margin-right:.18em}.plhero h1 .plico svg,.plhero h1 .plico .ico{width:.5em;height:.5em}
+.plnote2{margin:0 0 6px;color:var(--ink-2);font-size:15px;max-width:560px;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+.plfacts{font:400 12px var(--mono);color:var(--ink-2);text-shadow:0 1px 8px rgba(0,0,0,.6)}
+.plup{margin-top:22px;display:flex;align-items:flex-end;gap:14px 28px;flex-wrap:wrap;text-shadow:0 1px 10px rgba(0,0,0,.6);min-width:0}
+.plupt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.plupt>small{font:500 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--plc);filter:brightness(1.25)}
+.plupt>b{font:600 18px var(--ui);overflow-wrap:anywhere}
+.plupt>span{color:var(--ink-2);font-size:14px}
+.plup .cta{text-shadow:none}
+.plhero .cta{display:flex;gap:10px;flex-wrap:wrap}
+.plhero .btn.big{height:42px;font-size:14.5px}
+.plhero .btn.big:not(.pri){background:rgba(20,20,24,.5);backdrop-filter:blur(8px)}
+/* The cover top (mockup A): the up-next show's art beside the name */
+.plcover2{position:relative;display:flex;align-items:flex-end;gap:32px;margin:0 0 26px;padding:24px;border-radius:26px;background:radial-gradient(80% 140% at 0% 0%,color-mix(in srgb,var(--plc) 22%,transparent),transparent 70%),rgba(255,255,255,.03);box-shadow:var(--edge)}
+.plcov{flex:none;width:clamp(220px,26vw,340px);aspect-ratio:16/9;border-radius:16px;overflow:hidden;box-shadow:0 24px 50px -18px #000;background:var(--s2);display:grid;place-items:center}
+.plcov[data-a]{cursor:pointer}
+.plcov i{display:block;width:100%;height:100%;background:var(--art) center 30%/cover;transition:scale .8s var(--ease)}
+.plcov:hover i{scale:1.04}
+.plcov .plico .ico,.plcov .plico svg{width:44px;height:44px;color:var(--plc)}
+.plcover2 .plhc{padding:0 96px 0 0}
+.plcover2 h1{font:700 clamp(36px,3.8vw,56px)/.92 var(--display);text-transform:uppercase;margin:0 0 8px;letter-spacing:-.5px;overflow-wrap:anywhere;text-wrap:balance}
+.plcover2 h1.long{font-size:clamp(28px,2.8vw,42px)}
+.plcover2 h1 .plico{display:inline-grid;vertical-align:.12em;margin-right:.18em}.plcover2 h1 .plico svg,.plcover2 h1 .plico .ico{width:.5em;height:.5em}
+.plcover2 .plup{margin-top:16px}
+.plcover2 .btn.big{height:42px;font-size:14.5px}
+.plcover2 .cta{display:flex;gap:10px}
+@media (max-width:760px){.plcover2{flex-direction:column;align-items:flex-start;gap:18px}.plcov{width:100%}.plcover2 .plhc{padding:0}}
+.pltools{position:absolute;top:20px;right:20px;display:flex;gap:8px}
+.pltools .btn{background:rgba(10,11,14,.5);backdrop-filter:blur(8px)}
+.plcover2 .pltools .btn{background:rgba(255,255,255,.06);backdrop-filter:none}
+.pltools .btn.on{background:color-mix(in srgb,var(--plc) 55%,rgba(10,11,14,.5));color:#fff}
+/* The rows' heading: name, drag hint, the add box */
+.plsec{display:flex;align-items:center;gap:14px;margin:0 0 10px;flex-wrap:wrap}
+.plsec h2{margin:0;font:600 20px var(--ui);display:flex;align-items:baseline;gap:8px}.plsec h2 .n{font:400 12px var(--mono);color:var(--mute)}
+.plsec>.fill{flex:1}
+.pltip{font:400 12px var(--mono);color:var(--mute)}
+/* Find shows for this playlist (Elias picked mockup A): a section under the rows */
+.dialog.plfd{width:min(520px,94vw);padding:28px 28px 20px;display:flex;flex-direction:column}
+.plfind{display:flex;flex-direction:column;min-height:0}
+.plfind>.sub{margin:0 0 16px}
+.plfind>.sub .plico{display:inline-flex;vertical-align:-2px;margin:0 4px 0 2px}.plfind>.sub .plico .ico{width:15px;height:15px;color:var(--plc)}
+.plfq{display:flex;align-items:center;gap:10px;height:46px;padding:0 16px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);transition:background .2s,box-shadow .2s;cursor:text;flex:none}
+.plfq:hover{background:var(--glass-h)}
+.plfq:focus-within{box-shadow:var(--edge),0 0 0 2px color-mix(in srgb,var(--plc) 75%,transparent)}
+.plfq .ico{width:17px;height:17px;color:var(--mute);flex:none}
+.plfq input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;background:none!important;box-shadow:none!important;backdrop-filter:none;font:400 15px var(--ui);color:var(--ink)}
+.plfq input::placeholder{color:var(--mute)}
+.plfq input::-webkit-search-cancel-button{filter:invert(1) opacity(.5)}
+.plres{display:flex;flex-direction:column;gap:1px;margin:6px -10px 12px;padding:0 2px;max-height:min(50vh,400px);overflow-y:auto;overscroll-behavior:contain}
+.plfcap{margin:10px 0 4px 10px;font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+.plfr{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:6px 8px 6px 10px;border-radius:12px;text-align:left;color:inherit;transition:background .2s}
+.plfr:hover,.plfr.sel{background:rgba(255,255,255,.06)}
+.plfr .plth{width:32px;height:46px;border-radius:6px}
+.plfr .plt{padding:0;gap:1px}.plfr .plt b{font-size:14.5px}
+.plfa{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 9px;border-radius:999px;font:500 12.5px var(--ui);color:var(--ink-2);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);transition:background .2s,color .2s,box-shadow .2s}
+.plfa .ico{width:14px;height:14px}.plfa i{font-style:normal}
+.plfr:hover .plfa,.plfr.sel .plfa{background:rgba(255,255,255,.1);color:var(--ink)}
+.plfr.added .plfa{background:color-mix(in srgb,var(--plc) 32%,transparent);color:var(--ink);box-shadow:none}
+.plfr.added .plt,.plfr.added .plth{opacity:.65}
+.plres .plnone{color:var(--mute);font-size:14px;padding:12px 10px}
+/* The rows: # · poster · name · progress · list · ⋯ */
+.plhd,.plr{display:grid;grid-template-columns:44px 52px minmax(0,1fr) minmax(150px,240px) 116px;align-items:center}
+.plhd{padding:0 54px 10px 14px;border-bottom:1px solid var(--line);font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+.plhd span:nth-child(2){grid-column:2/4}
+#wall.plrows{display:flex;flex-direction:column;align-items:stretch;gap:2px;margin-top:6px}
+.plrow{position:relative;width:100%;display:flex;align-items:center;border-radius:14px;transition:background .2s}
+.plrow:hover,.plrow:focus-within{background:rgba(255,255,255,.05)}
+.plrow.cur{background:color-mix(in srgb,var(--plc,var(--accent)) 12%,rgba(255,255,255,.03))}
+.plr{flex:1;min-width:0;padding:8px 0 8px 14px;text-align:left;color:inherit;border-radius:14px}
+.plr .plno{font:700 24px/1 var(--display);color:var(--mute);font-variant-numeric:tabular-nums}
+.plrow.cur .plno{color:var(--plc,var(--accent))}
+.plth{width:42px;height:60px;border-radius:8px;overflow:hidden;display:block;box-shadow:0 6px 16px -6px #000}
+.plth .poster,.plth img{width:100%;height:100%;object-fit:cover;border-radius:0}
+.plt{min-width:0;padding:0 18px 0 12px;display:flex;flex-direction:column;gap:3px}
+.plt b{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plt b .fav{color:#f07a9a;display:inline-grid;margin-right:6px;vertical-align:-2px}.plt b .fav .ico{width:13px;height:13px}
+.plp small{min-width:62px;text-align:right}
+.plt small,.plp small{font:400 12px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plp{display:flex;align-items:center;gap:12px;padding-right:22px}
+.plbar{flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.12);display:block;overflow:hidden}
+.plbar i{display:block;height:100%;border-radius:inherit;background:var(--plc,var(--accent))}
+.pls{display:flex;align-items:center;gap:6px;font:500 12px var(--mono);color:var(--mute)}.pls .ico{width:14px;height:14px}
+.pls.none{color:var(--faint,rgba(243,243,241,.3))}
+.pls.s-current,.pls.s-repeating{color:var(--plc,var(--accent))}
+/* Finished shows grey out only where the playlist asks for it (Layout → Grey out finished shows) */
+#wall.pldim .plit.fin{filter:grayscale(1);opacity:.42;transition:opacity .2s,filter .2s}
+#wall.pldim .plit.fin:hover,#wall.pldim .plit.fin:focus-within{filter:grayscale(.4);opacity:.85}
+.plmore{width:40px;height:40px;margin-right:7px;border-radius:50%;display:grid;place-items:center;color:var(--mute);opacity:0;transition:opacity .2s,background .2s,color .2s}
+.plmore .ico{width:17px;height:17px}
+.plrow:hover .plmore,.plmore:focus-visible{opacity:1}.plmore:hover{background:rgba(255,255,255,.1);color:var(--ink)}
+.plctl{display:none;gap:4px;margin-right:6px}
 .plctl .arr:disabled{opacity:.3}
-.plit.lift{z-index:30;pointer-events:none;will-change:transform}
-.plit.lift .pw{transform:scale(1.05)!important;box-shadow:0 30px 50px -18px #000,0 0 0 2px var(--plc,var(--accent))!important}
-.plit.lift .plx,.plit.lift .plctl{opacity:0}
+.plit.lift{z-index:30;pointer-events:none;will-change:transform;background:var(--glass-pop);box-shadow:0 24px 50px -16px #000,0 0 0 2px var(--plc,var(--accent))}
+.plit.lift .plmore,.plit.lift .plctl{opacity:0}
 html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
-@media (pointer:fine){#wall .plit .card{cursor:grab}}
-@media (pointer:coarse){.plhead .pltip{display:none}.plctl{display:flex}.plx{opacity:1}}
+@media (pointer:fine){#wall .plrow .plr{cursor:grab}}
+@media (pointer:coarse){.plsec .pltip{display:none}.plctl{display:flex}.plmore{opacity:1}}
+/* Posters (mockup B): a big outlined place number behind each poster */
+#wall.plposters{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:30px 22px;margin-top:14px}
+.plpost{position:relative;min-width:0;border-radius:14px}
+.plpc{display:flex;align-items:flex-end;width:100%;padding:0;color:inherit}
+.plbig{flex:none;width:88px;margin-right:-12px;text-align:right;font:800 150px/.76 var(--display);letter-spacing:-4px;color:transparent;-webkit-text-stroke:2px rgba(255,255,255,.3);transition:-webkit-text-stroke-color .2s;user-select:none}
+.plbig.two{font-size:112px;letter-spacing:-12px}
+.plpost.cur .plbig{-webkit-text-stroke-color:var(--plc,var(--accent))}
+.plpost:hover .plbig{-webkit-text-stroke-color:rgba(255,255,255,.6)}
+.plpi{position:relative;flex:1;min-width:0;aspect-ratio:2/3;border-radius:10px;overflow:hidden;box-shadow:0 18px 36px -16px #000;transition:transform .25s var(--ease)}
+.plpost:hover .plpi{transform:translateY(-4px)}
+.plpi .poster,.plpi img{width:100%;height:100%;object-fit:cover;border-radius:0}
+.plpi .plbar{position:absolute;left:0;right:0;bottom:0;height:4px;border-radius:0;background:rgba(0,0,0,.5)}
+.plpcap{padding:10px 0 0 76px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.plpcap b{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plpcap b .fav{color:#f07a9a;display:inline-grid;margin-right:5px;vertical-align:-2px}.plpcap b .fav .ico{width:12px;height:12px}
+.plpcap small{font:400 11.5px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plpost .plmore{position:absolute;top:8px;right:8px;width:34px;height:34px;margin:0;background:rgba(10,11,14,.6);color:var(--ink)}
+.plpost:hover .plmore{opacity:1}
+.plpost .plctl{position:absolute;top:8px;left:84px}
+.plpost .plctl .arr{background:rgba(10,11,14,.6)}
+.plit.plpost.lift{background:none;box-shadow:none}.plit.plpost.lift .plpi{box-shadow:0 30px 60px -16px #000,0 0 0 2px var(--plc,var(--accent))}
+@media (pointer:fine){#wall .plpost .plpc{cursor:grab}}
+@media (max-width:600px){#wall.plposters{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 12px}.plbig{width:54px;margin-right:-8px;font-size:100px}.plbig.two{font-size:74px}.plpcap{padding-left:46px}.plpost .plctl{left:50px}}
+/* The Layout menu */
+.pllay{display:flex;flex-direction:column;padding:4px 6px 6px;min-width:240px}
+.pllay>small{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:10px 4px 6px}
+.plseg{display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06)}
+.plseg button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:34px;border-radius:999px;font:500 13px var(--ui);color:var(--ink-2);transition:background .2s,color .2s}
+.plseg button .ico{width:15px;height:15px}
+.plseg button:hover{color:var(--ink)}
+.pltog{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:10px;padding:8px 4px 4px 6px;border-top:1px solid var(--line);font:500 13.5px var(--ui);color:var(--ink);text-align:left}
+.pltog .switch{pointer-events:none;transform:scale(.86);transform-origin:right center}
+.pltog .switch[aria-checked=true]{background:var(--plc,var(--accent));border-color:var(--plc,var(--accent));box-shadow:none}
+.plseg button.on{background:color-mix(in srgb,var(--plc,var(--accent)) 40%,rgba(255,255,255,.08));color:#fff}
+/* A phone: mockup C's panel, the shows inside it */
+@media (max-width:700px){
+  .lib2.plph{padding-top:12px}
+  .plpage{margin:0 -10px 24px;padding:18px 18px 4px;border-radius:28px;background:linear-gradient(180deg,color-mix(in srgb,var(--plc) 38%,var(--s1)),var(--s1) 460px);box-shadow:var(--edge)}
+  .plpanelh{display:flex;flex-direction:column;align-items:stretch;min-width:0}
+  .plpanelh .plcrumb{align-self:flex-start;margin:0 0 14px -4px}
+  .plpanelh .plcov{width:100%;aspect-ratio:16/9;border-radius:18px}
+  .pllab{display:flex;align-items:center;gap:6px;margin:22px 0 8px;font:500 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--plc);filter:brightness(1.3)}
+  .pllab .plico svg,.pllab .plico .ico{width:14px;height:14px}
+  .plpanelh h1{font:700 46px/.92 var(--display);text-transform:uppercase;margin:0 0 10px;overflow-wrap:anywhere}
+  .plpanelh h1.long{font-size:34px}
+  .plpanelh .plnote2{text-shadow:none;font-size:14.5px;margin-bottom:8px}
+  .plpanelh .plfacts{text-shadow:none}
+  .plcont{margin-top:22px;width:100%;justify-content:center;min-width:0}
+  .plcont span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .plbtns{display:flex;gap:10px;margin-top:12px}
+  .plbtns .btn:first-child{flex:1;justify-content:center}
+  .plbtns .btn{background:rgba(255,255,255,.07)}
+  .plbtns .btn.on{background:color-mix(in srgb,var(--plc) 45%,transparent);color:#fff}
+  .plpage #wall{margin:22px -8px 0;padding-top:10px;border-top:1px solid var(--line)}
+  .plpage #wall.plrows{gap:4px}
+  .plpage #wall.plposters{margin:22px 0 0;padding-top:22px;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 14px}
+  .plpage #wall:empty{display:none}
+  .plpage .plctl{display:none!important}
+  .plpage .plmore{opacity:1;width:38px;height:38px;margin-right:0}
+  .plpage .plpost .plmore{width:32px;height:32px}
+  .plfoot{display:flex;align-items:center;gap:12px;width:100%;margin-top:10px;padding:18px 6px 16px;border-top:1px solid var(--line);color:var(--ink-2);font-size:15px;text-align:left}
+  .plfoot .ico{width:18px;height:18px;color:var(--plc)}
+  /* the rows, narrow: place · poster · name, its facts, its progress; ⋯ has the rest */
+  .plpage .plrow{border-radius:14px}
+  .plpage .plr{grid-template-columns:30px 46px minmax(0,1fr);grid-template-rows:auto auto;column-gap:0;row-gap:6px;padding:10px 0 10px 6px}
+  .plpage .plno{grid-row:1/3;font-size:18px}
+  .plpage .plth{grid-row:1/3;width:46px;height:66px}
+  .plpage .plt{grid-column:3;padding:0 4px 0 14px;align-self:end;gap:3px}
+  .plpage .plt b{font-size:15px}
+  .plpage .plp{grid-column:3;padding:0 4px 0 14px;align-self:start;gap:10px}
+  .plpage .plp .plbar{max-width:140px}
+  .plpage .pls{display:none}
+  .plpage .plbig{width:50px;margin-right:-10px;font-size:96px}
+  .plpage .plbig.two{font-size:70px}
+  .plpage .plpcap{padding-left:40px}
+}
 /* The edit dialog */
 .plform{display:flex;flex-direction:column;gap:16px;margin-top:8px}
 .plf{display:flex;flex-direction:column;gap:7px}.plf>span{font-size:13px;font-weight:600;color:var(--ink-2)}.plf small{font-weight:400;color:var(--mute)}
@@ -1358,7 +1524,6 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
 #toast .tact:hover{background:color-mix(in srgb,var(--accent) 28%,transparent)}
 @media (max-width:760px){
   .plcap h3{font-size:13.5px}
-  .pltitle{order:-1;flex:0 0 100%;margin:0 0 4px}.pltitle h2{font-size:24px}.pladd{order:5;width:100%}
   .plhomegrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 12px}.plhome .plbox{max-width:none}
 }
 /* Needs a look: episode numbers to check (the folder cards and the match dialog are further down) */
@@ -2467,9 +2632,9 @@ body.has-side #app{padding-left:340px}
   .frpage .tabs2{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:2px;flex:none}
   /* Round 2 (TODO 140): no logo over the art, back lines up with settings,
      one action per job (AniList sits in ⋯). */
-  body:has(.frpage) #nav{pointer-events:none}
-  body:has(.frpage) #nav>*{pointer-events:auto}
-  body:has(.frpage) #nav .brand{visibility:hidden}
+  body.pg-fr #nav{pointer-events:none}
+  body.pg-fr #nav>*{pointer-events:auto}
+  body.pg-fr #nav .brand{visibility:hidden}
   .sp2.frpage .backbtn{display:flex;width:fit-content;margin:-62px 0 0!important;background:rgba(10,11,13,.55)}
   .frpage .meta .sep,.frpage .meta .alk{display:none}
   .frpage .meta,.frpage .desc,.frpage .mline,.frpage .ahead{text-shadow:0 1px 2px rgba(0,0,0,.8),0 0 14px rgba(0,0,0,.7)}
@@ -3079,7 +3244,7 @@ body.pp-open #modal{z-index:70}
   .sp2 .backbtn:not([data-a=rmtclose]) .ico,.set2 .sback .ico{width:19px;height:19px}
   .sp2:not(.frpage) .backbtn:not([data-a=rmtclose]){margin:-62px 0 24px!important}
   .set2 .sback{margin:-66px 0 26px!important}
-  body:has(.sp2 .backbtn:not([data-a=rmtclose])) #nav .brand,body:has(.set2 .sback) #nav .brand{visibility:hidden}
+  body.pg-back #nav .brand{visibility:hidden}
 }
 @media (max-width:700px),(pointer:coarse){
   /* results fade out above the search field instead of showing through it (phone polish) */
@@ -3164,8 +3329,8 @@ body.pp-open #modal{z-index:70}
 }
 @media (max-width:700px){
   /* the show page's art goes soft behind the poster header, so the title and summary read on bright art (Show C) */
-  body:has(.sp2.frpage) .cv-art{opacity:0!important}
-  body:has(.sp2.frpage) .cv-blur{filter:blur(28px) saturate(1.3) brightness(.55)}
+  body.pg-sfr .cv-art{opacity:0!important}
+  body.pg-sfr .cv-blur{filter:blur(28px) saturate(1.3) brightness(.55)}
 }
 /* ───────── phone Home: hero + rails (TODO 177, Elias picked Home A) ───────── */
 .uph,.crail{display:none}
@@ -3225,8 +3390,8 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){
   /* Home's hero is the art: the blurred art behind the page made a lighter band the
      hero's fade didn't meet, an edge under Play while scrolling (Elias). Plain dark here. */
-  body:has(.home2.has-uph) #canvas>i:not(.cv-grain){opacity:0!important}
-  body:has(.home2.has-uph) #canvas{background:var(--bg)} /* and the accent glow at the top */
+  body.pg-uph #canvas>i:not(.cv-grain){opacity:0!important}
+  body.pg-uph #canvas{background:var(--bg)} /* and the accent glow at the top */
 }
 /* Show page episode tiles (Elias): the art may not zoom past its outline, and the
    progress bar follows the art's 16px corners instead of 4px ones */
@@ -3471,3 +3636,10 @@ body.pp-open #modal{z-index:70}
 /* Android: Termux setup steps (Decision 88) */
 .tsteps{margin:4px 0 0;padding-left:20px;display:grid;gap:12px;color:var(--mute);font-size:14px}.tsteps b{color:var(--ink)}.tsteps a{color:var(--accent)}
 .tcmd{display:flex;gap:8px;align-items:center;margin-top:6px}.tcmd code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;font:400 12px var(--mono);color:var(--ink);background:rgba(255,255,255,.06);border-radius:10px;padding:9px 11px}
+/* Windows sets itself up (Decision 87): one list, one footer */
+.tinst{margin-top:18px}.tinst .sum2{margin-top:0}
+.tpick .v{font:400 13px var(--ui);color:var(--mute);white-space:nowrap}.tpick .switch{margin-left:auto;flex:none}.tpick .spin{width:12px;height:12px}
+.tfoot{display:flex;align-items:center;gap:14px;margin-top:12px}.tfoot p{flex:1;color:var(--mute);font-size:13px}.tfoot p.swarn{color:var(--warn)}.tfoot .btn{flex:none}
+.set2 .tinst{padding:4px 16px 12px}
+.actions .aright{display:flex;gap:10px;margin-left:auto}
+@media (max-width:700px){.tpick .v{white-space:normal}}

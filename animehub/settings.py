@@ -231,6 +231,11 @@ def _update_payload():
     return update.payload()
 
 
+def _tools_payload():
+    from . import tools  # tools.py needs this module
+    return tools.payload()
+
+
 def automation_enabled(key):
     default = AUTOMATION_DEFAULTS[key]
     raw = get_setting(key)
@@ -371,6 +376,8 @@ def settings_payload():
         # additive (Decision 88): the app may read the phone's files (Android's "All files access").
         "files_ok": system.ANDROID and android.files_ok(),
         "termux": android.problem() if system.ANDROID else "",
+        # additive (Decision 87): Windows installs its tools on a click — can / missing / job
+        "tools_install": _tools_payload(),
     }
 
 

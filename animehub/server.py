@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, android, anicli, anilist, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, upscale, update, util
+from . import LOADED_AT, android, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -228,24 +228,30 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_file_body(body, ctype, cache)
 
-    def send_banner(self, path):
-        """A banner can be swapped for its upscaled version under the same
-        name, so the browser asks again each time (a bodiless 304 while
-        unchanged) instead of keeping the old picture for a day."""
+    def send_art(self, path):
+        """A poster or banner, sized for the screen that asks (artsize,
+        Decision 86). A banner can be swapped for its upscaled version under
+        the same name; the page's ?v= is the file's date, so a link whose ?v=
+        matches is that picture for good and stays in the browser's cache.
+        Any other link asks again each time (a bodiless 304 while unchanged)."""
         try:
             st = Path(path).stat()
         except OSError:
             self.send_error(404)
             return
-        tag = '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+        tier = artsize.tier_of(self.headers.get("Cookie"))
+        tag = '"%x-%x-%x"' % (st.st_mtime_ns, st.st_size, tier or 0)
+        v = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+        cache = "max-age=31536000, immutable" if v == str(int(st.st_mtime)) else "no-cache"
         if self.headers.get("If-None-Match") == tag:
             self.send_response(304)
             self.send_header("ETag", tag)
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", cache)
+            self.send_header("Vary", "Cookie")
             self.end_headers()
             return
         try:
-            body = system.read_bytes(path)
+            body = system.read_bytes(artsize.pick(path, tier))
         except OSError:
             self.send_error(404)
             return
@@ -253,7 +259,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("ETag", tag)
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache)
+        self.send_header("Vary", "Cookie")
         self.end_headers()
         self.wfile.write(body)
 
@@ -552,12 +559,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json(about)
         elif route.startswith("/img/"):
-            name = os.path.basename(route)
-            p = config.POSTERS / name
-            if name.endswith(".banner.jpg"):
-                self.send_banner(p)
-            else:
-                self.send_file(p, "image/jpeg", cache=True)
+            self.send_art(config.POSTERS / os.path.basename(route))
         elif route == "/api/phone/video":
             # The phone player's file (Decision 71): by episode id, never a path.
             q = parse_qs(urlparse(self.path).query)
@@ -991,6 +993,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(res, 200 if res.get("ok") else 400)
         elif route == "/api/anicli-get":
             self.send_json(anicli.fetch_anicli())
+        elif route == "/api/tools-install":
+            groups = body.get("groups")
+            r = tools.install([g for g in groups if isinstance(g, str)] if isinstance(groups, list) else None)
+            self.send_json(r, 400 if r.get("error") else 200)
         elif route == "/api/update-check":
             self.send_json(update.check())
         elif route == "/api/update-install":
@@ -1574,10 +1580,15 @@ def main():
     lengths.start()
     threading.Thread(target=background.refresh, daemon=True).start()
     update.tidy()
+    downloader.recover()
     threading.Thread(target=update.loop, daemon=True).start()
     if system.ANDROID:
         # Termux's ani-cli may have changed since the last start (Decision 88).
         threading.Thread(target=android.fetch_anicli, kwargs={"force": True}, daemon=True).start()
+    # Windows (Decision 87): tools installed since this session's PATH was
+    # made are found, and a zip copy puts itself in the Start menu once.
+    system.refresh_path()
+    threading.Thread(target=tools.start_menu_once, daemon=True).start()
     # The phone remote's Wi-Fi listener, when switched on (Decision 43).
     if remote.enabled():
         remote.start(RemoteHandler)
