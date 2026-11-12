@@ -1401,9 +1401,10 @@ html.pldragging .plstack{pointer-events:none}
 /* Finished shows grey out only where the playlist asks for it (Layout → Grey out finished shows) */
 #wall.pldim .plit.fin{filter:grayscale(1);opacity:.42;transition:opacity .2s,filter .2s}
 #wall.pldim .plit.fin:hover,#wall.pldim .plit.fin:focus-within{filter:grayscale(.4);opacity:.85}
-.plmore{width:40px;height:40px;margin-right:7px;border-radius:50%;display:grid;place-items:center;color:var(--mute);opacity:0;transition:opacity .2s,background .2s,color .2s}
-.plmore .ico{width:17px;height:17px}
-.plrow:hover .plmore,.plmore:focus-visible{opacity:1}.plmore:hover{background:rgba(255,255,255,.1);color:var(--ink)}
+/* ⋯ is just the dots, no circle, and only while you rest on the show (Elias, 2026-11-12) */
+.plmore{width:30px;height:40px;margin-right:8px;border-radius:8px;display:grid;place-items:center;color:var(--mute);opacity:0;transition:opacity .2s,color .2s}
+.plmore .ico{width:16px;height:16px}
+.plrow:hover .plmore,.plmore:focus-visible{opacity:1}.plmore:hover{color:var(--ink)}
 .plctl{display:none;gap:4px;margin-right:6px}
 .plctl .arr:disabled{opacity:.3}
 .plit.lift{z-index:30;pointer-events:none;will-change:transform;background:var(--glass-pop);box-shadow:0 24px 50px -16px #000,0 0 0 2px var(--plc,var(--accent))}
@@ -1427,7 +1428,9 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
 .plpcap b{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plpcap b .fav{color:#f07a9a;display:inline-grid;margin-right:5px;vertical-align:-2px}.plpcap b .fav .ico{width:12px;height:12px}
 .plpcap small{font:400 11.5px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.plpost .plmore{position:absolute;top:8px;right:8px;width:34px;height:34px;margin:0;background:rgba(10,11,14,.6);color:var(--ink)}
+/* right after the facts line's text, so the name keeps its full width and the dots never float alone */
+.plpf{display:flex;align-items:center;min-width:0}.plpf small{min-width:0}
+.plpost .plmore{flex:none;width:26px;height:30px;margin:-8px 0 -8px 2px}
 .plpost:hover .plmore{opacity:1}
 .plpost .plctl{position:absolute;top:8px;left:84px}
 .plpost .plctl .arr{background:rgba(10,11,14,.6)}
@@ -1470,7 +1473,7 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
   .plpage #wall:empty{display:none}
   .plpage .plctl{display:none!important}
   .plpage .plmore{opacity:1;width:38px;height:38px;margin-right:0}
-  .plpage .plpost .plmore{width:32px;height:32px}
+  .plpage .plpost .plmore{width:30px;height:32px;margin:-9px 0 -9px 2px}
   .plfoot{display:flex;align-items:center;gap:12px;width:100%;margin-top:10px;padding:18px 6px 16px;border-top:1px solid var(--line);color:var(--ink-2);font-size:15px;text-align:left}
   .plfoot .ico{width:18px;height:18px;color:var(--plc)}
   /* the rows, narrow: place · poster · name, its facts, its progress; ⋯ has the rest */

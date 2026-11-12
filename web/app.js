@@ -933,13 +933,15 @@ function plItemCard(it, i, all, next = -1, view = "list") {
   const st = plState(it), pct = st.tot ? Math.min(100, Math.round((100 * st.done) / st.tot)) : 0;
   const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
   const art = st.entry?.poster || st.show?.poster || it.poster;
-  const ctl = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>
-    <div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const more = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>`;
+  const arrows = `<div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const ctl = more + arrows;
+  /* Posters: ⋯ follows the facts line's text, so it never floats on its own (Elias, 2026-11-12). */
   /* Posters (mockup B, Elias 2026-11-11: each playlist picks): a big outlined
      place number behind each poster, like a top-10 row. */
   if (view === "posters") return `<div class="plit plpost${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plpc" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plbig${i >= 9 ? " two" : ""}" aria-hidden="true">${i + 1}</span><span class="plpi">${poster(it.title, art)}${st.tot ? `<i class="plbar"><i style="width:${pct}%"></i></i>` : ""}</span></button>
-    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small></div>${ctl}</div>`;
+    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><span class="plpf"><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small>${more}</span></div>${arrows}</div>`;
   return `<div class="plit plrow${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plr" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plno">${i + 1}</span><span class="plth">${poster(it.title, art)}</span>
     <span class="plt"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b>${st.more ? `<small>${esc(st.more)}</small>` : ""}</span>
