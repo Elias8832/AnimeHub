@@ -71,6 +71,7 @@ def setUpModule():
 LINK = {"query": "frieren", "title": "Sousou no Frieren", "mode": "sub"}
 
 
+@unittest.skipIf(system.WINDOWS, "the phone runs Linux code; the fake Termux needs bash and POSIX paths")
 class Base(unittest.TestCase):
     def setUp(self):
         d = tempfile.mkdtemp(prefix="termux-")
