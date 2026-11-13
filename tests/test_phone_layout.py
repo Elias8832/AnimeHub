@@ -426,10 +426,6 @@ class PhoneRound4(unittest.TestCase):
         self.assertIn(".sp2.rv .eps.strip{flex-direction:row", CSS.replace(".sp2.frpage .eps.strip,", ""))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PlayOnTheOtherSide(unittest.TestCase):
     """Elias, 2026-11-10: a long-press on an episode also offers the place the
     phone's Play button doesn't use (Decision 71). Checked live with
@@ -471,3 +467,7 @@ class PlayOnTheOtherSide(unittest.TestCase):
         body = APP[i:APP.index("}, 480) };", i)]
         self.assertIn('const pb = !ep && !cw && t.closest?.("[data-a=play][data-v], [data-a=deckplay][data-v]");', body)
         self.assertIn("playMenu(pb, x, y)", body)
+
+
+if __name__ == "__main__":
+    unittest.main()

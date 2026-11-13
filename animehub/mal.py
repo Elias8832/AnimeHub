@@ -94,6 +94,14 @@ def clear_token():
     config.MAL_TOKEN_FILE.unlink(missing_ok=True)
 
 
+def _drop_login():
+    """MAL refused the login: it ends, and the write that failed keeps its
+    account (Decision 24)."""
+    from . import anilist  # anilist imports this module
+    anilist.note_cleared(account_id())
+    clear_token()
+
+
 def connected():
     """A MAL login is kept. An access token that ran out still counts: the
     refresh token renews it on the next request, and a refused refresh
@@ -142,7 +150,9 @@ def _token_call(fields):
         last_ok = time.time()
         return out
     except HTTPError as e:
-        if e.code in (400, 401, 403):
+        # 403 is MAL blocking the address for a while (as in api()), not a
+        # refused grant: it must not end the login.
+        if e.code in (400, 401):
             raise _auth_error("MyAnimeList refused the login")
         raise _transient("MyAnimeList login server error (HTTP %d)" % e.code, status=e.code)
     except (URLError, OSError, TimeoutError, ValueError) as e:
@@ -163,13 +173,13 @@ def _refresh(used):
         if cur["access_token"] != used:
             return cur
         if not cur.get("refresh_token"):
-            clear_token()
+            _drop_login()
             raise _auth_error("MyAnimeList login expired — reconnect")
         try:
             data = _token_call({"grant_type": "refresh_token", "refresh_token": cur["refresh_token"]})
             fresh = _token_fields(data)
         except _errors()[0]:
-            clear_token()
+            _drop_login()
             raise _auth_error("MyAnimeList login expired — reconnect")
         rec = {**cur, **{k: v for k, v in fresh.items() if v is not None or k == "expires_at"}}
         return store_token(rec)
@@ -226,7 +236,7 @@ def api(method, path, params=None, form=None, token=None):
                 if attempt == 0:
                     tok = _refresh(access)
                     continue
-                clear_token()
+                _drop_login()
                 raise _auth_error("MyAnimeList rejected the saved login — reconnect")
             if e.code >= 500 or e.code in (403, 429):
                 raise _transient("MyAnimeList unavailable (HTTP %d)" % e.code, status=e.code)

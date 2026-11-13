@@ -137,7 +137,8 @@ end
 mp.observe_property("osd-dimensions", "native", function() draw() end)
 
 mp.observe_property("mouse-pos", "native", function(_, m)
-    if not (shown and shown.key) then return end
+    -- A look tracks the hover itself (anime-hub-skip-hover): no rect here.
+    if look or not (shown and shown.key) then return end
     local hover = inside(m)
     if hover ~= shown.hover then
         shown.hover = hover
@@ -347,7 +348,9 @@ local function draw_note()
     local dim = mp.get_property_native("osd-dimensions") or {}
     local res_x = (dim.w and dim.h and dim.h > 0) and math.floor(RES_Y * dim.w / dim.h) or 1280
     local busy = noted.state == "loading"
-    local tw = text_width(NOTE_FONT, noted.text, res_x)
+    -- Measured once per note and window width, not every frame of the spinner.
+    if noted.tw_res ~= res_x then noted.tw, noted.tw_res = text_width(NOTE_FONT, noted.text, res_x), res_x end
+    local tw = noted.tw
     local w = 9 + DISC + 11 + tw + 20
     local x, y = (res_x - w) / 2, 30 + lift
     local tint = busy and note_accent or BAD

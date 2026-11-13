@@ -154,6 +154,19 @@ class CutOff(Downloads):
         downloader.recover()
         self.assertEqual(os.listdir(d), ["Test Show Episode 2.mp4"])
 
+    def test_a_folder_made_for_a_download_that_never_started_goes(self):
+        """ani-cli refusing to start (too old, missing) leaves no empty show folder."""
+        dest = self.lib / "New Show"
+        job = {"media_id": 900010, "token": "1", "mode": "sub", "show": "New Show", "dest": str(dest)}
+        link = {"media_id": 900010, "query": "New Show", "title": "New Show", "idx": 1, "mode": "sub",
+                "episodes": ["1"], "meta": {}}
+        with mock.patch.object(streaming, "stream_link_get", return_value=link), \
+                mock.patch.object(anicli, "anicli_spawn", side_effect=anicli.AniCliError("too old")):
+            with self.assertRaises(anicli.AniCliError):
+                downloader._dl_run(job)
+        self.assertFalse(dest.exists())
+        self.assertFalse(settings.get_setting(downloader.RUNNING_KEY))
+
     def test_nothing_was_running(self):
         for value in ("", "not json", "[]", "{}"):
             settings.set_setting(downloader.RUNNING_KEY, value)

@@ -37,15 +37,34 @@ StartupWMClass=chrome-127.0.0.1__-Default
 DESKTOP
 cp "$APPDIR/anime-hub.desktop" "$APPDIR/usr/share/applications/"
 
+# The download is a fixed release, checked against the hash pinned here (as
+# build.ps1 does for Python): what builds the published AppImage can't change
+# under us.
+TOOL_VERSION="1.9.1"
+case "$ARCH" in
+  x86_64)  TOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0" ;;
+  aarch64) TOOL_SHA256="f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158" ;;
+  *)       TOOL_SHA256="" ;;
+esac
 TOOL="${APPIMAGETOOL:-$(command -v appimagetool || true)}"
 if [ -z "$TOOL" ]; then
-  TOOL="$OUT/tools/appimagetool-$ARCH.AppImage"
-  if [ ! -x "$TOOL" ]; then
-    mkdir -p "$OUT/tools"
-    curl -fL -o "$TOOL" \
-      "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage"
-    chmod +x "$TOOL"
+  if [ -z "$TOOL_SHA256" ]; then
+    echo "no pinned appimagetool for $ARCH: install one or set APPIMAGETOOL" >&2
+    exit 1
   fi
+  TOOL="$OUT/tools/appimagetool-$TOOL_VERSION-$ARCH.AppImage"
+  if [ ! -f "$TOOL" ]; then
+    mkdir -p "$OUT/tools"
+    curl -fL -o "$TOOL.part" \
+      "https://github.com/AppImage/appimagetool/releases/download/$TOOL_VERSION/appimagetool-$ARCH.AppImage"
+    mv "$TOOL.part" "$TOOL"
+  fi
+  if [ "$(sha256sum "$TOOL" | cut -d' ' -f1)" != "$TOOL_SHA256" ]; then
+    rm -f "$TOOL"
+    echo "$TOOL does not match the pinned SHA-256 - removed, run again" >&2
+    exit 1
+  fi
+  chmod +x "$TOOL"
 fi
 
 VERSION="$(git describe --tags --always 2>/dev/null || echo dev)" \
