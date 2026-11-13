@@ -75,6 +75,13 @@ input[type=range]:hover:not(:disabled){background:none}
 /* span.rpl (not .rpl): ripple is absolutely positioned inside isolated buttons/pills; keep it non-layout so it can't stretch them (bug found 2026-10-17) */
 span.rpl{position:absolute;border-radius:50%;pointer-events:none;background:#fff;opacity:.14;transform:scale(0);animation:ripple .65s var(--ease) forwards;z-index:0}
 .pri .rpl{opacity:.34}
+@keyframes lsubIn{from{grid-template-rows:0fr;margin-top:-2px;opacity:0}}
+@keyframes lsubOut{to{grid-template-rows:0fr;margin-top:-2px;opacity:0}}
+@keyframes lsubLine{from{transform:scaleY(0)}}
+@keyframes lsubTxt{0%,20%{opacity:0;transform:translateY(-6px)}}
+@keyframes lsubPick{from{background:transparent}}
+@keyframes lchevOpen{from{transform:none}}
+@keyframes lchevShut{from{transform:rotate(90deg)}}
 @keyframes ripple{to{transform:scale(1);opacity:0}}
 .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);border:0;border-radius:999px;padding:5px 12px;white-space:nowrap;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
 button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
@@ -356,7 +363,7 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 .peerform{margin:6px 0 16px}.peerform #peercode{max-width:180px;min-width:140px;flex:0 1 180px;letter-spacing:.12em}
 .found{display:flex;gap:9px;align-items:center;margin-top:14px;color:var(--mute);font-size:14px}
 .msg{min-height:20px;color:var(--warn);font-size:14px;margin-top:10px}
-.hint-line{color:var(--mute);font-size:13px;margin-top:8px}.stat-note{color:var(--mute);font-size:13px;margin-top:10px}
+.stat-note{color:var(--mute);font-size:13px;margin-top:10px}
 
 /* ───────── detail ───────── */
 .banner{--h:220;height:520px;background-size:cover;background-position:center;background-color:hsl(var(--h) 24% 16%);-webkit-mask:linear-gradient(#000 52%,transparent);mask:linear-gradient(#000 52%,transparent);transform-origin:top;animation:bannerIn .6s var(--ease) both}
@@ -472,11 +479,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .dialog.recon{width:min(900px,94vw)}.dialog h2{font-size:26px;letter-spacing:-.025em;font-weight:700;margin-bottom:6px}.dialog .sub{margin-bottom:22px}
 .actions{display:flex;justify-content:space-between;gap:10px;margin-top:26px}
 .steps{display:flex;gap:6px;margin-bottom:24px}.steps i{width:8px;height:8px;border-radius:4px;background:var(--line-hi);transition:width .45s var(--spring),background .3s}.steps i.on{width:30px;background:var(--accent)}.steps i.done{background:var(--mute)}
-.choices{display:grid;gap:10px}.choice{text-align:left;border:1px solid var(--line);border-radius:var(--r-m);padding:14px 18px 14px 52px;display:grid;gap:2px;position:relative;background:rgba(255,255,255,.015)}
-.choice:hover{border-color:var(--line-hi);background:rgba(255,255,255,.04)}
-.choice:before{content:"";position:absolute;left:18px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;border:2px solid var(--line-hi);transition:border-color .2s,background .2s,box-shadow .3s}
-.choice span{color:var(--mute);font-size:14px}.choice.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}
-.choice.on:before{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 0 4px,transparent 5px);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
 .bulk{display:flex;gap:10px;margin:14px 0}
 @keyframes draw{from{stroke-dashoffset:176}}
 
@@ -581,8 +583,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .pill .spin{width:14px;height:14px;border-color:rgba(12,22,36,.25);border-top-color:currentColor}
 .link-btn.fix{padding:0;margin-top:14px;font-size:13px}.link-btn.fix:hover{color:var(--ink)}
 .eps-note{margin:-4px 0 16px}.eps-note .link-btn.fix{margin:0 0 0 6px;vertical-align:baseline}
-.slres{display:grid;gap:2px;max-height:300px;overflow:auto;margin:0 -6px}
-.slres .mi.on{background:color-mix(in srgb,var(--accent) 10%,var(--s2))}.slres .mi.on .ico{color:var(--accent-hi)}
 .pop.dl .dlj{display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px}.pop.dl .dlj:hover{background:var(--s2)}
 .dlj-t{flex:1;min-width:0}.dlj-t b{display:block;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dlj-t small{display:block;color:var(--mute);font-size:12px}.dlj.failed small{color:var(--bad)}.dlj.done small{color:var(--ok)}
@@ -631,7 +631,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .frother-h{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:44px 0 4px}
 .eps-head.frother{margin-top:18px}.eps-head.frother h3{font-size:15px;font-weight:600;color:var(--ink-2)}
 .card .more{font-size:11px;font-weight:650;padding:2px 8px;border-radius:999px;background:var(--s2);color:var(--ink-2)}
-.slres{max-height:52vh;overflow:auto;margin-right:-6px;padding-right:6px}
 
 /* ───────── Motion setting (Decision 38): full / calm / off ───────── */
 :root[data-motion=calm] .cv-art,:root[data-motion=calm] #nr .led,:root[data-motion=calm] .np{animation:none!important}
@@ -877,15 +876,18 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .dialog.entry{width:min(700px,94vw);padding:0;overflow:hidden}
 .edh{position:relative;isolation:isolate;min-height:170px;display:flex;align-items:flex-end;gap:18px;padding:0 26px 18px}
 .edh .eda{position:absolute;inset:0;background-size:cover;background-position:center 30%;z-index:-1}
-.edh .eda::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,var(--glass-pop),rgba(22,23,27,.55) 60%,rgba(22,23,27,.25))}
+.edh .eda::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.35),rgba(0,0,0,.5) 50%,rgba(0,0,0,.1))}
+/* the art fades into the dialog instead of ending in a line (TODO 226) */
+.edh .eda,.mdh .eda{-webkit-mask:linear-gradient(180deg,#000 30%,rgba(0,0,0,.45) 70%,transparent);mask:linear-gradient(180deg,#000 30%,rgba(0,0,0,.45) 70%,transparent)}
 .edh .edp{width:76px;height:108px;flex:none;border-radius:14px;background-size:cover;background-position:center;box-shadow:0 12px 30px rgba(0,0,0,.5),var(--edge)}
-.edh .cap{display:block;font:500 11px var(--mono);color:var(--mute);margin-bottom:6px}
+.edh .cap{display:block;font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:8px;text-shadow:0 1px 12px rgba(0,0,0,.8)}
 .edh h2{font:700 40px/1 var(--display);text-transform:uppercase;margin:0 0 6px}
 .edh .mono{font:400 12px var(--mono);color:var(--ink-2)}
 .edb{padding:18px 26px 8px}
 #entrybox .ef{margin-bottom:20px}
 #entrybox .ef.two{display:grid;grid-template-columns:1fr 1fr;gap:28px}
-#entrybox .cap{display:block;font:500 11px var(--mono);color:var(--mute);margin-bottom:10px}
+#entrybox .cap{display:block;font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:10px}
+#entrybox .cap :is(.sv,small){letter-spacing:0}
 #entrybox .cap .sv{font:700 18px var(--display);color:var(--accent);margin-left:6px}
 #entrybox .cap small{color:var(--mute)}
 #entrybox .pills{display:flex;flex-wrap:wrap;gap:6px}
@@ -922,19 +924,12 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 #entrybox .flat{font:700 26px var(--display)}
 #entrybox .datef input{width:100%;height:40px;font:500 13px var(--mono)}
 #entrybox .note{margin:0 0 16px}
-.dialog.entry .actions{display:flex;align-items:center;gap:10px;margin:0;padding:14px 22px;border-top:1px solid rgba(255,255,255,.08)}
-.dialog.entry .note2{flex:1;font-size:11px;color:var(--mute)}
-/* Remember the season before (TODO 133, Decision 85): the season's banner
-   on top, the question in the display font over its foot, then what to
-   watch first as rows, its characters, and Start. */
-.dialog.recap{width:min(780px,94vw);padding:0;overflow:hidden auto;max-height:94vh}
-.recap .rcpart{height:220px;background:center 30%/cover;position:relative;-webkit-mask:linear-gradient(180deg,#000 30%,transparent 94%);mask:linear-gradient(180deg,#000 30%,transparent 94%)}
-.recap .rcpart:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 20%,rgba(0,0,0,.5))}
-.recap .rcpin{padding:0 40px 28px;margin-top:-94px;position:relative}
-.dialog.recap h2{font:700 60px/.92 var(--display);text-transform:uppercase;margin:0 0 12px;text-shadow:0 4px 30px rgba(0,0,0,.7);overflow-wrap:anywhere}
-.dialog.recap h2.long{font-size:44px}
-.recap .lead{margin:0;font-size:16px;color:var(--ink-2);text-shadow:0 1px 12px rgba(0,0,0,.8)}.recap .lead b{color:var(--ink);font-weight:600}
-.recap h3{font:600 13px var(--ui);color:var(--mute);margin:22px 0 8px}
+.dialog.entry .actions{display:flex;align-items:center;gap:4px;margin:0;padding:12px 22px 12px 26px;border-top:1px solid var(--line)}
+.dialog.entry .note2{flex:1;font:400 13px/1.4 var(--ui);color:var(--mute)}
+/* Remember the season before (TODO 133, Decision 85), in the pop-up frame (TODO 226):
+   what to watch first as rows, then its characters. */
+.dialog.recap.dl2{width:min(760px,94vw);max-height:94vh}
+.rcpb .group>.sub b{color:var(--ink);font-weight:600}
 .rcpo{display:flex;align-items:center;gap:16px;width:calc(100% + 20px);margin:0 -10px;padding:8px 14px 8px 8px;border:0;border-radius:16px;background:none;color:inherit;text-align:left;cursor:pointer;transition:background .2s}
 .rcpo:hover,.rcpo:focus-visible{background:rgba(255,255,255,.07)}
 .rcpo .th{width:136px;aspect-ratio:16/9;border-radius:10px;background:rgba(255,255,255,.06) center/cover;flex:none;position:relative;box-shadow:0 8px 20px -12px #000}
@@ -944,26 +939,16 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .rcpo small{display:block;margin-top:3px;font-size:13px;color:var(--mute)}.rcpo .seen{color:var(--ok)}
 .rcpo .go{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);flex:none;transition:background .2s,color .2s}
 .rcpo .go .ico{width:16px;height:16px}
-.rcpo:hover .go,.rcpo:focus-visible .go{background:var(--ink);color:#111}
+.rcpo:hover .go,.rcpo:focus-visible .go{background:color-mix(in srgb,var(--accent) 24%,transparent);color:var(--accent-hi)}
 .rcpw{display:flex;gap:12px;align-items:flex-end}
 .rcpw .f{width:70px;flex:none}.rcpw .f.s{width:52px}.rcpw .gap{width:8px;flex:none}
 .rcpw i{display:block;aspect-ratio:3/4;border-radius:9px;background:rgba(255,255,255,.06) center 18%/cover;box-shadow:0 8px 18px -12px #000}
 .rcpw small{display:block;margin-top:6px;font:500 12px/1.25 var(--ui);color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rcpw .f.s small{font-size:11px;color:var(--mute)}
-.rcpf{display:flex;align-items:center;gap:12px;margin-top:24px;padding-top:18px;border-top:1px solid rgba(255,255,255,.07)}
-.rcpf .quiet{border:0;background:none;padding:6px 0;font:500 13px var(--ui);color:var(--mute);cursor:pointer;transition:color .2s}.rcpf .quiet:hover{color:var(--ink-2)}
-.rcpf .btn.pri{margin-left:auto}
 @media (max-width:700px){
-  .dialog.recap{width:100%;padding:0!important}
-  .dialog.recap>.grabber{position:absolute;left:50%;top:8px;margin-left:-20px;z-index:2}
   .rcpo b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .recap .rcpart{height:150px}
-  .recap .rcpin{padding:0 20px 20px;margin-top:-60px}
-  .dialog.recap h2{font-size:42px}.dialog.recap h2.long{font-size:34px}
   .rcpo .th{width:104px}.rcpo .th.p{width:40px;margin:-4px 32px}
   .rcpw{overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 20px}
-  .rcpf{flex-wrap:wrap-reverse}.rcpf .btn.pri{flex:1 1 100%;margin:0}.rcpf .quiet{margin:0 auto}
 }
-.dialog.entry .btn .kb{margin-left:2px;background:rgba(0,0,0,.08);color:rgba(0,0,0,.55)}
 /* Dialogs + menus get the shared rounded glass now (their contents follow in step 7). */
 .overlay{background:rgba(8,9,11,.5);backdrop-filter:blur(8px)}
 .dialog{background:var(--glass-pop);border:0;box-shadow:0 40px 100px rgba(0,0,0,.55),var(--edge);border-radius:28px;backdrop-filter:blur(30px)}
@@ -1379,10 +1364,8 @@ html.pldragging .plstack{pointer-events:none}
 .plsec>.fill{flex:1}
 .pltip{font:400 12px var(--mono);color:var(--mute)}
 /* Find shows for this playlist (Elias picked mockup A): a section under the rows */
-.dialog.plfd{width:min(520px,94vw);padding:28px 28px 20px;display:flex;flex-direction:column}
+.dialog.plfd.dl2{width:min(580px,94vw)}
 .plfind{display:flex;flex-direction:column;min-height:0}
-.plfind>.sub{margin:0 0 16px}
-.plfind>.sub .plico{display:inline-flex;vertical-align:-2px;margin:0 4px 0 2px}.plfind>.sub .plico .ico{width:15px;height:15px;color:var(--plc)}
 .plfq{display:flex;align-items:center;gap:10px;height:46px;padding:0 16px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);transition:background .2s,box-shadow .2s;cursor:text;flex:none}
 .plfq:hover{background:var(--glass-h)}
 .plfq:focus-within{box-shadow:var(--edge),0 0 0 2px color-mix(in srgb,var(--plc) 75%,transparent)}
@@ -1390,16 +1373,17 @@ html.pldragging .plstack{pointer-events:none}
 .plfq input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;background:none!important;box-shadow:none!important;backdrop-filter:none;font:400 15px var(--ui);color:var(--ink)}
 .plfq input::placeholder{color:var(--mute)}
 .plfq input::-webkit-search-cancel-button{filter:invert(1) opacity(.5)}
-.plres{display:flex;flex-direction:column;gap:1px;margin:6px -10px 12px;padding:0 2px;max-height:min(50vh,400px);overflow-y:auto;overscroll-behavior:contain}
+.plres{display:flex;flex-direction:column;gap:1px;margin:6px -10px 0;padding:0 2px;max-height:min(50vh,400px);overflow-y:auto;overscroll-behavior:contain}
 .plfcap{margin:10px 0 4px 10px;font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
 .plfr{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:6px 8px 6px 10px;border-radius:12px;text-align:left;color:inherit;transition:background .2s}
 .plfr:hover,.plfr.sel{background:rgba(255,255,255,.06)}
 .plfr .plth{width:32px;height:46px;border-radius:6px}
 .plfr .plt{padding:0;gap:1px}.plfr .plt b{font-size:14.5px}
-.plfa{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 9px;border-radius:999px;font:500 12.5px var(--ui);color:var(--ink-2);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);transition:background .2s,color .2s,box-shadow .2s}
-.plfa .ico{width:14px;height:14px}.plfa i{font-style:normal}
-.plfr:hover .plfa,.plfr.sel .plfa{background:rgba(255,255,255,.1);color:var(--ink)}
-.plfr.added .plfa{background:color-mix(in srgb,var(--plc) 32%,transparent);color:var(--ink);box-shadow:none}
+.plfa{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 4px;font:500 15px var(--ui);color:var(--ink-2);transition:color .2s}
+.plfa b{font:400 18px/1 var(--ui);color:var(--mute);transition:transform .2s var(--ease),color .2s}
+.plfr:hover .plfa,.plfr.sel .plfa{color:var(--ink)}
+.plfr:hover .plfa b,.plfr.sel .plfa b{color:var(--accent);transform:translateX(2px)}
+.plfa .chip{font-size:15px}
 .plfr.added .plt,.plfr.added .plth{opacity:.65}
 .plres .plnone{color:var(--mute);font-size:14px;padding:12px 10px}
 /* The rows: # · poster · name · progress · list · ⋯ */
@@ -1519,9 +1503,6 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
   .plpage .plpcap{padding-left:40px}
 }
 /* The edit dialog */
-.plform{display:flex;flex-direction:column;gap:16px;margin-top:8px}
-.plf{display:flex;flex-direction:column;gap:7px}.plf>span{font-size:13px;font-weight:600;color:var(--ink-2)}.plf small{font-weight:400;color:var(--mute)}
-.plf input,#plname{width:100%}
 .plicons{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:264px;overflow-y:auto;padding:2px;scrollbar-width:thin}
 .plicons .pich{grid-column:1/-1;margin:8px 2px 0;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}.plicons .pich:first-child{margin-top:0}
 .plicons .pic{height:38px;border-radius:11px;display:grid;place-items:center;color:var(--plk,var(--ink-2));background:var(--s2);transition:transform .15s,background .15s,color .25s,box-shadow .25s}
@@ -1834,6 +1815,7 @@ body.srch #pal{display:grid}
 .pkprev{display:none}
 .pkprev.choice:before{display:none} /* the old cards' tick circle */
 .set2 .pkprev.choice{padding:0;border:0;background:none;box-shadow:none}
+.pkprev .lkv{width:280px;margin:0} /* the player drawing sizes from its box: max-content alone gave it none */
 .pkprev .plpv{width:200px;height:auto;padding:30px 0 6px;margin:0;background:none;overflow:visible} /* just the stack, no box around it */
 @media (min-width:701px){
   .set2 .srow{display:grid;grid-template-columns:auto minmax(28px,1fr) auto;column-gap:20px;row-gap:3px;align-items:center;padding:11px 0;margin:0;background:none}
@@ -1864,29 +1846,7 @@ body.srch #pal{display:grid}
 .dialog .btn.pri .kb{background:rgba(0,0,0,.08);color:rgba(0,0,0,.55)}
 .mono{font-family:var(--mono)}
 /* finished a show */
-.overlay[data-t=done] .dialog{width:min(760px,94vw)}
-.dn{display:grid;grid-template-columns:190px minmax(0,1fr);gap:28px}
-.dnp .poster{width:190px;border-radius:20px;box-shadow:0 20px 50px rgba(0,0,0,.5),var(--edge)}
-.dn h2{font-size:54px;line-height:.92;text-wrap:balance}
-.dn .facts{display:flex;align-items:center;flex-wrap:wrap;gap:10px;font:400 12px var(--mono);color:var(--ink-2)}
-.dn .sep{width:3px;height:3px;border-radius:50%;background:var(--mute);display:inline-block}
-.dn .scrow{margin-top:2px}
-.dnnext{display:flex;align-items:center;gap:14px;margin-top:20px;padding:12px;border-radius:18px;background:rgba(255,255,255,.04);box-shadow:var(--edge)}
-.dnnext .poster{width:40px;height:56px;padding:0;border-radius:9px;flex:none;font-size:0}
-.dnnext .tx{flex:1;min-width:0}.dnnext b{display:block;font:600 14px var(--ui)}.dnnext small{font:400 11px var(--mono);color:var(--mute)}
-.overlay[data-t=done] .actions{margin-top:24px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
 /* next episode online / VPN */
-.overlay[data-t=nxt] .dialog{width:min(780px,94vw)}
-.nx2{display:grid;grid-template-columns:auto minmax(0,1fr);gap:26px;align-items:center}
-.nxa{position:relative;display:block;width:300px;aspect-ratio:16/9;border-radius:16px;background:var(--s2) center/cover;box-shadow:var(--edge)}
-.nxa .lab{position:absolute;left:12px;bottom:12px;font:500 11px var(--mono);padding:4px 10px;border-radius:999px;background:var(--glass-h);backdrop-filter:blur(10px)}
-.warn2{display:flex;gap:14px;align-items:flex-start;margin-top:16px;padding:14px 16px;border-radius:18px;background:rgba(255,196,107,.08);box-shadow:inset 0 0 0 1px rgba(255,196,107,.35)}
-.warn2 .wi{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(255,196,107,.18);color:var(--warn);flex:none}
-.warn2 b{display:block;font-weight:600;color:#ffd79a}
-.warn2 span{font-size:13px;color:var(--ink-2)}
-.warn2 .watching{display:flex;gap:10px;align-items:center;margin-top:10px;font:400 12px var(--mono);color:var(--mute)}
-.okv{display:inline-block;margin-top:14px;color:var(--accent);font-size:12px}
-.overlay[data-t=nxt] .actions,.overlay[data-t=vpn] .actions,.overlay[data-t=skp] .actions{margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
 /* Three buttons (the AniSkip answer, Decision 39): the note gets its own line. */
 .dialog .actions.three{flex-wrap:wrap;justify-content:flex-end}.dialog .actions.three .note2{flex-basis:100%}.dialog .actions.three .btn{white-space:nowrap}
 /* downloads popover */
@@ -1900,12 +1860,6 @@ body.srch #pal{display:grid}
 .pop.dl .bar i{display:block;height:100%;background:var(--accent);transition:width .8s var(--ease)}
 .pop.dl .cap{font:500 11px var(--mono);color:var(--mute)}
 /* tour + reconcile + account: same glass, pills, choice cards */
-.dialog .choices{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
-.dialog .choice{padding:20px;border-radius:22px;background:rgba(255,255,255,.04);box-shadow:var(--edge);border:0;text-align:left;transition:background .2s,box-shadow .2s,transform .25s var(--ease)}
-.dialog .choice:hover{transform:translateY(-2px)}
-.dialog .choice.on{background:color-mix(in srgb,var(--accent) 10%,transparent);box-shadow:inset 0 0 0 1.5px var(--accent)}
-.dialog .choice b{display:block;font:600 16px var(--ui)}
-.dialog .choice span{display:block;font-size:13px;color:var(--mute);margin-top:4px}
 .dialog .steps{display:flex;gap:6px;justify-content:flex-end;margin-bottom:6px}
 .dialog .steps i{width:22px;height:6px;border-radius:6px;background:rgba(255,255,255,.14)}
 .dialog .steps i.on{background:var(--accent)}.dialog .steps i.done{background:color-mix(in srgb,var(--accent) 45%,transparent)}
@@ -1963,7 +1917,6 @@ body.srch #pal{display:grid}
   .rcv{font-size:14px}
   .dialog.recon .actions .note2{display:none}
 }
-.dialog .choice:before{display:none}.dialog .choice{display:block}
 
 /* ───────── Phone + narrow windows (TODO 60 step 8) ───────── */
 @media (max-width:1000px){
@@ -2019,15 +1972,12 @@ body.srch #pal{display:grid}
   .set2 .srow .ctl{width:100%;justify-content:flex-start;flex-wrap:wrap}
   .looks{justify-content:flex-start}
   .dialog{padding:22px 20px;width:calc(100vw - 20px)!important}
-  .dn{grid-template-columns:minmax(0,1fr)}.dnp{display:none}.dn h2{font-size:40px}
   .score{flex-wrap:wrap}
   /* the favourite pill goes under the slider, not between the pills and it */
   #entrybox .ef:has(> .ssl){display:flex;flex-direction:column;align-items:flex-start}
   #entrybox .ef:has(> .ssl) .scrow{display:contents}
   #entrybox .ef > .ssl{order:2;align-self:stretch}
   #entrybox .ef .scrow .heart{order:3;margin:14px 0 0}
-  .nx2{grid-template-columns:minmax(0,1fr)}.nxa{width:100%}
-  .dialog .choices{grid-template-columns:minmax(0,1fr)}
   .dialog .actions{flex-wrap:wrap}.dialog .actions .note2{flex-basis:100%}
   .dialog.entry .edb{padding:16px 18px}#entrybox .ef.two{grid-template-columns:minmax(0,1fr);gap:16px}
 }
@@ -2115,16 +2065,6 @@ body.srch #pal{display:grid}
 .jcard.gen .r span:first-child{width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:1000px){.jr2 .jrange{margin-left:0}.jband.all{flex-wrap:wrap;gap:14px 0}.jband .src{width:100%;margin:0}}
 /* Tour, last page: what the hub found (mockup) */
-.dialog .sum2{margin-top:18px;border-radius:18px;background:rgba(255,255,255,.03);box-shadow:var(--edge);padding:6px 16px}
-.sum2>div{display:flex;align-items:center;gap:14px;min-height:46px;border-top:1px solid rgba(255,255,255,.06)}
-.sum2>div:first-child{border-top:0}
-.sum2 b{font-weight:600;width:150px;flex:none}
-.sum2 .v{font:400 12px var(--mono);color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sum2 .okc{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--accent) 25%,transparent);color:var(--accent);font:600 12px var(--mono)}
-.sum2 .okc .ico{width:12px;height:12px;stroke-width:3}
-.sum2 .bad .okc{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}.sum2 .bad .v{color:var(--warn)}
-.sum2 .opt .okc{background:rgba(255,255,255,.06);color:var(--mute)}
-@media (max-width:700px){.sum2 b{width:auto}.sum2>div{flex-wrap:wrap;gap:4px 12px;padding:8px 0}.sum2 .v{width:100%;padding-left:36px;white-space:normal}}
 
 /* Journal, third pass (Elias, 2026-10-24): use the width, say each number once */
 .jr2 .hello{align-items:flex-end}
@@ -2853,8 +2793,6 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .wk2 .hd{font:700 clamp(48px,6vw,72px)/.9 var(--display);text-transform:uppercase;margin:0}
 .wk2 .hello{margin:14px 0 18px}
 
-.ptip{display:grid;gap:14px;margin-bottom:24px}.ptip>div{display:flex;gap:14px;align-items:flex-start}.ptip .kb{min-width:30px;height:30px;font-size:15px;border-radius:9px}.ptip b{display:block;color:var(--ink);font-weight:600}.ptip span{color:var(--mute);font-size:14px}.ptip>div>.ico{flex:none;width:20px;height:20px;margin-top:2px;color:var(--accent)}
-.sum2 .btn.sm,.sum2 .switch{flex:none;margin-left:auto}.sum2 .v{white-space:normal;padding:6px 0}.sum2 b{width:128px}
 
 /* the desktop calendar */
 .airp2{padding:0 44px 60px;max-width:1800px;margin:0 auto}
@@ -2934,12 +2872,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 }
 
 /* The tour's player looks: small drawings of mpv's controls. */
-.dialog:has(.lkpick){width:min(780px,94vw)}
-.dialog .choices.lkpick{grid-template-columns:1fr 1fr}
-.choice.lkcard{padding:10px 10px 14px;gap:4px}.choice.lkcard:before{display:none}
-.choice.lkcard>b,.choice.lkcard>span{padding:0 6px}.choice.lkcard>span{font-size:13px}
 :is(.dialog,.set2) .choice .lkv span{display:inline;color:inherit;font-size:inherit;margin:0;padding:0;line-height:1;font-weight:500}
-.choice.lkown{grid-column:1/-1}
 .lkv{--u:calc(100cqw/1000);container-type:inline-size;position:relative;display:block;aspect-ratio:16/9;margin-bottom:8px;border-radius:10px;overflow:hidden;color:#f3f3f1;font:500 calc(30*var(--u))/1 var(--ui);
   background:radial-gradient(34% 44% at 74% 26%,#fff4d8 0,transparent 72%),linear-gradient(180deg,#8fb3cf,color-mix(in srgb,var(--accent) 45%,#c9d6df) 70%)}
 .lkv:before{content:"";position:absolute;left:-12%;right:30%;bottom:-34%;height:88%;border-radius:50%;background:#6f9182}
@@ -2969,7 +2902,6 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .lkdock .lkbar{margin:0 calc(6*var(--u))}
 :is(.dialog,.set2) .choice .lkv .lksbar>span:not(.lkbar){flex:none;font-size:calc(28*var(--u))}.lkdock em{width:calc(46*var(--u));margin-right:calc(8*var(--u))}
 :is(.dialog,.set2) .choice .lkv .lktime{flex:none;font:500 calc(26*var(--u))/1 var(--mono)}
-@media (max-width:700px){.dialog .choices.lkpick{grid-template-columns:1fr}}
 
 /* Playlists on phones: two boxes a row (after the phone wall rule above) */
 @media (max-width:760px){.lib2 .wall.plgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 12px}}
@@ -3043,6 +2975,29 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lnav .lhello .lload{padding:16px 0 0;max-width:220px} /* the metadata pass, under the summary: always in view (TODO 199) */
   .lload.inl{display:none}
   .lnav>button[data-land]{animation:rise .4s var(--ease) backwards;animation-delay:calc(min(var(--i,0),8)*35ms)}
+  /* The Playlists tab open: your playlists under it, a quiet indent on one thin guide line (Elias picked mockup A, 2026-11-13); inside one, Playlists leads back */
+  .lnav>button.up{color:var(--ink)}
+  .lchev{display:grid;place-items:center;margin-left:-3px;color:var(--mute);transition:color .2s}.lchev .ico{width:13px;height:13px}
+  .lchev.open{transform:rotate(90deg)}.lnav>button:hover .lchev,.lnav>button.on .lchev,.lnav>button.up .lchev{color:var(--ink-2)}
+  .lchev.turn{animation:lchevShut .26s var(--ease) both;animation-delay:var(--d)}.lchev.open.turn{animation-name:lchevOpen}
+  .lsubw{position:relative;display:grid;grid-template-rows:1fr;flex:none}
+  .lsubw::before{content:"";position:absolute;z-index:1;left:20px;top:-2px;bottom:0;width:1.5px;background:rgba(255,255,255,.1);pointer-events:none;transform-origin:top}
+  .lnav>button+.lsubw::before{top:3px}.lsubw.last::before{bottom:5px}
+  .lsubpl{display:block;width:100%;min-height:0;overflow:hidden;padding:0;border:0;border-radius:12px;font:500 14px/18px var(--ui);color:var(--ink-2);text-align:left;background:none;transition:background .2s,color .2s}
+  .lsubpl[data-a]:hover,.lsubpl[data-a]:focus-visible{color:var(--ink);background:rgba(255,255,255,.05)}
+  .lsubw.on .lsubpl{color:var(--ink);background:var(--pick);cursor:default}
+  .lsubin{display:flex;align-items:center;gap:11px;padding:9px 14px 9px 31px}
+  .lsubpl .dot{flex:none;width:7px;height:7px;margin:0 4px;border-radius:50%;background:var(--plc)}
+  .lsubpl .plico{flex:none;display:grid;place-items:center;width:15px}.lsubpl .plico .ico{width:15px;height:15px}
+  .lsubpl b{flex:1;min-width:0;font-weight:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lsubpl .n{flex:none;font:400 11px var(--mono);color:var(--mute)}.lsubw.on .n{color:var(--ink-2)}
+  #app .lnav>.lsubw.grow{animation:lsubIn .42s var(--ease) both;animation-delay:var(--d)}
+  #app .lnav>.lsubw.gone{animation:lsubOut .3s var(--ease) both;animation-delay:var(--d);pointer-events:none}
+  .lsubw.grow::before{animation:lsubLine .42s var(--ease) both;animation-delay:var(--d)}
+  .lsubw.gone::before{animation:lsubLine .3s var(--ease) reverse both;animation-delay:var(--d)}
+  .lsubw.grow .lsubin{animation:lsubTxt .42s var(--ease) both;animation-delay:var(--d)}
+  .lsubw.fresh:not(.grow) .lsubpl{animation:lsubPick .26s var(--ease) both;animation-delay:var(--pd)}
+  @media (prefers-reduced-motion:reduce){#app .lnav>.lsubw,.lsubw::before,.lsubw .lsubin,.lsubw .lsubpl,.lchev{animation:none}.lsubw.gone{display:none}}
   .lib2 .lmain .filters{padding:0;animation:none} /* rebuilt on every click in the side list: rising each time flickered (Elias) */
   #app.nav-in .lib2 .lmain .filters{animation:rise .4s var(--ease) both}
   /* show + sort as plain words, no pill (Elias, 2026-11-06); a soft wash on hover */
@@ -3602,7 +3557,7 @@ body.pp-open #modal{z-index:70}
 .dialog.match{width:min(820px,94vw);padding:0;overflow:hidden auto}
 .mdh{position:relative;isolation:isolate;padding:22px 30px 26px}
 .mdh .eda{position:absolute;inset:0;background-size:cover;background-position:center 25%;z-index:-1;opacity:.75}
-.mdh .eda::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,var(--glass-pop) 4%,rgba(22,23,27,.72) 50%,rgba(22,23,27,.45))}
+.mdh .eda::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.3),rgba(0,0,0,.6) 50%,rgba(0,0,0,.4))}
 .mtop{display:flex;align-items:center;gap:18px;font:500 11px var(--mono);color:var(--ink-2)}
 .mpath{flex:1;min-width:0;display:flex;align-items:center;gap:8px}.mpath span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mpath .ico{width:14px;height:14px;flex:none}
 .mstep{display:flex;align-items:center;gap:10px;flex:none}.dialog .mstep .steps{margin:0}
@@ -3610,7 +3565,8 @@ body.pp-open #modal{z-index:70}
 .mpo .poster{border-radius:16px;box-shadow:0 22px 46px rgba(0,0,0,.55),var(--edge)}.mpo .poster.hasimg span{display:none}
 .mpo.mnone{aspect-ratio:2/3;display:grid;place-items:center;border-radius:16px;background:rgba(255,255,255,.04);box-shadow:var(--edge);color:var(--mute)}.mpo.mnone .ico{width:40px;height:40px;stroke-width:1.3}
 .mqw{min-width:0;padding-bottom:4px}
-.mqw .cap{display:block;font:700 22px/1 var(--display);text-transform:uppercase;letter-spacing:.01em;color:var(--ink-2);margin:0 0 4px}
+.mqw .cap{display:block;font:500 12px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2);margin:0 0 8px}
+.mdh:not(:has(.eda))::before{content:"";position:absolute;inset:0 0 -70px;z-index:-1;pointer-events:none;background:radial-gradient(70% 160% at 96% -20%,color-mix(in srgb,var(--accent) 40%,transparent),transparent 64%)}
 .dialog .mqw h2{font:700 56px/.94 var(--display);text-transform:uppercase;margin:0;text-wrap:balance;overflow-wrap:anywhere;text-shadow:0 2px 24px rgba(0,0,0,.45)}
 .dialog .mqw h2.long{font-size:42px}
 .mqw .sub{margin:12px 0 0;max-width:46ch}
@@ -3637,7 +3593,7 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){
   .mdh{padding:10px 18px 18px}.mbody{padding:4px 18px 0}
   .mhero{grid-template-columns:92px minmax(0,1fr);gap:16px;margin-top:16px}
-  .mqw .cap{font-size:17px}.dialog .mqw h2{font-size:34px}.dialog .mqw h2.long{font-size:28px}
+  .dialog .mqw h2{font-size:34px}.dialog .mqw h2.long{font-size:28px}
   .mcmp{grid-template-columns:auto;gap:2px}.mcmp span:nth-child(2){display:none}.mcmp b:nth-of-type(2)::before{content:"AniList · ";color:var(--mute)}.mcmp span:first-child{display:none}
   .mrail{display:flex;overflow-x:auto;gap:12px;margin:0 -18px;padding:0 18px 4px;scrollbar-width:none}.moth{flex:0 0 104px}
   .moth .kb{display:none}.dialog.match .btn .kb{display:none}
@@ -3675,12 +3631,10 @@ body.pp-open #modal{z-index:70}
 .tsteps{margin:4px 0 0;padding-left:20px;display:grid;gap:12px;color:var(--mute);font-size:14px}.tsteps b{color:var(--ink)}.tsteps a{color:var(--accent)}
 .tcmd{display:flex;gap:8px;align-items:center;margin-top:6px}.tcmd code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;font:400 12px var(--mono);color:var(--ink);background:rgba(255,255,255,.06);border-radius:10px;padding:9px 11px}
 /* Windows sets itself up (Decision 87): one list, one footer */
-.tinst{margin-top:18px}.tinst .sum2{margin-top:0}
-.tpick .v{font:400 13px var(--ui);color:var(--mute);white-space:nowrap}.tpick .switch{margin-left:auto;flex:none}.tpick .spin{width:12px;height:12px}
+.tinst{margin-top:4px}
 .tfoot{display:flex;align-items:center;gap:14px;margin-top:12px}.tfoot p{flex:1;color:var(--mute);font-size:13px}.tfoot p.swarn{color:var(--warn)}.tfoot .btn{flex:none}
-.set2 .tinst{padding:4px 16px 12px}
+.set2 .tinst{padding:0}
 .actions .aright{display:flex;gap:10px;margin-left:auto}
-@media (max-width:700px){.tpick .v{white-space:normal}}
 
 /* ───────── Settings on a phone (Decision 94, Elias picked mockup C) ─────────
    The show you're watching behind the title; sections as tiles with what's set
@@ -3688,13 +3642,13 @@ body.pp-open #modal{z-index:70}
    three choices, the value with a sheet of choices for the rest. */
 @media (max-width:700px){
   .set2:is(.phone,.pset){position:relative;isolation:isolate;padding-bottom:130px}
-  .set2 .shero{position:absolute;z-index:-1;left:0;right:0;top:-80px;height:380px;background:hsl(220 20% 18%) center 22%/cover;pointer-events:none}
-  .set2 .shero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,17,20,.45) 0,rgba(16,17,20,0) 26%,rgba(16,17,20,.55) 62%,var(--bg) 100%)}
-  .set2 .shero.none{background:radial-gradient(420px 260px at 70% 0,color-mix(in srgb,var(--accent) 30%,transparent),transparent 75%)}
+  .set2:where(.phone,.pset) .shero{position:absolute;z-index:-1;left:0;right:0;top:-80px;height:380px;background:hsl(220 20% 18%) center 22%/cover;pointer-events:none}
+  .set2:where(.phone,.pset) .shero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,17,20,.45) 0,rgba(16,17,20,0) 26%,rgba(16,17,20,.55) 62%,var(--bg) 100%)}
+  .set2:where(.phone,.pset) .shero.none{background:radial-gradient(420px 260px at 70% 0,color-mix(in srgb,var(--accent) 30%,transparent),transparent 75%)}
   .set2.pset .shero{height:250px}
   .set2.pset .shero::after{background:linear-gradient(180deg,rgba(16,17,20,.45) 0,rgba(16,17,20,0) 24%,rgba(16,17,20,.7) 60%,var(--bg) 92%)}
   .set2.phone>.hello{margin:150px 0 16px}
-  .set2 .hd{text-shadow:0 2px 24px rgba(0,0,0,.45)}
+  .set2:where(.phone,.pset) .hd{text-shadow:0 2px 24px rgba(0,0,0,.45)}
   .set2.phone .slsearch{height:48px;margin:0 0 14px;background:rgba(30,31,36,.82);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);-webkit-backdrop-filter:none;backdrop-filter:none;font:400 15px var(--ui)}
   .set2.phone .slsearch input{font:400 16px var(--ui)!important}
   /* the tiles */
@@ -3711,48 +3665,48 @@ body.pp-open #modal{z-index:70}
   .set2.pset .sum{display:none}
   .set2.pset .settings{animation:rise .32s var(--ease) both}
   .set2.pset .group,.set2.phone .settings .group{margin:0;padding:0;border:0;background:none;box-shadow:none}
-  .set2 .settings>.group>h3,.set2 .settings .group>h3{position:static;margin:26px 8px 8px;font:500 11.5px var(--mono);letter-spacing:.04em;text-transform:none;color:rgba(255,255,255,.62)}
-  .set2 .settings .group>h3 small{display:block;margin-bottom:2px;color:var(--accent-hi)}
-  .set2 .settings>.group:first-child>h3{margin-top:18px;display:block}
-  .set2 .settings .group>.sub{margin:-2px 8px 10px!important;font-size:13px;line-height:1.4;color:var(--mute)}
+  .set2:where(.phone,.pset) .settings>.group>h3,.set2:where(.phone,.pset) .settings .group>h3{position:static;margin:26px 8px 8px;font:500 11.5px var(--mono);letter-spacing:.04em;text-transform:none;color:rgba(255,255,255,.62)}
+  .set2:where(.phone,.pset) .settings .group>h3 small{display:block;margin-bottom:2px;color:var(--accent-hi)}
+  .set2:where(.phone,.pset) .settings>.group:first-child>h3{margin-top:18px;display:block}
+  .set2:where(.phone,.pset) .settings .group>.sub{margin:-2px 8px 10px!important;font-size:13px;line-height:1.4;color:var(--mute)}
   /* rows: a card per run of rows */
-  .set2 .settings .srow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:14px;align-items:center;min-height:58px;margin:0;padding:12px 16px;background:rgba(30,31,36,.82);border:0;border-radius:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
-  .set2 .settings .srow:not(.srow+.srow){border-top-left-radius:22px;border-top-right-radius:22px}
-  .set2 .settings .srow:not(:has(+.srow)){border-bottom-left-radius:22px;border-bottom-right-radius:22px}
-  .set2 .settings .srow+.srow{margin-top:1px}
-  .set2 .settings .srow>div:first-child{display:block;min-width:0}
-  .set2 .settings .srow>div:first-child>b{display:block;font:500 16px/1.3 var(--ui);color:var(--ink)}
-  .set2 .settings .srow>div:first-child>p{margin:2px 0 0;max-width:none;font-size:12.5px;line-height:1.4;color:#a3a3a8}
-  .set2 .settings .srow>.sline{display:none}
-  .set2 .settings .srow>.ctl{grid-column:2;grid-row:1;width:auto;min-height:0;margin:0;justify-content:flex-end;align-self:center;flex-wrap:nowrap;gap:8px}
-  .set2 .settings .srow.wide>.ctl,.set2 .settings .srow>.ctl:has(.path,.fontpick,.lkcard,.looks,textarea,.pairbox){grid-column:1/-1;grid-row:2;justify-content:flex-start;margin-top:10px;flex-wrap:wrap}
-  .set2 .settings .srow:has(>.ctl:empty){grid-template-columns:minmax(0,1fr)}
-  .set2 .settings .srow>.ctl:has(>.pkseg){grid-column:1/-1;grid-row:2;margin-top:10px;justify-content:stretch} /* buttons go under the name, full width */
-  .set2 .settings .srow>.ctl>.pkseg{flex:1}.set2 .pkseg button{flex:1}
-  .set2 .settings .srow.prev>.pkprev{grid-column:1/-1;grid-row:3;margin:12px 0 4px;max-width:260px}
-  .set2 .settings .srow.flash{animation:rowflash 1.8s ease}
-  .set2 .settings .srow:has(.pksw,.pklist):active{background:rgba(40,41,47,.92)}
-  .set2 .settings .srow code{font-size:11.5px}
-  .set2 .settings>.group .dirpick{margin:10px 0}
+  .set2:where(.phone,.pset) .settings .srow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:14px;align-items:center;min-height:58px;margin:0;padding:12px 16px;background:rgba(30,31,36,.82);border:0;border-radius:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+  .set2:where(.phone,.pset) .settings .srow:not(.srow+.srow){border-top-left-radius:22px;border-top-right-radius:22px}
+  .set2:where(.phone,.pset) .settings .srow:not(:has(+.srow)){border-bottom-left-radius:22px;border-bottom-right-radius:22px}
+  .set2:where(.phone,.pset) .settings .srow+.srow{margin-top:1px}
+  .set2:where(.phone,.pset) .settings .srow>div:first-child{display:block;min-width:0}
+  .set2:where(.phone,.pset) .settings .srow>div:first-child>b{display:block;font:500 16px/1.3 var(--ui);color:var(--ink)}
+  .set2:where(.phone,.pset) .settings .srow>div:first-child>p{margin:2px 0 0;max-width:none;font-size:12.5px;line-height:1.4;color:#a3a3a8}
+  .set2:where(.phone,.pset) .settings .srow>.sline{display:none}
+  .set2:where(.phone,.pset) .settings .srow>.ctl{grid-column:2;grid-row:1;width:auto;min-height:0;margin:0;justify-content:flex-end;align-self:center;flex-wrap:nowrap;gap:8px}
+  .set2:where(.phone,.pset) .settings .srow.wide>.ctl,.set2:where(.phone,.pset) .settings .srow>.ctl:has(.path,.fontpick,.lkcard,.looks,textarea,.pairbox){grid-column:1/-1;grid-row:2;justify-content:flex-start;margin-top:10px;flex-wrap:wrap}
+  .set2:where(.phone,.pset) .settings .srow:has(>.ctl:empty){grid-template-columns:minmax(0,1fr)}
+  .set2:where(.phone,.pset) .settings .srow>.ctl:has(>.pkseg){grid-column:1/-1;grid-row:2;margin-top:10px;justify-content:stretch} /* buttons go under the name, full width */
+  .set2:where(.phone,.pset) .settings .srow>.ctl>.pkseg{flex:1}.set2:where(.phone,.pset) .pkseg button{flex:1}
+  .set2:where(.phone,.pset) .settings .srow.prev>.pkprev{grid-column:1/-1;grid-row:3;margin:12px 0 4px;max-width:260px}
+  .set2:where(.phone,.pset) .settings .srow.flash{animation:rowflash 1.8s ease}
+  .set2:where(.phone,.pset) .settings .srow:has(.pksw,.pklist):active{background:rgba(40,41,47,.92)}
+  .set2:where(.phone,.pset) .settings .srow code{font-size:11.5px}
+  .set2:where(.phone,.pset) .settings>.group .dirpick{margin:10px 0}
   /* the three controls */
-  .set2 .pk{width:auto;min-width:0;display:inline-flex;align-items:center}
-  .set2 .pk.off{opacity:.4}
-  .set2 .pksw .switch{width:52px;height:32px;border-radius:16px}
-  .set2 .pksw .switch:after{top:4px;left:4px;width:22px;height:22px}
-  .set2 .pksw .switch[aria-checked=true]:after{transform:translateX(20px)}
-  .set2 .pksw .switch:active:not(:disabled):after{width:26px}.set2 .pksw .switch[aria-checked=true]:active:not(:disabled):after{transform:translateX(16px)}
-  .set2 .pkseg{gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.07)}
-  .set2 .pkseg button{height:32px;padding:0 13px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink-2);white-space:nowrap;transition:background .2s,color .2s}
-  .set2 .pkseg button.on{background:var(--ink);color:#111;pointer-events:none}
-  .set2 .pkseg button:active:not(.on){background:rgba(255,255,255,.1)}
-  .set2 .pklist{max-width:52vw;gap:2px}
-  .set2 .pklist .pka{display:none}
-  .set2 .pklist .pkm{min-width:0;display:flex;align-items:center}
-  .set2 .pklist select.pkv{pointer-events:none;height:32px;padding:0;text-align:right;text-align-last:right;font:500 15px var(--ui)!important;color:var(--ink-2);text-overflow:ellipsis;background-image:none}
-  .set2 .pklist::after{content:"";flex:none;width:7px;height:7px;margin:0 4px 0 6px;border:solid var(--mute);border-width:2px 2px 0 0;transform:rotate(45deg)}
-  .set2 .pklist .pkdot{margin-right:8px}
-  .set2 .pkdo{min-width:0;justify-content:flex-end}
-  .set2 .settings .btn{height:36px;padding:0 4px;font-size:15px}
+  .set2:where(.phone,.pset) .pk{width:auto;min-width:0;display:inline-flex;align-items:center}
+  .set2:where(.phone,.pset) .pk.off{opacity:.4}
+  .set2:where(.phone,.pset) .pksw .switch{width:52px;height:32px;border-radius:16px}
+  .set2:where(.phone,.pset) .pksw .switch:after{top:4px;left:4px;width:22px;height:22px}
+  .set2:where(.phone,.pset) .pksw .switch[aria-checked=true]:after{transform:translateX(20px)}
+  .set2:where(.phone,.pset) .pksw .switch:active:not(:disabled):after{width:26px}.set2:where(.phone,.pset) .pksw .switch[aria-checked=true]:active:not(:disabled):after{transform:translateX(16px)}
+  .set2:where(.phone,.pset) .pkseg{gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.07)}
+  .set2:where(.phone,.pset) .pkseg button{height:32px;padding:0 13px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink-2);white-space:nowrap;transition:background .2s,color .2s}
+  .set2:where(.phone,.pset) .pkseg button.on{background:var(--ink);color:#111;pointer-events:none}
+  .set2:where(.phone,.pset) .pkseg button:active:not(.on){background:rgba(255,255,255,.1)}
+  .set2:where(.phone,.pset) .pklist{max-width:52vw;gap:2px}
+  .set2:where(.phone,.pset) .pklist .pka{display:none}
+  .set2:where(.phone,.pset) .pklist .pkm{min-width:0;display:flex;align-items:center}
+  .set2:where(.phone,.pset) .pklist select.pkv{pointer-events:none;height:32px;padding:0;text-align:right;text-align-last:right;font:500 15px var(--ui)!important;color:var(--ink-2);text-overflow:ellipsis;background-image:none}
+  .set2:where(.phone,.pset) .pklist::after{content:"";flex:none;width:7px;height:7px;margin:0 4px 0 6px;border:solid var(--mute);border-width:2px 2px 0 0;transform:rotate(45deg)}
+  .set2:where(.phone,.pset) .pklist .pkdot{margin-right:8px}
+  .set2:where(.phone,.pset) .pkdo{min-width:0;justify-content:flex-end}
+  .set2:where(.phone,.pset) .settings .btn{height:36px;padding:0 4px;font-size:15px}
   /* the sheet of choices */
   #ddm.sheet{left:8px!important;right:8px;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom))!important;min-width:0!important;max-height:72vh!important;padding:10px 0 12px;border-radius:28px;background:rgba(26,27,31,.98);box-shadow:0 0 0 100vmax rgba(0,0,0,.55),0 -20px 60px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.1);transform-origin:bottom center!important}
   #ddm.sheet.open{animation:sheetIn .3s var(--ease) both}
@@ -3764,10 +3718,10 @@ body.pp-open #modal{z-index:70}
   #ddm.sheet button .ico{position:static;margin-left:auto;width:20px;height:20px}
   #ddm.sheet.ttl button span{font-size:21px}
   /* the pairing form of the Android app's PC sync, inside its card */
-  .set2 .settings .peerform{width:100%;margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
-  .set2 .settings .peerform #peeraddr{grid-column:1/-1}
-  .set2 .settings .peerform input{width:100%;max-width:none;min-width:0;height:46px;padding:0 14px;border:0;border-radius:14px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
-  .set2 .settings .peerform .btn{height:46px;padding:0 22px;border-radius:14px}
+  .set2:where(.phone,.pset) .settings .peerform{width:100%;margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+  .set2:where(.phone,.pset) .settings .peerform #peeraddr{grid-column:1/-1}
+  .set2:where(.phone,.pset) .settings .peerform input{width:100%;max-width:none;min-width:0;height:46px;padding:0 14px;border:0;border-radius:14px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+  .set2:where(.phone,.pset) .settings .peerform .btn{height:46px;padding:0 22px;border-radius:14px}
   /* Opening Settings (Decision 94). Touch screens drop the page entrances
      (Decision 44); these few stay: one art layer, the title, the find box and
      eight tiles, each only fading and moving. A section pushes in from the
@@ -3790,3 +3744,153 @@ body.pp-open #modal{z-index:70}
 @keyframes heroIn{from{opacity:0;transform:scale(1.12)}}
 @keyframes heroPush{from{transform:scale(1.1)}}
 @keyframes heroBack{from{transform:translateY(-24px) scale(1.04)}}
+
+/* ───────── Pop-ups built from Settings' parts (TODO 226) ─────────
+   A head with the show's art (or a soft glow), the title big with a mono note
+   beside it, Settings rows in the middle, and a bar of quiet buttons with ›;
+   the one that matters most wears the accent (Decision 73's buttons). */
+.dialog.dl2{width:min(720px,94vw);padding:0;display:flex;flex-direction:column;overflow:hidden auto}
+.dl2>*{flex:none}
+.dl2 .dlh{position:relative;isolation:isolate;padding:34px 44px 0}
+.dl2 .dlh:not(.art)::before{content:"";position:absolute;inset:0 0 -70px;z-index:-1;pointer-events:none;background:radial-gradient(70% 160% at 96% -20%,color-mix(in srgb,var(--glow,var(--accent)) 40%,transparent),transparent 64%);transition:background .4s}
+.dl2 .dlh.art{min-height:210px;display:flex;flex-direction:column;justify-content:flex-end}
+.dl2 .dlh.art::before{content:"";position:absolute;inset:0 0 -70px;z-index:-2;background:var(--art) center 22%/cover;-webkit-mask:linear-gradient(180deg,#000 28%,rgba(0,0,0,.4) 62%,rgba(0,0,0,.08) 84%,transparent);mask:linear-gradient(180deg,#000 28%,rgba(0,0,0,.4) 62%,rgba(0,0,0,.08) 84%,transparent)}
+.dl2 .dlh.art::after{content:"";position:absolute;inset:0 0 -70px;z-index:-1;background:linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,0) 18%,rgba(0,0,0,.5) 58%,rgba(0,0,0,.12) 84%,rgba(0,0,0,0))}
+.dl2 .dlt{display:flex;align-items:flex-end;flex-wrap:wrap;gap:6px 18px}
+.dl2 .dlh h2{font:700 56px/.9 var(--display);text-transform:uppercase;margin:0;text-wrap:balance;overflow-wrap:anywhere}
+.dl2 .dlh h2.long{font-size:46px}
+.dl2 .dlh.art h2{text-shadow:0 4px 30px rgba(0,0,0,.6)}
+.dl2 .dls{padding-bottom:5px;font:400 12px var(--mono);color:var(--mute)}
+.dl2 .dlh.art .dls,.dl2 .dlh.art .dlcap{color:var(--ink);text-shadow:0 1px 12px rgba(0,0,0,.8)}
+.dl2 .dlcap{display:block;margin-bottom:8px;font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.dl2 .steps{justify-content:flex-start;margin:0 0 18px}
+.dl2 .dlb{padding:22px 44px 24px}
+.dl2 .dlb .settings{animation:none}
+.dl2 .dlb .group{margin:0}
+.dl2 .dlb .group>.sub{margin:0 0 10px;font-size:14.5px;line-height:1.5;color:var(--ink-2);max-width:600px}
+.dl2 .dlb .group>.sub+.srow{margin-top:4px}
+.dl2 .dlb .group .group{margin-top:22px}.dl2 .dlb .group .group:first-child{margin-top:0}
+.dl2 .srow.on>div:first-child>b{color:var(--ink)}
+.dl2 .chip{padding:0;background:none;box-shadow:none;backdrop-filter:none;border:0;font:500 15.5px var(--ui);color:var(--ink-2)}
+.dl2 .chip.warn{color:var(--warn)}
+.dl2 .sub .chip{font-size:14px}
+.dot.live{background:var(--warn);animation:dlLive 1.6s ease-out infinite}
+@keyframes dlLive{0%{box-shadow:0 0 0 0 rgb(var(--warn-rgb) / .55)}70%,100%{box-shadow:0 0 0 8px rgb(var(--warn-rgb) / 0)}}
+.dl2 .dlq{margin:2px 0 12px}
+.dl2 .dlq input{min-width:22ch}
+.dl2 .pkdo>.kb{min-width:30px;height:28px;font-size:14px}
+.dl2 .pk.pkdo{min-width:0;justify-content:flex-end;gap:14px}
+.dl2 .srow>.ctl{min-width:0}
+.dl2 .msg:empty{display:none}
+/* the bar: a line across, a quiet note on the left, the buttons on the right */
+.dl2 .actions{margin:0;padding:12px 22px 12px 44px;border-top:1px solid var(--line);gap:4px;align-items:center}
+.dl2 .actions .note2{flex:1;font:400 13px/1.4 var(--ui);color:var(--mute)}
+.dl2 .actions .note2 .lnk{font:inherit;color:var(--ink-2);padding:0;background:none;transition:color .2s}
+.dl2 .actions .note2 .lnk:hover{color:var(--accent-hi)}
+:is(.dl2,.match,.entry) .actions .btn{gap:8px;height:40px;padding:0 12px;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:500 15.5px var(--ui);color:var(--ink);white-space:nowrap}
+:is(.dl2,.match,.entry) .actions .btn::after{content:"›";margin-left:-2px;font-size:18px;line-height:1;color:var(--mute);transition:transform .2s var(--ease),color .2s}
+:is(.dl2,.match,.entry) .actions .btn:is(:has(.kb),:has(.ico))::after{content:none}
+:is(.dl2,.match,.entry) .actions .btn:hover:not(:disabled){background:rgba(255,255,255,.06);box-shadow:none}
+:is(.dl2,.match,.entry) .actions .btn:hover:not(:disabled)::after{color:var(--accent);transform:translateX(2px)}
+:is(.dl2,.match,.entry) .actions .btn.pri{color:var(--accent-hi);font-weight:600}
+:is(.dl2,.match,.entry) .actions .btn .kb{margin-left:2px;background:rgba(255,255,255,.08);color:var(--ink-2)}
+:is(.dl2,.match,.entry) .actions .btn.pri .kb{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent-hi)}
+.dl2 .actions.three{flex-wrap:wrap}
+.dl2 .actions.three .note2{flex:1 1 220px}
+:is(.dl2,.match,.entry) .actions .btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media (pointer:coarse),(max-width:700px){
+  .overlay .dialog.dl2{padding:0}
+  .dl2>.grabber{position:absolute;top:8px;left:50%;margin:0;transform:translateX(-50%);z-index:2}
+  .dl2 .dlh{padding:30px 20px 0}
+  .dl2 .dlh.art{min-height:170px}
+  .dl2 .dlh h2{font-size:42px}.dl2 .dlh h2.long{font-size:36px}
+  .dl2 .dlb{padding:16px 20px 18px}
+  .dl2 .actions{padding:8px 10px calc(10px + env(safe-area-inset-bottom)) 20px;flex-wrap:wrap}
+  .dl2 .actions{justify-content:flex-end}
+  .dl2 .actions .note2,.dl2 .actions.three .note2{flex:1 1 100%;padding:2px 0 4px}
+  .dl2 .actions .note2:empty{display:none}
+  .overlay .dl2 .dlb :is(.settings,.group){margin:0;padding:0;background:none;box-shadow:none;border-radius:0}
+  .overlay .dl2 .set2:not(.phone) .settings:not([data-sec=find])>.group{margin:0;padding:0;background:none;box-shadow:none;border-radius:0}
+  .overlay .dl2 .dlb .group .group{margin-top:20px}
+  .overlay .dl2 .srow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:14px;row-gap:2px;align-items:center;padding:10px 0;margin:0;border:0}
+  .overlay .dl2 .srow>div:first-child{display:contents}
+  .overlay .dl2 .srow>div:first-child>b{grid-column:1;font:400 16px/1.3 var(--ui);color:var(--ink-2)}
+  .overlay .dl2 .srow>div:first-child>p{grid-column:1/-1;grid-row:2;margin:0;font-size:13px;color:var(--mute)}
+  .overlay .dl2 .srow>.sline{display:none}
+  .overlay .dl2 .srow>.ctl{grid-column:2;grid-row:1}
+  .overlay .dl2 .pk.pkdo{min-width:0;width:auto}
+  .overlay .dl2 .srow.wide>.ctl{grid-column:1/-1;grid-row:3;justify-content:flex-start;margin-top:6px;flex-wrap:wrap}
+  .overlay .dl2 .srow.wide>.ctl>.path{width:100%}
+  .overlay .dl2 .pk:not(.pkdo){width:190px}
+}
+/* New playlist in the frame: line fields, the icons as quiet tiles, group names like Settings' */
+.dl2 .srow.wide .path{max-width:none}
+.dl2 .srow.wide .path input{field-sizing:fixed;width:100%;flex:1}
+.dl2 .plicons{margin:0;max-height:204px;gap:4px}
+.dl2 .plicons .pich{font:500 11px var(--mono);letter-spacing:.08em;color:var(--mute)}
+.dl2 .plicons .pic{background:none;color:var(--plk,var(--ink-2))}
+.dl2 .plicons .pic:hover{background:rgba(255,255,255,.06);transform:none}
+.dl2 .plicons .pic.on{background:color-mix(in srgb,var(--plk,var(--accent)) 16%,transparent);box-shadow:inset 0 0 0 1.5px var(--plk,var(--accent))}
+.dl2 .plcols{gap:12px;padding:6px 0 4px}
+.plcols .sw{transition:transform .15s,box-shadow .3s var(--ease)}
+/* Add a font in the frame: a line field, then the fonts as rows with a line and Add › */
+.dl2 .fq{height:auto;padding:0;border-radius:0;background:none;box-shadow:none;margin:0 0 6px;gap:10px;color:var(--mute)}
+.dl2 .fq:focus-within{box-shadow:none}
+.dl2 .fq input{flex:1;min-width:0;height:36px;font:400 16px var(--ui);box-shadow:inset 0 -1px 0 rgba(255,255,255,.18)}
+.dl2 .fq:focus-within input{box-shadow:inset 0 -1.5px 0 var(--accent)}
+.dl2 .flist{height:min(400px,50vh);margin:0 -10px;padding:0 10px;gap:0}
+.dl2 .frow{gap:16px;min-height:50px;padding:6px 10px;margin:0 -10px;border-radius:10px}
+.dl2 .frow .fn{flex:none;max-width:62%;font-size:20px;color:var(--ink-2);transition:color .18s}
+.dl2 .frow .fline{flex:1;height:1px;min-width:24px;background:rgba(255,255,255,.1);transition:background .25s}
+.dl2 .frow small{font:500 15px var(--ui);color:var(--ink);gap:12px}
+.dl2 .frow small em{font:400 12px var(--mono);color:var(--mute);font-style:normal}
+.dl2 .frow small b{font-weight:500}.dl2 .frow small b::after{content:"›";margin-left:6px;font-size:18px;color:var(--mute);transition:color .2s,margin .2s var(--ease)}
+.dl2 .frow:hover:not(:disabled){background:rgba(255,255,255,.04)}
+.dl2 .frow:hover:not(:disabled) .fn{color:var(--ink)}
+.dl2 .frow:hover:not(:disabled) .fline{background:color-mix(in srgb,var(--accent) 70%,transparent)}
+.dl2 .frow:hover:not(:disabled) small b::after{color:var(--accent);margin-left:8px}
+.dl2 .frow.on .fn{opacity:.55}
+.dl2 .flist .dim{padding:16px 0}
+/* Mark what you watched in the frame: its rows keep their own grid, the body scrolls between head and bar */
+.dialog.recon.dl2{width:min(900px,94vw);padding:0;overflow:hidden}
+.dl2 .rcsub{padding:16px 44px 0}
+.dl2 .rcsub .sub{margin:0;font-size:14.5px;line-height:1.5;color:var(--ink-2);max-width:740px}
+.dl2.recon .rcbody{margin:0;padding:2px 44px 22px}
+.dl2.recon .actions{margin:0}
+.rcrow.rcsw:has(.pk){grid-template-columns:minmax(0,360px) minmax(60px,1fr) 250px}
+/* You finished: the score row's pills sit under its name */
+.dl2 .srow.wide .scrow{margin-top:2px}
+@media (pointer:coarse),(max-width:700px){
+  .dl2 .rcsub{padding:14px 20px 0}
+  .dl2.recon .rcbody{padding:2px 20px 18px}
+  .dialog.match .actions .btn.pri{flex:none;order:0;height:40px}
+}
+.dl2 .tsteps>li,.dl2 .tcmd{min-width:0}
+/* New playlist: the playlist itself on one line (icon tile in its colour + the name), the description under
+   the name, then colours and icons. A colour fades over: tile, icons and the glow (--glow is a registered colour). */
+@property --glow{syntax:"<color>";inherits:true;initial-value:#0000}
+.dl2 .dlh{--glow:var(--accent);transition:--glow .6s var(--ease)}
+.dl2 .dlh:not(.art)::before{background:radial-gradient(70% 160% at 96% -20%,color-mix(in srgb,var(--glow) 40%,transparent),transparent 64%)}
+.dl2 .pnw{display:flex;flex-direction:column}
+/* the playlist: a big tile in its colour, name and description stacked beside it, both lines to the right edge */
+.dl2 .pnh{display:grid;grid-template-columns:88px minmax(0,1fr);gap:20px;align-items:center;margin-bottom:28px}
+.dl2 .pnt{width:88px;height:88px;display:grid;place-items:center;border-radius:22px;color:var(--plk,var(--ink-2));background-color:color-mix(in srgb,var(--plk,#fff) 14%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--plk,#fff) 26%,transparent);transition:color .45s var(--ease),background-color .45s var(--ease),box-shadow .45s var(--ease)}
+.dl2 .pnt .ico{display:block;width:36px;height:36px;stroke-width:1.8}
+.dl2 .pnf{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dl2 :is(#plname,.pnd){width:100%;min-width:0;padding:0 2px;border:0;border-radius:0;background:none;transition:box-shadow .3s}
+.dl2 #plname{height:46px;font:600 26px var(--ui);color:var(--ink);box-shadow:inset 0 -1px 0 rgba(255,255,255,.16)}
+.dl2 .pnd{height:34px;font:400 15px var(--ui);color:var(--ink-2);box-shadow:inset 0 -1px 0 rgba(255,255,255,.08)}
+.dl2 :is(#plname,.pnd):focus{outline:0;box-shadow:inset 0 -1.5px 0 var(--plk,var(--accent))}
+.dl2 :is(#plname,.pnd)::placeholder{color:var(--mute)}
+/* colour and icon: a mono caps name like Settings' groups, then the choices on the same left edge */
+.dl2 .pncap::before{display:none}
+.dl2 .pncap{display:block;margin:0 0 12px;font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.dl2 .pnw .plcols{display:flex;flex-wrap:wrap;gap:12px;padding:0;margin:0 0 28px}
+.dl2 .pnw .plcols .sw{width:34px;height:34px}
+.dl2 .pnw .plicons{grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:6px;max-height:236px;margin:0 -12px 0 0;padding:0 12px 6px 0;-webkit-mask:linear-gradient(#000 calc(100% - 28px),transparent);mask:linear-gradient(#000 calc(100% - 28px),transparent)}
+.dl2 .pnw .plicons .pic{height:40px;border-radius:12px}
+.dl2 .pnw .plicons .pich{margin:14px 0 2px;font:400 13px var(--ui);letter-spacing:0;text-transform:none;color:var(--mute)}
+.dl2 .pnw .plicons .pich:first-child{margin-top:0}
+.dl2 .pnw .msg{margin:8px 0 0}
+@media (pointer:coarse),(max-width:700px){.dl2 .pnh{grid-template-columns:64px minmax(0,1fr);gap:14px}.dl2 .pnt{width:64px;height:64px;border-radius:18px}.dl2 .pnt .ico{width:28px;height:28px}.dl2 #plname{font-size:21px}.dl2 .pnw .plcols{gap:9px}.dl2 .pnw .plcols .sw{width:30px;height:30px}}
+

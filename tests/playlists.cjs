@@ -23,6 +23,10 @@ function context(mode, entries, shows, playlists = [], untracked = []) {
     pickTarget: (s) => { for (const sea of s.seasons) { const ep = sea.episodes.find((e) => !e.watched); if (ep) return { sea, ep, kind: ep.position ? "resume" : "play" }; } return null; },
     resumable: (ep) => !!ep.position, epCode: (sea, ep) => `E${ep.number}`, epName: () => null, cssUrl: (u) => `url(${u})`,
     statusLabel: (st) => ({ CURRENT: "Watching", COMPLETED: "Completed", PLANNING: "Planning" })[st] || st,
+    /* the pop-up frame's parts (TODO 226), as plain as the real ones */
+    dlHead: (t, sum) => `<div class="dlh"><h2 id="dt">${t}</h2>${sum ? `<span class="dls">${sum}</span>` : ""}</div>`,
+    dlFoot: (n, b) => `<div class="actions"><span class="note2">${n}</span>${b}</div>`,
+    dotTxt: (t) => `<span class="chip"><i class="dot ok"></i>${t}</span>`, kb: (k) => `<kbd class="kb">${k}</kbd>`,
   });
   vm.runInContext(source.slice(from, to) + source.slice(source.indexOf("function plWall() {"), source.indexOf("function plResPaint()")) + ";this.api = { plEntryRef, plShowRef, plFind, plItemCard, plHead, plNext, plState, plFindGroups, plFindList, plFindHTML, plReorder, plSlotAt, plBox, plStack, plPos, plAddCands, plHomeHTML, plWall, plMenuRows };", ctx);
   ctx.api.ctx = ctx;
@@ -195,6 +199,42 @@ test("every box on the Playlists tab opens its playlist", () => {
   assert.doesNotMatch(html, /object Object/);
 });
 
+test("the side list: your playlists under Playlists while its tab is open, the open one picked, the others open theirs, the chevron turning", () => {
+  const a = source.indexOf("let railPl;"), b = source.indexOf("/* Genres open in place");
+  const ctx = vm.createContext({ S: { data: { playlists: [
+    { id: 7, name: "Rainy <days>", color: "#9cf", icon: "", items: [1, 2, 3] },
+    { id: 8, name: "Summer", color: "#e8c", icon: "sun", items: [] },
+  ] } }, esc: (x) => String(x), plColor: (p) => p.color, plIcon: (p) => (p.icon ? `<i data-icon="${p.icon}"></i>` : ""), ico: (n) => `<svg ${n}>`, Date: { now: () => ctx.now } });
+  ctx.now = 1000;
+  vm.runInContext(source.slice(a, b) + ";this.rows = railPlRows; this.chev = railChev;", ctx);
+  let i = 0; const next = () => i++, rows = (open, cur) => ctx.rows(open, cur, next).split("</div>").filter(Boolean);
+  let r = rows(true, null); // the page opened on the overview: no motion
+  assert.equal(r.length, 2);
+  assert.match(r[0], /class="lsubw" style="--plc:#9cf;--i:0;/);
+  assert.match(r[0], /data-a="plgo" data-v="7" title="Rainy <days>"><span class="lsubin"><i class="dot"><\/i><b>Rainy <days><\/b><span class="n">3<\/span>/);
+  assert.match(r[1], /class="lsubw last"/); // the guide line ends at the last
+  assert.match(ctx.chev(), /^<span class="lchev open" [^>]*><svg chevr><\/span>$/); // pointing down, no motion on the first draw
+  assert.match(r[1], /<i data-icon="sun"><\/i><b>Summer<\/b><span class="n">0<\/span>/); // its own icon instead of the dot
+  ctx.now = 1100; r = rows(true, ctx.S.data.playlists[1]); // inside one: it is picked and opens nothing
+  assert.match(r[1], /class="lsubw last on fresh"/);
+  assert.match(r[1], /aria-current="page"/); assert.doesNotMatch(r[1], /data-a=/);
+  assert.match(r[0], /data-a="plgo" data-v="7"/);
+  ctx.now = 2000; assert.match(rows(true, ctx.S.data.playlists[1])[1], /class="lsubw last on"/);
+  ctx.now = 3000; r = rows(false, null); // another tab: they fold away, nothing to click
+  assert.equal(r.length, 2);
+  assert.match(r[0], /class="lsubw gone"[^>]*aria-hidden="true"><button class="lsubpl" tabindex="-1"/);
+  assert.match(ctx.chev(), /class="lchev turn" style="--d:0ms"/); // the chevron turns back with them
+  ctx.now = 3500; assert.deepEqual(rows(false, null), []); // and are gone once folded
+  assert.match(ctx.chev(), /class="lchev" /);
+  ctx.now = 4000; r = rows(true, null); // the tab again: they grow in one after another
+  assert.match(r[0], /class="lsubw grow"[^>]*--d:0ms/);
+  assert.match(r[1], /class="lsubw last grow"[^>]*--d:26ms/);
+  assert.match(ctx.chev(), /class="lchev open turn"/);
+  ctx.now = 4100; assert.match(rows(true, null)[1], /class="lsubw last grow"[^>]*--d:-74ms/); // a redraw mid-way carries on
+  assert.match(ctx.chev(), /class="lchev open turn" style="--d:-100ms"/);
+  ctx.S.data.playlists = []; assert.equal(ctx.chev(), ""); // nothing to open: no chevron
+});
+
 test("an open playlist's banner: back, icon, name, count and note, pin and ⋯, then the add box", () => {
   const html = context("local", [], []).plHead(list());
   assert.match(html, /data-a="plback"/);
@@ -252,7 +292,7 @@ test("find shows: before typing, your Watching and Planning shows not on the lis
   assert.equal(api.plFindGroups("mush", p)[0].rows.map((r) => r.title).join(), "Mushishi");
   const html = api.plFindHTML(p);
   assert.match(html, /<h2 id="dt">Add shows<\/h2>[\s\S]*id="plq"[\s\S]*data-a="close"/);
-  assert.match(html, /<button class="plfr" data-a="plfadd" data-v="aid:1"[\s\S]*?<i>Add<\/i><\/span><\/button>/); // the whole row adds
+  assert.match(html, /<button class="plfr" data-a="plfadd" data-v="aid:1"[\s\S]*?Add<b>›<\/b><\/span><\/button>/); // the whole row adds
   /* a show added here keeps its row, marked, so a second click takes it off */
   api.ctx.S.plJust2 = new Set(["aid:3"]);
   assert.match(api.plFindList(p), /plfr added[^>]*data-v="aid:3"[\s\S]*Added/);
