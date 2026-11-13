@@ -42,7 +42,7 @@ class PhoneLayout(unittest.TestCase):
         """The entrance animation leaves a transform on #app's children, so
         fixed elements inside it would scroll with the page."""
         self.assertIn('const b = $("#app .sp2 .cta .btn.pri"), more = $("#app .frpage .cta [data-a=frmore]");', APP)
-        self.assertIn("paintPortals();\n}\n/* Background refreshes", APP)
+        self.assertIn("paintPortals();\n  pagerStale();\n}\n/* Background refreshes", APP)
         self.assertIn("body.has-pbar .sp2 .cta .btn.pri{display:none}", CSS)
         self.assertIn(".fsheet .filters{display:flex", CSS)
 
@@ -109,7 +109,7 @@ class TouchSmoothness(unittest.TestCase):
 
     def test_touch_rules(self):
         touch = CSS[CSS.index("/* ───────── touch screens: smoothness"):]
-        for rule in ("html{transition:none}", ".cv-grain{display:none}", "#app *{-webkit-backdrop-filter:none!important",
+        for rule in ("html{transition:none}", ".cv-grain{display:none}", "#app *,.tpeek *{-webkit-backdrop-filter:none!important",
                      "#app.nav-in *,.wall.fade .card,.wall.fade .prog i{animation:none!important}"):
             self.assertIn(rule, touch)
         self.assertTrue(touch.lstrip("/* ─").find("@media (pointer:coarse){") > 0)  # never the PC
@@ -308,11 +308,12 @@ class PhonePolish(unittest.TestCase):
         # Elias: scrolling Home showed an edge under the hero — the blurred art and the
         # accent glow behind the page were lighter than the colour the hero fades to
         self.assertIn("body.pg-uph #canvas>i:not(.cv-grain){opacity:0}", CSS)
+        self.assertIn("body.pg-uph #canvas>i:not(.cv-grain){transition:opacity .25s}", CSS)  # art and wash together: the art outlived its wash
         self.assertIn("body.pg-uph #canvas{background:var(--bg)}", CSS)
 
     def test_rails_hide_the_previous_tile(self):
         # Elias: a snapped tile left 6 px of the one before showing; above the strip's own edge fades (.ml/.mr)
-        self.assertIn("#app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px)", CSS)
+        self.assertIn("#app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy,.tpeek .home2.phone .crail,.tpeek .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px)", CSS)
 
     def test_episode_tile_art_stays_in_its_ring(self):
         # Elias: hovering zoomed the art past the ring, and the progress bar ran past the
@@ -467,6 +468,73 @@ class PlayOnTheOtherSide(unittest.TestCase):
         body = APP[i:APP.index("}, 480) };", i)]
         self.assertIn('const pb = !ep && !cw && t.closest?.("[data-a=play][data-v], [data-a=deckplay][data-v]");', body)
         self.assertIn("playMenu(pb, x, y)", body)
+
+
+class TabPager(unittest.TestCase):
+    """The sideways swipe between Home · Library · Journal · Calendar (Elias,
+    2026-11-12: "laggy, slow, doesn't look good"): the next tab is a copy
+    beside this one, both follow the finger one to one, then the tab is built
+    for real with no entrance."""
+
+    def body(self, name):
+        i = APP.index(f"function {name}(")
+        return APP[i:APP.index("\n}\n", i)]
+
+    def test_follows_the_finger_one_to_one(self):
+        move = self.body("pagerMove")
+        self.assertIn("const tx = to ? d :", move)  # no more half speed
+        self.assertIn("pk.style.transform = `translate3d(${(tx - dir * W).toFixed(1)}px,0,0)`; pk.style.opacity = \"1\";", move)
+        self.assertIn("pagerInd(p, k)", move)  # the dock's highlight moves with it
+        self.assertIn("swSet(", move)  # one style write per frame
+
+    def test_lands_without_an_entrance(self):
+        end = self.body("pagerEnd")
+        self.assertIn("nav(to, null, true)", end)
+        self.assertNotIn("opacity .", end)  # nothing fades a whole page
+        self.assertIn('S.navQuiet = !!quiet', self.body("nav"))
+        self.assertIn('if (quiet) { go(); return calmIn($("#app")); }', self.body("nav"))
+        self.assertIn('app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion())', APP)
+        # its own entrance animations jump to their end (the copy showed it finished)
+        self.assertIn("a.finish()", self.body("calmIn"))
+        # the backdrop and colour change with the slide, not after it
+        self.assertIn("ambient();", end)
+
+    def test_lands_under_its_copy_until_drawn(self):
+        # right after a swipe Chrome shows layers it hasn't drawn: the new tab
+        # is built unseen under the copy, and shown only after it is drawn
+        end = self.body("pagerEnd")
+        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";\n    nav(to, null, true);', end)  # drawn while it waits (at 0 Chrome skips it)
+        self.assertIn("requestAnimationFrame(() => setTimeout(show, PAGER_DRAW))", end)
+        self.assertIn('addEventListener("touchstart", show, { capture: true, passive: true });', end)  # a touch shows it at once
+        self.assertIn('app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";', end)  # no fade
+        # the landing's own scroll back to where the tab was doesn't count as a scroll
+        self.assertIn("Math.abs(scrollY - y0) > 2 && show()", end)
+
+    def test_body_marks_change_with_the_slide(self):
+        # Home's art hides the backdrop and the top bar darkens once scrolled:
+        # set at the release from the copy, not after the landing (a white flash on Home)
+        end = self.body("pagerEnd")
+        self.assertIn("pageMarks(pk.firstChild)", end)
+        self.assertIn('b.classList.toggle("sc", sy > 8); b.classList.toggle("sc2", sy > 84);', end)
+        self.assertIn("el._sy = sy;", self.body("peekFresh"))
+        self.assertIn('function pageMarks(app = $("#app"))', APP)
+
+    def test_copy_loads_its_first_screen(self):
+        # its posters load before the swipe, not during it
+        self.assertIn('i.loading = "eager"', self.body("peekFresh"))
+
+    def test_copies_are_built_ahead_and_parked(self):
+        self.assertIn("peekFresh(to);", self.body("pagerStale"))
+        self.assertIn("document.hidden", self.body("pagerStale"))  # never while the app is away
+        self.assertIn("if (el._sig !== sig)", self.body("peekFresh"))  # rebuilt only when it changed
+        self.assertIn(".tpeek{position:fixed;inset:0;overflow:hidden;pointer-events:none;will-change:transform,opacity;contain:strict;opacity:.004}", CSS)  # kept drawn: at 0 or off screen it came in as holes
+        self.assertIn(".tpeek *,.tpeek *::before,.tpeek *::after{animation:none!important;transition:none!important}", CSS)
+        self.assertIn('el.inert = true', self.body("peekFresh"))
+
+    def test_copies_do_not_count_as_the_page(self):
+        self.assertIn("app.querySelector(sel)", self.body("pageMarks"))
+        self.assertIn("#app .lib2 .filters,.tpeek .lib2 .filters{display:none}", CSS)
+        self.assertIn('if (still) { w.innerHTML = cards.slice(0, 24).join("") || empty; return; }', APP)
 
 
 if __name__ == "__main__":
