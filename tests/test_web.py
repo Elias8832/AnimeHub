@@ -175,7 +175,7 @@ class Frontend(unittest.TestCase):
         self.assertIn("const TABS = [", APP)
         self.assertIn("<kbd>${i + 1}</kbd>", APP)
         self.assertIn('if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }', APP)
-        self.assertIn("function paintCanvas()", APP)
+        self.assertIn("function paintCanvas(art = canvasArt())", APP)
         self.assertIn('swapLayer("cv-art", mode === "full" ? art?.sharp : null);', APP)
 
 
@@ -411,7 +411,7 @@ class SearchPalette(unittest.TestCase):
     def test_palette(self):
         self.assertIn('["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"]', APP)
         self.assertIn('data-a="srsw" data-v="${key}"', APP)
-        self.assertIn('if (S.menu === "sr") srPreview(', APP)
+        self.assertIn('if (S.menu === "sr" && (keep != null || !touchSearch())) srPreview(', APP)  # touch: no keyboard ring until the arrows are used (TODO 238)
         # the palette opens centred with its own line; the top bar only holds the button
         self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; ovOpen("sr", () => A.srclose()); paintNav(); } q.focus(); }', APP)
         self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)

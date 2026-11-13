@@ -1720,16 +1720,58 @@ function libRail(m, sum, loading) {
   /* The lists just arrived: their rows rise into the placeholders' spot, once. */
   const landed = !m.cold && Date.now() - (S.listsLanded || 0) < 4000;
   if (landed) S.listsLanded = 0;
-  const it = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}" style="--i:${n++}"${landed && !t.side ? " data-land" : ""} data-a="tab" data-v="${t.k}">${esc(t.l)}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
+  const cur = plCurrent(), up = (t) => t.k === "PLAYLISTS" && cur;
+  if (m.tabs.some((t) => t.k === "PLAYLISTS")) railPlSync(S.lib.tab === "PLAYLISTS", cur);
+  const it = (t) => `<button class="${S.lib.tab === t.k ? (up(t) ? "up" : "on") : ""}" style="--i:${n++}"${landed && !t.side ? " data-land" : ""}${up(t) ? ' title="Back to all playlists"' : ""} data-a="tab" data-v="${t.k}">${esc(t.l)}${t.k === "PLAYLISTS" ? railChev() : ""}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
   const head = (t) => `<h4 style="--i:${n++}">${t}</h4>`;
   const lists = m.tabs.filter((t) => !t.side), pl = m.tabs.filter((t) => t.k === "PLAYLISTS"), pc = m.tabs.filter((t) => t.k === "UNTRACKED" || t.k === "MATCH");
   const gen = !m.cold && lists.some((t) => t.k === S.lib.tab) ? railGenres(m) : "";
+  /* Yours sits above Filter (Elias, 2026-11-12): what opens and closes as you
+     click (the filters, your playlists) is always below the row you clicked,
+     so that row never jumps away from the mouse. */
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
     ${loading ? head(acct() + " lists") + `<div class="lghost" style="--i:${n++}" aria-hidden="true">${[58, 76, 88, 70].map((w) => `<i><b style="width:${w}px"></b><u></u></i>`).join("")}</div><div class="lload" style="--i:${n++}">${listLoad()}</div>` : ""}
+    ${pl.length ? head("Yours") + pl.map(it).join("") + railPlRows(S.lib.tab === "PLAYLISTS", cur, () => n++) : ""}
     ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1))}${gen}</div>` : ""}
-    ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
+}
+/* Your playlists, under Playlists while its tab is open (Elias, 2026-11-12:
+   "if I click on Playlists it should expand so I can click the playlists from
+   there"); the open one is picked, the Playlists row above it leads back.
+   They grow in one after another when the tab opens and fold away when it
+   closes; a redraw mid-way carries on where the motion was (--d). The look
+   is a quiet indent (Elias picked mockup A, 2026-11-13): one thin guide
+   line, full-width rows, a chevron on Playlists that turns as they open. */
+let plFrom; // the Library tab before Playlists: where a second click on Playlists goes back to
+let railPl; // { rows: the rows shown (null: closed), prev: the rows before, t: when it opened/closed, pick: the open id, pt: when that changed }
+const RAIL_MS = 420, RAIL_STEP = 26;
+function railPlSync(open, cur) { // the same draw may ask twice: only a change starts a motion
+  const now = Date.now(), pick = cur?.id ?? null;
+  const rows = open ? (S.data.playlists || []).map((p) => ({ id: p.id, name: p.name, color: plColor(p), icon: plIcon(p), n: p.items.length })) : null;
+  if (!railPl) railPl = { rows, t: 0, pick, pt: 0 }; // first draw: no motion
+  else {
+    if (!rows !== !railPl.rows) Object.assign(railPl, { prev: railPl.rows, t: now });
+    if (pick !== railPl.pick) Object.assign(railPl, { pick, pt: now });
+    railPl.rows = rows;
+  }
+  return now;
+}
+function railChev() { // no playlists, nothing to open: no chevron
+  if (!railPl || !S.data.playlists?.length) return "";
+  const age = Date.now() - railPl.t;
+  return `<span class="lchev${railPl.rows ? " open" : ""}${age < 300 ? " turn" : ""}" style="--d:${-age}ms" aria-hidden="true">${ico("chevr")}</span>`;
+}
+function railPlRows(open, cur, next) {
+  const now = railPlSync(open, cur), rows = railPl.rows, pick = railPl.pick;
+  const age = now - railPl.t, list = rows || (age < RAIL_MS && railPl.prev) || [];
+  const grow = rows && age < RAIL_MS + Math.min(list.length, 8) * RAIL_STEP, pk = now - railPl.pt < 260;
+  return list.map((o, k) => {
+    const on = rows && o.id === pick, d = rows ? Math.min(k, 8) * RAIL_STEP - age : -age;
+    const cls = `lsubw${k === list.length - 1 ? " last" : ""}${rows ? (grow ? " grow" : "") : " gone"}${on ? " on" + (pk ? " fresh" : "") : ""}`;
+    const act = !rows ? ' tabindex="-1"' : on ? ' aria-current="page"' : ` data-a="plgo" data-v="${o.id}"`;
+    return `<div class="${cls}" style="--plc:${esc(o.color)};--i:${next()};--d:${d}ms;--pd:${railPl.pt - now}ms"${rows ? "" : ' aria-hidden="true"'}><button class="lsubpl"${act} title="${esc(o.name)}"><span class="lsubin">${o.icon || '<i class="dot"></i>'}<b>${esc(o.name)}</b><span class="n">${o.n}</span></span></button></div>`;
+  }).join("");
 }
 /* Genres open in place like the other filters (Elias, 2026-11-08: "there are
    just too many genres"); pick several, the row says how many. */
@@ -2522,7 +2564,7 @@ function aheadLine(f, pending, fe) {
 function entryPaint(f, pending, prev) {
   const page = !S.entry?.svc, st = page && $("#entrystats");
   if (st) { st.innerHTML = entryStats(f, pending); st._own = true; }
-  const acts = page && $("#entryacts");
+  const acts = page && $("#app #entryacts"); // not a back swipe's copy of another page
   if (acts) { acts.innerHTML = entryActs(f, pending); acts._own = true; }
   const box = $("#entrybox");
   if (!box) return;
@@ -4012,8 +4054,11 @@ function paintSr() {
   const sr = $("#sr"), srHad = !!sr.firstElementChild;
   const keep = $("#sr .mi.sel")?.dataset.i;
   sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";
+  const wasUp = srHad && sr._up;
   if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
-  if (S.menu === "sr") srPreview(keep != null && srPv[keep] ? keep : 0);
+  sr._up = !!sr.querySelector(".pal2.up");
+  if (sr._up && !wasUp && srHad) sr.firstElementChild.classList.add("rise"); // the first letter: the results rise from the field
+  if (S.menu === "sr" && (keep != null || !touchSearch())) srPreview(keep != null && srPv[keep] ? keep : 0);
 }
 function paintNav() {
   paintTabbar(); paintSide(); paintTop();
@@ -4541,41 +4586,121 @@ function srShows() {
 }
 const srSub = (x) => { if (!x.s) return "on anilist"; const sp = spineOf(x.s); return sp ? statusLabel(sp.status) : `${epTotal(x.s)} episodes`; };
 /* @srhist:end */
+/* Typing on a touch screen (TODO 238, Elias picked A's look with B's list):
+   the result you most likely meant is a big card right above the field, with
+   its button (Play, + Planning, Run); the rest rise above it in groups, the
+   closest match nearest the thumb. The list stacks from the bottom (column-
+   reverse), so the DOM stays best-first: Enter and the arrows walk it in rank
+   order. An exact command or setting beats AniList's loose guesses.
+   srModel: { top, groups: [{ k, items, more }], n: { lib, al, set } }. */
+/* @srtouch:start */
+const SR_KIND = ["lib", "cmd", "set", "al"]; // a tie goes to the earlier kind
+const srPop = (x) => [x.popularity || 0, x.averageScore || 0];
+function srModel(ql, scope = "all") {
+  const local = srLocal(ql, 6).map(({ r, s }) => ({ k: "lib", r, s }));
+  const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
+  /* Same match, better known first: AniList's own order put "001" above ONE PIECE for "one". */
+  const al = (alSearchable() && S.alres || []).map((x, i) => ({ k: "al", r: srRank(candLabel(x), ql), x, i })).filter((y) => !have.has(y.x.id))
+    .sort((a, b) => { const p = srPop(a.x), o = srPop(b.x); return a.r - b.r || o[0] - p[0] || o[1] - p[1]; }).slice(0, 8);
+  /* A setting or command found only through a typo ranks below every real match (r 4+). */
+  const near = (f, t) => f === 0 ? srRank(t, ql) : 4 + f;
+  const set = srSets(ql, 4).map((x) => ({ k: "set", r: near(srFuzzy(`${x[0]} ${x[2]} ${x[1]}`, ql), x[0]), x })).sort((a, b) => a.r - b.r);
+  const cmd = COMMANDS.map((c, i) => ({ k: "cmd", f: srFuzzy(`${c[0]} ${c[1]}`, ql), c, i })).filter((y) => y.f !== null).map((y) => ({ ...y, r: near(y.f, y.c[0]) })).sort((a, b) => a.r - b.r).slice(0, 3);
+  /* "frieren" is not a typo of "preferences": once anything really matched, the typo-only settings and commands go. */
+  const exact = [local, al, set, cmd].some((xs) => xs.some((y) => y.r < 3));
+  const set2 = exact ? set.filter((y) => y.r < 4) : set, cmd2 = exact ? cmd.filter((y) => y.r < 4) : cmd;
+  const n = { lib: local.length, al: al.length, set: set2.length + cmd2.length };
+  const want = (k) => scope === "all" || scope === k || (scope === "set" && k === "cmd");
+  const groups = [["lib", local], ["cmd", cmd2], ["set", set2], ["al", al]].filter(([k, xs]) => xs.length && want(k)).map(([k, items]) => ({ k, items: items.slice() }));
+  const rank = (g) => [g.items[0].r, SR_KIND.indexOf(g.k)];
+  groups.sort((a, b) => { const x = rank(a), y = rank(b); return x[0] - y[0] || x[1] - y[1]; });
+  const top = groups.length ? groups[0].items.shift() : null;
+  /* AniList only guessed (no title holds what you typed) while something else matched: one row, not nine posters. */
+  for (const g of groups) if (g.k === "al" && scope === "all" && top && top.k !== "al" && g.items.every((y) => y.r === 3)) g.more = g.items.length;
+  return { top, groups: groups.filter((g) => g.items.length), n };
+}
+/* @srtouch:end */
+const SR_SCOPES = [["all", "All"], ["lib", "Library"], ["al", "AniList"], ["set", "Settings"]];
+const SR_HEAD = { lib: "Your library", al: "On AniList", set: "Settings", cmd: "Commands" };
+const CMD_ICO = ["home", "grid", "clock", "cal", "sliders", "refresh", "download", "arrowr"];
+const srEntry = (x) => aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+/* + Planning on an AniList hit: only with an AniList account, only when it isn't on a list yet. */
+function srPlanBtn(x, big) {
+  if (!aniMode() || srEntry(x)) return "";
+  const on = S.srAdded?.has(x.id);
+  return big ? `<button class="btn${on ? "" : " pri"}" data-a="srplan" data-v="${x.id}"${on ? " disabled" : ""}>${ico(on ? "check" : "plus")}<span>${on ? "On Planning" : "Planning"}</span></button>`
+    : `<button class="srplus${on ? " on" : ""}" data-a="srplan" data-v="${x.id}" aria-label="Add ${esc(candLabel(x))} to Planning"${on ? " disabled" : ""}>${ico(on ? "check" : "plus")}</button>`;
+}
+const srYear = (x) => [x.seasonYear || x.startDate?.year, fmtName(x.format)].filter(Boolean).join(" · ");
+let srTopKey = "";
 function srHTMLTouch() {
   const qq = S.q.trim(), ql = qq.toLowerCase();
   srPv = [];
-  let i = 0, h = "";
+  let i = 0;
   const mi = (attrs, cls, inner) => { srPv.push(null); return `<div class="mi ${cls}" tabindex="-1" data-i="${i++}" ${attrs}>${inner}</div>`; };
-  const sec = (t, extra = "") => `<div class="srsec"><h2>${t}</h2><span class="fill"></span>${extra}</div>`;
-  if (!qq) {
-    const recent = srShows();
-    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srposters">${recent.map((x) => mi(`data-a="srshow" data-v="${esc(x.k)}"`, "sp", `${poster(x.t, x.p)}<b>${esc(x.t)}</b>`)).join("")}</div>`;
-    const sp = S.data?.spine;
-    if (aniMode() && sp?.entries?.length) {
-      const n = (k) => new Set(sp.entries.filter((e) => e.status === k).map(libKey)).size;
-      const lists = LISTS.filter(([k]) => n(k)).map(([k, l]) => `<button class="chip" data-a="srlist" data-v="${k}">${esc(l)}<span class="n">${n(k)}</span></button>`).join("");
-      h += sec("Your lists") + `<div class="srchips">${lists}<button class="chip" data-a="srgo" data-v="week">${ico("cal")}This week</button></div>`;
-    }
-    const up = S.data && nextUpInfo(), shows = S.data ? [up?.s, ...keepWatching(up && up.s.id).map((x) => x.s)].filter(Boolean).slice(0, 8) : [];
-    if (shows.length) h += sec("Watching") + `<div class="srposters">${shows.map((s) => mi(`data-a="open" data-v="${esc(s.id)}"`, "sp", `${poster(s.title, s.poster)}<b>${esc(s.title)}</b>`)).join("")}</div>`;
-    if (!h) h = '<p class="srnone">Type a show, a setting or a command.</p>';
-  } else {
-    const local = srLocal(ql, 6);
-    const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
-    const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, k })).filter((y) => !have.has(y.x.id)).sort((a, b) => a.r - b.r).slice(0, 9);
-    /* Your own shows as wide cards on their banner (TODO 177, Elias picked B): they're what you're most likely after. */
-    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s), art = s.banner || s.poster;
-      return mi(`data-a="open" data-v="${esc(s.id)}"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}`, "srwide", `<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>`); }).join("");
-    if (remote.length) h += sec(`On AniList <small>${remote.length}</small>`) + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
-      return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, fmtName(x.format)].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
-    const sets = srSets(ql, 4);
-    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = setTabName(tab);
-      return mi(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, "srrow set", `<i class="sic">${ico(SET_ICONS[tab] || "sliders")}</i><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : ico("chevr")}`); }).join("")}</div>`;
-    const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, 3);
-    if (cmds.length) h += sec("Do") + `<div class="srchips">${cmds.map(([[t], k]) => `<button class="chip" data-a="cmd" data-v="${k}">${ico("arrowr")}${esc(t)}</button>`).join("")}</div>`;
-    if (alSearchable() && (S.alBusy || (S.alq !== qq && qq.length >= 2))) h += '<p class="srnone"><i class="spin"></i> searching AniList…</p>';
-    if (!h) h = `<p class="srnone">Nothing for “${esc(qq)}”${alSearchable() ? " in your library, on AniList or in settings" : " in your library or settings"}.</p>`;
+  if (!qq) { srTopKey = ""; return srHTMLTouchEmpty(mi); }
+  const scope = S.srScope || "all", m = srModel(ql, scope), parts = [];
+  const sic = (name) => `<i class="sic">${ico(name)}</i>`;
+  const sw = (t, key) => key && S.settings ? `<button class="switch" role="switch" aria-checked="${!!S.settings[key]}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : "";
+  const t = m.top, tkey = t ? t.k + ":" + (t.s?.id ?? t.x?.id ?? t.x?.[0] ?? t.i) : "";
+  const fresh = tkey !== srTopKey ? " fresh" : ""; srTopKey = tkey; // a new top hit rises in; the same one stays put while AniList answers
+  if (t?.k === "lib") {
+    const s = t.s, sp = spineOf(s), p = pickTarget(s), art = s.banner || s.poster;
+    parts.push(mi(`data-a="open" data-v="${esc(s.id)}"`, "srtop art" + fresh, `<span class="ta"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ` style="--h:${hueOf(s.title)}"`}></span>
+      <span class="tk">${sp ? "your library · " + esc(statusLabel(sp.status)) : "your library"}</span><b class="tt">${hl(s.title, qq)}</b><small>${epWatched(s)} / ${epTotal(s)} watched</small>
+      ${p ? `<span class="acts"><button class="btn pri" data-a="srplay" data-v="${esc(p.ep.id)}">${ico("play")}<span>${esc(KIND_WORD[p.kind])} ${esc(epCode(p.sea, p.ep))}</span></button></span>` : ""}`));
+  } else if (t?.k === "al") {
+    const x = t.x, e = srEntry(x), art = x.bannerImage || x.coverImage?.extraLarge, eps = x.episodes ? `${x.episodes} episode${x.episodes === 1 ? "" : "s"}` : "";
+    const plan = srPlanBtn(x, true);
+    parts.push(mi(`data-a="catpick" data-v="${t.i}"`, "srtop art" + fresh + (x.bannerImage ? "" : " cov"), `<span class="ta"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ` style="--h:${hueOf(candLabel(x))}"`}></span>
+      <span class="tk">on anilist · ${esc(srYear(x))}</span><b class="tt">${hl(candLabel(x), qq)}</b><small>${esc(e ? "on your list · " + statusLabel(e.status) : eps)}</small>
+      ${plan ? `<span class="acts">${plan}</span>` : ""}`));
+  } else if (t?.k === "cmd") {
+    parts.push(mi(`data-a="cmd" data-v="${t.i}"`, "srtop row" + fresh, `${sic(CMD_ICO[t.i] || "arrowr")}<span class="tx"><b>${hl(t.c[0], qq)}</b><small>command</small></span><button class="btn pri" data-a="cmd" data-v="${t.i}">Run</button>`));
+  } else if (t?.k === "set") {
+    const [st, tab, , key] = t.x;
+    parts.push(mi(`data-a="setgo" data-v="${esc(st)}" data-t="${tab}"`, "srtop row" + fresh, `${sic(SET_ICONS[tab] || "sliders")}<span class="tx"><b>${hl(st, qq)}</b><small>Settings · ${esc(setTabName(tab))}</small></span>${sw(st, key) || `<button class="btn pri" data-a="setgo" data-v="${esc(st)}" data-t="${tab}">Open</button>`}`));
   }
+  for (const g of m.groups) {
+    let rows;
+    if (g.more) rows = [mi(`data-a="srscope" data-v="al"`, "srrow more", `${sic("star")}<span class="tx"><b>${g.more} guess${g.more === 1 ? "" : "es"} on AniList</b><small>${esc(g.items.slice(0, 2).map((y) => candLabel(y.x)).join(", "))}</small></span>${ico("chevr")}`)];
+    else rows = g.items.map((y) => {
+      if (g.k === "lib") { const s = y.s, sp = spineOf(s), p = pickTarget(s);
+        return mi(`data-a="open" data-v="${esc(s.id)}"`, "srrow", `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc([sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`, p ? KIND_WORD[p.kind].toLowerCase() + " " + epCode(p.sea, p.ep) : ""].filter(Boolean).join(" · "))}</small></span>`); }
+      if (g.k === "al") { const x = y.x, e = srEntry(x);
+        return mi(`data-a="catpick" data-v="${y.i}"`, "srrow", `${poster(candLabel(x), x.coverImage?.extraLarge, { c: "t" })}<span class="tx"><b>${hl(candLabel(x), qq)}</b><small>${esc(srYear(x))}${e ? ` · <em>${esc(statusLabel(e.status))}</em>` : ""}</small></span>${srPlanBtn(x)}`); }
+      if (g.k === "set") { const [st, tab, , key] = y.x;
+        return mi(`data-a="setgo" data-v="${esc(st)}" data-t="${tab}"`, "srrow set", `${sic(SET_ICONS[tab] || "sliders")}<span class="tx"><b>${hl(st, qq)}</b><small>${esc(setTabName(tab))}</small></span>${sw(st, key) || ico("chevr")}`); }
+      return mi(`data-a="cmd" data-v="${y.i}"`, "srrow", `${sic(CMD_ICO[y.i] || "arrowr")}<span class="tx"><b>${hl(y.c[0], qq)}</b></span>`);
+    });
+    parts.push(...rows); // stacked from the bottom: the heading lands above its rows
+    if (!g.more) parts.push(`<h2 class="srlab">${SR_HEAD[g.k]}</h2>`);
+  }
+  if (alSearchable() && (scope === "all" || scope === "al") && (S.alBusy || (S.alq !== qq && qq.length >= 2))) parts.push('<p class="srnone"><i class="spin"></i> searching AniList…</p>');
+  if (!t) parts.unshift(`<p class="srnone">Nothing for “${esc(qq)}”.</p>`);
+  const kinds = SR_SCOPES.filter(([k]) => k === "all" || m.n[k]);
+  const chips = kinds.length > 2 || scope !== "all" ? `<div class="srscope">${kinds.map(([k, l]) => `<button class="chip${k === scope ? " on" : ""}" data-a="srscope" data-v="${k}" aria-pressed="${k === scope}">${l}${k !== "all" && m.n[k] ? `<small>${m.n[k]}</small>` : ""}</button>`).join("")}</div>` : "";
+  return `<div class="pal2 touch up${chips ? " scoped" : ""}"><div class="plist">${parts.join("")}</div>${chips}</div>`;
+}
+/* Before typing (A): Recent as posters, then your lists as big tiles to jump to. */
+function srHTMLTouchEmpty(mi) {
+  let h = "";
+  const recent = srShows();
+  if (recent.length) h += `<div class="srsec"><h2>Recent</h2><span class="fill"></span><button class="link-btn" data-a="srclr">Clear</button></div><div class="srposters">${recent.map((x) => mi(`data-a="srshow" data-v="${esc(x.k)}"`, "sp", `${poster(x.t, x.p)}<b>${esc(x.t)}</b>`)).join("")}</div>`;
+  const sp = S.data?.spine;
+  if (aniMode() && sp?.entries?.length) {
+    const ents = (k) => sp.entries.filter((e) => e.status === k), n = (k) => new Set(ents(k).map(libKey)).size, air = airingList();
+    const tiles = [["CURRENT", "Watching"], ["PLANNING", "Planning"], ["week", "This week"], ["COMPLETED", "Completed"]].map(([k, l], j) => {
+      const week = k === "week", c = week ? air.length : n(k), e = (week ? air : ents(k)).find((z) => z.poster);
+      if (!week && !c) return "";
+      return `<button class="srtile c${j}" data-a="${week ? "srgo" : "srlist"}" data-v="${week ? "week" : k}">${e ? `<span class="tp" style="background-image:${esc(cssUrl(e.poster))}"></span>` : ""}<b>${esc(l)}</b><small>${week ? (c ? `${c} airing` : "calendar") : `${c} show${c === 1 ? "" : "s"}`}</small></button>`;
+    }).join("");
+    h += `<div class="srsec"><h2>Jump to</h2></div><div class="srtiles">${tiles}</div>`;
+  } else {
+    const up = S.data && nextUpInfo(), shows = S.data ? [up?.s, ...keepWatching(up && up.s.id).map((x) => x.s)].filter(Boolean).slice(0, 8) : [];
+    if (shows.length) h += `<div class="srsec"><h2>Watching</h2></div><div class="srposters">${shows.map((s) => mi(`data-a="open" data-v="${esc(s.id)}"`, "sp", `${poster(s.title, s.poster)}<b>${esc(s.title)}</b>`)).join("")}</div>`;
+  }
+  if (!h) h = '<p class="srnone">Type a show, a setting or a command.</p>';
   return `<div class="pal2 touch"><div class="plist">${grab}<h1 class="hd srhd">Search</h1>${h}</div></div>`;
 }
 /* The keyboard (Elias: "the entire page goes up when I open my keyboard").
@@ -4595,13 +4720,15 @@ vv?.addEventListener("resize", fitPal);
 vv?.addEventListener("scroll", fitPal);
 /* Opening a show from the results puts it in Recent; settings and commands don't count. */
 document.addEventListener("click", (e) => {
-  const m = e.target.closest?.("#sr .mi");
-  if (!m || S.menu !== "sr" || !S.q.trim()) return;
+  const m = e.target.closest?.("#sr .mi"), b = e.target.closest?.("[data-a]");
+  if (!m || S.menu !== "sr" || !S.q.trim() || (b !== m && b?.dataset.a !== "srplay")) return;
   const v = m.dataset.v, x = m.dataset.a === "catpick" ? S.alres?.[+v] : null, s = m.dataset.a === "open" ? showById(v) : null;
   if (s) srAdd({ k: "s:" + s.id });
   else if (x) srAdd({ k: "a:" + x.id, t: candLabel(x), p: x.coverImage?.extraLarge, b: x.bannerImage });
 }, true);
 try { localStorage.removeItem("srRecent"); } catch {} // the old list of typed words
+/* The scope chips keep the keyboard up: a tap doesn't take the focus from the field. */
+document.addEventListener("mousedown", (e) => { if (e.target.closest?.("#pal .srscope")) e.preventDefault(); });
 
 /* Settings on a phone (S5): a grouped list; a section opens as its own page. */
 function setSummary(k, s) {
@@ -5477,9 +5604,9 @@ function cvRestSoon() { clearTimeout(cvRestSoon.t); cvRestSoon.t = setTimeout(cv
   addEventListener("resize", cvRestSoon);
   cvRestSoon();
 }
-function paintCanvas() {
+function paintCanvas(art = canvasArt()) { // art: a back swipe brings the page before's in with the slide
   cvLook();
-  const art = canvasArt(), mode = lookGet("art");
+  const mode = lookGet("art");
   document.documentElement.classList.add("amb-now"); // page changes step the accent too: the CSS fade restyled everything each frame
   swapLayer("cv-blur", mode === "off" ? null : art?.blur);
   swapLayer("cv-art", mode === "full" ? art?.sharp : null);
@@ -5628,7 +5755,10 @@ function render(inPlace = false) {
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
   const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
-  if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion()); app.innerHTML = html; }
+  if (morph) morphHTML(app, html); else {
+    if (S.backGrab) { S.backGrab.append(...app.childNodes); S.backGrab = null; } // the page you leave, kept for a back swipe (backSave)
+    app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion()); app.innerHTML = html;
+  }
   S.navQuiet = false;
   /* What restyles the whole page (the accent on <html>, the page marks on
      <body>) goes on before anything below measures the new page: after it,
@@ -5680,7 +5810,7 @@ function dip(f) {
   if (reduceMotion()) return;
   a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter");
 }
-function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
+function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.srScope = null; S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
 /* Switching Home · Library · Journal · Calendar on a touch screen slides the page in
    from the side of the tab you went to (one transform on #app, no fill,
    so nothing stays transformed afterwards). */
@@ -5709,6 +5839,7 @@ function nav(view, fn, quiet) {
   if (TAB_AT[from] != null) tabScroll[from] = scrollY;
   const go = () => {
     const prev = S.view;
+    backSave();
     S.navIn = true; S.navQuiet = !!quiet; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
     if (view === "library" && !quiet) S.fadeNext = true;
     if (fn) fn(prev);
@@ -6688,10 +6819,13 @@ const A = {
      the tab before it (Elias, 2026-11-11). Other tabs just switch. */
   tab: (v) => {
     if (v === "PLAYLISTS" && S.lib.tab === v && plCurrent()) return A.plback(); // inside one: same as ‹ Playlists
+    /* On the overview, the side list's Playlists closes again (Elias, 2026-11-12:
+       "it should act as a back button"): back to the tab you came from. */
+    if (v === "PLAYLISTS" && S.lib.tab === v && isRail()) return history.state?.plTab ? history.back() : A.tab(plFrom && plFrom !== v ? plFrom : $(".lnav button[data-a=tab]:not([data-v=PLAYLISTS])")?.dataset.v || "ALL");
     const step = v === "PLAYLISTS" && S.lib.tab !== v && S.view === "library";
-    if (step) navKeep();
+    if (step) { navKeep(); plFrom = S.lib.tab; }
     S.lib.tab = v; if (v === "PLAYLISTS") S.lib.pl = null; saveLib(); S.fadeNext = true; render(true); // the side list stays put
-    if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();
+    if (step) history.pushState({ ...navSnap(), inApp: true, plTab: true }, "", navUrl()); else navKeep();
   },
   srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true); $$(".srev").forEach((b) => { b.classList.toggle("on", S.lib.rev); b.setAttribute("aria-pressed", S.lib.rev); }); },
   filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") { S.fadeNext = true; return render(); } paintWall(true); syncFilters(); },
@@ -7063,6 +7197,17 @@ const A = {
   srforget: (v) => { srForget(v); paintNav(); if (!touchSearch()) q.focus(); },
   srlist: (v) => { clearSearch(); q.blur(); S.lib.tab = v; saveLib(); nav("library"); },
   srgo: (v) => { clearSearch(); q.blur(); nav(v); },
+  /* The phone's search (TODO 238): play from the top hit, add an AniList hit to Planning, narrow to one kind. */
+  srplay: (v) => { A.srclose(); play(v); },
+  srplan: (v, t) => {
+    t.disabled = true;
+    entrySave(+v, { status: "PLANNING" }).then((r) => {
+      if (!r || r.error) throw 0;
+      (S.srAdded ||= new Set()).add(+v); buzz(); toast("Added to Planning");
+      paintSr(); refreshData();
+    }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
+  },
+  srscope: (v) => { S.srScope = v === "all" ? null : v; paintSr(); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
   /* A new section node, so every section opens with the same .settings entrance. */
   settab: (v) => { if (v !== S.setTab || S.setQ) $("#app .scol")?.remove(); setClear(); S.setTab = v; render(true); scrollTo(0, 0); },
@@ -7373,7 +7518,7 @@ const A = {
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
   /* Opening a playlist is a step back can undo (Elias: back quit the Library):
      it gets its own history entry, and ‹ Playlists goes back through it. */
-  plgo: (v) => { navKeep(); S.lib.pl = +v; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plin"); scrollTo(0, 0); history.pushState({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },
+  plgo: (v) => { navKeep(); const swap = !!plCurrent(); S.lib.pl = +v; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plin"); scrollTo(0, 0); history[swap ? "replaceState" : "pushState"]({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); }, // from one playlist to another (the side list): back still leads to the overview
   plback: () => {
     if (history.state?.plStep && history.state.pl === S.lib.pl) return history.back(); // the list we came from, scrolled where it was
     S.lib.pl = null; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plout"); navKeep();
@@ -7945,12 +8090,12 @@ function ovDrop(name) { const k = OV.findIndex((o) => o.name === name); if (k >=
 const PULL = [
   { sel: ".rview", scroller: (el) => el, close: () => A.rmtclose(), fade: () => ({ style: {} }) }, // stays solid, only shrinks
   { sel: "#deck .deck", scroller: () => ({ scrollTop: S.deck?.i ? 3 : 0 }), close: () => closeDeck() }, // deckPager moves a transform, not a scroll
-  { sel: "#pal .pbox", scroller: (el) => el.querySelector(".plist"), close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
+  { sel: "#pal .pbox", scroller: (el) => { const l = el.querySelector(".plist"); return l?.closest(".up") ? { scrollTop: l.scrollHeight - l.clientHeight + l.scrollTop } : l; }, close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
   { sel: ".fsheet .filters", scroller: (el) => el, close: () => A.fltclose() },
   { sel: "#modal .dialog", scroller: (el) => el.querySelector(".rcbody") || el, close: () => modalDismiss(), /* the connect dialog scrolls its rows, not itself */ when: () => isPhone() && S.modal && S.modal.t !== "tour" },
   { sel: "#cm", scroller: (el) => el, close: () => { cmHide(); ovClosed("cm"); }, when: () => isPhone() },
 ];
-const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srchips, .dgen, .gtray, .switch";
+const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srscope, .dgen, .gtray, .switch";
 /* Pull to refresh (Home, Library, Journal, the week): installed web apps
    get no browser pull-to-refresh, so the app draws its own — a circle that
    drops in with the pull, turns with it, and spins while the hub reloads. */
@@ -8028,11 +8173,18 @@ const pagerAt = () => PAGER.indexOf(S.view === "stats" ? "history" : S.view);
 const pagerNext = (dir) => PAGER[pagerAt() - dir] || null; // dir -1: finger moves left, the tab to the right
 const peeks = {};
 let pagerBusy = false, pagerGen = 0, peekIO = null;
+/* The pages a copy can be built of: the tabs, and the Settings list a
+   section's back swipe goes to. */
+const PEEK_PAGE = { home: () => Home(), library: () => Lib(), history: () => Hist(), week: () => Week(), setlist: () => Sett() };
+function peekAs(to, f) {
+  const was = S.view, wo = S.setOpen;
+  S.view = to === "setlist" ? "settings" : to;
+  if (to === "setlist") S.setOpen = false;
+  try { return f(); } finally { S.view = was; S.setOpen = wo; }
+}
 /* What a copy shows: its page, and for the Library the wall's first screenful. */
 function peekHTML(to) {
-  const was = S.view;
-  S.view = to;
-  try { return { home: Home, library: Lib, history: Hist, week: Week }[to]() + (to === "library" ? wallCards(libModel()).slice(0, 24).join("") : ""); } finally { S.view = was; }
+  return peekAs(to, () => PEEK_PAGE[to]() + (to === "library" ? wallCards(libModel()).slice(0, 24).join("") : ""));
 }
 /* The copy of a tab, up to date: rebuilt only when what it shows changed. */
 function peekFresh(to) {
@@ -8044,9 +8196,7 @@ function peekFresh(to) {
      collapses through #app, and the copy's box keeps it inside). */
   const bs = getComputedStyle(document.body), top = document.body.getBoundingClientRect().top + scrollY + parseFloat(bs.paddingTop);
   if (el._sig !== sig) {
-    const was = S.view;
-    S.view = to;
-    try { el.innerHTML = `<div class="pkpg">${{ home: Home, library: Lib, history: Hist, week: Week }[to]()}</div>`; } finally { S.view = was; }
+    el.innerHTML = `<div class="pkpg">${peekAs(to, PEEK_PAGE[to])}</div>`;
     if (to === "history") loadAlData(); // render() asks for it on the Journal; it lands in pagerStale
     const w = el.firstChild.querySelector("#wall");
     if (w) paintWall(false, w, true);
@@ -8085,15 +8235,22 @@ const pagerOn = () => isPhone() && mq("(pointer:coarse)") && pagerAt() >= 0;
 function pagerStale() {
   pagerGen++;
   clearTimeout(pagerStale.t);
-  const held = pull?.side && pull.kind === "tab";
+  const held = pull?.side && (pull.kind === "tab" || pull.bk);
   if (held || pagerBusy) return; // the swipe's end renders again
-  const near = pagerOn() ? [pagerNext(-1), pagerNext(1)].filter(Boolean) : [];
-  peekDrop(near);
-  if (!near.length) return;
   const gen = pagerGen;
+  let near = null, bk = null;
   const step = () => idle(() => {
     if (gen !== pagerGen) return;
     if (document.hidden || pull?.side || pagerBusy || S.menu || S.modal || /\b(rmt-open|deck-open)\b/.test(document.body.className)) { pagerStale.t = setTimeout(step, 1000); return; }
+    /* What's beside this page: the tabs either side, or on a page a back
+       swipe leaves, the page before. Worked out here, not at the render:
+       nav() only adds the page's history entry after it. */
+    if (!near) {
+      bk = pagerAt() < 0 ? backTarget() : null;
+      near = pagerOn() ? [pagerNext(-1), pagerNext(1)].filter(Boolean) : bk && PEEK_PAGE[bk.view] ? [bk.view] : [];
+      peekDrop(near); backDrop(bk);
+    }
+    if (bk && !PEEK_PAGE[bk.view]) { backPeek(bk); return; }
     const to = near.find((v) => peeks[v]?._gen !== gen);
     if (!to) return;
     peekFresh(to);
@@ -8101,7 +8258,7 @@ function pagerStale() {
   }, { timeout: 2500 });
   pagerStale.t = setTimeout(step, 700); // after the page's own settling (the Library wall fills at 380 ms)
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden && pagerOn()) pagerStale(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && isPhone()) pagerStale(); });
 /* The dock's highlight between the tab you're on and the one you swipe to. */
 function pagerInd(p, k) {
   const ind = $("#tabbar .ind"), a = p.indFrom, b = p.indTo;
@@ -8135,7 +8292,7 @@ function pagerMove(p, x) {
 }
 function pagerEnd(p, cancel) {
   const W = innerWidth, app = $("#app"), pk = p.pk, ind = $("#tabbar .ind"), d = p.d || 0, dir = p.dir || 1, to = p.peekFor;
-  const s = p.v || [], a = s[0], b = s[s.length - 1], v = a && b && b[0] > a[0] && performance.now() - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0; // px/ms, last ~90 ms
+  const v = pagerSpeed(p); // px/ms, last ~90 ms
   const fling = Math.abs(v) > 0.3;
   const go = !cancel && !!to && (fling ? Math.sign(v) === dir : Math.abs(d) > W * 0.35);
   const end = go ? dir * W : 0, rem = Math.abs(end - d);
@@ -8180,25 +8337,172 @@ function pagerEnd(p, cancel) {
        the finger is the real one. */
     app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = ".004"; app.style.transform = "";
     nav(to, null, true);
-    const y0 = scrollY;
-    let shown = false;
-    const show = () => {
-      if (shown) return;
-      shown = true;
-      removeEventListener("touchstart", show, true); removeEventListener("scroll", moved);
+    pagerReveal(() => {
       swEnd(app); // the dock's glass comes back with it
       app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";
       peekHide(pk);
       pagerBusy = false;
       pagerStale(); // the copies for where you are now
-    };
-    addEventListener("touchstart", show, { capture: true, passive: true });
-    const moved = () => Math.abs(scrollY - y0) > 2 && show(); // not the landing's own scroll to where the tab was
-    requestAnimationFrame(() => { addEventListener("scroll", moved, { passive: true }); requestAnimationFrame(() => setTimeout(show, PAGER_DRAW)); });
+    });
   }, dur + 10);
 }
-/* How long a landed tab waits under its copy after two frames, for the phone to draw it. */
+/* How long a landed page waits under its copy after two frames, for the phone to draw it. */
 const PAGER_DRAW = 140;
+/* A landed page waits under its copy until the phone has drawn it, then
+   show() takes the copy away; a touch or a scroll shows it at once, so the
+   page under the finger is the real one. */
+function pagerReveal(show) {
+  const y0 = scrollY;
+  let shown = false;
+  const once = () => {
+    if (shown) return;
+    shown = true;
+    removeEventListener("touchstart", once, true); removeEventListener("scroll", moved);
+    show();
+  };
+  addEventListener("touchstart", once, { capture: true, passive: true });
+  const moved = () => Math.abs(scrollY - y0) > 2 && once(); // not the landing's own scroll to where the page was
+  requestAnimationFrame(() => { addEventListener("scroll", moved, { passive: true }); requestAnimationFrame(() => setTimeout(once, PAGER_DRAW)); });
+}
+/* How fast the finger was going as it let go, px/ms over the last ~90 ms. */
+function pagerSpeed(p) {
+  const s = p.v || [], a = s[0], b = s[s.length - 1];
+  return a && b && b[0] > a[0] && performance.now() - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0;
+}
+/* ---------- the back swipe (Elias, 2026-11-13: "a bit laggy, feels weird
+   to use and is just a slow point in the phone version") ----------
+   Like the tab pager: the page you go back to is drawn beside this one (a
+   still copy) and both follow the finger one to one; letting go carries on
+   at the finger's speed, then the page is built for real under its copy,
+   with no entrance. Before, the page shrank toward 90 % with nothing behind
+   it but the backdrop and an arrow, slid off, and only then was the page
+   before built (a stall) and slid in again from the left.
+   The copy: a tab (Home · Library · Journal · Calendar) or the Settings list
+   is built like the pager's copies; a show, franchise or Settings page is
+   the page itself as you left it (its nodes, kept when nav() replaced them,
+   no rebuild). Kept per history entry (nid), the last few only. */
+const backs = new Map();
+/* Ids the CSS styles stay in a kept page; the rest go, so a lookup by id
+   never finds the copy instead of the page on screen. */
+const PK_IDS = new Set(["wall", "aboutx", "entryacts", "entrybox", "msst"]);
+let backEl = null, backLanding = null;
+function backSave() {
+  if (!isPhone() || !mq("(pointer:coarse)") || !S.data) return;
+  const v = S.view === "stats" ? "history" : S.view, b = document.body;
+  const rec = { view: v, sy: scrollY, art: canvasArt() || null, top: b.getBoundingClientRect().top + scrollY + parseFloat(getComputedStyle(b).paddingTop) };
+  if (!PEEK_PAGE[v]) {
+    rec.node = document.createElement("div"); rec.node.className = "pkpg";
+    rec.pbar = $("#portal .pbar")?.outerHTML || "";
+    S.backGrab = rec.node; // render() moves the page into it instead of throwing it away
+  }
+  backs.delete(curNid); backs.set(curNid, rec);
+  for (const k of backs.keys()) if (backs.size > 6) backs.delete(k);
+}
+/* Where a back swipe from here goes, when it can be shown: the page before,
+   or the Settings list from one of its sections. */
+const SETLIST = { view: "setlist", sy: 0, art: null };
+function backTarget() {
+  if (!isPhone() || !mq("(pointer:coarse)") || !["show", "fr", "settings"].includes(S.view)) return null;
+  const top = OV[OV.length - 1];
+  if (top) return top.name === "set" && S.view === "settings" && S.setOpen ? SETLIST : null;
+  return (curPnid && backs.get(curPnid)) || null;
+}
+function backPeek(rec) {
+  if (PEEK_PAGE[rec.view]) return peekFresh(rec.view);
+  let el = backEl;
+  if (!el) { el = backEl = document.createElement("div"); el.className = "tpeek"; el.setAttribute("aria-hidden", "true"); el.inert = true; $("#app").after(el); }
+  if (el._rec !== rec) {
+    for (const e of rec.node.querySelectorAll("[id]")) if (!PK_IDS.has(e.id)) e.removeAttribute("id");
+    el.replaceChildren(rec.node);
+    if (rec.pbar) el.insertAdjacentHTML("beforeend", rec.pbar);
+    rec.node.style.top = Math.round(rec.top - rec.sy) + "px";
+    el._rec = rec; el._sy = rec.sy;
+  }
+  return el;
+}
+function backDrop(keep) { if (backEl && backEl._rec !== keep) { backEl.replaceChildren(); backEl._rec = null; peekHide(backEl); } }
+function backLock(p) {
+  const app = $("#app"), ind = $("#tabbar .ind");
+  app.style.transition = "none"; swBegin(app);
+  if (ind) ind.style.transition = "none";
+  p.pb = $("#portal .pbar");
+  if (p.pb) p.pb.style.transition = "none";
+  p.indFrom = indOf(S.view === "show" || S.view === "fr" ? "library" : S.view); // the dock marks the Library on a show
+  p.indTo = PAGER.includes(p.bk.view) ? indOf(p.bk.view) : p.indFrom;
+  p.pk = backPeek(p.bk); p.v = [];
+}
+function backMove(p, x) {
+  const W = innerWidth, d = x - p.x0, now = performance.now();
+  p.v.push([now, x]); while (p.v.length > 2 && now - p.v[0][0] > 90) p.v.shift();
+  /* The other way: a give that tightens. */
+  const tx = d > 0 ? d : (d * 0.3) / (1 + Math.abs(d) / W * 2), k = Math.max(0, Math.min(d / W, 1));
+  p.d = tx;
+  swSet(() => {
+    const t = `translate3d(${tx.toFixed(1)}px,0,0)`;
+    $("#app").style.transform = t;
+    if (p.pb) p.pb.style.transform = t; // the show's Play bar goes with its page
+    p.pk.style.transform = `translate3d(${(tx - W).toFixed(1)}px,0,0)`; p.pk.style.opacity = "1";
+    pagerInd(p, k);
+  });
+}
+function backEnd(p, cancel) {
+  const W = innerWidth, app = $("#app"), pk = p.pk, pb = p.pb, ind = $("#tabbar .ind"), d = p.d || 0, rec = p.bk;
+  const v = pagerSpeed(p), fling = Math.abs(v) > 0.3;
+  const go = !cancel && d > 0 && (fling ? v > 0 : d > W * 0.35);
+  const end = go ? W : 0, rem = Math.abs(end - d);
+  const dur = Math.round(Math.max(120, Math.min(140 + rem * 0.45, fling && Math.sign(v) === Math.sign(end - d) ? (3.5 * rem) / Math.abs(v) : 1e9, 330)));
+  const ease = `transform ${dur}ms cubic-bezier(.22,.8,.3,1)`;
+  pagerBusy = true;
+  for (const e of [app, pb]) if (e) { e.style.transition = ease; e.style.transform = `translate3d(${end}px,0,0)`; }
+  pk.style.transition = ease; pk.style.transform = `translate3d(${end - W}px,0,0)`;
+  if (ind && p.indFrom) { ind.style.transition = `${ease}, width ${dur}ms cubic-bezier(.22,.8,.3,1)`; pagerInd(p, go ? 1 : 0); }
+  /* The backdrop, colour and body marks of the page before come with the
+     slide, a frame after it starts: they restyle the whole page, and in the
+     same frame they held the slide's start (67 ms at CPU ×4). */
+  if (go) requestAnimationFrame(() => {
+    const b = document.body;
+    if (PEEK_PAGE[rec.view]) peekAs(rec.view, () => ambient()); else ambient(rec.art);
+    pageMarks(pk.firstChild);
+    b.classList.toggle("sc", pk._sy > 8); b.classList.toggle("sc2", pk._sy > 84);
+  });
+  setTimeout(() => {
+    if (ind) ind.style.transition = "";
+    if (!go) {
+      swEnd(app);
+      for (const e of [app, pb]) if (e) { e.style.transition = "none"; e.style.transform = ""; getComputedStyle(e).transform; e.style.transition = ""; }
+      peekHide(pk);
+      pagerBusy = false;
+      return pagerStale();
+    }
+    /* As the tab pager: the page before is built unseen under its copy (popstate → backLand). */
+    app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = ".004"; app.style.transform = "";
+    $("#portal").style.opacity = ".004";
+    if (pb) { pb.style.transition = "none"; pb.style.transform = ""; }
+    backLanding = { pk, sy: pk._sy, pb };
+    backSwiped = "pager";
+    history.back();
+    setTimeout(() => backLanding && backLand(), 1000); // no popstate came: show what's there
+  }, dur + 10);
+}
+function backLand() {
+  const L = backLanding, app = $("#app");
+  backLanding = null;
+  if (!L) return;
+  calmIn(app);
+  /* Where the copy showed it. Again a frame later: after popstate the
+     browser puts back the scroll it noted for the entry (the top, noted
+     when the next page was pushed). */
+  scrollTo(0, L.sy);
+  requestAnimationFrame(() => { scrollTo(0, L.sy); pagerReveal(reveal); });
+  const reveal = () => {
+    swEnd(app);
+    app.style.opacity = ""; $("#portal").style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";
+    if (L.pb) L.pb.style.transition = "";
+    if (L.pk === backEl) backDrop(null); else peekHide(L.pk);
+    pagerBusy = false;
+    pagerStale();
+  };
+}
 document.addEventListener("touchstart", (e) => {
   pull = null;
   if (e.touches.length !== 1 || !mq("(pointer:coarse)") || pagerBusy) return;
@@ -8207,7 +8511,7 @@ document.addEventListener("touchstart", (e) => {
      episode row and Home's rails scroll (TODO 177); only an unmatched
      folder's episode list is still vertical on a phone. */
   const x = e.touches[0].clientX, y = e.touches[0].clientY;
-  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda, .crail")
+  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srscope, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda, .crail")
     && !(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")));
   if (L) {
     const el = t.closest(L.sel), sc = L.scroller(el);
@@ -8251,11 +8555,13 @@ document.addEventListener("touchmove", (e) => {
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         p.side = true; p.x0 = x;
         if (p.kind === "tab") pagerLock(p);
+        else if ((p.bk = backTarget())) backLock(p);
         else { $("#app").style.transition = "none"; $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
       } else return;
     }
     e.preventDefault();
     if (p.kind === "tab") { pagerMove(p, x); return; }
+    if (p.bk) { backMove(p, x); return; }
     const d = x - p.x0, tg = sideTarget(p, d), lim = innerWidth * 0.3;
     p.lx = x; p.ly = y; p.tg = tg;
     /* Nothing that way (first/last tab): only a little give. */
@@ -8294,13 +8600,14 @@ document.addEventListener("touchmove", (e) => {
   if (p.dy > 120 && !p.armed) { p.armed = true; buzz(); } else if (p.dy <= 120) p.armed = false;
 }, { passive: false });
 const unstyle = (...els) => { for (const el of els) if (el) { el.style.transform = el.style.opacity = el.style.transition = el.style.borderRadius = el.style.transformOrigin = ""; } };
-document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; if (pull?.side && pull.kind === "tab") { pagerEnd(pull, true); pull = null; return; } swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
+document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; if (pull?.side && pull.kind === "tab") { pagerEnd(pull, true); pull = null; return; } if (pull?.side && pull.bk) { backEnd(pull, true); pull = null; return; } swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
 document.addEventListener("touchend", () => {
   const p = pull;
   pull = null;
   if (!p) return;
   cancelAnimationFrame(swFrame); swFrame = 0; swWrite = null;
   if (p.kind === "tab" && p.side) return pagerEnd(p);
+  if (p.bk && p.side) return backEnd(p);
   if (p.side || p.live) swEnd(p.side ? $("#app") : p.el);
   if (p.kind === "ptr") { if ((p.dist || 0) >= 70) ptrRun(); else ptrHide(); return; }
   if (p.kind === "tab" || p.kind === "back") {
@@ -8366,26 +8673,32 @@ document.addEventListener("click", (e) => { if (Date.now() < lpUntil) { e.preven
 document.addEventListener("contextmenu", (e) => { if (mq("(pointer:coarse)") && !e.target.closest?.("input, textarea")) { e.preventDefault(); } }, true);
 /* Switches answer with a light tap (Android). */
 document.addEventListener("click", (e) => { if (e.target.closest?.(".switch") && mq("(pointer:coarse)")) buzz(); }, true);
-/* A back swipe lands on the page before with a slide in from the left. */
+/* A back swipe lands on the page before: "pager" under its copy (backEnd),
+   true (no copy of it) with a slide in from the left. */
 let backSwiped = false;
 /* A grab handle shows that a layer can be pulled down. */
 const grab = '<i class="grabber" aria-hidden="true"></i>';
 
 /* ---------- browser history (back/forward, mouse side buttons, #deep links) ---------- */
 let navSeeded = false;
-const navSnap = () => ({ view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY,
+/* Each page's history entry has an id (nid) and its page before's (pnid): a
+   back swipe finds the copy of the page it goes to by them (backs). */
+const nidNew = () => Math.random().toString(36).slice(2, 10);
+let curNid = nidNew(), curPnid = null;
+const navSnap = () => ({ nid: curNid, pnid: curPnid, view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY,
   lt: S.view === "library" ? S.lib.tab : undefined, pl: S.view === "library" && S.lib.tab === "PLAYLISTS" ? S.lib.pl ?? null : undefined });
 const navUrl = () => location.pathname + location.search + (S.view === "show" ? "#show=" + encodeURIComponent(S.showId) : S.view === "fr" ? "#f=" + S.fr.eid : VIEWS.includes(S.view) && S.view !== "home" ? "#" + S.view : "");
 /* The page as it is now, into its own history entry (keeps how it was reached). */
 const navKeep = () => history.replaceState({ ...history.state, ...navSnap() }, "", navUrl());
 function pushNav() {
+  curPnid = curNid; curNid = nidNew();
   const h = navSnap();
   /* Going somewhere from inside a layer (a result in search, Details in the
      deck): the new page takes the layer's history entry. */
   if (history.state?.ov) { OV.length = 0; history.replaceState(h, "", navUrl()); return; }
   if (navSeeded) history.pushState({ ...h, inApp: true }, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
 }
-function applyNav(h) {
+function applyNav(h, quiet) {
   frOpenTok++; // back/forward wins over a show page still waiting to open
   const stay = S.view === "library" && h.view === "library"; // a step inside the Library: the side list stays put (Elias)
   const wasPl = stay && !!plCurrent();
@@ -8395,19 +8708,23 @@ function applyNav(h) {
     if (h.pl && !(S.data.playlists || []).some((p) => p.id === h.pl)) h.pl = null; // deleted since
     S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true;
   }
-  clearSearch(); render(stay);
+  clearSearch(); S.navQuiet = !!quiet; render(stay);
   if (stay && wasPl !== !!plCurrent()) plSlide(wasPl ? "plout" : "plin");
   if (S.view === "fr") frLoad(h.fr);
   history.replaceState(h, "", navUrl());
   scrollTo(0, h.scroll || 0);
 }
 addEventListener("popstate", (e) => {
-  const swiped = backSwiped, app = $("#app");
+  const swiped = backSwiped, app = $("#app"), st = e.state || {};
   backSwiped = false;
-  if (ovSkip) { ovSkip--; if (swiped) unstyle(app, $("#portal")); return; } // a layer closed by hand took its own entry back
+  curNid = st.nid || nidNew(); curPnid = st.pnid || null;
+  if (ovSkip) { ovSkip--; if (swiped === "pager") backLand(); else if (swiped) unstyle(app, $("#portal")); return; } // a layer closed by hand took its own entry back
   const top = OV.pop();
+  if (top && swiped === "pager") { S.navQuiet = true; top.close(); S.navQuiet = false; return backLand(); } // a Settings section, back to the list
   if (top) { top.close(); if (swiped) unstyle(app, $("#portal")); return; } // back closes the top layer first
-  applyNav(e.state || {});
+  backs.delete(curNid); // on screen again: leaving it keeps it anew
+  applyNav(st, swiped === "pager");
+  if (swiped === "pager") return backLand();
   if (swiped) { unstyle(app, $("#portal")); app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add("tab-r"); }
 });
 history.replaceState(navSnap(), "", location.href);
