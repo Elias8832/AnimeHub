@@ -678,6 +678,7 @@ class NextAiringAt(unittest.TestCase):
         cache.parent.mkdir(parents=True, exist_ok=True)
         self.addCleanup(cache.unlink, missing_ok=True)
         with mock.patch.object(anilist, "load_anilist_username", return_value="u"), \
+             mock.patch.object(anilist, "service", return_value="anilist"), \
              mock.patch.object(anilist, "anilist_request", return_value=data):
             out = anilist.anilist_user_data(force=True)
         self.assertEqual(out["entries"][0]["next_episode"], {"number": 5, "in_seconds": 3600, "at": 1_800_000_000})

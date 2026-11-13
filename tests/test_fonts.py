@@ -53,7 +53,7 @@ class Storage(unittest.TestCase):
 
     def test_delete_and_no_path_walking(self):
         f = fonts.import_font("a.woff2", b64(WOFF2))
-        for bad in ("../hub.db", "..\\hub.db", ".hidden.ttf", "hub.db", None, 3):
+        for bad in ("../hub.db", "..\\hub.db", ".hidden.ttf", "hub.db", "D:x.ttf", None, 3):
             self.assertIsNone(fonts.font_path(bad))
             with self.assertRaises(fonts.FontError):
                 fonts.delete_font(bad)

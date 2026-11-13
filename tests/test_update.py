@@ -280,6 +280,13 @@ class Replacing(unittest.TestCase):
         self.assertEqual(update._job["state"], "failed")
         self.assertEqual(self.app.read_bytes(), b"old")
 
+    def test_an_unexpected_error_fails_instead_of_working_for_ever(self):
+        with mock.patch.object(update, "_fetch", side_effect=RuntimeError("odd")):
+            update._replace({"download": "x", "sha256": "0"}, self.app)
+        self.assertEqual((update._job["state"], update._job["error"]), ("failed", "The update failed, so nothing changed."))
+        self.assertEqual(self.app.read_bytes(), b"old")
+        self.assertEqual(self.left(), [self.app.name])
+
     def test_only_an_appimage_or_a_git_copy_can(self):
         settings.set_setting("update_found", json.dumps({"version": "99.0", "download": "x"}))
         with mock.patch.dict(os.environ), mock.patch.object(update, "REPO", self.app.parent):  # no .git there
@@ -545,6 +552,21 @@ class WindowsZip(unittest.TestCase):
         with mock.patch.object(update, "_move", move):
             self.assertIn("wouldn't let", self.swap(NEW)["error"])
         self.assertGreater(len(calls), 6)  # it had moved files before, and moved them back
+        self.assertUntouched()
+
+    def test_an_unexpected_error_puts_everything_back(self):
+        """Not one of the errors it names (zipfile can't unpack it, …): it
+        still fails, puts back what it moved and leaves no stage behind."""
+        real, calls = update._move, []
+
+        def move(src, dst):
+            calls.append(dst)
+            if len(calls) == 6:
+                raise NotImplementedError("odd")
+            return real(src, dst)
+        with mock.patch.object(update, "_move", move):
+            self.assertEqual(self.swap(NEW)["error"], "The update failed, so nothing changed.")
+        self.assertEqual(update._job["state"], "failed")
         self.assertUntouched()
 
     def test_who_can(self):

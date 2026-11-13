@@ -177,7 +177,7 @@ class Switch(unittest.TestCase):
         self.assertEqual((self.taken, handoff["start"], handoff["fullscreen"], handoff["old"]),
                          (slot, 118.4, True, self.proc))
         self.assertIn(["set_property", "pause", True], self.sent)
-        takeover.assert_called_once_with("stream:1:2", self.proc)
+        takeover.assert_called_once_with("stream:1:2", self.proc, {"proc": self.proc, "switch": "dub"})
         relist.assert_called_once_with(1)
 
     def test_near_the_start_it_starts_at_zero(self):

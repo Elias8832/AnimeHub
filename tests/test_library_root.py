@@ -95,6 +95,24 @@ class LibraryRootTests(unittest.TestCase):
                          {"port": 9000, "library_root": str(self.lib), "custom": [1]})
         self.assertFalse(self.cfg.with_name("config.json.tmp").exists())
 
+    def test_config_writes_at_once_keep_every_key(self):
+        # The PC and a phone saving at once: no key lost, no shared temp file failing.
+        keys = [f"k{i}" for i in range(16)]
+        errors = []
+
+        def write(k):
+            try:
+                settings.write_config_key(k, True)
+            except Exception as e:
+                errors.append(e)
+        threads = [threading.Thread(target=write, args=(k,)) for k in keys]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(json.loads(self.cfg.read_text(encoding="utf-8"))), sorted(keys))
+
     def test_set_root_refuses_to_overwrite_a_broken_config(self):
         self.cfg.parent.mkdir(parents=True)
         self.cfg.write_text("{ not json")

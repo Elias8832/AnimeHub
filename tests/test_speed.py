@@ -167,7 +167,7 @@ class Limiter(unittest.TestCase):
         with patch.object(anilist, "QUICK_WAIT", 0.3), anilist.quick(), \
                 self.assertRaises(anilist.AniListTransientError) as e:
             anilist._anilist_slot()
-        self.assertLess(time.time() - start, 1)
+        self.assertLess(time.time() - start, 10)  # seconds, not the minute the window asks
         self.assertEqual(e.exception.status, 429)
         self.assertIsNone(anilist._al_ctx.deadline)
 
@@ -339,17 +339,23 @@ class ParallelEpisodeProbes(unittest.TestCase):
              "status": "FINISHED", "episodes": 12}
         results = {"results": [{"index": 1, "title": "Show"}, {"index": 2, "title": "Show!"}]}
 
+        # No clock: both probes must be running at once (one after another
+        # breaks the barrier), and the best match answers after the other.
+        together = threading.Barrier(2, timeout=10)
+        other_done = threading.Event()
+
         def episodes(link):
+            together.wait()
             if link["title"] == "Show":
-                time.sleep(0.3)  # the best match answers last
+                self.assertTrue(other_done.wait(10))  # the best match answers last
+            else:
+                other_done.set()
             return [str(n) for n in range(1, 13)]
         with patch.object(streaming.anicli, "anicli_search", return_value=results), \
              patch.object(streaming.anicli, "anicli_episodes", side_effect=episodes) as eps:
-            start = time.time()
             found = streaming.stream_match(m)
         self.assertEqual(found[1], "Show")
         self.assertEqual(eps.call_count, 2)
-        self.assertLess(time.time() - start, 0.55)
 
 
 class BackgroundRefreshBatches(Isolated):

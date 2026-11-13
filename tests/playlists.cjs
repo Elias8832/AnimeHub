@@ -15,7 +15,7 @@ function context(mode, entries, shows, playlists = [], untracked = []) {
     S: { lib: { tab: "PLAYLISTS", pl: 1 }, data: { spine: { mode, entries, untracked }, playlists, shows, streams: [] } },
     aniMode: () => mode === "anilist", showById: show, allShows: () => shows,
     isPhone: () => !!context.phone,
-    entryCard: (e) => `entry:${e.id}`, showCard: (s) => `show:${s.id}`, FMT: { TV: "TV" },
+    entryCard: (e) => `entry:${e.id}`, showCard: (s) => `show:${s.id}`, FMT: { TV: "TV" }, fmtName: (f) => ({ TV: "TV" })[f] || f,
     LUCIDE: { "cloud-rain": "<path/>" }, lu: (n) => `<svg data-icon="${n}"></svg>`,
     esc: (x) => String(x), ico: (n) => `[${n}]`, poster: (t, u) => `<img alt="${t}" src="${u}">`,
     hl: (t, q) => String(t).replace(new RegExp(q, "i"), (m) => `<mark>${m}</mark>`),

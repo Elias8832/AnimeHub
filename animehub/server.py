@@ -6,7 +6,9 @@ import hashlib
 import hmac
 import html
 import json
+import math
 import mimetypes
+import traceback
 import os
 import re
 import subprocess
@@ -38,6 +40,14 @@ def open_show_folder(show_id):
     if not path.is_dir() or not any(path.is_relative_to(r.resolve()) for _, r in library.roots()):
         raise ValueError("folder not found")
     system.open_external(path)
+
+
+def file_name(route):
+    """The file a picture or font address names: its last part only (no
+    path walking), or None. Never one with ":": on Windows "D:x" joined to
+    a folder is a file on drive D: (Decision 41)."""
+    name = os.path.basename(route)
+    return name if name and ":" not in name else None
 
 
 def open_in_browser(url):
@@ -175,6 +185,12 @@ MANIFEST = {"id": "/", "name": "Anime Hub", "short_name": "Anime Hub", "start_ur
                       {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]}
 
 
+def _no_constant(name):
+    """NaN and Infinity aren't JSON: a stored Infinity came back out as
+    `Infinity`, which the page's JSON.parse refuses (the whole library)."""
+    raise ValueError(f"{name} is not a number JSON allows")
+
+
 # Changes the Android app hands to its PC soon after (Decision 91).
 SYNC_SOON = ("/api/watched", "/api/bulk-watched", "/api/entry-watched", "/api/playlists", "/api/entry", "/api/reset")
 
@@ -189,9 +205,34 @@ class Handler(BaseHTTPRequestHandler):
     # as before, so one without a Content-Length (a relayed stream) ends.
     protocol_version = "HTTP/1.1"
 
+    # Whether this request's answer has begun (see _guarded).
+    _answered = False
+
+    def send_response(self, code, message=None):
+        self._answered = True
+        super().send_response(code, message)
+
     def end_headers(self):
         self.send_header("Connection", "close")
         super().end_headers()
+
+    def _guarded(self, handle):
+        """One request, never without an answer: an unexpected error is a
+        logged 500, not a dropped connection the page reads as "the hub
+        isn't running"."""
+        try:
+            handle()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the browser left
+        except Exception as e:
+            util.log("%s %s failed: %r" % (self.command, urlparse(self.path).path, e))
+            traceback.print_exc()
+            if not self._answered:
+                try:
+                    self.send_json({"error": "Something went wrong in the hub: %s" % e}, 500)
+                except OSError:
+                    pass
+            self.close_connection = True
 
     def log_message(self, fmt, *args):
         pass
@@ -412,16 +453,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(502)
             return
         if kind == "playlist":
-            self.send_file_body(got.encode(), "application/vnd.apple.mpegurl")
+            self.send_file_body(got.encode(), "application/vnd.apple.mpegurl", nosniff=True)
             return
         if kind == "bytes":
-            self.send_file_body(got, "application/octet-stream")
+            self.send_file_body(got, "application/octet-stream", nosniff=True)
             return
         with got:
             self.send_response(got.status)
             for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
                 if got.headers.get(h):
                     self.send_header(h, got.headers[h])
+            # The site's Content-Type rides on the hub's own address: never
+            # let a browser read a piece as a page of the hub.
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             try:
@@ -459,10 +503,12 @@ class Handler(BaseHTTPRequestHandler):
         if fresh:
             self.wfile.write(body)
 
-    def send_file_body(self, body, ctype, cache=False, etag=None):
+    def send_file_body(self, body, ctype, cache=False, etag=None, nosniff=False):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if nosniff:
+            self.send_header("X-Content-Type-Options", "nosniff")
         if etag:
             self.send_header("ETag", etag)
         if cache:
@@ -473,9 +519,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        self._guarded(self._get)
+
+    def _get(self):
         if not self.check_local():
             return
-        route = urlparse(self.path).path
+        url = urlparse(self.path)
+        route, qs = url.path, parse_qs(url.query)
         if route == "/api/library":
             self.send_json(library.full_library(), etag=True)
         elif route == "/api/anilist":
@@ -492,7 +542,6 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 self.send_json({"error": anilist.friendly_error(e)}, 502)
         elif route == "/api/entry":
-            qs = parse_qs(urlparse(self.path).query)
             try:
                 mid = int(qs.get("id", ["0"])[0])
             except ValueError:
@@ -513,7 +562,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/journal":
             # Additive (Elias, 2026-10-24): the Journal from your AniList activity.
             try:
-                since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+                since = int(qs.get("since", ["0"])[0])
             except ValueError:
                 self._bad("'since' must be an integer (unix seconds)")
                 return
@@ -537,7 +586,6 @@ class Handler(BaseHTTPRequestHandler):
                             "fonts": fonts.all_fonts()})  # additive (TODO 122)
         elif route == "/api/browse":
             # Decision 32: the library folder picker walks one level at a time.
-            qs = parse_qs(urlparse(self.path).query)
             try:
                 self.send_json(settings.browse_dirs(qs.get("path", [""])[0]))
             except ValueError as e:
@@ -547,7 +595,6 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/auth/mal/callback":
             # Decision 75: MyAnimeList sends the browser back here with a
             # one-time code; the hub trades it for the login itself.
-            qs = parse_qs(urlparse(self.path).query)
             if qs.get("error"):
                 r = {"error": "MyAnimeList said no (%s) — start again from the app." % qs["error"][0][:60]}
             else:
@@ -643,7 +690,7 @@ class Handler(BaseHTTPRequestHandler):
             # The franchise page holding an entry (phase 4): every season,
             # movie and special, local and online episodes as one list.
             try:
-                mid = int(parse_qs(urlparse(self.path).query).get("id", ["0"])[0])
+                mid = int(qs.get("id", ["0"])[0])
             except ValueError:
                 mid = 0
             if mid <= 0:
@@ -651,12 +698,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 # peek (additive, TODO 61): the page as stored, starting no
                 # background work — a card's hover prefetch.
-                peek = parse_qs(urlparse(self.path).query).get("peek", ["0"])[0] == "1"
+                peek = qs.get("peek", ["0"])[0] == "1"
                 self.send_json(pages.franchise_view(mid, peek=peek))
         elif route == "/api/recap":
             # Additive (TODO 133, Decision 85): before the first episode of a
             # season, whether to remind of the season before, and with what.
-            ep = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            ep = qs.get("id", [""])[0]
             if not ep:
                 self._bad("'id' must be an episode id")
             else:
@@ -665,7 +712,7 @@ class Handler(BaseHTTPRequestHandler):
             # The show page's About extras (TODO 172): genres, tags,
             # characters. Public AniList data, no login needed.
             try:
-                mid = int(parse_qs(urlparse(self.path).query).get("id", ["0"])[0])
+                mid = int(qs.get("id", ["0"])[0])
             except ValueError:
                 mid = 0
             if mid <= 0:
@@ -681,28 +728,28 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "AniList has no such entry"}, 404)
             else:
                 self.send_json(about)
+        elif route.startswith(("/img/", "/epimgs/", "/icons/", "/fonts/")) and not file_name(route):
+            self.send_error(404)  # a Windows drive name (Decision 41)
         elif route.startswith("/img/"):
-            self.send_art(config.POSTERS / os.path.basename(route))
+            self.send_art(config.POSTERS / file_name(route))
         elif route.startswith("/alpic/"):
             self.send_alpic(route[len("/alpic/"):])
         elif route == "/api/phone/video":
             # The phone player's file (Decision 71): by episode id, never a path.
-            q = parse_qs(urlparse(self.path).query)
             try:
-                version = int((q.get("v") or ["0"])[0])
+                version = int((qs.get("v") or ["0"])[0])
             except ValueError:
                 version = 0
-            hit = phoneplay.file_of((q.get("id") or [""])[0], version)
+            hit = phoneplay.file_of((qs.get("id") or [""])[0], version)
             if hit:
                 self.send_video(hit[0])
             else:
                 self.send_error(404)
         elif route == "/api/phone/filesub":
             # A subtitle file beside the phone player's file, as WebVTT (by episode id, never a path).
-            q = parse_qs(urlparse(self.path).query)
             try:
-                text = phoneplay.file_subtitle((q.get("id") or [""])[0], int((q.get("v") or ["0"])[0]),
-                                               int((q.get("n") or ["0"])[0]))
+                text = phoneplay.file_subtitle((qs.get("id") or [""])[0], int((qs.get("v") or ["0"])[0]),
+                                               int((qs.get("n") or ["0"])[0]))
             except ValueError:
                 text = None
             except OSError as e:
@@ -714,7 +761,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file_body(text.encode(), "text/vtt; charset=utf-8")
         elif route.startswith("/api/phone/relay/"):
             # An online episode for the phone, through the PC (Decision 71).
-            u = (parse_qs(urlparse(self.path).query).get("u") or [""])[0]
+            u = (qs.get("u") or [""])[0]
             self.send_relay(route.rsplit("/", 1)[1], u)
         elif route.startswith("/api/phone/sub/"):
             parts = route.split("/")
@@ -733,7 +780,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file(WEB / "vendor" / "hls.light.min.js", "text/javascript; charset=utf-8", cache=True)
         elif route == "/api/phone/episodes":
             # The phone player's Episodes list: the same list as mpv's (player.episode_menu).
-            ep = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+            ep = (qs.get("id") or [""])[0]
             try:
                 eps = player.episode_menu(ep) if ep else []
             except Exception as e:
@@ -741,21 +788,22 @@ class Handler(BaseHTTPRequestHandler):
                 eps = []
             self.send_json({"episodes": eps})
         elif route == "/api/phone/skips":
-            q = parse_qs(urlparse(self.path).query)
             try:
-                dur = float((q.get("d") or ["0"])[0])
-                version = int((q.get("v") or ["0"])[0])
+                dur = float((qs.get("d") or ["0"])[0])
+                version = int((qs.get("v") or ["0"])[0])
+                if not math.isfinite(dur):
+                    raise ValueError(dur)
             except ValueError:
                 self._bad("'d' must be a number and 'v' an integer")
                 return
             try:
-                segs = phoneplay.segments((q.get("id") or [""])[0], dur, version)
+                segs = phoneplay.segments((qs.get("id") or [""])[0], dur, version)
             except Exception as e:
                 util.log("phone skips: %s" % e)
                 segs = []
             self.send_json({"segments": segs})
         elif route.startswith("/epimg/"):
-            self.send_file(config.EPIMGS / os.path.basename(route), "image/jpeg", cache=True)
+            self.send_file(config.EPIMGS / file_name(route), "image/jpeg", cache=True)
         elif route == "/api/remote":
             self.send_json(remote.payload())
         elif route == "/api/sync/facts":
@@ -770,7 +818,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file(WEB / "icon.svg", "image/svg+xml", cache=True)
         elif route.startswith("/icons/") and route.endswith(".svg"):
             # One app icon per accent colour (TODO 139). Basename only, as for fonts.
-            self.send_file(WEB / "icons" / os.path.basename(route), "image/svg+xml", cache=True)
+            self.send_file(WEB / "icons" / file_name(route), "image/svg+xml", cache=True)
         elif route == "/sw.js":
             # Lets phones install the app (Decision 44); never cached, so an
             # update reaches the phone on its next visit.
@@ -803,7 +851,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route.startswith("/fonts/") and route.endswith(".woff2"):
             # TODO 60 (Decision 38): the UI fonts ship with the app, so it
             # looks the same offline. Basename only — no path walking.
-            self.send_file(WEB / "fonts" / os.path.basename(route), "font/woff2", cache=True)
+            self.send_file(WEB / "fonts" / file_name(route), "font/woff2", cache=True)
         else:
             self.send_error(404)
 
@@ -819,6 +867,9 @@ class Handler(BaseHTTPRequestHandler):
             self.rfile.read(length)
 
     def do_POST(self):
+        self._guarded(self._do_post)
+
+    def _do_post(self):
         if not self.check_local():
             self._drain()
             return
@@ -845,8 +896,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "request body too large"}, 413)
             return
         try:
-            body = json.loads(self.rfile.read(length) or b"{}")
-        except json.JSONDecodeError as e:
+            body = json.loads(self.rfile.read(length) or b"{}", parse_constant=_no_constant)
+        except ValueError as e:  # JSONDecodeError, or NaN/Infinity
             # Structured 400 (TODO 22): malformed JSON used to become an
             # empty body, whose empty episode id was written into the DB.
             self.send_json({"error": f"invalid JSON body: {e}"}, 400)
@@ -975,7 +1026,7 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     player.answer_aniskip(body["id"], aniskip_ok)
                 at, switch = body.get("at"), body.get("switch", False)  # additive: a Sub/Dub switch
-                if at is not None and (isinstance(at, bool) or not isinstance(at, (int, float)) or at < 0):
+                if at is not None and (isinstance(at, bool) or not isinstance(at, (int, float)) or not 0 <= at < math.inf):
                     self._bad("'at' must be a number ≥ 0")
                     return
                 if not isinstance(switch, bool):
@@ -988,7 +1039,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(r, 404 if r.get("error") else 200)
         elif route == "/api/phone/progress":
             ep, pos, dur = body.get("id"), body.get("position"), body.get("duration")
-            nums = all(isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 0 for x in (pos, dur))
+            nums = all(isinstance(x, (int, float)) and not isinstance(x, bool) and 0 <= x < math.inf for x in (pos, dur))
             flags = all(isinstance(body.get(k, False), bool) for k in ("ended", "stop"))
             if not isinstance(ep, str) or not ep or not nums or not flags:
                 self._bad("needs 'id', 'position' and 'duration' (numbers ≥ 0); 'ended' and 'stop' are booleans")
@@ -1408,10 +1459,18 @@ class Handler(BaseHTTPRequestHandler):
         library.curation_set(ref, cpatch)
         fav_result = None
         if anilist.account_present():
+            # Read before the call: an auth failure clears the token, and
+            # the queued row must keep this account (Decision 24).
+            account = anilist.account_id()
             try:
                 if patch or fav is not None:
                     result = anilist.anilist_entry_save(body["media_id"], patch) \
                         if patch else anilist.anilist_entry_state(body["media_id"])
+                    if patch and result and not result.get("error"):
+                        # The newest word on these fields: older queued
+                        # rows must not send theirs over it later.
+                        saved = (result.get("entry") or {}).get("progress")
+                        sync.outbox_trim_saved(body["media_id"], patch, account, saved)
                     if fav is not None and not result.get("error"):
                         fav_result = anilist.anilist_favourite_set(body["media_id"], fav)
                         if fav_result and fav_result.get("error"):
@@ -1419,6 +1478,7 @@ class Handler(BaseHTTPRequestHandler):
                             return
                         if fav_result:
                             result = fav_result
+                            sync.outbox_trim_saved(body["media_id"], {"favourite"}, account)
                     if result and not result.get("error"):
                         cpatch2 = {}
                         ent = result.get("entry") or {}
@@ -1443,14 +1503,16 @@ class Handler(BaseHTTPRequestHandler):
             except anilist.AniListAuthError as e:
                 # Dormant outbox (Decision 24): the intent is kept,
                 # held until a valid token exists again.
-                sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav)
+                sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav,
+                                    account=account)
                 self.send_json({"error": e.reason, "auth": True,
                                 "queued": True}, 401)
                 return
             except anilist.AniListTransientError as e:
                 # Offline / AniList down (TODO 14, Decision 3): the
                 # local change is already committed; the intent waits.
-                sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav)
+                sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav,
+                                    account=account)
                 cur = library.curation_get(ref) or {}
                 self.send_json({"queued": True, "local": True,
                                 "entry": cur, "reason": anilist.friendly_error(e)})
@@ -1583,6 +1645,11 @@ class RemoteHandler(Handler):
     phone uses the PC's address), but every request needs a paired phone's
     cookie except the pairing page; a phone can't use remote.BLOCKED."""
 
+    # Any device on the Wi-Fi reaches this door: a connection that sends
+    # nothing (or half a body) lets its thread go after a minute instead of
+    # holding it for good. A paused video's piece just ends; the player asks again.
+    timeout = 60
+
     def check_local(self):
         route = urlparse(self.path).path
         self.remote_device = remote.device_of(self.headers.get("Cookie"))
@@ -1616,7 +1683,7 @@ class RemoteHandler(Handler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self):
+    def _get(self):
         url = urlparse(self.path)
         if url.path == "/pair":
             code = (parse_qs(url.query).get("c") or [""])[0]
@@ -1626,11 +1693,11 @@ class RemoteHandler(Handler):
             else:
                 self.pair_page("This code has run out. Show a new one on the PC." if code else "")
             return
-        super().do_GET()
+        super()._get()
 
-    def do_POST(self):
+    def _do_post(self):
         if urlparse(self.path).path != "/api/remote/pair":
-            return super().do_POST()
+            return super()._do_post()
         ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         try:
             length = int(self.headers.get("Content-Length", 0))

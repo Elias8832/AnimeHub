@@ -57,6 +57,42 @@ class Reads(unittest.TestCase):
         self.assertEqual([x["id"] for x in out["items"]], [5])  # since filters
         self.assertIn("7", out["media"])
 
+    def test_older_pages_keep_activities_of_the_oldest_ones_second(self):
+        """createdAt_lesser is strict: asking for what came before the oldest
+        held one's second skipped its neighbours in that second."""
+        log = {"user": "me", "uid": 1, "items": [], "media": {}, "complete": False, "ts": 0}
+        journal.merge_page(log, [act(9, 900), act(8, 500)])
+        journal._write(log)
+        held = [act(9, 900), act(8, 500), act(7, 500), act(6, 400)]  # 7 shares 8's second
+
+        def page(uid, page=1, before=None):
+            if before is None:
+                return [act(9, 900)], True  # nothing new on top
+            return [a for a in held if a["createdAt"] < before], False
+        with mock.patch.object(journal, "_page", side_effect=page):
+            journal.refresh("me")
+        log = journal._read()
+        self.assertEqual([x["id"] for x in log["items"]], [9, 8, 7, 6])  # held ones not twice
+        self.assertTrue(log["complete"])
+
+    def test_a_page_of_only_held_ones_moves_on(self):
+        log = {"user": "me", "uid": 1, "items": [], "media": {}, "complete": False, "ts": 0}
+        journal.merge_page(log, [act(9, 900), act(8, 500)])
+        journal._write(log)
+        asked = []
+
+        def page(uid, page=1, before=None):
+            asked.append(before)
+            if before is None:
+                return [act(9, 900)], True
+            if before == 501:
+                return [act(8, 500)], True  # a full page of that second, all held
+            return [act(5, 300)], False
+        with mock.patch.object(journal, "_page", side_effect=page):
+            journal.refresh("me")
+        self.assertEqual(asked, [None, 501, 500])
+        self.assertEqual([x["id"] for x in journal._read()["items"]], [9, 8, 5])
+
     def test_fresh_copy_starts_nothing(self):
         journal._write({"user": "me", "uid": 1, "items": [], "media": {}, "complete": True, "ts": time.time()})
         with mock.patch.object(journal.anilist, "load_anilist_username", return_value="me"), \

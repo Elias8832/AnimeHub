@@ -435,10 +435,6 @@ class PhoneRound4(unittest.TestCase):
         self.assertIn(".sp2.rv .eps.strip{flex-direction:row", CSS.replace(".sp2.frpage .eps.strip,", ""))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PlayOnTheOtherSide(unittest.TestCase):
     """Elias, 2026-11-10: a long-press on an episode also offers the place the
     phone's Play button doesn't use (Decision 71). Checked live with
@@ -598,3 +594,7 @@ class BackPager(unittest.TestCase):
         self.assertIn("calmIn(app);", land)
         # where the copy showed it, again after the browser's own scroll restore
         self.assertIn("requestAnimationFrame(() => { scrollTo(0, L.sy); pagerReveal(reveal); });", land)
+
+
+if __name__ == "__main__":
+    unittest.main()

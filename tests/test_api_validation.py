@@ -197,6 +197,34 @@ class ApiValidationTests(unittest.TestCase):
         self.assertEqual(self.get("/fonts/OFL-hankengrotesk.txt")[0], 404)
         self.assertEqual(self.get("/fonts/../app.js")[0], 404)
         self.assertEqual(self.get("/fonts/%2e%2e%2fapp.woff2")[0], 404)
+        # On Windows "D:x" joined to a folder is a file on drive D: (Decision 41).
+        self.assertEqual(self.get("/fonts/D:x.woff2")[0], 404)
+        self.assertEqual(self.get("/img/D:x.jpg")[0], 404)
+        self.assertIsNone(server.file_name("/img/D:x.jpg"))
+        self.assertEqual(server.file_name("/img/a.jpg"), "a.jpg")
+
+    def test_nan_and_infinity_are_not_json(self):
+        # A stored Infinity came back out as `Infinity`, which JSON.parse refuses.
+        for raw in (b'{"id":"x","position":Infinity,"duration":10}', b'{"id":"x","position":NaN,"duration":10}'):
+            self.assertEqual(self.post("/api/phone/progress", raw)[0], 400)
+        self.assertEqual(self.post("/api/phone/progress", b'{"id":"x","position":1e999,"duration":10}')[0], 400)
+        self.assertEqual(self.post("/api/phone/play", b'{"id":"x","at":1e999}')[0], 400)
+        self.assertEqual(self.get("/api/phone/skips?id=x&d=inf")[0], 400)
+        self.assertEqual(self.episode_rows(), [])
+
+    def test_an_unexpected_error_still_answers(self):
+        with patch.object(server.library, "full_library", side_effect=RuntimeError("boom")), \
+                patch("traceback.print_exc"), patch.object(server.util, "log"):
+            status, ctype, _ = self.get("/api/library")
+        self.assertEqual((status, ctype), (500, None))  # get() hides an error's body
+        with patch.object(server.player, "start_play", side_effect=RuntimeError("boom")), \
+                patch("traceback.print_exc"), patch.object(server.util, "log"):
+            status, payload = self.post("/api/play", b'{"id":"x"}')
+        self.assertEqual(status, 500)
+        self.assertIn("boom", payload["error"])
+
+    def test_the_phone_door_lets_idle_connections_go(self):
+        self.assertEqual(server.RemoteHandler.timeout, 60)
 
 
 if __name__ == "__main__":

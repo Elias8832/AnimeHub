@@ -326,12 +326,6 @@ def next_up(ep_id):
     return end
 
 
-def next_episode(ep_id):
-    """The episode id to play after ep_id (next_up), None at the end or
-    when the next episode can't play."""
-    return next_up(ep_id)["id"]
-
-
 # Next-episode prompt (TODO 10, Decision 2): when a file finishes and the
 # next episode is online only, autoplay waits — the hub asks (with the VPN
 # state) instead of silently fetching through ani-cli. Answered by playing
@@ -399,7 +393,8 @@ def episode_menu(ep_id):
                     for x in e["slots"] if x["id"] and (x["local"] or (x["online"] and e["online"]["available"]))]
     s, ep = library.episode_by_id(ep_id)
     sea = next((x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"])), None) if ep else None
-    return [{"id": x["id"], "number": x["number"], "title": None, "watched": False, "online": False, "thumb": None}
+    return [{"id": x["id"], "number": x["number"], "title": None, "watched": bool(x.get("watched")),
+             "online": False, "thumb": None}
             for x in sorted(sea["episodes"], key=lambda x: x["number"])] if sea else []
 
 
@@ -485,7 +480,11 @@ def _chain_to(ep_id, nxt, version):
             _next_prompt.update(id=nxt["id"], label=nxt.get("label"), show=nxt.get("show"),
                                 kind="aniskip", ts=time.time())
         else:
-            start_play(nxt["id"], version)
+            # Nobody clicked, so nobody sees start_play's answer: a failure
+            # (file gone, ani-cli or AniList unreachable) goes to /api/now.
+            r = start_play(nxt["id"], version)
+            if isinstance(r, dict) and r.get("error"):
+                _record_session_error(nxt["id"], r["error"])
 
 
 def autoplay_next(ep_id, version=0):
@@ -507,6 +506,17 @@ def _owns_session(ep_id, proc):
     generation guard every watcher effect goes through (TODO 24)."""
     with _active_lock:
         return _active.get(ep_id, {}).get("proc") is proc
+
+
+def _session_state(ep_id, proc):
+    """"own" (the registered session), "handoff" (its Sub/Dub switch is
+    pending: it waits, without effects, to be ended or given its session
+    back — _await_takeover) or "gone". One look under the lock, so a
+    restore can't fall between the two questions."""
+    with _active_lock:
+        if _active.get(ep_id, {}).get("proc") is proc:
+            return "own"
+        return "handoff" if getattr(proc, "hub_handoff", False) is True else "gone"
 
 
 def _record_session_error(ep_id, msg):
@@ -599,7 +609,36 @@ PREPARE_AT = 0.8
 def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     """Track one playback session over mpv's IPC socket. `startup` bounds
     the wait for the socket; `failure(rc)` words a session that ended
-    before playback (stream sessions report ani-cli's own error)."""
+    before playback (stream sessions report ani-cli's own error).
+    Whatever goes wrong in here (a database error, a bug), the session
+    never outlives its player: a ghost entry in _active would read as
+    "playing" for good, and stop autoplay, preparing and the upscaler."""
+    try:
+        _watch(proc, ep_id, sock_path, startup, failure)
+    except Exception as exc:
+        util.log("playback watcher for %s stopped: %s" % (ep_id, exc))
+        try:
+            proc.wait()  # the player is still the user's until it ends
+        except Exception:
+            pass
+    finally:
+        anicli.anicli_release(proc)
+        with _active_lock:
+            if _active.get(ep_id, {}).get("proc") is proc:
+                _active.pop(ep_id, None)
+        _remove_ipc_files(sock_path)
+
+
+def _remove_ipc_files(sock_path):
+    try:
+        system.ipc_remove(sock_path)
+        system.ipc_marker(sock_path).unlink(missing_ok=True)
+        system.ipc_go(sock_path).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _watch(proc, ep_id, sock_path, startup, failure):
     last_time = 0.0
     duration = 0.0
     # No position write until mpv has reported one: a stream (or a slow
@@ -648,6 +687,12 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                                            f"(exit code {rc}). See mpv-stderr.log in the data dir.")
         if msg:
             _record_session_error(ep_id, msg)
+    elif (not connected and proc.poll() is None and not getattr(proc, "hub_retired", False)
+          and _owns_session(ep_id, proc)):
+        # Still no socket after `startup` seconds (ani-cli still looking,
+        # mpv stuck): it is ended below; say so instead of going quiet.
+        anicli.stop_process_group(proc, system.SIGKILL)
+        _record_session_error(ep_id, f"The episode didn't start within {startup} s — try again.")
     if connected:
         missed = 0  # polls in a row mpv didn't answer: one is no reason to end the session
         while proc.poll() is None:
@@ -663,7 +708,17 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
                 # Generation guard (TODO 24): a retired watcher must not write
                 # the DB or the replacement's percentage — check ownership
                 # immediately before every effect, not only at cleanup.
-                if not _owns_session(ep_id, proc):
+                state = _session_state(ep_id, proc)
+                if state == "handoff":
+                    # The other language is loading: this player stays,
+                    # paused, until it plays (then this one ends) or fails
+                    # (then this session is this player's again).
+                    try:
+                        proc.wait(timeout=0.5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
+                if state != "own":
                     break
                 if not seen:
                     try:
@@ -744,6 +799,15 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
     # at all (the old bug: a retired watcher marked the episode watched at
     # its own 80 % and overwrote the new session's position).
     retired = rc == -signal.SIGTERM or getattr(proc, "hub_retired", False)
+    if connected and not seen and not retired and rc not in (0, 4) and _owns_session(ep_id, proc):
+        # mpv opened its socket, then failed before playing (a bad file, a
+        # stream link that died): the same explanation, or the stream's
+        # retry, as when it died before the socket. Exit 0 is the user
+        # quitting while it loaded; 4 is mpv quitting on a signal.
+        msg = failure(rc) if failure else (f"mpv exited before playback started "
+                                           f"(exit code {rc}). See mpv-stderr.log in the data dir.")
+        if msg:
+            _record_session_error(ep_id, msg)
     # "Done with this episode": the last position we saw was within ~3s of
     # the end (the poll runs every 2s, so a natural EOF — or a seek to the
     # end — always qualifies), or the skip-credits marker (hotkey quit).
@@ -776,13 +840,7 @@ def watch_process(proc, ep_id, sock_path, startup=15, failure=None):
             print(f"Episode pick: {e}", file=sys.stderr, flush=True)
     elif autoplay:
         autoplay_next(ep_id, version)
-    try:
-        system.ipc_remove(sock_path)
-        marker.unlink(missing_ok=True)
-        system.ipc_go(sock_path).unlink(missing_ok=True)
-    except OSError:
-        pass
-
+    _remove_ipc_files(sock_path)
 
 
 def save_position(ep_id, position, duration):
@@ -1040,6 +1098,10 @@ def _switch(ep_id, proc, sock, want):
             return
         start = max(0.0, live["time-pos"] - SWITCH_REWIND)
         handoff = {"slot": slot, "start": start, "fullscreen": live["fullscreen"] is True, "old": proc}
+        with _active_lock:  # what this player gets back if the other language fails
+            saved = dict(_active.get(ep_id) or {})
+        if saved.get("proc") is not proc:
+            return
         mpv_ipc(sock, ["set_property", "pause", True])
         slot = None  # start_stream owns it now
         if online:
@@ -1054,8 +1116,14 @@ def _switch(ep_id, proc, sock, want):
                 mpv_ipc(sock, ["set_property", "pause", False])
             _tell_switch(sock, "failed", r["error"])
             return
-        _await_takeover(ep_id, proc)
-        if online:
+        if _await_takeover(ep_id, proc, saved) == "kept":
+            # The other language ended or never played: this one plays on.
+            kept = SWITCH_WORDS["sub" if want == "dub" else "dub"]
+            text = f"Couldn't switch to the {words} — kept the {kept} playing."
+            mpv_ipc(sock, ["set_property", "pause", False])
+            _tell_switch(sock, "failed", text)
+            streaming._session_notice.update(msg=text, ts=time.time())
+        elif online:
             streaming.relist(streaming.stream_media_id(ep_id))
     except Exception as exc:
         util.log("sub/dub switch failed: %s" % exc)
@@ -1069,23 +1137,70 @@ def _switch(ep_id, proc, sock, want):
                 entry["switch"] = None
 
 
-def _await_takeover(ep_id, old):
-    """End the old player once the new one plays (or gave up)."""
+def _await_takeover(ep_id, old, saved=None):
+    """End the old player once the new one plays: "played". If the new one
+    ends or doesn't play within SWITCH_TIMEOUT, the old one, still paused
+    on screen, gets its session back (saved: its _active entry from before
+    the switch) and plays on: "kept". Without `saved`, or once anything
+    else was started meanwhile ("superseded"), the old one ends."""
     deadline = time.time() + SWITCH_TIMEOUT
+    new, outcome, kept = None, "failed", False
     try:
-        while time.time() < deadline and old.poll() is None:
-            with _active_lock:
-                entry = dict(_active.get(ep_id) or {})
-            new = entry.get("proc")
-            if new is None or new is old or new.poll() is not None:
+        while time.time() < deadline:
+            if old.poll() is not None:
+                outcome = "old ended"
                 break
+            with _active_lock:
+                others = any(k != ep_id for k in _active)
+                entry = dict(_active.get(ep_id) or {})
+            cur = entry.get("proc")
+            if cur is old:  # already its session again
+                outcome, kept = "kept", True
+                break
+            if others or (new is not None and cur is not None and cur is not new):
+                outcome = "superseded"  # another click (or episode) took over
+                break
+            if cur is None or cur.poll() is not None:
+                new = new if new is not None else cur
+                break  # the new one ended before it played
+            new = cur
             if entry.get("sock"):
                 try:
                     t = (mpv_ipc(entry["sock"], ["get_property", "time-pos"]) or {}).get("data")
                 except OSError:
                     t = None
                 if isinstance(t, (int, float)):
+                    outcome = "played"
                     break
             time.sleep(0.25)
+        if outcome == "failed" and saved is not None:
+            kept = _restore(ep_id, old, new, saved)
+        return "kept" if kept else outcome
     finally:
-        anicli.stop_process_group(old)
+        if not kept:
+            anicli.stop_process_group(old)
+
+
+def _restore(ep_id, old, new, saved):
+    """Give a failed switch's session back to the old player: its entry
+    (socket, menu, tracks) as it was, so /api/now, the phone remote,
+    progress and autoplay follow it again, and its watcher (waiting in
+    "handoff") carries on. The new run is retired and ended. False when
+    something else started meanwhile, or the old player is gone."""
+    with _launch_lock:
+        with _active_lock:
+            if new is None:  # not seen yet: the run registered for this episode
+                new = (_active.get(ep_id) or {}).get("proc")
+            if (new is old or old.poll() is not None
+                    or any(e.get("proc") is not new for e in _active.values())):
+                return False
+            if new is not None:
+                new.hub_retired = True
+            old.hub_retired = old.hub_handoff = False
+            _active.clear()
+            _active[ep_id] = dict(saved, switch=None, loading=False)
+            if _session_error["ep_id"] == ep_id:  # the new run's failure is no failure of what plays
+                _session_error.update(ep_id=None, error=None, ts=0.0)
+        if new is not None and new.poll() is None:
+            anicli.stop_process_group(new, system.SIGKILL)
+    return True

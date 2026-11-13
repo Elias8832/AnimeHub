@@ -133,6 +133,23 @@ class TitleList(unittest.TestCase):
             self.assertEqual(fetch.call_count, 1)
             self.assertEqual(titles.search("naurto")[0][0][0], 20)
 
+    def test_the_list_file_goes_through_the_windows_safe_helpers(self):
+        """Windows refuses a swap while a search reads the file, and a read
+        in that moment: system.replace / read_bytes try again (Decision 41)."""
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        big = LIST + b"\n" + b"\n".join(line(100000 + n, f"Filler {n}").encode() for n in range(1000))
+        with mock.patch.object(config, "CACHE", Path(folder.name)), mock.patch.object(titles, "_index", None), \
+                mock.patch.object(titles, "_fetch", return_value=big), \
+                mock.patch.object(titles.system, "replace", wraps=titles.system.replace) as replace, \
+                mock.patch.object(titles.system, "read_bytes", wraps=titles.system.read_bytes) as read:
+            titles.ensure(wait=True)
+            titles._index = None
+            titles.ensure(wait=True)
+            self.assertEqual(titles.search("naurto")[0][0][0], 20)
+        replace.assert_called_once()
+        read.assert_called_once()
+
     def test_a_failed_download_leaves_the_old_search(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)

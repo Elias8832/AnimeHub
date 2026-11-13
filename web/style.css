@@ -564,8 +564,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 /* ───────── motion preferences ───────── */
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-/* Settings → Appearance zoom stepper: compact, no reset (Elias, 2026-10-17). */
-.zrow{display:inline-flex;align-items:center;gap:10px}
 .looks{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .swatch{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.14);transition:transform .2s var(--ease),box-shadow .2s}
 .swatch:hover{transform:scale(1.12)}
@@ -574,8 +572,6 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .follow.on{background:var(--ink);color:#111;box-shadow:none}
 /* The brand mark follows the palette. */
 .mark stop{stop-color:var(--accent-hi)}.mark stop+stop{stop-color:var(--accent)}
-.zrow .btn{height:38px;width:38px;padding:0;font-size:17px;border-radius:10px}
-.zrow .zval{min-width:52px;text-align:center;font-weight:500;color:var(--ink)}
 /* online episodes (ani-cli, v0.2): loading/unavailable tiles, "Wrong episodes?" dialog, downloads popover */
 .ep.loading .eplay{opacity:1;transform:scale(1)}.eplay .spin{width:18px;height:18px;border-width:2.5px;border-color:rgba(12,22,36,.2);border-top-color:#0c1624}
 .ep.off{cursor:default}.ep.off .epimg{filter:grayscale(.7) brightness(.7)}.ep.off:hover .eplay{opacity:0}
@@ -781,6 +777,8 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .sp2 .ep.watched .epimg{filter:saturate(.3) brightness(.55)}
 .sp2 .ep.resume .epa{outline:2px solid var(--ink);outline-offset:3px}
 .sp2 .ep.resume .epa .epimg{border-radius:16px}
+/* Keys (Tab, or the arrows' .focused) show where they are: the tile itself has no outline. */
+.sp2 .ep:is(:focus-visible,.focused) .epa{outline:2px solid var(--accent-hi);outline-offset:3px}
 .sp2 .ep.off .epimg{filter:grayscale(.8) brightness(.5)}
 /* Hide spoilers (Decision 57): the scale keeps the blur's soft edge outside the tile. */
 .ep.spoil .epimg,.sp2 .ep.spoil .epimg,.sp2 .ep.spoil:hover .epimg{filter:blur(14px) brightness(.8);transform:scale(1.25)}
@@ -1519,8 +1517,6 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
 .plpv .plcard{border-radius:9px;transition:none}.plpv .plcard .fname{font-size:9.5px;left:7px;bottom:6px;max-width:calc(100% - 14px)}.plpv .plcard .fname .ico{display:none}
 .plpv .plcard[data-pos="0"] .fname{opacity:1}
 .plpv .plcard:not([data-pos="0"]) .fname{top:4px;bottom:auto}
-.set2 .plfanrow .ctl{grid-template-columns:repeat(4,minmax(0,1fr));max-width:860px}
-@media (max-width:900px){.set2 .plfanrow .ctl{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* Add to playlist (right-click a show): each playlist in its colour, a tick when the show is on it */
 #cm .plmi{height:48px;gap:11px}
 #cm .plmi .plmt{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--plc);background:color-mix(in srgb,var(--plc) 18%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--plc) 30%,transparent)}
@@ -2244,7 +2240,7 @@ body.rmt-open .rbar,body.rmt-open #nav,body.rmt-open #status,body.rmt-open #app{
 .pairtxt{flex:1;min-width:220px}
 .pairtxt p{margin:6px 0}
 .pairtxt .pcode{font-size:32px;font-weight:700;letter-spacing:.12em;color:var(--ink)}
-:root[data-motion=calm] .rbar,:root[data-motion=calm] .rsheet{animation:none}
+:root[data-motion=calm] .rbar{animation:none}
 
 /* ───────── phone and tablet layout (Decision 44) ───────── */
 #tabbar,.fltb,.fltdone,.fltscrim,.sback,.fltrow,.disc{display:none}
@@ -2264,17 +2260,6 @@ body.rmt-open .rbar,body.rmt-open #nav,body.rmt-open #status,body.rmt-open #app{
 .psec .sh .mut{font:400 12px var(--mono);color:var(--mute)}
 .psec .sh .fill{flex:1}
 .psec .empty{color:var(--mute);font-size:14px;padding:8px 0}
-/* the up-next card */
-.upp{border-radius:var(--r-xl);overflow:hidden;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px)}
-.upa2{display:block;width:100%;aspect-ratio:16/8;border:0;background:hsl(var(--h,220) 30% 24%) center/cover;position:relative;cursor:pointer}
-.upa2 .dh{position:absolute;right:12px;top:12px;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;background:rgba(10,11,13,.55);backdrop-filter:blur(10px);font:500 11px var(--mono);color:var(--ink-2)}
-.upa2 .dh .ico{width:13px;height:13px}
-.upb{padding:16px 16px 18px}
-.upb .eye{display:flex;align-items:center;gap:8px;font:400 12px var(--mono);color:var(--ink-2)}
-.upb .eye .ok{color:var(--accent)}
-.upb h2{font:700 36px/.95 var(--display);text-transform:uppercase;letter-spacing:.004em;margin:8px 0 6px;text-wrap:balance}
-.upb .sub{color:var(--ink-2);font-size:15px;margin-bottom:12px}
-.upb .tbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}.upb .tbar span{font:400 11px var(--mono);color:var(--mute)}.upb .ticks{flex:1}
 .btn.wide{width:100%}
 /* the deck */
 body.deck-open{overflow:hidden}
@@ -2633,6 +2618,8 @@ body.has-side #app{padding-left:340px}
   .sp2 .ep.resume .epa,.sp2 .ep.sel .epa{outline:0}
   .sp2 .ep.resume .epa:after,.sp2 .ep.sel .epa:after{content:"";position:absolute;inset:0;z-index:4;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--ink);pointer-events:none}
   .sp2 .ep.sel .epa:after{box-shadow:inset 0 0 0 2px var(--accent)}
+  .sp2 .ep:is(:focus-visible,.focused) .epa{outline:0}
+  .sp2 .ep:is(:focus-visible,.focused) .epa:after{content:"";position:absolute;inset:0;z-index:4;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--accent-hi);pointer-events:none}
   /* The list fades out behind Play and the tabs instead of showing through them. */
   body.has-pbar .sp2{padding-bottom:190px}
   .pbar:before{content:"";position:absolute;z-index:-1;left:-12px;right:-12px;top:-34px;bottom:calc(-200px - env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--bg) 58px);pointer-events:none}
@@ -2669,12 +2656,12 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 @media (pointer:coarse){
   kbd.kb,.btn .kb,.mi .kb,.dialog .kb{display:none!important}
   html{-webkit-tap-highlight-color:transparent}
-  img,.poster,.epimg,.upa2,.dart{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  img,.poster,.epimg,.dart{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
   #tabbar,#nav,.rbar,.pbar,.chip,.btn,.seg,.prow,.sli{-webkit-user-select:none;user-select:none}
-  .btn,.chip,.seg button,.prow,.sli,.srrow,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.upa2,.hc,.gb{transition:transform .16s var(--ease),opacity .16s,background .2s}
+  .btn,.chip,.seg button,.prow,.sli,.srrow,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.hc,.gb{transition:transform .16s var(--ease),opacity .16s,background .2s}
   .btn:active:not(:disabled),.chip:active,.seg button:active,#tabbar .sq:active{transform:scale(.95)}
   .prow:active,.sli:active,.srrow:active,.mi:active{background:var(--pick)}
-  .lib2 .card:active,.rc:active,.rec .rcv:active,.ep:active,.hc:active,.upa2:active{transform:scale(.97);opacity:.85}
+  .lib2 .card:active,.rc:active,.rec .rcv:active,.ep:active,.hc:active{transform:scale(.97);opacity:.85}
 }
 @media (max-width:700px){
   /* the page title shrinks into the top bar once the big one scrolls away */
@@ -2906,15 +2893,6 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 
 /* Fonts (TODO 122, Decision 69): a card per font, its sample set in it. */
 .fontpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;width:100%;max-width:640px}
-.set2 .fontrow .ctl.fontpick{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
-.fcard{display:grid;gap:6px;text-align:left;padding:14px 14px 12px;border-radius:16px;background:rgba(255,255,255,.04);box-shadow:var(--edge);transition:background .2s,box-shadow .2s}
-.fcard:hover{background:rgba(255,255,255,.07)}
-.fcard.on{background:color-mix(in srgb,var(--accent) 10%,transparent);box-shadow:inset 0 0 0 1.5px var(--accent)}
-.fcard .fs{display:block;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fcard .fs.text{font-size:15px;font-weight:400}
-.fcard .fs.title{font-size:26px;line-height:1.05;font-weight:700;text-transform:uppercase}
-.fcard>b{font:500 12px var(--ui);color:var(--mute)}
-.fcard.on>b{color:var(--accent-hi)}
 .fmine{display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
 .fchip{padding-right:5px}.fchip .fx{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;color:var(--mute)}
 .fchip .fx:hover{background:rgba(255,255,255,.1);color:var(--ink)}.fchip .fx .ico{width:13px;height:13px}
@@ -3578,7 +3556,7 @@ body.pp-open #modal{z-index:70}
 .mqw .found{margin-top:12px}
 .mcmp{display:grid;grid-template-columns:auto auto;justify-content:start;gap:3px 30px;margin-top:16px;font:400 12px var(--mono)}
 .mcmp span{color:var(--mute)}.mcmp b{font-weight:400;color:var(--ink)}
-.mcmp em{font-style:normal}.mcmp .mok{color:var(--ok)}.mcmp .mwarn{color:var(--warn)}
+.mcmp em{font-style:normal}.mcmp .mok{color:var(--ok)}
 .mbody{padding:6px 30px 0}
 .mbody>.cap{display:block;font:500 11px var(--mono);color:var(--mute);margin:0 0 12px}
 .mrail{display:grid;grid-template-columns:repeat(auto-fill,112px);gap:18px}

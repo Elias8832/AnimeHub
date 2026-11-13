@@ -295,6 +295,7 @@ def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=froz
 
 
 _building = set()
+_jobs_lock = threading.Lock()  # one check-and-claim for _building and _freshening
 # Franchises whose last build failed (AniList unreachable): id -> (time,
 # reason). For BUILD_RETRY seconds the page answers "unavailable" instead of
 # "building" forever, so the UI can fall back to the folder's show page
@@ -306,9 +307,10 @@ BUILD_RETRY = 60
 def franchise_build_async(mid):
     """Build and store a franchise nobody has opened yet (a search result),
     in the background; the page asks again until it is there."""
-    if mid in _building or time.time() - _build_failed.get(mid, (0, None))[0] < BUILD_RETRY:
-        return
-    _building.add(mid)
+    with _jobs_lock:
+        if mid in _building or time.time() - _build_failed.get(mid, (0, None))[0] < BUILD_RETRY:
+            return
+        _building.add(mid)
 
     def run():
         try:
@@ -388,9 +390,12 @@ def vpn_held(m, link):
 def stream_freshen_async(media_id):
     """Ask ani-cli again for an entry's online episodes once its list is
     stale (airing entries gain episodes), in the background."""
-    if media_id in _freshening or not anicli.anicli_path() or not settings.site_ok():
+    if not anicli.anicli_path() or not settings.site_ok():
         return
-    _freshening.add(media_id)
+    with _jobs_lock:
+        if media_id in _freshening:
+            return
+        _freshening.add(media_id)
 
     def run():
         try:

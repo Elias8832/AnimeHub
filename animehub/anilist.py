@@ -1,5 +1,7 @@
 """AniList API: requests, rate limiting, OAuth, entry state and user data."""
 
+import socket
+import http.client
 import json
 import math
 import os
@@ -18,11 +20,19 @@ ANILIST_URL = "https://graphql.anilist.co"
 # round-4 UI rework (genre hints/tray, home airing panel, stats panels);
 # old caches just lack the fields until the next refresh — additive
 # (airingAt joined for the home countdown, TODO 48).
-ANILIST_USER_QUERY = """query($name:String){
-User(name:$name){ name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}} favourites{anime(perPage:50){nodes{id}}} }
-MediaListCollection(userName:$name, type:ANIME){
-lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day} score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status averageScore season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }
-}}"""
+_USER_FIELDS = ("name mediaListOptions{scoreFormat} statistics{anime{episodesWatched minutesWatched meanScore count}}"
+                " favourites{anime(perPage:50){nodes{id}}}")
+_LIST_FIELDS = ("lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day}"
+                " score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status averageScore"
+                " season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring"
+                " airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }")
+ANILIST_USER_QUERY = ("query($name:String){ User(name:$name){ " + _USER_FIELDS + " }"
+                      " MediaListCollection(userName:$name, type:ANIME){ " + _LIST_FIELDS + " } }")
+# By the account's id (stored at connect): a renamed account still reads,
+# and with its token the private entries come too. The name query stays
+# for token files from before the id was kept.
+ANILIST_USER_QUERY_ID = ("query($id:Int){ User(id:$id){ " + _USER_FIELDS + " }"
+                         " MediaListCollection(userId:$id, type:ANIME){ " + _LIST_FIELDS + " } }")
 MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
 coverImage{extraLarge color} bannerImage description
 relations{edges{relationType node{id format}}}
@@ -136,10 +146,6 @@ def _fuzzy_date_str(fd):
     return out
 
 
-def _cache_del(key):
-    database.cache_del(key)
-
-
 def _state_key(media_id):
     """The stored panel read of the service in use (or picked, `using`):
     each service keeps its own (Decision 83)."""
@@ -193,8 +199,9 @@ def entry_state_refresh_async(media_id):
 
     def run():
         try:
+            # No cache_del first: anilist_entry_state's 30 s ttl already
+            # skips the stored read, and it stays the fallback if this fails.
             with using(which):  # the editor's pick follows into the thread
-                database.cache_del(_state_key(media_id))
                 anilist_entry_state(media_id)
         except Exception as e:
             util.log("entry %s not refreshed: %s" % (media_id, e))
@@ -261,6 +268,8 @@ def list_cache_apply(media_id, state):
         if ent.get("score") is not None and fmt in _SCORE_MAX:
             row["score100"] = round(float(ent["score"]) * 100.0 / _SCORE_MAX[fmt])
             row["score"] = round(row["score100"] / 10.0)  # the list query reads POINT_10
+        elif "score" in ent:  # cleared (MyAnimeList answers no score as None)
+            row["score100"] = row["score"] = 0
         if state.get("is_favourite") is not None:
             favs = [i for i in cached.get("favourites") or [] if i != media_id]
             cached["favourites"] = favs + [media_id] if state["is_favourite"] else favs
@@ -622,7 +631,7 @@ def anilist_request(payload, token=None):
             last_ok = time.time()
             return out
         except Exception as e:
-            if getattr(e, "code", None) == 429 and attempt < 3:
+            if _own(e, "code") == 429 and attempt < 3:
                 # Honour AniList's Retry-After (usually well under a minute)
                 # instead of always parking the handler thread for 62 s.
                 try:
@@ -802,20 +811,31 @@ class AniListTransientError(Exception):
         self.retry_in = retry_in  # seconds until AniList takes requests again, when known
 
 
+def _own(e, name):
+    """An attribute set on the error itself, else None. Not getattr: on
+    Python 3.9 a body-less HTTPError raises KeyError from getattr, default
+    or not."""
+    return (getattr(e, "__dict__", None) or {}).get(name)
+
+
+def _service_of(e):
+    return _own(e, "service") or "AniList"
+
+
 def friendly_error(e):
     """An AniList failure in the app's words, for the UI (the counterpart
     of streaming.friendly_stream_error): never "HTTP Error 403: Forbidden".
     An unexpected failure is logged with its details."""
     if isinstance(e, AniListAuthError):
         return e.reason
-    code = e.status if isinstance(e, AniListTransientError) else getattr(e, "code", None)
-    name = getattr(e, "service", None) or "AniList"
+    code = e.status if isinstance(e, AniListTransientError) else _own(e, "code")
+    name = _service_of(e)
     if code == 429:
         return "%s is limiting requests — try again in a minute." % name
     if code == 404:
         return "%s has no entry with this id." % name
     if code == 403 or (isinstance(code, int) and code >= 500) \
-            or isinstance(e, (URLError, TimeoutError, ConnectionError, AniListTransientError)):
+            or isinstance(e, (URLError, TimeoutError, socket.timeout, ConnectionError, AniListTransientError)):
         return "%s is unreachable right now — try again later." % name
     util.log("AniList: %s" % e)
     return "Something went wrong talking to AniList."
@@ -831,13 +851,13 @@ def error_hint(e):
     until the page asks again on its own: AniList's Retry-After or the
     hub's own rate gate when it says, else RETRY_DEFAULT. A missing entry
     or an unknown failure doesn't retry by itself."""
-    return dict(_hint(e), service=getattr(e, "service", None) or "AniList")
+    return dict(_hint(e), service=_service_of(e))
 
 
 def _hint(e):
-    code = e.status if isinstance(e, AniListTransientError) else getattr(e, "code", None)
+    code = e.status if isinstance(e, AniListTransientError) else _own(e, "code")
     if code == 429:
-        wait = getattr(e, "retry_in", None)
+        wait = _own(e, "retry_in")
         if wait is None:
             try:
                 wait = int(e.headers.get("Retry-After"))
@@ -847,7 +867,7 @@ def _hint(e):
     if code == 404:
         return {"why": "missing"}
     if code == 403 or (isinstance(code, int) and code >= 500) \
-            or isinstance(e, (URLError, TimeoutError, ConnectionError, AniListTransientError)):
+            or isinstance(e, (URLError, TimeoutError, socket.timeout, ConnectionError, AniListTransientError)):
         return {"why": "offline", "retry_in": RETRY_DEFAULT}
     return {"why": "error"}
 
@@ -882,8 +902,30 @@ def store_token(access_token, expires_in=None, user=None):
     return rec
 
 
+# The account of the login the service refused last, and when (Decision
+# 24): the write that failed because of it is queued for that account.
+_cleared = {"id": None, "at": 0.0, "data": None}
+CLEARED_KEEP = 300
+
+
+def note_cleared(account):
+    if account is not None:
+        _cleared.update(id=account, at=time.time(), data=str(config.DATA))
+
+
+def cleared_account_id():
+    """The account whose login was refused in the last few minutes, or None."""
+    fresh = time.time() - _cleared["at"] < CLEARED_KEEP and _cleared["data"] == str(config.DATA)
+    return _cleared["id"] if fresh else None
+
+
 def clear_token():
     config.ANILIST_TOKEN_FILE.unlink(missing_ok=True)
+
+
+def _drop_rejected_token():
+    note_cleared((load_token() or {}).get("user_id"))
+    clear_token()
 
 
 def auth_disconnect(which=None):
@@ -1049,7 +1091,7 @@ def anilist_mutation(query, variables=None):
             body = {}
         msg = _graphql_error_msg(body) or f"HTTP {e.code}"
         if re.search(r"invalid token|unauthenticated|bad auth", msg, re.I):
-            clear_token()
+            _drop_rejected_token()
             raise AniListAuthError("AniList rejected the saved token — reconnect")
         if e.code >= 500:
             raise AniListTransientError(f"AniList server error (HTTP {e.code})",
@@ -1063,11 +1105,15 @@ def anilist_mutation(query, variables=None):
     except (URLError, OSError, TimeoutError) as e:
         # Connection-level failure: the definition of "offline" (Decision 3).
         raise AniListTransientError(f"Could not reach AniList: {e}")
+    except (json.JSONDecodeError, http.client.HTTPException) as e:
+        # A cut-off or non-JSON answer (a proxy's error page) is an outage
+        # too: as a ValueError the outbox would drop the row (Decision 34).
+        raise AniListTransientError(f"AniList answered unreadably: {e}")
     msg = _graphql_error_msg(data)
     if msg:
         # AniList signals dead tokens as a GraphQL error, not an HTTP one.
         if re.search(r"invalid token|unauthenticated|bad auth", msg, re.I):
-            clear_token()
+            _drop_rejected_token()
             raise AniListAuthError("AniList rejected the saved token — reconnect")
         raise ValueError(f"AniList mutation failed: {msg}")
     return (data or {}).get("data")
@@ -1140,7 +1186,7 @@ def anilist_user_data(force=False):
     """The lists of the service in use (the spine's source), cached 10 min.
     With MyAnimeList in use (Decision 75) they come from MAL, in the same
     shape, keyed by AniList id."""
-    which = service() or ("anilist" if load_anilist_username() else None)
+    which = service()
     if which is None:
         # No-AniList mode (Decision 6): a readable payload shape, not a 502 —
         # the UI renders "not connected" rather than "unavailable".
@@ -1163,8 +1209,29 @@ def anilist_user_data(force=False):
             lists_loading.pop(which, None)
 
 
+def _lists_request():
+    """The list read: by id with the token when the login has them, else by
+    name without (old token files). A token AniList refuses here doesn't
+    stop the read: it is asked again without one (public entries only), and
+    the account's own reads raise the reconnect prompt."""
+    tok = load_token() or {}
+    uid = tok.get("user_id")
+    payload = ({"query": ANILIST_USER_QUERY_ID, "variables": {"id": uid}} if isinstance(uid, int)
+               else {"query": ANILIST_USER_QUERY, "variables": {"name": load_anilist_username()}})
+    token = tok.get("access_token")
+    if token and tok.get("expires_at") is not None and tok["expires_at"] < time.time():
+        token = None
+    if token:
+        try:
+            return anilist_request(payload, token=token)
+        except HTTPError as e:
+            if e.code not in (400, 401):
+                raise
+    return anilist_request(payload)
+
+
 def _anilist_lists():
-    data = anilist_request({"query": ANILIST_USER_QUERY, "variables": {"name": load_anilist_username()}})
+    data = _lists_request()
     u = data["data"]["User"]
     entries = {}
     for lst in (data["data"].get("MediaListCollection") or {}).get("lists", []):
