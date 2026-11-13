@@ -3332,7 +3332,7 @@ function lookSeg(k, opts, label) {
   return pick(label || k, "look", k, opts, cur);
 }
 /* Opening/ending skipping in mpv (Decision 39). AniSkip is opt-in: it would learn what you watch. */
-const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "Auto"]];
+const SKIPMODES = [["off", "Off"], ["prompt", "Ask"], ["auto", "On"]];
 /* mpv's own section (Decision 45): each option is on, off, or left to your mpv.conf. */
 const PLAYER_LOOKS = { soft: "Float", deck: "Dock" };
 const PLAYER_LINES = { soft: "Controls float over the picture.", deck: "One slim bar along the bottom." };
