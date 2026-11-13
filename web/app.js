@@ -496,7 +496,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* Appearance (Decision 38): device preferences in localStorage, put on
    <html> by index.html before first paint. The accent follows the show on
    screen unless one colour is picked. */
-const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["fan", "wide", "cascade", "peek"] };
+const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["cascade", "fan", "wide", "peek"] };
 const ACCENTS = ["#f2a46f", "#b8d7c6", "#9ccbe8", "#e58ccf", "#e6c27c", "#c3a6f2"];
 /* The tab's icon wears the chosen accent (TODO 139, Decision 59); "follow" keeps the default. */
 const ACCENT_ICONS = { "#f2a46f": "orange", "#b8d7c6": "sage", "#9ccbe8": "blue", "#e58ccf": "pink", "#e6c27c": "gold", "#c3a6f2": "violet" };

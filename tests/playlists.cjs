@@ -315,7 +315,7 @@ test("Settings: four ways to open a stack, a ‹ value › to pick one, the chos
   assert.match(row, /data-a="look" data-k="fan" data-v="cascade"|data-a="look" data-k="fan" data-v="peek"/);
   assert.match(row, /class="plpv" data-fan="cascade"/); // the picture shows the chosen one
   assert.match(row, /src="f.jpg"/);
-  assert.match(source, /fan: \["fan", "wide", "cascade", "peek"\]/);
+  assert.match(source, /fan: \["cascade", "fan", "wide", "peek"\]/);
 });
 
 /* The add menu (TODO 189, mockup A): ticks, find as you type, make one by name. */
