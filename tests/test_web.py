@@ -109,9 +109,9 @@ class Frontend(unittest.TestCase):
 
     def test_countdown(self):
         now = 1_700_000_000_000
-        self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 + 90000} }}, {now});"), "E5 in 1d 1h")
-        self.assertEqual(run_js(f"return airText({{ number: 5, in_seconds: 600 }}, {now});"), "E5 in 10 min")
-        self.assertEqual(run_js(f"return airText({{ number: 5, at: {now // 1000 - 5} }}, {now});"), "E5 is out")
+        self.assertEqual(run_js(f"return fmtIn(airsIn({{ number: 5, at: {now // 1000 + 90000} }}, {now}));"), "1d 1h")
+        self.assertEqual(run_js(f"return fmtIn(airsIn({{ number: 5, in_seconds: 600 }}, {now}));"), "10 min")
+        self.assertLess(run_js(f"return airsIn({{ number: 5, at: {now // 1000 - 5} }}, {now});"), 0)
         self.assertIn('t - now > 0 ? pre + fmtIn((t - now) / 1000) : "out now"', APP)  # Home → This week (TODO 178; tests/home_hero.cjs)
 
     def test_appearance_prefs(self):

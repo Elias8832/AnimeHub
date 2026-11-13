@@ -277,7 +277,6 @@ const LU_GROUPS = [
 ];
 const lu = (n, c = "") => (LUCIDE[n] ? `<svg class="ico lu${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${LUCIDE[n]}</svg>` : "");
 const FMT = { TV: "TV", TV_SHORT: "TV short", MOVIE: "Movie", OVA: "OVA", ONA: "ONA", SPECIAL: "Special", MUSIC: "Music" };
-const fmtName = (f) => FMT[f] || f;
 /* Escape text and wrap the first case-insensitive match of q in <mark>. */
 const hl = (t, q) => {
   const s = String(t ?? ""), i = q ? s.toLowerCase().indexOf(q.toLowerCase()) : -1;
@@ -528,7 +527,6 @@ function fmtIn(sec) {
 }
 /* Seconds until the next episode airs; `at` is absolute, older caches only carry in_seconds. */
 const airsIn = (n, now = Date.now()) => !n ? null : n.at ? n.at - now / 1000 : n.in_seconds ?? null;
-const airText = (n, now) => { const s = airsIn(n, now); return s == null ? "" : s > 0 ? `E${n.number} in ${fmtIn(s)}` : `E${n.number} is out`; };
 /* @lists:end */
 
 async function api(path, body) {

@@ -86,7 +86,7 @@ span.rpl{position:absolute;border-radius:50%;pointer-events:none;background:#fff
 .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);border:0;border-radius:999px;padding:5px 12px;white-space:nowrap;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
 button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
 .chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 50%,var(--line))}
-.mchip.al{text-decoration:none;color:var(--ink-2);transition:background .2s,border-color .2s,color .2s}.mchip.al:hover{color:var(--ink);background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.2)}.mchip.al .ico{color:inherit}.chip .ico{width:13px;height:13px}
+.chip .ico{width:13px;height:13px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--warn);display:inline-block;flex:none}
 .dot.ok{background:var(--ok);animation:ping 2.4s ease-out infinite}
 @keyframes ping{0%{box-shadow:0 0 0 0 rgb(var(--ok-rgb)/.6)}70%,100%{box-shadow:0 0 0 7px rgb(var(--ok-rgb)/0)}}
@@ -307,8 +307,6 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 /* ───────── home ───────── */
 @keyframes drift{from{transform:scale(1.02) translate3d(0,0,0)}to{transform:scale(1.12) translate3d(-1.8%,1.2%,0)}}
 .hl{display:flex;gap:12px;align-items:center;font-size:17px;margin-bottom:12px;flex-wrap:wrap}
-.mchip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink-2);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(8px);padding:3px 11px;border-radius:999px}
-.mchip .ico{width:13px;height:13px;color:var(--warn)}.mchip .ico.star{fill:currentColor}
 .desc{max-width:620px;color:var(--ink-2);opacity:.82;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:22px;line-height:1.55}
 .bar{height:4px;background:rgba(255,255,255,.18);margin:0 0 14px;border-radius:3px;position:relative}
 .bar i{position:relative;border-radius:3px;box-shadow:0 0 12px color-mix(in srgb,var(--accent) 60%,transparent)}
