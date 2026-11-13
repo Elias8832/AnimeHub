@@ -129,7 +129,8 @@ test("a playlist box: icon, name, note, colour and its shows as a stack of cards
 test("an unknown icon name draws nothing", () => {
   const html = context("local", [], []).plStack(list({ icon: "not-an-icon", items: [] }));
   assert.doesNotMatch(html, /data-icon/);
-  assert.match(html, /no shows yet/i);
+  assert.match(html, /plstack empty/);
+  assert.doesNotMatch(html, /no shows yet/i); // the empty card is clear without words
 });
 
 test("a stack: the front card first, two peeking behind, the rest hidden, a counter", () => {

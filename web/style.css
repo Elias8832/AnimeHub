@@ -98,6 +98,8 @@ button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
 .cv-blur{inset:-90px;background-size:cover;background-position:center;filter:blur(60px) saturate(1.5) brightness(.85);transition:opacity 1.1s ease}
 .cv-art{inset:0 0 auto 0;height:min(100vh,860px);background-size:cover;background-position:center 30%;transition:opacity 1.1s ease;-webkit-mask:linear-gradient(90deg,transparent 6%,#000 52%),linear-gradient(0deg,transparent,#000 40%);-webkit-mask-composite:source-in;mask:linear-gradient(90deg,transparent 6%,#000 52%) intersect,linear-gradient(0deg,transparent,#000 40%);animation:drift 40s ease-in-out infinite alternate}
 #canvas .out{opacity:0}
+#canvas .rest{animation-play-state:paused} /* faded out for good: nothing to move (app.js cvRest) */
+.cv-blur>canvas{display:none} /* the touch screen's blurred copy (cvDraw); shown only there */
 .cv-wash{inset:0;background:linear-gradient(90deg,rgba(13,14,17,.66),rgba(13,14,17,.26) 46%,rgba(13,14,17,.1) 75%),linear-gradient(0deg,rgba(13,14,17,.94),rgba(13,14,17,.4) 40%,rgba(13,14,17,.15) 60%),linear-gradient(180deg,rgba(13,14,17,.5),transparent 18%)}
 .cv-grain{inset:0;opacity:.07;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
 /* Scrolling down a show page fades the art into the page's dark (Decision 67):
@@ -266,6 +268,7 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 .poster img.ready{opacity:1;transform:none}
 .poster.ready span,.poster.ready:after{display:none}
 .poster.hasimg:not(.ready){background:linear-gradient(110deg,hsl(var(--h) 24% 24%) 30%,hsl(var(--h) 26% 33%) 50%,hsl(var(--h) 24% 24%) 70%) 0 0/250% 100%;animation:shimmer 1.5s linear infinite}
+.poster.shoff{animation-play-state:paused!important} /* off the screen: no redraws for a shimmer nobody sees (app.js shimIO) */
 @keyframes shimmer{to{background-position:-150% 0}}
 .poster.wait:before{content:"";position:absolute;top:12px;right:12px;width:12px;height:12px;border:2px solid var(--line-hi);border-top-color:var(--warn);border-radius:50%;animation:spin .8s linear infinite;z-index:2}
 .poster.ready.wait:before{display:none}
@@ -1161,6 +1164,24 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .lib2 .rt:before{background:linear-gradient(90deg,rgba(255,255,255,.14) var(--a),var(--accent) var(--a),var(--accent) var(--b),rgba(255,255,255,.14) var(--b))}
 .lib2 .rt input::-webkit-slider-thumb{width:14px;height:14px;margin-top:7px;border:2px solid var(--accent)}
 .lib2 .rt input,.lib2 .rt input::-webkit-slider-runnable-track{height:28px}
+/* Narrower PC windows: source, format and airing are a chip that opens a short
+   list, several can be ticked (the side list and the phone sheet have their own). */
+.lib2 .filters>.fdrop:has(.fchips){display:block;position:relative}
+.lib2 .filters>.fdrop .fdb{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 14px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px);font:400 11px var(--mono);color:var(--mute);transition:background .2s}
+.lib2 .filters>.fdrop .fdb b{font:600 13px var(--ui);color:var(--ink);white-space:nowrap}
+.lib2 .filters>.fdrop .fdb .ico{width:12px;height:12px;stroke-width:2.6;color:#b0b0b4;transition:transform .2s var(--ease)}
+.lib2 .filters>.fdrop .fdb:hover{background:var(--glass-h)}
+.lib2 .filters>.fdrop.set .fdb,.lib2 .filters>.fdrop.open .fdb{background:var(--pick);color:var(--ink-2)}
+.lib2 .filters>.fdrop.open .fdb .ico{transform:rotate(180deg)}
+.lib2 .filters>.fdrop.locked .fdb{cursor:default}.lib2 .filters>.fdrop.locked .fdb .ico{display:none}
+.lib2 .filters>.fdrop .fpanel{display:none;position:absolute;top:42px;left:0;z-index:30;min-width:180px;padding:6px;border-radius:16px;background:var(--glass-pop);box-shadow:var(--sh-pop);backdrop-filter:blur(24px)}
+.lib2 .filters>.fdrop.open .fpanel{display:block;animation:popIn .18s var(--ease) both}
+.lib2 .filters>.fdrop .fchips{display:flex;flex-direction:column;gap:1px}
+.lib2 .filters>.fdrop .fopt{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 10px;border-radius:10px;font:500 13.5px var(--ui);color:var(--mute);text-align:left;white-space:nowrap;transition:background .15s,color .15s}
+.lib2 .filters>.fdrop .fopt:hover{background:rgba(255,255,255,.06);color:var(--ink)}
+.lib2 .filters>.fdrop .fopt.on{color:var(--ink);font-weight:600}
+.lib2 .filters>.fdrop .fopt .ico{margin-left:auto;width:14px;height:14px;stroke-width:2.4;color:var(--accent-hi);opacity:0}
+.lib2 .filters>.fdrop .fopt.on .ico{opacity:1}
 .lib2 .filters .btn{height:36px;padding:0 14px;font-size:13px}
 .lib2 .filters .btn.ic{width:36px;padding:0}
 .srev .ico{transition:transform .2s var(--ease)}.srev.on{color:var(--accent)!important}.srev.on .ico{transform:scaleX(-1)}
@@ -1271,7 +1292,11 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .plbox:hover .plctr,.plctr:focus-visible{opacity:1}
 @media (pointer:coarse){.plctr{opacity:1;padding:5px 11px}}.plctr:hover{background:rgba(0,0,0,.75)}
 .plstack.empty .plcard{background:var(--s2);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}.plstack.empty .plcard:after{display:none}
-.plnew{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;border-radius:16px;border:1.5px dashed var(--line-hi);color:var(--ink-2);font-weight:600;transition:border-color .2s,color .2s}
+/* New playlist: a filled card (no dashed outline: Elias has turned those down every time) with the app's round
+   glass button in it and the name under it. Hover only lifts it and turns the button white like Play; the stack doesn't open. */
+.plnew{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;border-radius:16px;background:var(--s2);box-shadow:0 14px 30px -10px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.07);color:var(--ink-2);font-size:15px;font-weight:600;transition:color .2s}
+.plnew .plplus{display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:var(--glass);box-shadow:var(--edge);color:var(--ink);transition:background .2s,color .2s,box-shadow .2s}
+.plnew .plplus .ico{width:22px;height:22px;stroke-width:2.2}
 .plnone2{position:absolute;inset:0;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;color:var(--mute);font-size:12.5px}
 .plnone2 .plico .ico{width:28px;height:28px}
 /* Under it: the name (opens the playlist) and a mono fact line, as under a Library poster */
@@ -1284,8 +1309,11 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .plbox:hover .plcap h3{color:var(--accent-hi)}
 .pldot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--plc)}
 .plico{flex:none;display:inline-grid;place-items:center;color:var(--plc)}.plico .ico{width:16px;height:16px;stroke-width:2}
-.plnewbox{cursor:pointer}.plnewbox .plstack:before,.plnewbox .plstack:after{display:none}
-.plnewbox:hover .plnew{border-color:var(--accent);color:var(--accent-hi)}.plnewbox .ico{width:18px;height:18px}
+.plnewbox{cursor:pointer}.plnewbox .plstack:before{background:var(--s3);opacity:.5}.plnewbox .plstack:after{background:var(--s3);opacity:.85}
+.plbox.plnewbox:hover .plstack:before,[data-plfan] .plbox.plnewbox:hover .plstack:before{transform:translateY(calc(-13% - 13px)) scale(.87)}
+.plbox.plnewbox:hover .plstack:after,[data-plfan] .plbox.plnewbox:hover .plstack:after{transform:translateY(calc(-6.5% - 7px)) scale(.935)}
+.plnewbox:hover .plnew,.plnewbox:focus-visible .plnew{color:var(--ink)}
+.plnewbox:hover .plplus,.plnewbox:focus-visible .plplus{background:var(--ink);color:#111;box-shadow:0 10px 32px -6px rgba(255,255,255,.3)}
 .plbox.lift{z-index:30;pointer-events:none}.plbox.lift .plstack{transform:scale(1.04)}
 .plpin{color:var(--mute);display:inline-grid;flex:none}.plpin .ico{width:14px;height:14px}
 .plnote{color:var(--ink-2);font-size:13.5px;line-height:1.45;margin:0;overflow-wrap:anywhere}
@@ -1401,9 +1429,10 @@ html.pldragging .plstack{pointer-events:none}
 /* Finished shows grey out only where the playlist asks for it (Layout → Grey out finished shows) */
 #wall.pldim .plit.fin{filter:grayscale(1);opacity:.42;transition:opacity .2s,filter .2s}
 #wall.pldim .plit.fin:hover,#wall.pldim .plit.fin:focus-within{filter:grayscale(.4);opacity:.85}
-.plmore{width:40px;height:40px;margin-right:7px;border-radius:50%;display:grid;place-items:center;color:var(--mute);opacity:0;transition:opacity .2s,background .2s,color .2s}
-.plmore .ico{width:17px;height:17px}
-.plrow:hover .plmore,.plmore:focus-visible{opacity:1}.plmore:hover{background:rgba(255,255,255,.1);color:var(--ink)}
+/* ⋯ is just the dots, no circle, and only while you rest on the show (Elias, 2026-11-12) */
+.plmore{width:30px;height:40px;margin-right:8px;border-radius:8px;display:grid;place-items:center;color:var(--mute);opacity:0;transition:opacity .2s,color .2s}
+.plmore .ico{width:16px;height:16px}
+.plrow:hover .plmore,.plmore:focus-visible{opacity:1}.plmore:hover{color:var(--ink)}
 .plctl{display:none;gap:4px;margin-right:6px}
 .plctl .arr:disabled{opacity:.3}
 .plit.lift{z-index:30;pointer-events:none;will-change:transform;background:var(--glass-pop);box-shadow:0 24px 50px -16px #000,0 0 0 2px var(--plc,var(--accent))}
@@ -1427,7 +1456,9 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
 .plpcap b{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plpcap b .fav{color:#f07a9a;display:inline-grid;margin-right:5px;vertical-align:-2px}.plpcap b .fav .ico{width:12px;height:12px}
 .plpcap small{font:400 11.5px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.plpost .plmore{position:absolute;top:8px;right:8px;width:34px;height:34px;margin:0;background:rgba(10,11,14,.6);color:var(--ink)}
+/* right after the facts line's text, so the name keeps its full width and the dots never float alone */
+.plpf{display:flex;align-items:center;min-width:0}.plpf small{min-width:0}
+.plpost .plmore{flex:none;width:26px;height:30px;margin:-8px 0 -8px 2px}
 .plpost:hover .plmore{opacity:1}
 .plpost .plctl{position:absolute;top:8px;left:84px}
 .plpost .plctl .arr{background:rgba(10,11,14,.6)}
@@ -1470,7 +1501,7 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
   .plpage #wall:empty{display:none}
   .plpage .plctl{display:none!important}
   .plpage .plmore{opacity:1;width:38px;height:38px;margin-right:0}
-  .plpage .plpost .plmore{width:32px;height:32px}
+  .plpage .plpost .plmore{width:30px;height:32px;margin:-9px 0 -9px 2px}
   .plfoot{display:flex;align-items:center;gap:12px;width:100%;margin-top:10px;padding:18px 6px 16px;border-top:1px solid var(--line);color:var(--ink-2);font-size:15px;text-align:left}
   .plfoot .ico{width:18px;height:18px;color:var(--plc)}
   /* the rows, narrow: place · poster · name, its facts, its progress; ⋯ has the rest */
@@ -2523,10 +2554,29 @@ body.has-side #app{padding-left:340px}
      soft look for ~1/16 of the drawing work on every art change. */
   .cv-blur{inset:auto;left:50%;top:50%;width:34%;height:34%;transform:translate(-50%,-50%) scale(3.6);filter:blur(15px) saturate(1.5) brightness(.85)}
   :root[data-art=soft] .cv-blur{inset:auto;filter:blur(35px) saturate(1.3) brightness(.5)}
+  /* Drawn once per picture (TODO 224, measured on Elias's phone): the same blurred
+     copy as above, made by app.js (cvDraw) into a small canvas in the layer, once
+     when the picture or the look changes. The screen then only scales and fades a
+     finished picture. Blurred by the browser, the copy was drawn again at full
+     screen sharpness, tile by tile, whenever the layer was redrawn (a fade's start
+     and end): frames of 30-100 ms on tab switches. --cvp is the blur's reach (3x its
+     radius), the edge the canvas keeps around the picture, as the blur had. Not for
+     Soft: the browser's own big blur there comes out visibly different from a true
+     one (up to 38 of 255 steps), so Soft stays as it was. */
+  :root:not([data-art=soft]) #canvas.cvc{--cvf:blur(15px) saturate(1.5) brightness(.85);--cvp:45px}
+  :root:not([data-art=soft]) #canvas.cvc .cv-blur{inset:0;width:auto;height:auto;transform:none;filter:none;background-image:none!important;will-change:opacity}
+  :root:not([data-art=soft]) #canvas.cvc .cv-blur>canvas{display:block;position:absolute;left:50%;top:50%;width:calc(34% + 2*var(--cvp));height:calc(34% + 2*var(--cvp));transform:translate(-50%,-50%) scale(3.6)}
   #app *,.tpeek *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
   #app.nav-in *,.wall.fade .card,.wall.fade .prog i{animation:none!important}
   .sp2 .eps .ep{content-visibility:auto;contain-intrinsic-size:auto 90px}
   .prow{content-visibility:auto;contain-intrinsic-size:auto 64px}
+  /* Home's recommendations: 30 cards, two or three of them on screen. The
+     ones past the third are skipped until the row is swiped near them (they
+     were two thirds of everything Home styled on a tab switch, TODO 224).
+     The first three always draw and set the row's height (the stand-in
+     height must stay under a real card's, or it would set it); the margin
+     leaves room for the poster's shadow, which reaches past the card. */
+  .hstrip.recs .rec:nth-child(n+4){content-visibility:auto;contain-intrinsic-size:auto 150px auto 120px;overflow-clip-margin:64px}
 }
 
 /* ───────── tab slide + touch search (Elias, 2026-10-27) ───────── */
@@ -3253,6 +3303,9 @@ body.pp-open #modal{z-index:70}
   .sp2:not(.frpage) .backbtn:not([data-a=rmtclose]){margin:-62px 0 24px!important}
   .set2 .sback{margin:-66px 0 26px!important}
   body.pg-back #nav .brand{visibility:hidden}
+  /* The bar lies over the back button: let taps through it, but not through its own buttons. */
+  body.pg-back #nav{pointer-events:none}
+  body.pg-back #nav>*{pointer-events:auto}
 }
 @media (max-width:700px),(pointer:coarse){
   /* results fade out above the search field instead of showing through it (phone polish) */
@@ -3337,8 +3390,9 @@ body.pp-open #modal{z-index:70}
 }
 @media (max-width:700px){
   /* the show page's art goes soft behind the poster header, so the title and summary read on bright art (Show C) */
-  body.pg-sfr .cv-art{opacity:0!important}
+  body.pg-sfr .cv-art{opacity:0} /* no !important here or on Home below: a fade to an !important value is redrawn frame by frame instead of blended (TODO 224) */
   body.pg-sfr .cv-blur{filter:blur(28px) saturate(1.3) brightness(.55)}
+  @media (pointer:coarse){:root:not([data-art=soft]) body.pg-sfr #canvas.cvc{--cvf:blur(28px) saturate(1.3) brightness(.55);--cvp:84px}} /* the canvas copy (cvDraw) */
 }
 /* ───────── phone Home: hero + rails (TODO 177, Elias picked Home A) ───────── */
 .uph,.crail{display:none}
@@ -3398,7 +3452,7 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){
   /* Home's hero is the art: the blurred art behind the page made a lighter band the
      hero's fade didn't meet, an edge under Play while scrolling (Elias). Plain dark here. */
-  body.pg-uph #canvas>i:not(.cv-grain){opacity:0!important}
+  body.pg-uph #canvas>i:not(.cv-grain){opacity:0}
   body.pg-uph #canvas{background:var(--bg)} /* and the accent glow at the top */
   /* Art and wash go together, with the tab swipe: the art's own longer fade outlived its
      wash, and arriving on Home flashed the bright blurred art (Elias, 2026-11-13: "a lot gets white"). */

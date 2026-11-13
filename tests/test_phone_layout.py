@@ -188,7 +188,7 @@ class ShowPagePhone(unittest.TestCase):
         self.assertIn(".sp2.frpage .hp{display:block;grid-column:1;grid-row:1/3;align-self:end;width:auto;height:auto;overflow:visible", CSS)
         self.assertIn(".sp2.frpage .eps.strip{flex-direction:row", CSS)
         self.assertIn('descx: (v, t) => { if (isPhone()) t.classList.toggle("open"); }', APP)
-        self.assertIn("body.pg-sfr .cv-art{opacity:0!important}", CSS)
+        self.assertIn("body.pg-sfr .cv-art{opacity:0}", CSS)
 
     def test_select_bar_sits_on_the_dock(self):
         # Elias, 2026-11-10: the select bar was drawn behind the dock on phones
@@ -258,9 +258,9 @@ class PhonePolish(unittest.TestCase):
     def test_library_sort_line_and_row_sheet(self):
         self.assertIn('<div class="lsort"><label class="srt">', APP)
         self.assertIn('data-a="fltopen">${ico("filter")}Filter', APP)
-        self.assertIn('<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>', APP)
+        self.assertIn('<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>', APP)
         self.assertIn(".fsheet .filters{gap:0;padding-top:12px;flex-wrap:nowrap}", CSS)  # a tall sheet wrapped into columns
-        self.assertIn('if (k === "group" || isPhone()) { S.fadeNext = true; return render(); }', APP)
+        self.assertIn('if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow', APP)
 
     def test_small_fixes(self):
         self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top
@@ -307,7 +307,7 @@ class PhonePolish(unittest.TestCase):
     def test_home_hero_meets_a_plain_background(self):
         # Elias: scrolling Home showed an edge under the hero — the blurred art and the
         # accent glow behind the page were lighter than the colour the hero fades to
-        self.assertIn("body.pg-uph #canvas>i:not(.cv-grain){opacity:0!important}", CSS)
+        self.assertIn("body.pg-uph #canvas>i:not(.cv-grain){opacity:0}", CSS)
         self.assertIn("body.pg-uph #canvas>i:not(.cv-grain){transition:opacity .25s}", CSS)  # art and wash together: the art outlived its wash
         self.assertIn("body.pg-uph #canvas{background:var(--bg)}", CSS)
 

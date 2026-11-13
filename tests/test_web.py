@@ -64,6 +64,17 @@ class Frontend(unittest.TestCase):
         self.assertEqual(self.filtered(genres=["Action", "Drama"]), [1])
         self.assertEqual(self.filtered(genres=[]), [1, 2, 3, 4])
 
+    def test_source_format_airing_take_several_picks(self):
+        """Elias, 2026-11-12: two formats or two airing states at once; a show
+        passes when it matches any pick. A single pick saved before still works."""
+        self.assertEqual(self.filtered(air=["RELEASING", "HIATUS"]), [1, 3])
+        self.assertEqual(self.filtered(air="FINISHED"), [2])
+        self.assertEqual(self.filtered(air="all"), [1, 2, 3, 4])
+        self.assertEqual(run_js("S.lib.fmt = ['TV', 'MOVIE']; return [fhas('fmt', 'TV'), fhas('fmt', 'OVA'), fval('fmt', FOPTS_T)];"
+                                .replace("FOPTS_T", '[["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"]]')),
+                         [True, False, "TV, Movie"])
+        self.assertEqual(run_js("S.lib.fmt = ['TV', 'MOVIE', 'OVA']; return fval('fmt', [['all', 'any']]);"), "3 picked")
+
     def test_genre_tray_counts_the_open_tab(self):
         m = json.dumps({"entries": ENTRIES})
         self.assertEqual(run_js(f"return genreCounts({m});"), [["Action", 2], ["Drama", 2]])
@@ -368,7 +379,13 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn("#app.nav-in .lib2 .lmain .filters{animation:rise", block)
         self.assertIn("if (railTop) { const r = $(\".lnav\"); if (r) r.scrollTop = railTop; }", APP)
         # source / format / airing open in place as chips in the side list, no popup
-        self.assertIn("const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel;", APP)
+        self.assertIn('const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}', APP)
+        # several can be picked (Elias, 2026-11-12); the list stays open on a phone too
+        self.assertIn('const FMULTI = new Set(["src", "fmt", "air"]);', APP)
+        self.assertIn('S.lib[k] = next.length ? next : "all";', APP)
+        self.assertIn('(multi ? opts.filter(([v]) => v !== "all") : opts)', APP)  # nothing ticked = any, no "any" row
+        self.assertIn('const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);', APP)
+        self.assertIn(".lib2 .filters>.fdrop .fpanel{display:none;position:absolute;", CSS)
         self.assertIn('data-a="fpick" data-k="${k}"', APP)
         self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills
         # the drop-down list: a caption, a check on the picked one, hung from a right-hand chip's right edge
@@ -869,7 +886,7 @@ class ShowPagePolish(unittest.TestCase):
     def test_art_dims_when_scrolled(self):
         self.assertIn("body.pg-fr .cv-wash:after{opacity:var(--sd,0)}", CSS)  # Decision 67: fades with the scroll
         self.assertIn('w.style.setProperty("--sd", S.view === "fr"', APP)
-        self.assertIn("strips(); ambient(); artDim();", APP)
+        self.assertIn("strips(); artDim();", APP)
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")

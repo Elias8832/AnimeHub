@@ -291,12 +291,25 @@ function hueOf(str) {
   for (const c of String(str || "")) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return (h >>> 0) % 360;
 }
-const cssUrl = (u) => `url("${String(u).replace(/[\s"'()\\]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))}")`;
+/* AniList's own PNG covers are ~450 KB each (shows on your lists that aren't
+   on the PC). A phone asks the PC for them instead, which sends a JPEG copy
+   a quarter the size (Decision 90). Only where a picture goes on screen:
+   the data keeps AniList's link. A PC or tablet (no artw cookie, Decision
+   86) and a hub that can't make copies keep AniList's own. */
+const AL_PNG = /^https:\/\/s4\.anilist\.co\/file\/anilistcdn\/(media\/anime\/(?:cover\/(?:medium|large|extraLarge)|banner)\/[\w-]+\.png)$/;
+let artPhone = null; // index.html set the cookie before this script ran; read on first use
+const pic = (u) => {
+  artPhone ??= typeof document !== "undefined" && /(?:^|;\s*)artw=\d/.test(document.cookie);
+  const m = artPhone && S.data?.alpic && typeof u === "string" && AL_PNG.exec(u);
+  return m ? "/alpic/" + m[1] : u;
+};
+const cssUrl = (u) => `url("${String(pic(u)).replace(/[\s"'()\\]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))}")`;
 const bgStyle = (url, hue) => `--h:${hue};` + (url ? `background-image:${cssUrl(url)}` : "");
 /* Posters shown before are drawn ready (TODO 61): their fade-in plays once,
    not again on every page that shows them. */
 const imgSeen = new Set();
 const poster = (title, url, o = {}) => {
+  url = pic(url);
   const seen = !!url && imgSeen.has(url);
   return `<div class="poster${url ? " hasimg" : ""}${seen ? " ready" : ""}${o.c ? " " + o.c : ""}${o.wait ? " wait" : ""}" style="--h:${hueOf(title)}">${url ? `<img loading="lazy"${seen ? ' class="ready"' : ' decoding="async"'} alt="" src="${esc(url)}">` : ""}<span>${esc(title)}</span></div>`;
 };
@@ -373,14 +386,22 @@ const showById = (id) => allShows().find((x) => x.id === id) || null;
 const isStream = (s) => s?.kind === "stream";
 const streamEp = (ep) => ep.id.startsWith("stream:");
 
+/* Asked ~180 times per Home page, and each ask walked every episode of
+   every show (a tenth of a phone's tab switch). One walk per library load
+   now: the hub's answer replaces S.data whole, shows and episodes are never
+   added or dropped in place. */
+let epIdx = null;
 function findEpContext(id) {
-  for (const s of allShows()) {
-    for (const sea of s.seasons) {
-      const ep = sea.episodes.find((e) => e.id === id);
-      if (ep) return { s, sea, ep };
-    }
+  const d = S.data;
+  if (!d) return null;
+  const n = d.shows.length + (d.streams?.length || 0);
+  if (!epIdx || epIdx.d !== d || epIdx.shows !== d.shows || epIdx.streams !== d.streams || epIdx.n !== n) {
+    const at = new Map();
+    for (const s of allShows()) for (const sea of s.seasons) for (const ep of sea.episodes) if (!at.has(ep.id)) at.set(ep.id, { s, sea, ep });
+    epIdx = { d, shows: d.shows, streams: d.streams, n, at };
   }
-  return null;
+  const c = epIdx.at.get(id);
+  return c ? { s: c.s, sea: c.sea, ep: c.ep } : null;
 }
 
 /* Taken off Continue watching (Decision 81): only until something of the
@@ -821,14 +842,22 @@ function fixTab(m) {
 function libList(m) {
   const f = S.lib;
   return libCards(m.entries.filter((e) => (f.tab === "ALL" || e.status === f.tab)
-    && (srcLocked() || f.src === "all" || e.capability === f.src)
-    && (f.fmt === "all" || e.format === f.fmt)
-    && (f.air === "all" || e.airing === f.air)
+    && (srcLocked() || fhas("src", e.capability))
+    && fhas("fmt", e.format)
+    && fhas("air", e.airing)
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
     && (!Array.isArray(f.average) || (e.average > 0 && inRange(f.average, e.average)))
     && hasGenres(e, f.genres))).sort(libSort(f.sort, f.rev));
 }
+/* Source, format and airing take several picks (Elias, 2026-11-12, Decision 13):
+   a show passes when it matches any of them. "all" = nothing picked; a saved
+   single pick (a string, from before) still reads as one. */
+const FMULTI = new Set(["src", "fmt", "air"]);
+const fpicked = (k) => { const v = S.lib[k]; return v === "all" || v == null ? [] : Array.isArray(v) ? v : [v]; };
+const fhas = (k, x) => { const p = fpicked(k); return !p.length || p.includes(x); };
+/* The chip's value: the picks by name, or how many once that gets long. */
+const fval = (k, opts) => { const p = fpicked(k); return !p.length ? opts[0][1] : p.length > 2 ? `${p.length} picked` : p.map((v) => (opts.find(([o]) => o === v) || [v, v])[1]).join(", "); };
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
 const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genres || []).includes(g));
 /* The tray: genres in the open tab, most cards first (one per franchise). */
@@ -878,7 +907,7 @@ function plArt(it) {
 const plPos = (i, k, n) => { const r = (i - k + n) % n; return r < 3 ? String(r) : "hide"; };
 function plStack(p) {
   const shows = p.items.slice(0, PL_STACK_MAX), n = shows.length;
-  if (!n) return `<div class="plstack empty n0"><div class="plcard" data-pos="0"><span class="plnone2">${plIcon(p) || `<span class="plico">${ico("list")}</span>`}<small>No shows yet</small></span></div></div>`;
+  if (!n) return `<div class="plstack empty n0"><div class="plcard" data-pos="0"><span class="plnone2">${plIcon(p) || `<span class="plico">${ico("list")}</span>`}</span></div></div>`;
   const k = Math.min((S.plFlip ||= {})[p.id] || 0, n - 1);
   const card = (it, i) => {
     const art = plArt(it);
@@ -892,7 +921,7 @@ function plBox(p, i, act = "plgo") {
     ${plStack(p)}
     <div class="plcap"><h3>${plIcon(p) || (p.color ? '<i class="pldot"></i>' : "")}<span class="pln">${esc(p.name)}</span>${p.pinned && act === "plgo" ? `<span class="plpin" title="Pinned to Home">${ico("pin")}</span>` : ""}<span class="plgo">${ico("chevr")}</span></h3><div class="m">${facts}</div></div></div>`;
 }
-const plNewBox = () => `<button class="plbox plnewbox" data-a="plnew"><span class="plstack"><span class="plnew">${ico("plus")}<span>New playlist</span></span></span><span class="plcap"><h3><span class="pln">&nbsp;</span></h3></span></button>`;
+const plNewBox = () => `<button class="plbox plnewbox" data-a="plnew"><span class="plstack"><span class="plnew"><span class="plplus">${ico("plus")}</span><span>New playlist</span></span></span><span class="plcap"><h3><span class="pln">&nbsp;</span></h3></span></button>`;
 /* "Add a show" inside a playlist: your library's shows by name, minus the ones already on it. */
 function plAddCands(q, p) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -933,13 +962,15 @@ function plItemCard(it, i, all, next = -1, view = "list") {
   const st = plState(it), pct = st.tot ? Math.min(100, Math.round((100 * st.done) / st.tot)) : 0;
   const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
   const art = st.entry?.poster || st.show?.poster || it.poster;
-  const ctl = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>
-    <div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const more = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>`;
+  const arrows = `<div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const ctl = more + arrows;
+  /* Posters: ⋯ follows the facts line's text, so it never floats on its own (Elias, 2026-11-12). */
   /* Posters (mockup B, Elias 2026-11-11: each playlist picks): a big outlined
      place number behind each poster, like a top-10 row. */
   if (view === "posters") return `<div class="plit plpost${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plpc" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plbig${i >= 9 ? " two" : ""}" aria-hidden="true">${i + 1}</span><span class="plpi">${poster(it.title, art)}${st.tot ? `<i class="plbar"><i style="width:${pct}%"></i></i>` : ""}</span></button>
-    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small></div>${ctl}</div>`;
+    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><span class="plpf"><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small>${more}</span></div>${arrows}</div>`;
   return `<div class="plit plrow${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plr" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plno">${i + 1}</span><span class="plth">${poster(it.title, art)}</span>
     <span class="plt"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b>${st.more ? `<small>${esc(st.more)}</small>` : ""}</span>
@@ -1232,7 +1263,7 @@ async function plDragEnd(keep) {
 function plMenu(item, x, y) {
   S.plItem = item; S.plMq = ""; S.plJust = null;
   const m = $("#cm");
-  m.innerHTML = `<div class="plmh">${item.poster ? `<img src="${esc(item.poster)}" alt="">` : `<span class="plmph">${ico("list")}</span>`}<div><small>Add to playlist</small><b>${esc(item.title)}</b></div></div>
+  m.innerHTML = `<div class="plmh">${item.poster ? `<img src="${esc(pic(item.poster))}" alt="">` : `<span class="plmph">${ico("list")}</span>`}<div><small>Add to playlist</small><b>${esc(item.title)}</b></div></div>
   <label class="plmq">${ico("search")}<input id="plmq" type="text" autocomplete="off" spellcheck="false" maxlength="60" placeholder="${(S.data.playlists || []).length ? "Find or make a playlist" : "Name a new playlist"}" aria-label="Find or make a playlist"></label>
   <div class="plml" id="plml" role="menu"></div><div class="plmf" id="plmf"></div>`;
   plMenuPaint();
@@ -1277,8 +1308,10 @@ function plLayoutMenu(x, y) {
 function plRowMenu(ref, x, y) {
   const p = plCurrent(), it = p?.items.find((q) => q.ref === ref);
   if (!it) return;
-  const st = plState(it), t = st.show && !st.fin ? pickTarget(st.show) : null, m = $("#cm");
-  const play = t && t.kind !== "rewatch" ? cmRow("play", t.ep.id, "play", `${resumable(t.ep) ? "Resume" : "Play"} ${esc(epCode(t.sea, t.ep))}`) : "";
+  /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
+  const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
+  const again = st.fin || t?.kind === "rewatch";
+  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`) : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
   m.innerHTML = `<div class="cap">${esc(it.title)}</div>${play}${cmRow("plopen", ref, "arrowr", "Open show")}${cmRow("pladd", ref, "list", "Add to another playlist", "", "", `data-r="${esc(ref)}" data-t="${esc(it.title)}" data-p="${esc(it.poster || "")}"`)}${move}<div class="sep"></div>${cmRow("plremove", ref, "close", "Remove from this playlist", "", "", 'data-danger="1"')}`;
@@ -1567,11 +1600,14 @@ function fdrop(k, label, inner, val, set = Array.isArray(S.lib[k]), locked = fal
 /* Side list: a pick-one filter opens in place as a list of its options, one per row (no pills, Elias) (Elias: "make the
    upper three expand downwards like the bottom three, I don't like the popup"). */
 function fchoice(k, label, opts, locked) {
+  const multi = FMULTI.has(k) && !locked, p = fpicked(k);
   const cur = locked ? opts[1] : opts.find(([v]) => v === S.lib[k]) || opts[0];
-  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => {
-    const on = v === cur[0];
+  const isOn = (v) => multi ? (v === "all" ? !p.length : p.includes(v)) : v === cur[0];
+  /* no "any" row where several can be ticked: nothing ticked is any (Elias) */
+  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${(multi ? opts.filter(([v]) => v !== "all") : opts).map(([v, l]) => {
+    const on = isOn(v);
     return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="fpick" data-k="${k}" data-v="${esc(v)}"><span>${esc(l)}</span>${ico("check")}</button>`;
-  }).join("")}</div>`, cur[1], !locked && cur[0] !== "all", locked);
+  }).join("")}</div>`, multi ? fval(k, opts) : cur[1], multi ? p.length > 0 : !locked && cur[0] !== "all", locked);
 }
 function fdropClose(except) {
   for (const d of $$(".fdrop.open")) if (d !== except) { d.classList.toggle("open", false); d.querySelector(".fdb")?.setAttribute("aria-expanded", "false"); }
@@ -1644,7 +1680,7 @@ function Lib() {
     /* Phones (TODO 177): the sheet lists the filters as rows, like the PC's side
        list; sort sits on the line above the grid. */
     const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
-    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
+    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>
       <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
@@ -1667,9 +1703,9 @@ const FOPTS = () => ({
   src: [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]],
   fmt: [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]],
   air: [["all", "any"], ...Object.entries(AIR)] });
-const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel; return `${pick("src", cap("source"), o.src, srcLocked())}
-      ${pick("fmt", cap("format"), o.fmt)}
-      ${pick("air", cap("airing"), o.air)}
+const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}
+      ${fchoice("fmt", cap("format"), o.fmt)}
+      ${fchoice("air", cap("airing"), o.air)}
       ${fdrop("year", cap("year"), frng("year", "year", ...yearBounds(), 1, String))}
       ${fdrop("score", cap("my score"), frng("score", "my score", 0, 10, 0.5, (x) => String(x)))}
       ${fdrop("average", cap("average"), frng("average", "average", 0, 100, 5, (x) => String(x)))}`; };
@@ -1691,7 +1727,7 @@ function libRail(m, sum, loading) {
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
     ${loading ? head(acct() + " lists") + `<div class="lghost" style="--i:${n++}" aria-hidden="true">${[58, 76, 88, 70].map((w) => `<i><b style="width:${w}px"></b><u></u></i>`).join("")}</div><div class="lload" style="--i:${n++}">${listLoad()}</div>` : ""}
-    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
+    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1))}${gen}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
 }
@@ -4158,7 +4194,7 @@ function deckFill(src, i, items) {
       if (!u) continue;
       delete p.dataset.art;
       const im = new Image();
-      im.src = u;
+      im.src = pic(u);
       im.decode().catch(() => {}).finally(() => p.style.setProperty("--art", cssUrl(u)));
     }
   };
@@ -4454,6 +4490,8 @@ const PAGE_MARKS = [["pg-fr", ".frpage"], ["pg-sfr", ".sp2.frpage"], ["pg-uph", 
   ["pg-back", ".sp2 .backbtn:not([data-a=rmtclose]), .set2 .sback"]];
 function pageMarks(app = $("#app")) {
   for (const [cls, sel] of PAGE_MARKS) document.body.classList.toggle(cls, !!app.querySelector(sel));
+  cvRestSoon(); // a page can hide the art (pg-sfr, pg-uph)
+  cvLook(); // and a show page on a phone blurs it more (pg-sfr)
 }
 function paintPortals() {
   pageMarks();
@@ -4643,7 +4681,7 @@ function paintRemote() {
     const paused = !!l.paused, busy = now.loading ? "disabled" : "", epNo = ctx ? "E" + String(ctx.ep.number).padStart(2, "0") : now.label;
     const pp = (c) => `<button class="btn pri ic ${c}" data-a="rmt" data-v="toggle" aria-label="${paused ? "Play" : "Pause"}" ${busy}>${ico(paused ? "play" : "pause")}</button>`;
     const skip = (c) => `<button class="btn ${c}" data-a="rmt" data-v="skip" hidden>${ico("next")}<span>Skip opening</span></button>`;
-    const thumb = s?.poster ? `<img alt="" src="${esc(s.poster)}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
+    const thumb = s?.poster ? `<img alt="" src="${esc(pic(s.poster))}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
     const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
     const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
     /* The remote (TODO 177, Elias picked B): the show's art fills the top, big −10 · Play · +10
@@ -5261,27 +5299,34 @@ function glide(box) {
 }
 /* Edge fades + arrow state for horizontally scrolling strips. */
 function strips(root = $("#app")) {
+  /* Every strip is measured first, then every strip is marked. A mark
+     written between two measurements made the browser lay the page out
+     again for each strip (Home: 8 strips, a third of a tab switch). Each
+     `read` measures and hands back the marking. */
+  const marks = [];
   root.querySelectorAll(".strip").forEach((st) => {
     const arrows = st.previousElementSibling ? st.previousElementSibling.querySelectorAll(".arr") : [];
-    const upd = () => {
+    const read = () => {
       const max = st.scrollWidth - st.clientWidth, x = st.scrollLeft;
-      st.classList.toggle("ml", x > 4); st.classList.toggle("mr", x < max - 4);
-      if (arrows[0]) { arrows[0].hidden = arrows[1].hidden = max <= 4; arrows[0].disabled = x <= 4; arrows[1].disabled = x >= max - 4; }
+      return () => {
+        st.classList.toggle("ml", x > 4); st.classList.toggle("mr", x < max - 4);
+        if (arrows[0]) { arrows[0].hidden = arrows[1].hidden = max <= 4; arrows[0].disabled = x <= 4; arrows[1].disabled = x >= max - 4; }
+      };
     };
     if (!st._strip) {
-      st._strip = true; st.addEventListener("scroll", upd, { passive: true });
+      st._strip = true; st.addEventListener("scroll", () => read()(), { passive: true });
       const on = st.matches(".frorder") && st.querySelector(".on"); // the watch order opens at this entry
       const x = on ? on.getBoundingClientRect().left - st.getBoundingClientRect().left - 80 : 0;
       if (x > 0) st.scrollLeft = x;
     }
-    upd();
+    marks.push(read());
   });
   /* The show page's season tabs: one row that scrolls sideways (fades at
      the cut edge, the wheel scrolls it, the picked tab starts in view). */
   root.querySelectorAll(".sp2 .rels").forEach((r) => {
-    const upd = () => { const max = r.scrollWidth - r.clientWidth; r.classList.toggle("ml", r.scrollLeft > 4); r.classList.toggle("mr", r.scrollLeft < max - 4); };
+    const read = () => { const max = r.scrollWidth - r.clientWidth, x = r.scrollLeft; return () => { r.classList.toggle("ml", x > 4); r.classList.toggle("mr", x < max - 4); }; };
     if (!r._rels) {
-      r._rels = true; r.addEventListener("scroll", upd, { passive: true });
+      r._rels = true; r.addEventListener("scroll", () => read()(), { passive: true });
       r.addEventListener("wheel", (e) => {
         if (e.ctrlKey || r.scrollWidth <= r.clientWidth + 4 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
         e.preventDefault(); r.scrollLeft += e.deltaY;
@@ -5289,8 +5334,9 @@ function strips(root = $("#app")) {
       const on = r.querySelector("button.on");
       if (on && on.offsetLeft + on.offsetWidth > r.clientWidth) r.scrollLeft = on.offsetLeft - 40;
     }
-    upd();
+    marks.push(read());
   });
+  for (const mark of marks) mark();
 }
 /* The accent follows the show on screen (Decision 38): a hue sampled from its
    art, at a fixed light, soft saturation so every show reads well on dark.
@@ -5343,10 +5389,85 @@ function swapLayer(cls, url) {
   if (canvasNow[cls] === url) return;
   canvasNow[cls] = url;
   const [a, b] = $$("#canvas ." + cls), on = a.classList.contains("out") ? b : a, off = on === a ? b : a;
-  if (url) { off.style.backgroundImage = cssUrl(url); off.classList.remove("out"); }
+  if (url) { off.style.backgroundImage = cssUrl(url); off.classList.remove("out", "rest"); cvPicture(off, url); }
   on.classList.add("out");
+  cvRestSoon();
+}
+/* Touch screens: the blurred art is drawn once per picture into a small canvas
+   in its layer (CSS #canvas.cvc, TODO 224); the screen only scales and fades it.
+   The CSS holds the look (--cvf, the same filter the layer had) and the blur's
+   reach (--cvp, the edge kept around the picture). The picture fills the inner
+   box as background-size:cover / center did, and the blur spreads into the edge. */
+const cvc = { on: false, f: "", p: 0, mark: "" };
+function cvPicture(el, url) {
+  if (!cvc.on || el._cvu === url) return cvDraw(el);
+  el._cvu = url;
+  const c = el.firstElementChild;
+  if (c) { c._key = ""; c.width = c.width; } // the old picture must not fade in while the new one loads
+  cvDraw(el);
+}
+function cvDraw(el) {
+  const c = el.firstElementChild, url = el._cvu;
+  if (!cvc.on || !c || !url || !c._w || !cvc.f) return;
+  const key = `${url}|${cvc.f}|${cvc.p}|${c._w}x${c._h}`;
+  if (c._key === key) return;
+  c._key = key;
+  const img = new Image();
+  img.src = pic(url);
+  img.decode().then(() => {
+    if (c._key !== key) return;
+    const w = c._w, h = c._h, p = cvc.p, bw = w - 2 * p, bh = h - 2 * p, iw = img.naturalWidth, ih = img.naturalHeight;
+    if (!iw || !ih || bw <= 0 || bh <= 0) return;
+    const s = Math.max(bw / iw, bh / ih), sw = bw / s, sh = bh / s;
+    c.width = Math.round(w); c.height = Math.round(h);
+    const x = c.getContext("2d");
+    x.filter = cvc.f;
+    x.imageSmoothingQuality = "high";
+    x.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, p, p, bw, bh);
+  }).catch(() => {});
+}
+/* The look changes with Art (Full / Soft), a show page on a phone (pg-sfr) and
+   the width; the CSS is read only then, a frame later, never while a page builds. */
+function cvLook() {
+  if (!cvc.on) return;
+  const mark = `${document.documentElement.dataset.art}|${document.body.classList.contains("pg-sfr")}|${mq("(max-width:700px)")}`;
+  if (mark === cvc.mark) return;
+  cvc.mark = mark;
+  requestAnimationFrame(() => {
+    const st = getComputedStyle($("#canvas"));
+    cvc.f = st.getPropertyValue("--cvf").trim();
+    cvc.p = parseFloat(st.getPropertyValue("--cvp")) || 0;
+    $$("#canvas .cv-blur").forEach(cvDraw);
+  });
+}
+if (mq("(pointer:coarse)") && typeof ResizeObserver === "function") {
+  cvc.on = true;
+  $("#canvas").classList.add("cvc");
+  const ro = new ResizeObserver((es) => {
+    for (const e of es) { e.target._w = e.contentRect.width; e.target._h = e.contentRect.height; }
+    cvLook();
+    $$("#canvas .cv-blur").forEach(cvDraw);
+  });
+  for (const el of $$("#canvas .cv-blur")) { const c = document.createElement("canvas"); el.append(c); ro.observe(c); }
+}
+/* The sharp art drifts for good, and it kept drifting while faded out: on
+   every page the screen was asked for a new frame 60 times a second with
+   nothing to show (a phone never came to rest). A layer nobody can see now
+   holds still ("rest"); it moves again the moment it starts to fade in. */
+const cvRest = () => $$("#canvas .cv-art").forEach((el) => {
+  if (el.getAnimations().some((a) => a.transitionProperty === "opacity")) return; // mid-fade: its end comes back here
+  el.classList.toggle("rest", getComputedStyle(el).opacity === "0");
+});
+function cvRestSoon() { clearTimeout(cvRestSoon.t); cvRestSoon.t = setTimeout(cvRest, 1400); }
+{
+  const cv = $("#canvas");
+  cv.addEventListener("transitionrun", (e) => { if (e.propertyName === "opacity") e.target.classList.remove("rest"); });
+  for (const ev of ["transitionend", "transitioncancel"]) cv.addEventListener(ev, (e) => { if (e.propertyName === "opacity") cvRestSoon(); });
+  addEventListener("resize", cvRestSoon);
+  cvRestSoon();
 }
 function paintCanvas() {
+  cvLook();
   const art = canvasArt(), mode = lookGet("art");
   document.documentElement.classList.add("amb-now"); // page changes step the accent too: the CSS fade restyled everything each frame
   swapLayer("cv-blur", mode === "off" ? null : art?.blur);
@@ -5360,9 +5481,13 @@ function paintCanvas() {
    5 steps over 0.4 s, still a fade, a fraction of the work. */
 let ambStep = 0;
 function ambFade(to) {
-  const root = document.documentElement, from = getComputedStyle(root).getPropertyValue("--amb").trim();
+  const root = document.documentElement;
   clearInterval(ambStep);
-  if (!to || !from || reduceMotion() || mq("(pointer:coarse)")) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
+  /* Where the colour only steps once (touch screens, reduced motion) the
+     colour now on screen isn't needed, and asking for it made the browser
+     style the whole new page on the spot. */
+  const from = !to || reduceMotion() || mq("(pointer:coarse)") ? "" : getComputedStyle(root).getPropertyValue("--amb").trim();
+  if (!from) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
   let k = 0;
   ambStep = setInterval(() => {
     k++;
@@ -5385,18 +5510,24 @@ function barTint(c) {
 }
 function accentFrom(url, color) {
   const root = document.documentElement;
+  const own = url;
+  url = pic(url); // a phone samples the copy it already has, not a second download from AniList
   ambWant = url || null;
   const set = (c) => { barTint(c); if (root.classList.contains("amb-now")) return ambFade(c); clearInterval(ambStep); c ? root.style.setProperty("--amb", c) : root.style.removeProperty("--amb"); };
   if (color) return set(hexAccent(color));
   if (!url) return set(null);
   if (url in ambMemo) return set(ambMemo[url]);
-  const img = new Image();
   /* AniList's CDN allows CORS; without it the canvas can't read the colour. Its own
      URL key, so the copy the page already loaded (no CORS) isn't reused. */
-  const remote = /^https?:/.test(url);
-  if (remote) img.crossOrigin = "anonymous";
-  img.onload = () => { let c = null; try { c = sampleColor(img); } catch {} ambMemo[url] = c; if (ambWant === url) set(c); };
-  img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
+  const read = (src, cors, unreadable) => {
+    const img = new Image();
+    if (cors) img.crossOrigin = "anonymous";
+    img.onload = () => { let c = null; try { c = sampleColor(img); } catch { if (unreadable) return unreadable(); } ambMemo[url] = c; if (ambWant === url) set(c); };
+    img.src = src;
+  };
+  const direct = (u) => read(u + (u.includes("?") ? "&" : "?") + "cors=1", true);
+  /* A copy the PC passed on to AniList (a see-through cover) can't be read: AniList's own then, as before. */
+  if (/^https?:/.test(url)) direct(url); else read(url, false, url !== own ? () => direct(own) : null);
 }
 const ambient = paintCanvas;
 const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Calendar" };
@@ -5408,7 +5539,7 @@ const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "J
    their scroll. Runtime state the HTML doesn't carry survives: the image
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
-const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "setin"];
+const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "setin"];
 const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
@@ -5488,6 +5619,11 @@ function render(inPlace = false) {
   const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
   if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion()); app.innerHTML = html; }
   S.navQuiet = false;
+  /* What restyles the whole page (the accent on <html>, the page marks on
+     <body>) goes on before anything below measures the new page: after it,
+     every tab switch that changed the accent styled the page twice (a third
+     of a phone's switch to the Journal or the Calendar). */
+  ambient(); pageMarks();
   /* The entrance is over after ~2.5 s: drop its class, or every element a later
      in-place update swaps in rose again (the side list's rows flickered, Elias). */
   if (fresh) { clearTimeout(render.navInT); render.navInT = setTimeout(() => app.classList.remove("nav-in"), 2500); }
@@ -5497,7 +5633,7 @@ function render(inPlace = false) {
   if (S.view === "library") { paintWall(!!S.fadeNext); S.fadeNext = false; startMetaWatch(); }
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
-  strips(); ambient(); artDim();
+  strips(); artDim();
   setEnter();
   if (S.view === "settings" && S.setFlash) { const t = S.setFlash; S.setFlash = null; const r = $$("#app .srow").find((x) => x.querySelector("b")?.textContent.startsWith(t)); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }
   /* The strip opens on the next episode, with the one before it in view — whole tiles, never a cut one. */
@@ -5600,7 +5736,12 @@ function offlineNote(on, msg) {
    304 (TODO 61) and the copy in hand stays. */
 let libTag = null;
 async function libFetch() {
-  const res = await fetch("/api/library", { cache: "no-store", headers: libTag && S.data ? { "If-None-Match": libTag } : {} });
+  /* The first one was already asked for by index.html, before this script
+     had loaded. It and any other fetch with no copy in hand go through the
+     browser's cache: unchanged since the last visit is a 304 there too. */
+  const early = window.libEarly;
+  window.libEarly = null;
+  const res = (early && await early.catch(() => null)) || await fetch("/api/library", libTag && S.data ? { cache: "no-store", headers: { "If-None-Match": libTag } } : {});
   if (res.status === 304 && S.data) return S.data;
   let d;
   try { d = await res.json(); } catch { throw new Error(`HTTP ${res.status} from /api/library`); }
@@ -6467,12 +6608,23 @@ const A = {
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   fpick: (v, t) => {
-    const k = t.dataset.k, d = t.closest(".fdrop");
-    S.lib[k] = v; saveLib();
-    if (k === "group" || isPhone()) { S.fadeNext = true; return render(); } // phones: the sheet and the Filter count follow
+    const k = t.dataset.k, d = t.closest(".fdrop"), multi = FMULTI.has(k);
+    if (multi) { const p = fpicked(k), next = v === "all" ? [] : p.includes(v) ? p.filter((x) => x !== v) : [...p, v]; S.lib[k] = next.length ? next : "all"; }
+    else S.lib[k] = v;
+    saveLib();
+    if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow
+      const sc = $(".fsheet .filters")?.scrollTop;
+      S.fadeNext = true; render();
+      /* several can be picked: the list stays open for the next one */
+      const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);
+      if (nd) { nd.querySelector(".fpanel").style.animation = "none"; nd.classList.add("open"); nd.querySelector(".fdb").setAttribute("aria-expanded", "true"); }
+      const f = $(".fsheet .filters"); if (f && sc) f.scrollTop = sc;
+      return;
+    }
     paintWall(true); syncFilters();
-    for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
-    d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
+    const opts = FOPTS()[k];
+    for (const b of d.querySelectorAll(".fopt")) { const bv = b.dataset.v, on = multi ? (bv === "all" ? S.lib[k] === "all" : fpicked(k).includes(bv)) : b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    d.classList.toggle("set", S.lib[k] !== "all"); d.querySelector(".fdb b").textContent = multi ? fval(k, opts) : t.querySelector("span").textContent;
   },
   fdrop: (v, t) => { const d = t.closest(".fdrop"), open = !d.classList.contains("open"); fdropClose(d); d.classList.toggle("open", open); t.setAttribute("aria-expanded", open); if (open) d.querySelector(".fpanel input, .fpanel .fopt.on")?.focus({ preventScroll: true }); },
   totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
@@ -7498,6 +7650,7 @@ function applyLook() {
   a === "follow" ? d.style.removeProperty("--fixed") : d.style.setProperty("--fixed", a);
   $('link[rel="icon"]')?.setAttribute("href", accentIcon(a));
   applyFonts();
+  cvRestSoon();
 }
 function applyFonts() {
   const d = document.documentElement, t = fontGet("text"), h = fontGet("title");
@@ -7551,10 +7704,21 @@ if (SHELL) {
   addEventListener("drop", (e) => e.preventDefault());
 }
 /* Images fade in once decoded; a 404 keeps the title placeholder. */
-document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); imgSeen.add(t.getAttribute("src")); } }, true);
+document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); imgSeen.add(t.getAttribute("src")); if (t.parentElement?.classList.contains("poster")) { shimIO?.unobserve(t.parentElement); t.parentElement.classList.remove("shoff"); } } }, true);
+/* A poster shimmers until its picture is in, and a picture off the screen
+   isn't fetched at all, so those posters shimmered for good: the page was
+   redrawn 60 times a second with nothing moving in sight (Home, a quarter
+   of a phone's CPU). The shimmer now holds still ("shoff") while its poster
+   is off the screen and runs again just before it comes into view. */
+const shimIO = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((en) => {
+  const el = en.target;
+  if (!el.isConnected || el.classList.contains("ready")) { shimIO.unobserve(el); el.classList.remove("shoff"); return; }
+  el.classList.toggle("shoff", !en.isIntersecting);
+}), { rootMargin: "120px" }) : null;
+document.addEventListener("animationstart", (e) => { if (shimIO && e.animationName === "shimmer" && e.target.classList?.contains("poster")) shimIO.observe(e.target); }, true);
 // Back on the window (e.g. after toggling the VPN elsewhere): refresh now.
 addEventListener("focus", () => pollSoon(0));
-addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) { t.parentElement.classList.remove("hasimg"); t.remove(); } }, true);
+addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) { shimIO?.unobserve(t.parentElement); t.parentElement.classList.remove("hasimg", "shoff"); t.remove(); } }, true);
 $("#brand").addEventListener("click", () => nav("home"));
 /* ripple on primary controls */
 document.addEventListener("pointerdown", (e) => {
@@ -7645,6 +7809,7 @@ function paintPtitle(t) {
 /* keyboard: / search · Esc back · j/k/h/l or arrows move focus · Enter opens */
 const focusables = () => $$("#app .hc, #app .twb, #app .twr, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
 function applyFocus() {
+  if (fIdx < 0) return; // nothing picked with the keys: no need to measure every card on the page (it runs after each draw)
   const els = focusables();
   if (fIdx >= 0 && els[fIdx]) { els.forEach((e, i) => e.classList.toggle("focused", i === fIdx)); els[fIdx].scrollIntoView({ block: "nearest" }); } else fIdx = -1;
 }
