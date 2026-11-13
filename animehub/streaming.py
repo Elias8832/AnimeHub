@@ -56,7 +56,7 @@ def _stream_miss(media_id, missed):
 
 
 RELEASE_QUERY = """query($id:Int){Media(id:$id,type:ANIME){id title{romaji english native} synonyms
-format status episodes averageScore seasonYear startDate{year} nextAiringEpisode{episode}
+format status episodes averageScore seasonYear startDate{year} nextAiringEpisode{episode airingAt}
 coverImage{extraLarge color} bannerImage description streamingEpisodes{title thumbnail}}}"""
 
 
@@ -79,11 +79,18 @@ def release_meta(media_id):
     return media
 
 
+def next_aired(nxt, at):
+    """The episodes out before AniList's "next" one, plus that one once its
+    stated airing time has passed: a stored copy of an airing entry is up
+    to a day old, and the episode it calls next may be out by now."""
+    return nxt if at and at <= time.time() else nxt - 1
+
+
 def release_aired(m):
     """How many episodes of a release are out, as far as AniList knows."""
-    nxt = (m.get("nextAiringEpisode") or {}).get("episode")
-    if m.get("status") == "RELEASING" and nxt:
-        return nxt - 1
+    nxt = m.get("nextAiringEpisode") or {}
+    if m.get("status") == "RELEASING" and nxt.get("episode"):
+        return next_aired(nxt["episode"], nxt.get("airingAt"))
     if m.get("status") == "NOT_YET_RELEASED":
         return 0
     return m.get("episodes") or 0
@@ -219,9 +226,8 @@ def _count_fits(episodes, m):
         # Nothing has aired: any listed episodes belong to another show
         # ("Chainsaw Man" for the announced "Chainsaw Man: Shikaku-hen").
         return False
-    nxt = (m.get("nextAiringEpisode") or {}).get("episode")
-    if m.get("status") == "RELEASING" and nxt:
-        aired = nxt - 1
+    if m.get("status") == "RELEASING" and (m.get("nextAiringEpisode") or {}).get("episode"):
+        aired = release_aired(m)
         return aired - max(4, aired * 0.1) <= n <= aired + 2
     if m.get("episodes"):
         total = m["episodes"]

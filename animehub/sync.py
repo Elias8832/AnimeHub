@@ -421,7 +421,7 @@ def _aired(e):
     if e.get("airing") == "NOT_YET_RELEASED":
         return 0
     if e.get("airing") == "RELEASING" and nxt:
-        return nxt - 1
+        return streaming.next_aired(nxt, e["next_episode"].get("at"))
     return e.get("episodes") or 0
 
 
