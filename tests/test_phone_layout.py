@@ -149,7 +149,8 @@ class BackAndSwipes(unittest.TestCase):
     def test_layers_take_a_history_entry(self):
         for name in ('ovOpen("rmt"', 'ovOpen("deck"', 'ovOpen("sr"', 'ovOpen("flt"', 'ovOpen("set"'):
             self.assertIn(name, APP)
-        self.assertIn("const top = OV.pop();\n  if (top) { top.close();", APP)
+        self.assertIn("const top = OV.pop();", APP)
+        self.assertIn("if (top) { top.close();", APP)
         self.assertIn("if (history.state?.ov) { OV.length = 0; history.replaceState(h, \"\", navUrl()); return; }", APP)
 
     def test_back_from_a_playlist_lands_on_the_list(self):
@@ -511,12 +512,13 @@ class TabPager(unittest.TestCase):
         # right after a swipe Chrome shows layers it hasn't drawn: the new tab
         # is built unseen under the copy, and shown only after it is drawn
         end = self.body("pagerEnd")
-        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";\n    nav(to, null, true);', end)  # drawn while it waits (at 0 Chrome skips it)
-        self.assertIn("requestAnimationFrame(() => setTimeout(show, PAGER_DRAW))", end)
-        self.assertIn('addEventListener("touchstart", show, { capture: true, passive: true });', end)  # a touch shows it at once
+        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";\n    nav(to, null, true);\n    pagerReveal(', end)  # drawn while it waits (at 0 Chrome skips it)
         self.assertIn('app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";', end)  # no fade
+        reveal = self.body("pagerReveal")
+        self.assertIn("requestAnimationFrame(() => setTimeout(once, PAGER_DRAW))", reveal)
+        self.assertIn('addEventListener("touchstart", once, { capture: true, passive: true });', reveal)  # a touch shows it at once
         # the landing's own scroll back to where the tab was doesn't count as a scroll
-        self.assertIn("Math.abs(scrollY - y0) > 2 && show()", end)
+        self.assertIn("Math.abs(scrollY - y0) > 2 && once()", reveal)
 
     def test_body_marks_change_with_the_slide(self):
         # Home's art hides the backdrop and the top bar darkens once scrolled:
@@ -543,3 +545,53 @@ class TabPager(unittest.TestCase):
         self.assertIn("app.querySelector(sel)", self.body("pageMarks"))
         self.assertIn("#app .lib2 .filters,.tpeek .lib2 .filters{display:none}", CSS)
         self.assertIn('if (still) { w.innerHTML = cards.slice(0, 24).join("") || empty; return; }', APP)
+
+
+class BackPager(unittest.TestCase):
+    """The back swipe (Elias, 2026-11-13: "a bit laggy, feels weird to use"):
+    like the tab pager, the page you go back to is a copy beside this one, both
+    follow the finger, and the page is built for real under its copy."""
+
+    def body(self, name):
+        i = APP.index(f"function {name}(")
+        return APP[i:APP.index("\n}\n", i)]
+
+    def test_follows_the_finger_beside_the_page_before(self):
+        move = self.body("backMove")
+        self.assertIn('p.pk.style.transform = `translate3d(${(tx - W).toFixed(1)}px,0,0)`; p.pk.style.opacity = "1";', move)
+        self.assertIn("if (p.pb) p.pb.style.transform = t;", move)  # the Play bar goes with its page
+        self.assertIn("swSet(", move)
+        self.assertNotIn("scale(", move)  # no more shrinking card
+        self.assertIn("else if ((p.bk = backTarget())) backLock(p);", APP)
+        self.assertIn("if (p.bk) { backMove(p, x); return; }", APP)
+        self.assertIn("if (p.bk && p.side) return backEnd(p);", APP)
+
+    def test_copies(self):
+        # a tab or the Settings list is built like the pager's copies; a show,
+        # franchise or Settings page is the page itself, kept when nav() replaced it
+        self.assertIn("setlist: () => Sett()", APP)
+        self.assertIn("if (PEEK_PAGE[rec.view]) return peekFresh(rec.view);", self.body("backPeek"))
+        self.assertIn("S.backGrab = rec.node;", self.body("backSave"))
+        self.assertIn("if (S.backGrab) { S.backGrab.append(...app.childNodes); S.backGrab = null; }", self.body("render"))
+        self.assertIn("backSave();", self.body("nav"))
+        # ids the CSS doesn't style go, so a lookup never finds the copy
+        self.assertIn('if (!PK_IDS.has(e.id)) e.removeAttribute("id")', self.body("backPeek"))
+        self.assertIn('$("#app #entryacts")', APP)
+        # kept per history entry, the last few
+        self.assertIn("curPnid = curNid; curNid = nidNew();", self.body("pushNav"))
+        self.assertIn("nid: curNid, pnid: curPnid,", APP)
+        self.assertIn("if (backs.size > 6) backs.delete(k);", self.body("backSave"))
+        self.assertIn("return (curPnid && backs.get(curPnid)) || null;", self.body("backTarget"))
+
+    def test_lands_under_its_copy(self):
+        end = self.body("backEnd")
+        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";', end)
+        self.assertIn('backSwiped = "pager";\n    history.back();', end)
+        self.assertIn("requestAnimationFrame(() => {", end)  # backdrop and marks a frame after the slide starts
+        self.assertIn("pageMarks(pk.firstChild);", end)
+        self.assertIn('applyNav(st, swiped === "pager");\n  if (swiped === "pager") return backLand();', APP)
+        self.assertIn("S.navQuiet = !!quiet; render(stay);", self.body("applyNav"))  # no entrance
+        land = self.body("backLand")
+        self.assertIn("calmIn(app);", land)
+        # where the copy showed it, again after the browser's own scroll restore
+        self.assertIn("requestAnimationFrame(() => { scrollTo(0, L.sy); pagerReveal(reveal); });", land)

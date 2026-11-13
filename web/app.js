@@ -2568,7 +2568,7 @@ function aheadLine(f, pending, fe) {
 function entryPaint(f, pending, prev) {
   const page = !S.entry?.svc, st = page && $("#entrystats");
   if (st) { st.innerHTML = entryStats(f, pending); st._own = true; }
-  const acts = page && $("#entryacts");
+  const acts = page && $("#app #entryacts"); // not a back swipe's copy of another page
   if (acts) { acts.innerHTML = entryActs(f, pending); acts._own = true; }
   const box = $("#entrybox");
   if (!box) return;
@@ -5524,9 +5524,9 @@ function cvRestSoon() { clearTimeout(cvRestSoon.t); cvRestSoon.t = setTimeout(cv
   addEventListener("resize", cvRestSoon);
   cvRestSoon();
 }
-function paintCanvas() {
+function paintCanvas(art = canvasArt()) { // art: a back swipe brings the page before's in with the slide
   cvLook();
-  const art = canvasArt(), mode = lookGet("art");
+  const mode = lookGet("art");
   document.documentElement.classList.add("amb-now"); // page changes step the accent too: the CSS fade restyled everything each frame
   swapLayer("cv-blur", mode === "off" ? null : art?.blur);
   swapLayer("cv-art", mode === "full" ? art?.sharp : null);
@@ -5675,7 +5675,10 @@ function render(inPlace = false) {
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
   const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
-  if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion()); app.innerHTML = html; }
+  if (morph) morphHTML(app, html); else {
+    if (S.backGrab) { S.backGrab.append(...app.childNodes); S.backGrab = null; } // the page you leave, kept for a back swipe (backSave)
+    app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion()); app.innerHTML = html;
+  }
   S.navQuiet = false;
   /* What restyles the whole page (the accent on <html>, the page marks on
      <body>) goes on before anything below measures the new page: after it,
@@ -5755,6 +5758,7 @@ function nav(view, fn, quiet) {
   if (TAB_AT[from] != null) tabScroll[from] = scrollY;
   const go = () => {
     const prev = S.view;
+    backSave();
     S.navIn = true; S.navQuiet = !!quiet; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
     if (view === "library" && !quiet) S.fadeNext = true;
     if (fn) fn(prev);
@@ -8070,11 +8074,18 @@ const pagerAt = () => PAGER.indexOf(S.view === "stats" ? "history" : S.view);
 const pagerNext = (dir) => PAGER[pagerAt() - dir] || null; // dir -1: finger moves left, the tab to the right
 const peeks = {};
 let pagerBusy = false, pagerGen = 0, peekIO = null;
+/* The pages a copy can be built of: the tabs, and the Settings list a
+   section's back swipe goes to. */
+const PEEK_PAGE = { home: () => Home(), library: () => Lib(), history: () => Hist(), week: () => Week(), setlist: () => Sett() };
+function peekAs(to, f) {
+  const was = S.view, wo = S.setOpen;
+  S.view = to === "setlist" ? "settings" : to;
+  if (to === "setlist") S.setOpen = false;
+  try { return f(); } finally { S.view = was; S.setOpen = wo; }
+}
 /* What a copy shows: its page, and for the Library the wall's first screenful. */
 function peekHTML(to) {
-  const was = S.view;
-  S.view = to;
-  try { return { home: Home, library: Lib, history: Hist, week: Week }[to]() + (to === "library" ? wallCards(libModel()).slice(0, 24).join("") : ""); } finally { S.view = was; }
+  return peekAs(to, () => PEEK_PAGE[to]() + (to === "library" ? wallCards(libModel()).slice(0, 24).join("") : ""));
 }
 /* The copy of a tab, up to date: rebuilt only when what it shows changed. */
 function peekFresh(to) {
@@ -8086,9 +8097,7 @@ function peekFresh(to) {
      collapses through #app, and the copy's box keeps it inside). */
   const bs = getComputedStyle(document.body), top = document.body.getBoundingClientRect().top + scrollY + parseFloat(bs.paddingTop);
   if (el._sig !== sig) {
-    const was = S.view;
-    S.view = to;
-    try { el.innerHTML = `<div class="pkpg">${{ home: Home, library: Lib, history: Hist, week: Week }[to]()}</div>`; } finally { S.view = was; }
+    el.innerHTML = `<div class="pkpg">${peekAs(to, PEEK_PAGE[to])}</div>`;
     if (to === "history") loadAlData(); // render() asks for it on the Journal; it lands in pagerStale
     const w = el.firstChild.querySelector("#wall");
     if (w) paintWall(false, w, true);
@@ -8127,15 +8136,22 @@ const pagerOn = () => isPhone() && mq("(pointer:coarse)") && pagerAt() >= 0;
 function pagerStale() {
   pagerGen++;
   clearTimeout(pagerStale.t);
-  const held = pull?.side && pull.kind === "tab";
+  const held = pull?.side && (pull.kind === "tab" || pull.bk);
   if (held || pagerBusy) return; // the swipe's end renders again
-  const near = pagerOn() ? [pagerNext(-1), pagerNext(1)].filter(Boolean) : [];
-  peekDrop(near);
-  if (!near.length) return;
   const gen = pagerGen;
+  let near = null, bk = null;
   const step = () => idle(() => {
     if (gen !== pagerGen) return;
     if (document.hidden || pull?.side || pagerBusy || S.menu || S.modal || /\b(rmt-open|deck-open)\b/.test(document.body.className)) { pagerStale.t = setTimeout(step, 1000); return; }
+    /* What's beside this page: the tabs either side, or on a page a back
+       swipe leaves, the page before. Worked out here, not at the render:
+       nav() only adds the page's history entry after it. */
+    if (!near) {
+      bk = pagerAt() < 0 ? backTarget() : null;
+      near = pagerOn() ? [pagerNext(-1), pagerNext(1)].filter(Boolean) : bk && PEEK_PAGE[bk.view] ? [bk.view] : [];
+      peekDrop(near); backDrop(bk);
+    }
+    if (bk && !PEEK_PAGE[bk.view]) { backPeek(bk); return; }
     const to = near.find((v) => peeks[v]?._gen !== gen);
     if (!to) return;
     peekFresh(to);
@@ -8143,7 +8159,7 @@ function pagerStale() {
   }, { timeout: 2500 });
   pagerStale.t = setTimeout(step, 700); // after the page's own settling (the Library wall fills at 380 ms)
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden && pagerOn()) pagerStale(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && isPhone()) pagerStale(); });
 /* The dock's highlight between the tab you're on and the one you swipe to. */
 function pagerInd(p, k) {
   const ind = $("#tabbar .ind"), a = p.indFrom, b = p.indTo;
@@ -8177,7 +8193,7 @@ function pagerMove(p, x) {
 }
 function pagerEnd(p, cancel) {
   const W = innerWidth, app = $("#app"), pk = p.pk, ind = $("#tabbar .ind"), d = p.d || 0, dir = p.dir || 1, to = p.peekFor;
-  const s = p.v || [], a = s[0], b = s[s.length - 1], v = a && b && b[0] > a[0] && performance.now() - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0; // px/ms, last ~90 ms
+  const v = pagerSpeed(p); // px/ms, last ~90 ms
   const fling = Math.abs(v) > 0.3;
   const go = !cancel && !!to && (fling ? Math.sign(v) === dir : Math.abs(d) > W * 0.35);
   const end = go ? dir * W : 0, rem = Math.abs(end - d);
@@ -8222,25 +8238,172 @@ function pagerEnd(p, cancel) {
        the finger is the real one. */
     app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = ".004"; app.style.transform = "";
     nav(to, null, true);
-    const y0 = scrollY;
-    let shown = false;
-    const show = () => {
-      if (shown) return;
-      shown = true;
-      removeEventListener("touchstart", show, true); removeEventListener("scroll", moved);
+    pagerReveal(() => {
       swEnd(app); // the dock's glass comes back with it
       app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";
       peekHide(pk);
       pagerBusy = false;
       pagerStale(); // the copies for where you are now
-    };
-    addEventListener("touchstart", show, { capture: true, passive: true });
-    const moved = () => Math.abs(scrollY - y0) > 2 && show(); // not the landing's own scroll to where the tab was
-    requestAnimationFrame(() => { addEventListener("scroll", moved, { passive: true }); requestAnimationFrame(() => setTimeout(show, PAGER_DRAW)); });
+    });
   }, dur + 10);
 }
-/* How long a landed tab waits under its copy after two frames, for the phone to draw it. */
+/* How long a landed page waits under its copy after two frames, for the phone to draw it. */
 const PAGER_DRAW = 140;
+/* A landed page waits under its copy until the phone has drawn it, then
+   show() takes the copy away; a touch or a scroll shows it at once, so the
+   page under the finger is the real one. */
+function pagerReveal(show) {
+  const y0 = scrollY;
+  let shown = false;
+  const once = () => {
+    if (shown) return;
+    shown = true;
+    removeEventListener("touchstart", once, true); removeEventListener("scroll", moved);
+    show();
+  };
+  addEventListener("touchstart", once, { capture: true, passive: true });
+  const moved = () => Math.abs(scrollY - y0) > 2 && once(); // not the landing's own scroll to where the page was
+  requestAnimationFrame(() => { addEventListener("scroll", moved, { passive: true }); requestAnimationFrame(() => setTimeout(once, PAGER_DRAW)); });
+}
+/* How fast the finger was going as it let go, px/ms over the last ~90 ms. */
+function pagerSpeed(p) {
+  const s = p.v || [], a = s[0], b = s[s.length - 1];
+  return a && b && b[0] > a[0] && performance.now() - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0;
+}
+/* ---------- the back swipe (Elias, 2026-11-13: "a bit laggy, feels weird
+   to use and is just a slow point in the phone version") ----------
+   Like the tab pager: the page you go back to is drawn beside this one (a
+   still copy) and both follow the finger one to one; letting go carries on
+   at the finger's speed, then the page is built for real under its copy,
+   with no entrance. Before, the page shrank toward 90 % with nothing behind
+   it but the backdrop and an arrow, slid off, and only then was the page
+   before built (a stall) and slid in again from the left.
+   The copy: a tab (Home · Library · Journal · Calendar) or the Settings list
+   is built like the pager's copies; a show, franchise or Settings page is
+   the page itself as you left it (its nodes, kept when nav() replaced them,
+   no rebuild). Kept per history entry (nid), the last few only. */
+const backs = new Map();
+/* Ids the CSS styles stay in a kept page; the rest go, so a lookup by id
+   never finds the copy instead of the page on screen. */
+const PK_IDS = new Set(["wall", "aboutx", "entryacts", "entrybox", "msst"]);
+let backEl = null, backLanding = null;
+function backSave() {
+  if (!isPhone() || !mq("(pointer:coarse)") || !S.data) return;
+  const v = S.view === "stats" ? "history" : S.view, b = document.body;
+  const rec = { view: v, sy: scrollY, art: canvasArt() || null, top: b.getBoundingClientRect().top + scrollY + parseFloat(getComputedStyle(b).paddingTop) };
+  if (!PEEK_PAGE[v]) {
+    rec.node = document.createElement("div"); rec.node.className = "pkpg";
+    rec.pbar = $("#portal .pbar")?.outerHTML || "";
+    S.backGrab = rec.node; // render() moves the page into it instead of throwing it away
+  }
+  backs.delete(curNid); backs.set(curNid, rec);
+  for (const k of backs.keys()) if (backs.size > 6) backs.delete(k);
+}
+/* Where a back swipe from here goes, when it can be shown: the page before,
+   or the Settings list from one of its sections. */
+const SETLIST = { view: "setlist", sy: 0, art: null };
+function backTarget() {
+  if (!isPhone() || !mq("(pointer:coarse)") || !["show", "fr", "settings"].includes(S.view)) return null;
+  const top = OV[OV.length - 1];
+  if (top) return top.name === "set" && S.view === "settings" && S.setOpen ? SETLIST : null;
+  return (curPnid && backs.get(curPnid)) || null;
+}
+function backPeek(rec) {
+  if (PEEK_PAGE[rec.view]) return peekFresh(rec.view);
+  let el = backEl;
+  if (!el) { el = backEl = document.createElement("div"); el.className = "tpeek"; el.setAttribute("aria-hidden", "true"); el.inert = true; $("#app").after(el); }
+  if (el._rec !== rec) {
+    for (const e of rec.node.querySelectorAll("[id]")) if (!PK_IDS.has(e.id)) e.removeAttribute("id");
+    el.replaceChildren(rec.node);
+    if (rec.pbar) el.insertAdjacentHTML("beforeend", rec.pbar);
+    rec.node.style.top = Math.round(rec.top - rec.sy) + "px";
+    el._rec = rec; el._sy = rec.sy;
+  }
+  return el;
+}
+function backDrop(keep) { if (backEl && backEl._rec !== keep) { backEl.replaceChildren(); backEl._rec = null; peekHide(backEl); } }
+function backLock(p) {
+  const app = $("#app"), ind = $("#tabbar .ind");
+  app.style.transition = "none"; swBegin(app);
+  if (ind) ind.style.transition = "none";
+  p.pb = $("#portal .pbar");
+  if (p.pb) p.pb.style.transition = "none";
+  p.indFrom = indOf(S.view === "show" || S.view === "fr" ? "library" : S.view); // the dock marks the Library on a show
+  p.indTo = PAGER.includes(p.bk.view) ? indOf(p.bk.view) : p.indFrom;
+  p.pk = backPeek(p.bk); p.v = [];
+}
+function backMove(p, x) {
+  const W = innerWidth, d = x - p.x0, now = performance.now();
+  p.v.push([now, x]); while (p.v.length > 2 && now - p.v[0][0] > 90) p.v.shift();
+  /* The other way: a give that tightens. */
+  const tx = d > 0 ? d : (d * 0.3) / (1 + Math.abs(d) / W * 2), k = Math.max(0, Math.min(d / W, 1));
+  p.d = tx;
+  swSet(() => {
+    const t = `translate3d(${tx.toFixed(1)}px,0,0)`;
+    $("#app").style.transform = t;
+    if (p.pb) p.pb.style.transform = t; // the show's Play bar goes with its page
+    p.pk.style.transform = `translate3d(${(tx - W).toFixed(1)}px,0,0)`; p.pk.style.opacity = "1";
+    pagerInd(p, k);
+  });
+}
+function backEnd(p, cancel) {
+  const W = innerWidth, app = $("#app"), pk = p.pk, pb = p.pb, ind = $("#tabbar .ind"), d = p.d || 0, rec = p.bk;
+  const v = pagerSpeed(p), fling = Math.abs(v) > 0.3;
+  const go = !cancel && d > 0 && (fling ? v > 0 : d > W * 0.35);
+  const end = go ? W : 0, rem = Math.abs(end - d);
+  const dur = Math.round(Math.max(120, Math.min(140 + rem * 0.45, fling && Math.sign(v) === Math.sign(end - d) ? (3.5 * rem) / Math.abs(v) : 1e9, 330)));
+  const ease = `transform ${dur}ms cubic-bezier(.22,.8,.3,1)`;
+  pagerBusy = true;
+  for (const e of [app, pb]) if (e) { e.style.transition = ease; e.style.transform = `translate3d(${end}px,0,0)`; }
+  pk.style.transition = ease; pk.style.transform = `translate3d(${end - W}px,0,0)`;
+  if (ind && p.indFrom) { ind.style.transition = `${ease}, width ${dur}ms cubic-bezier(.22,.8,.3,1)`; pagerInd(p, go ? 1 : 0); }
+  /* The backdrop, colour and body marks of the page before come with the
+     slide, a frame after it starts: they restyle the whole page, and in the
+     same frame they held the slide's start (67 ms at CPU ×4). */
+  if (go) requestAnimationFrame(() => {
+    const b = document.body;
+    if (PEEK_PAGE[rec.view]) peekAs(rec.view, () => ambient()); else ambient(rec.art);
+    pageMarks(pk.firstChild);
+    b.classList.toggle("sc", pk._sy > 8); b.classList.toggle("sc2", pk._sy > 84);
+  });
+  setTimeout(() => {
+    if (ind) ind.style.transition = "";
+    if (!go) {
+      swEnd(app);
+      for (const e of [app, pb]) if (e) { e.style.transition = "none"; e.style.transform = ""; getComputedStyle(e).transform; e.style.transition = ""; }
+      peekHide(pk);
+      pagerBusy = false;
+      return pagerStale();
+    }
+    /* As the tab pager: the page before is built unseen under its copy (popstate → backLand). */
+    app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = ".004"; app.style.transform = "";
+    $("#portal").style.opacity = ".004";
+    if (pb) { pb.style.transition = "none"; pb.style.transform = ""; }
+    backLanding = { pk, sy: pk._sy, pb };
+    backSwiped = "pager";
+    history.back();
+    setTimeout(() => backLanding && backLand(), 1000); // no popstate came: show what's there
+  }, dur + 10);
+}
+function backLand() {
+  const L = backLanding, app = $("#app");
+  backLanding = null;
+  if (!L) return;
+  calmIn(app);
+  /* Where the copy showed it. Again a frame later: after popstate the
+     browser puts back the scroll it noted for the entry (the top, noted
+     when the next page was pushed). */
+  scrollTo(0, L.sy);
+  requestAnimationFrame(() => { scrollTo(0, L.sy); pagerReveal(reveal); });
+  const reveal = () => {
+    swEnd(app);
+    app.style.opacity = ""; $("#portal").style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";
+    if (L.pb) L.pb.style.transition = "";
+    if (L.pk === backEl) backDrop(null); else peekHide(L.pk);
+    pagerBusy = false;
+    pagerStale();
+  };
+}
 document.addEventListener("touchstart", (e) => {
   pull = null;
   if (e.touches.length !== 1 || !mq("(pointer:coarse)") || pagerBusy) return;
@@ -8293,11 +8456,13 @@ document.addEventListener("touchmove", (e) => {
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         p.side = true; p.x0 = x;
         if (p.kind === "tab") pagerLock(p);
+        else if ((p.bk = backTarget())) backLock(p);
         else { $("#app").style.transition = "none"; $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
       } else return;
     }
     e.preventDefault();
     if (p.kind === "tab") { pagerMove(p, x); return; }
+    if (p.bk) { backMove(p, x); return; }
     const d = x - p.x0, tg = sideTarget(p, d), lim = innerWidth * 0.3;
     p.lx = x; p.ly = y; p.tg = tg;
     /* Nothing that way (first/last tab): only a little give. */
@@ -8336,13 +8501,14 @@ document.addEventListener("touchmove", (e) => {
   if (p.dy > 120 && !p.armed) { p.armed = true; buzz(); } else if (p.dy <= 120) p.armed = false;
 }, { passive: false });
 const unstyle = (...els) => { for (const el of els) if (el) { el.style.transform = el.style.opacity = el.style.transition = el.style.borderRadius = el.style.transformOrigin = ""; } };
-document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; if (pull?.side && pull.kind === "tab") { pagerEnd(pull, true); pull = null; return; } swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
+document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; if (pull?.side && pull.kind === "tab") { pagerEnd(pull, true); pull = null; return; } if (pull?.side && pull.bk) { backEnd(pull, true); pull = null; return; } swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
 document.addEventListener("touchend", () => {
   const p = pull;
   pull = null;
   if (!p) return;
   cancelAnimationFrame(swFrame); swFrame = 0; swWrite = null;
   if (p.kind === "tab" && p.side) return pagerEnd(p);
+  if (p.bk && p.side) return backEnd(p);
   if (p.side || p.live) swEnd(p.side ? $("#app") : p.el);
   if (p.kind === "ptr") { if ((p.dist || 0) >= 70) ptrRun(); else ptrHide(); return; }
   if (p.kind === "tab" || p.kind === "back") {
@@ -8408,26 +8574,32 @@ document.addEventListener("click", (e) => { if (Date.now() < lpUntil) { e.preven
 document.addEventListener("contextmenu", (e) => { if (mq("(pointer:coarse)") && !e.target.closest?.("input, textarea")) { e.preventDefault(); } }, true);
 /* Switches answer with a light tap (Android). */
 document.addEventListener("click", (e) => { if (e.target.closest?.(".switch") && mq("(pointer:coarse)")) buzz(); }, true);
-/* A back swipe lands on the page before with a slide in from the left. */
+/* A back swipe lands on the page before: "pager" under its copy (backEnd),
+   true (no copy of it) with a slide in from the left. */
 let backSwiped = false;
 /* A grab handle shows that a layer can be pulled down. */
 const grab = '<i class="grabber" aria-hidden="true"></i>';
 
 /* ---------- browser history (back/forward, mouse side buttons, #deep links) ---------- */
 let navSeeded = false;
-const navSnap = () => ({ view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY,
+/* Each page's history entry has an id (nid) and its page before's (pnid): a
+   back swipe finds the copy of the page it goes to by them (backs). */
+const nidNew = () => Math.random().toString(36).slice(2, 10);
+let curNid = nidNew(), curPnid = null;
+const navSnap = () => ({ nid: curNid, pnid: curPnid, view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY,
   lt: S.view === "library" ? S.lib.tab : undefined, pl: S.view === "library" && S.lib.tab === "PLAYLISTS" ? S.lib.pl ?? null : undefined });
 const navUrl = () => location.pathname + location.search + (S.view === "show" ? "#show=" + encodeURIComponent(S.showId) : S.view === "fr" ? "#f=" + S.fr.eid : VIEWS.includes(S.view) && S.view !== "home" ? "#" + S.view : "");
 /* The page as it is now, into its own history entry (keeps how it was reached). */
 const navKeep = () => history.replaceState({ ...history.state, ...navSnap() }, "", navUrl());
 function pushNav() {
+  curPnid = curNid; curNid = nidNew();
   const h = navSnap();
   /* Going somewhere from inside a layer (a result in search, Details in the
      deck): the new page takes the layer's history entry. */
   if (history.state?.ov) { OV.length = 0; history.replaceState(h, "", navUrl()); return; }
   if (navSeeded) history.pushState({ ...h, inApp: true }, "", navUrl()); else { navSeeded = true; history.replaceState(h, "", navUrl()); }
 }
-function applyNav(h) {
+function applyNav(h, quiet) {
   const stay = S.view === "library" && h.view === "library"; // a step inside the Library: the side list stays put (Elias)
   const wasPl = stay && !!plCurrent();
   S.navIn = !stay; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";
@@ -8436,19 +8608,23 @@ function applyNav(h) {
     if (h.pl && !(S.data.playlists || []).some((p) => p.id === h.pl)) h.pl = null; // deleted since
     S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true;
   }
-  clearSearch(); render(stay);
+  clearSearch(); S.navQuiet = !!quiet; render(stay);
   if (stay && wasPl !== !!plCurrent()) plSlide(wasPl ? "plout" : "plin");
   if (S.view === "fr") frLoad(h.fr);
   history.replaceState(h, "", navUrl());
   scrollTo(0, h.scroll || 0);
 }
 addEventListener("popstate", (e) => {
-  const swiped = backSwiped, app = $("#app");
+  const swiped = backSwiped, app = $("#app"), st = e.state || {};
   backSwiped = false;
-  if (ovSkip) { ovSkip--; if (swiped) unstyle(app, $("#portal")); return; } // a layer closed by hand took its own entry back
+  curNid = st.nid || nidNew(); curPnid = st.pnid || null;
+  if (ovSkip) { ovSkip--; if (swiped === "pager") backLand(); else if (swiped) unstyle(app, $("#portal")); return; } // a layer closed by hand took its own entry back
   const top = OV.pop();
+  if (top && swiped === "pager") { S.navQuiet = true; top.close(); S.navQuiet = false; return backLand(); } // a Settings section, back to the list
   if (top) { top.close(); if (swiped) unstyle(app, $("#portal")); return; } // back closes the top layer first
-  applyNav(e.state || {});
+  backs.delete(curNid); // on screen again: leaving it keeps it anew
+  applyNav(st, swiped === "pager");
+  if (swiped === "pager") return backLand();
   if (swiped) { unstyle(app, $("#portal")); app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add("tab-r"); }
 });
 history.replaceState(navSnap(), "", location.href);
