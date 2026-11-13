@@ -464,6 +464,9 @@ def _replace(found, target):
         error = f"AnimeHub can't write to {target.parent}. Download the new version by hand."
     except (OSError, HTTPException):
         error = "The download failed, so nothing changed."
+    except Exception as e:  # anything else: say so, or the job stays "working"
+        util.log("update: %r" % e)
+        error = "The update failed, so nothing changed."
     finally:
         tmp.unlink(missing_ok=True)
     with _lock:
@@ -599,6 +602,9 @@ def _swap_zip(found, root):
                  " if AnimeHub sits in Program Files, download the zip by hand.")
     except (OSError, HTTPException):
         error = "The download failed, so nothing changed."
+    except Exception as e:  # a zip zipfile can't unpack, …: every moved file still goes back
+        util.log("update: %r" % e)
+        error = "The update failed, so nothing changed."
     if error and not _put_back(moved):
         error += f" Some old files couldn't go back; they are in {aside}."
     else:

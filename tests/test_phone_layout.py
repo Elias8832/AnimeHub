@@ -149,15 +149,20 @@ class BackAndSwipes(unittest.TestCase):
     def test_layers_take_a_history_entry(self):
         for name in ('ovOpen("rmt"', 'ovOpen("deck"', 'ovOpen("sr"', 'ovOpen("flt"', 'ovOpen("set"'):
             self.assertIn(name, APP)
-        self.assertIn("const top = OV.pop();\n  if (top) { top.close();", APP)
+        self.assertIn("const top = OV.pop();", APP)
+        self.assertIn("if (top) { top.close();", APP)
         self.assertIn("if (history.state?.ov) { OV.length = 0; history.replaceState(h, \"\", navUrl()); return; }", APP)
 
     def test_back_from_a_playlist_lands_on_the_list(self):
         """Elias: back inside a playlist left the Library. Opening one is its own
         step and so is the Playlists tab (always the overview); landing inside one
         from elsewhere, back goes where you came from."""
-        self.assertIn('history.pushState({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },', APP)
-        self.assertIn('if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();', APP)
+        # from one playlist to another (the side list) the step is replaced, so back still lands on the overview
+        self.assertIn('history[swap ? "replaceState" : "pushState"]({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },', APP)
+        self.assertIn('const swap = !!plCurrent(); S.lib.pl = +v;', APP)
+        self.assertIn('if (step) history.pushState({ ...navSnap(), inApp: true, plTab: true }, "", navUrl()); else navKeep();', APP)
+        # on the overview, a second click on the side list's Playlists goes back to the tab before
+        self.assertIn('if (v === "PLAYLISTS" && S.lib.tab === v && isRail()) return history.state?.plTab ? history.back() : A.tab(plFrom', APP)
         self.assertIn('if (S.view === "library" && plCurrent() && history.state?.plStep) pull = { kind: "back"', APP)
         self.assertIn('S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl;', APP)
 
@@ -473,18 +478,22 @@ class PhoneRound3(unittest.TestCase):
         self.assertIn(".jr2.phone:not(.jmove) .jpane:not(.on){height:0;overflow:hidden}", CSS)
 
     def test_settings_rows_put_the_choice_beside_the_name(self):
-        self.assertIn(".set2:not(.phone) .srow>div:first-child{display:contents}", CSS)
-        self.assertIn(".set2:not(.phone) .srow{flex-direction:row!important;flex-wrap:wrap;", CSS)
+        # Decision 94 replaced round 3's rows: a switch or a value beside the name, buttons under it
+        self.assertIn(".set2:where(.phone,.pset) .settings .srow{display:grid;grid-template-columns:minmax(0,1fr) auto;", CSS)
+        self.assertIn(".set2:where(.phone,.pset) .settings .srow>.ctl:has(>.pkseg){grid-column:1/-1;grid-row:2;", CSS)
 
 
 
 class PhoneRound4(unittest.TestCase):
     """TODO 177 round 4: Elias picked Search B (field at the thumb, tidied) and Remote B (big controls on the art)."""
 
-    def test_search_library_hits_are_wide_cards(self):
-        self.assertIn('"srwide", `<span class="tx"><b>${hl(s.title, qq)}</b>', APP)
-        self.assertIn("sec(`On AniList <small>${remote.length}</small>`)", APP)
-        self.assertIn('.pal2.touch .mi.srwide:before{content:"";display:block;position:absolute;inset:0;width:auto;', CSS)  # beats the PC list's 3 px selection bar
+    def test_search_top_hit_rises_from_the_field(self):
+        # TODO 238 (Elias: A's look, B's list): one top hit right above the field, the rest stacked upward.
+        self.assertIn(".pal2.touch.up .plist{display:flex;flex-direction:column-reverse;", CSS)
+        self.assertIn('"srtop art" + fresh', APP)
+        self.assertIn('<div class="srscope">', APP)
+        self.assertIn('srplan: (v, t) => {', APP)
+        self.assertIn("return l?.closest(\".up\") ? { scrollTop: l.scrollHeight - l.clientHeight + l.scrollTop } : l;", APP)  # pull-to-close only from the visual top
 
     def test_search_field_is_a_dock_pill(self):
         self.assertIn("#pal .pin{height:62px;padding:0 9px 0 18px;gap:12px;border-radius:26px;background:rgba(28,29,34,.96)", CSS)
@@ -497,10 +506,6 @@ class PhoneRound4(unittest.TestCase):
         self.assertIn("S.rmtRow]);", APP)  # opening a row redraws the remote
         self.assertNotIn("rsleep", APP)
         self.assertIn(".sp2.rv .eps.strip{flex-direction:row", CSS.replace(".sp2.frpage .eps.strip,", ""))
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class PlayOnTheOtherSide(unittest.TestCase):
@@ -579,12 +584,13 @@ class TabPager(unittest.TestCase):
         # right after a swipe Chrome shows layers it hasn't drawn: the new tab
         # is built unseen under the copy, and shown only after it is drawn
         end = self.body("pagerEnd")
-        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";\n    nav(to, null, true);', end)  # drawn while it waits (at 0 Chrome skips it)
-        self.assertIn("requestAnimationFrame(() => setTimeout(show, PAGER_DRAW))", end)
-        self.assertIn('addEventListener("touchstart", show, { capture: true, passive: true });', end)  # a touch shows it at once
+        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";\n    nav(to, null, true);\n    pagerReveal(', end)  # drawn while it waits (at 0 Chrome skips it)
         self.assertIn('app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";', end)  # no fade
+        reveal = self.body("pagerReveal")
+        self.assertIn("requestAnimationFrame(() => setTimeout(once, PAGER_DRAW))", reveal)
+        self.assertIn('addEventListener("touchstart", once, { capture: true, passive: true });', reveal)  # a touch shows it at once
         # the landing's own scroll back to where the tab was doesn't count as a scroll
-        self.assertIn("Math.abs(scrollY - y0) > 2 && show()", end)
+        self.assertIn("Math.abs(scrollY - y0) > 2 && once()", reveal)
 
     def test_body_marks_change_with_the_slide(self):
         # Home's art hides the backdrop and the top bar darkens once scrolled:
@@ -611,3 +617,107 @@ class TabPager(unittest.TestCase):
         self.assertIn("app.querySelector(sel)", self.body("pageMarks"))
         self.assertIn("#app .lib2 .filters,.tpeek .lib2 .filters{display:none}", CSS)
         self.assertIn('if (still) { w.innerHTML = cards.slice(0, 24).join("") || empty; return; }', APP)
+
+
+class PhoneSettingsC(unittest.TestCase):
+    """Decision 94 (TODO 237): Elias picked mockup C for Settings on a phone."""
+
+    def test_list_is_tiles_over_the_show(self):
+        self.assertIn("function setHero()", APP)
+        self.assertIn('<div class="stiles">', APP)
+        self.assertIn('class="stile${warn(k) ? " warn" : ""}"', APP)  # no VPN reads in amber
+        self.assertNotIn("setHeads", APP)  # no group headings, as on the PC (Decision 73)
+        self.assertIn(".stiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))", CSS)
+
+    def test_sections_get_the_art_and_cards(self):
+        self.assertIn('<div class="set2${isPhone() ? " pset" : ""}">${isPhone() ? `${setHero()}', APP)
+        self.assertIn(".set2:where(.phone,.pset) .settings .srow:not(.srow+.srow){border-top-left-radius:22px", CSS)
+
+    def test_only_settings_on_a_phone_get_the_touch_controls(self):
+        self.assertIn("pickTouch = isPhone();\n  try { return settPage(); } finally { pickTouch = false; }", APP)
+
+    def test_keys_stay_on_the_pc(self):
+        self.assertIn("m.keys && !pickTouch ? hkGroup(m)", APP)
+
+    def test_a_list_opens_as_a_sheet_and_the_closing_tap_is_eaten(self):
+        self.assertIn('const sheet = !!sel.closest(".pklist");', APP)
+        self.assertIn('ovOpen("dd", () => ddClose(false))', APP)  # Android's back closes it
+        self.assertIn("if (ddEat && Date.now() - ddEat < 700", APP)
+        self.assertIn('e.target.closest?.(".set2 .srow:has(.pksw,.pklist)")', APP)  # the whole row is the target
+        self.assertIn("#ddm.sheet{left:8px!important;", CSS)
+
+    def test_settings_open_with_a_short_entrance_on_touch(self):
+        # touch drops page entrances (#app.nav-in * is none!important, Decision 44); these beat it
+        self.assertIn("#app.nav-in .set2.phone .stile{--ds:.94;animation:setIn", CSS)
+        self.assertIn("#app.nav-in .set2.pset .settings{--dx:56px;--dy:0px;animation:setIn", CSS)
+        self.assertIn("@keyframes setIn{from{opacity:0;transform:translate(var(--dx,0px),var(--dy,16px)) scale(var(--ds,1))}}", CSS)
+        self.assertIn('app.classList.add("setback")', APP)  # Back: the list comes from the left
+        self.assertIn("#app.setback .set2.phone :is(.shero,.hello,.slsearch,.stile){--dx:-36px", CSS)
+        self.assertIn("#app.setback.nav-in .set2.phone .shero{animation:heroBack", CSS)  # the banner moves on the way out too
+
+    def test_the_sheet_slides_away(self):
+        self.assertIn('m.classList.add("out");', APP)
+        self.assertIn("#ddm.sheet.out{animation:sheetOut", CSS)
+        self.assertIn('clearTimeout(ddClose.t); m.classList.remove("out"); // a sheet still sliding away', APP)
+
+    def test_cards_stay_out_of_the_pop_ups(self):
+        # master's pop-ups put Settings rows in .dlb.set2 (TODO 226); the phone cards are for the Settings pages only
+        a = CSS.index("Settings on a phone (Decision 94"); b = CSS.index("@keyframes sheetIn", a)
+        self.assertNotIn(".set2 ", CSS[a:b])
+
+    def test_pairing_form_sits_in_its_card(self):
+        self.assertIn('srow("2. Here", "Type the address and code it shows.", `<div class="row peerform">', APP)
+
+
+class BackPager(unittest.TestCase):
+    """The back swipe (Elias, 2026-11-13: "a bit laggy, feels weird to use"):
+    like the tab pager, the page you go back to is a copy beside this one, both
+    follow the finger, and the page is built for real under its copy."""
+
+    def body(self, name):
+        i = APP.index(f"function {name}(")
+        return APP[i:APP.index("\n}\n", i)]
+
+    def test_follows_the_finger_beside_the_page_before(self):
+        move = self.body("backMove")
+        self.assertIn('p.pk.style.transform = `translate3d(${(tx - W).toFixed(1)}px,0,0)`; p.pk.style.opacity = "1";', move)
+        self.assertIn("if (p.pb) p.pb.style.transform = t;", move)  # the Play bar goes with its page
+        self.assertIn("swSet(", move)
+        self.assertNotIn("scale(", move)  # no more shrinking card
+        self.assertIn("else if ((p.bk = backTarget())) backLock(p);", APP)
+        self.assertIn("if (p.bk) { backMove(p, x); return; }", APP)
+        self.assertIn("if (p.bk && p.side) return backEnd(p);", APP)
+
+    def test_copies(self):
+        # a tab or the Settings list is built like the pager's copies; a show,
+        # franchise or Settings page is the page itself, kept when nav() replaced it
+        self.assertIn("setlist: () => Sett()", APP)
+        self.assertIn("if (PEEK_PAGE[rec.view]) return peekFresh(rec.view);", self.body("backPeek"))
+        self.assertIn("S.backGrab = rec.node;", self.body("backSave"))
+        self.assertIn("if (S.backGrab) { S.backGrab.append(...app.childNodes); S.backGrab = null; }", self.body("render"))
+        self.assertIn("backSave();", self.body("nav"))
+        # ids the CSS doesn't style go, so a lookup never finds the copy
+        self.assertIn('if (!PK_IDS.has(e.id)) e.removeAttribute("id")', self.body("backPeek"))
+        self.assertIn('$("#app #entryacts")', APP)
+        # kept per history entry, the last few
+        self.assertIn("curPnid = curNid; curNid = nidNew();", self.body("pushNav"))
+        self.assertIn("nid: curNid, pnid: curPnid,", APP)
+        self.assertIn("if (backs.size > 6) backs.delete(k);", self.body("backSave"))
+        self.assertIn("return (curPnid && backs.get(curPnid)) || null;", self.body("backTarget"))
+
+    def test_lands_under_its_copy(self):
+        end = self.body("backEnd")
+        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";', end)
+        self.assertIn('backSwiped = "pager";\n    history.back();', end)
+        self.assertIn("requestAnimationFrame(() => {", end)  # backdrop and marks a frame after the slide starts
+        self.assertIn("pageMarks(pk.firstChild);", end)
+        self.assertIn('applyNav(st, swiped === "pager");\n  if (swiped === "pager") return backLand();', APP)
+        self.assertIn("S.navQuiet = !!quiet; render(stay);", self.body("applyNav"))  # no entrance
+        land = self.body("backLand")
+        self.assertIn("calmIn(app);", land)
+        # where the copy showed it, again after the browser's own scroll restore
+        self.assertIn("requestAnimationFrame(() => { scrollTo(0, L.sy); pagerReveal(reveal); });", land)
+
+
+if __name__ == "__main__":
+    unittest.main()

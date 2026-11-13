@@ -118,14 +118,16 @@ def _rows(c, ids=None):
 
 
 def episode_facts(slots=None):
+    """Every slot this device has, untouched ones as EMPTY: a slot missing
+    from the answer means "not here" (a deleted file, an unplugged drive),
+    which the merge reads as unchanged, never as unwatched."""
     slots = slot_map() if slots is None else slots
     with database.db() as c:
         rows = _rows(c)
     out = {}
     for key, ids in slots.items():
         f = _combine([rows[i] for i in ids if i in rows])
-        if _meaningful(f):
-            out[key] = f
+        out[key] = f if _meaningful(f) else list(EMPTY)
     return out
 
 
@@ -240,8 +242,10 @@ def apply_curation(rows):
 
 def facts_payload():
     """GET /api/sync/facts."""
+    # every_slot (additive): "episodes" lists every slot, so a missing one
+    # is "not here", not "unwatched". An older PC's answer lacks it.
     return {"version": VERSION, "name": socket.gethostname(), "episodes": episode_facts(),
-            "playlists": playlist_facts(), "curation": curation_facts()}
+            "every_slot": True, "playlists": playlist_facts(), "curation": curation_facts()}
 
 
 def _check_fact(f):
@@ -305,11 +309,25 @@ def further(a, b):
     return [bool(a[0] or b[0]), newer[1], newer[2], newer[3]]
 
 
-def merge_episodes(mine, theirs, base):
+def _side(facts, every_slot, other, base, key):
+    """One side's value for a slot. A side that lists every slot and lacks
+    this one doesn't have it (a deleted file, an unplugged drive): it stands
+    as last agreed — or, never synced, as the other side has it — so the
+    other side's facts are never wiped by it. An older peer's missing slot
+    is EMPTY, as before."""
+    if key in facts:
+        return facts[key]
+    if not every_slot:
+        return EMPTY
+    return other.get(key, EMPTY) if base is None else base.get(key, EMPTY)
+
+
+def merge_episodes(mine, theirs, base, theirs_every_slot=True):
     """{slot: result} for every slot either side has. base None: never synced."""
     out = {}
     for key in set(mine) | set(theirs):
-        m, t = mine.get(key, EMPTY), theirs.get(key, EMPTY)
+        m = _side(mine, True, theirs, base, key)
+        t = _side(theirs, theirs_every_slot, mine, base, key)
         b = None if base is None else base.get(key, EMPTY)
         if m == t:
             out[key] = m
@@ -355,6 +373,21 @@ def merge_playlists(mine, theirs):
         if win is not t:
             for_them[uid] = win
     return for_me, gone_me, for_them, gone_them, renames
+
+
+def episode_writes(facts, every_slot, base, result):
+    """{slot: [was, now]} to write on one side. A slot it lacks gets a write
+    only when the result is new since the last agreement (never synced:
+    anything worth keeping) — a deleted file never gets its old facts back
+    as an online twin."""
+    out = {}
+    for key, v in result.items():
+        if key in facts:
+            if facts[key] != v:
+                out[key] = [facts[key], v]
+        elif _meaningful(v) and v != (base.get(key, EMPTY) if base is not None and every_slot else EMPTY):
+            out[key] = [list(EMPTY), v]
+    return out
 
 
 def merge_curation(mine, theirs):
@@ -560,10 +593,10 @@ def sync_once():
             slots = slot_map()
             mine = episode_facts(slots)
             base = p["snapshot"]
-            result = merge_episodes(mine, theirs["episodes"], base)
-            to_them = {k: [theirs["episodes"].get(k, EMPTY), v] for k, v in result.items()
-                       if theirs["episodes"].get(k, EMPTY) != v}
-            to_me = {k: [mine.get(k, EMPTY), v] for k, v in result.items() if mine.get(k, EMPTY) != v}
+            every = bool(theirs.get("every_slot"))
+            result = merge_episodes(mine, theirs["episodes"], base, every)
+            to_them = episode_writes(theirs["episodes"], every, base, result)
+            to_me = episode_writes(mine, True, base, result)
             lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(playlist_facts(), theirs["playlists"])
             if renames:
                 with database.db() as c:

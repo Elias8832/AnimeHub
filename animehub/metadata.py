@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import json
 import re
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -25,6 +26,10 @@ EPISODE_META_TTL = 12 * 3600
 _meta_status = {"running": False, "pending": 0, "total": 0, "current": None, "phase": None, "matching": []}
 
 
+# One change to overrides.json at a time: read, change, write.
+_overrides_lock = threading.Lock()
+
+
 def load_overrides():
     f = config.DATA / "overrides.json"
     if f.exists():
@@ -33,6 +38,18 @@ def load_overrides():
         except Exception:
             return {}
     return {}
+
+
+def _save_overrides(overrides):
+    """Atomic: a torn file reads as {} and the next pin would write that
+    over every manual match."""
+    f = config.DATA / "overrides.json"
+    tmp = f.with_name(f".overrides.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(json.dumps(overrides, indent=1), encoding="utf-8")
+        system.replace(tmp, f)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def fetch_media_full(id=None, search=None):
@@ -285,17 +302,6 @@ def local_media_candidates(title):
     found = [c for c in cards.values() if c]
     found.sort(key=lambda m: (score[m["id"]], -(m.get("popularity") or 0)))
     return found[:10]
-
-
-def polluted_playlist(ref_thumbs, cand_thumbs):
-    """True when a candidate streaming playlist carries the reference entry's
-    (franchise S1) thumbnails — AniList's Attack-on-Titan-style data bug."""
-    if not ref_thumbs or not cand_thumbs:
-        return False
-    shared = [k for k in ref_thumbs if k in cand_thumbs and k in ("1", "2", "3")]
-    if len(shared) < 2:
-        return False
-    return all(ref_thumbs[k] == cand_thumbs[k] for k in shared)
 
 
 def sequel_id(media_id):
@@ -582,16 +588,16 @@ def clear_match(show_id):
         # Old per-season art (season_thumbs, no longer written) goes with it.
         # Season pins stay: they name entries, not the folder's match.
         c.execute("DELETE FROM season_thumbs WHERE show_id=?", (show_id,))
-    overrides = load_overrides()
-    changed = False
-    for show in library.scan_library():
-        if show["id"] != show_id:
-            continue
-        for key in (show["title"], show.get("path")):
-            if key and overrides.pop(key, None) is not None:
+    keys = [key for show in library.scan_library() if show["id"] == show_id
+            for key in (show["title"], show.get("path")) if key]
+    with _overrides_lock:
+        overrides = load_overrides()
+        changed = False
+        for key in keys:
+            if overrides.pop(key, None) is not None:
                 changed = True
-    if changed:
-        (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")
+        if changed:
+            _save_overrides(overrides)
 
 
 def kept_local():
@@ -620,9 +626,10 @@ def pin_match(path, anilist_id):
     """A folder's release, written down before anything is fetched: every
     metadata pass reads it (refresh_meta), so a match AniList couldn't
     answer for now is made on the next one."""
-    overrides = load_overrides()
-    overrides[path] = {"anilistId": anilist_id}
-    (config.DATA / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")
+    with _overrides_lock:
+        overrides = load_overrides()
+        overrides[path] = {"anilistId": anilist_id}
+        _save_overrides(overrides)
 
 
 def set_match(show_id, anilist_id=None, query=None):

@@ -437,6 +437,22 @@ def cache_get_ts(key):
         return None
 
 
+def cache_get_ts_many(keys):
+    """{key: (payload, ts)} for every key that has a readable row, in one
+    connection (a connection per key costs seconds on Windows)."""
+    keys, out = list(keys), {}
+    with db() as c:
+        for i in range(0, len(keys), 500):
+            part = keys[i:i + 500]
+            for key, payload, ts in c.execute(
+                    "SELECT key, payload, ts FROM catalog_cache WHERE key IN (%s)" % ",".join("?" * len(part)), part):
+                try:
+                    out[key] = (json.loads(payload), ts)
+                except Exception:
+                    pass
+    return out
+
+
 def cache_del(key):
     with db() as c:
         c.execute("DELETE FROM catalog_cache WHERE key=?", (key,))
@@ -445,16 +461,29 @@ def cache_del(key):
 # Longest any reader keeps a row is 12 h (EPISODE_META_TTL); stale panel
 # reads (anilist_entry_state_quick) take any age, so a week is plenty.
 CACHE_KEEP = 7 * 24 * 3600
+# Kept at any age: the MAL list's AniList matches stand in when AniList
+# can't be asked (mal.catalog), MAL ids are kept a year (mal.mal_id_of),
+# and the About section falls back to its stored copy (media_about). One
+# row per show, so they stay small.
+CACHE_KEEP_ALWAYS = ("malcat:", "idmal:", "media-about:")
 
 
 def cache_prune(now=None):
     """Drop catalog rows nobody reads any more (TODO 61: it never pruned)."""
+    keep = " AND ".join("key NOT LIKE ?" for _ in CACHE_KEEP_ALWAYS)
     with db() as c:
-        return c.execute("DELETE FROM catalog_cache WHERE ts < ?",
-                         ((now or time.time()) - CACHE_KEEP,)).rowcount
+        return c.execute(f"DELETE FROM catalog_cache WHERE ts < ? AND {keep}",
+                         ((now or time.time()) - CACHE_KEEP,
+                          *(p + "%" for p in CACHE_KEEP_ALWAYS))).rowcount
 
 
 def cache_put(key, payload):
+    cache_put_many([(key, payload)])
+
+
+def cache_put_many(items):
+    """cache_put for several (key, payload) pairs in one transaction."""
+    now = time.time()
     with db() as c:
-        c.execute("INSERT INTO catalog_cache(key,payload,ts) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, ts=excluded.ts",
-                  (key, json.dumps(payload), time.time()))
+        c.executemany("INSERT INTO catalog_cache(key,payload,ts) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, ts=excluded.ts",
+                      [(key, json.dumps(payload), now) for key, payload in items])

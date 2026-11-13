@@ -94,6 +94,14 @@ def clear_token():
     config.MAL_TOKEN_FILE.unlink(missing_ok=True)
 
 
+def _drop_login():
+    """MAL refused the login: it ends, and the write that failed keeps its
+    account (Decision 24)."""
+    from . import anilist  # anilist imports this module
+    anilist.note_cleared(account_id())
+    clear_token()
+
+
 def connected():
     """A MAL login is kept. An access token that ran out still counts: the
     refresh token renews it on the next request, and a refused refresh
@@ -142,7 +150,9 @@ def _token_call(fields):
         last_ok = time.time()
         return out
     except HTTPError as e:
-        if e.code in (400, 401, 403):
+        # 403 is MAL blocking the address for a while (as in api()), not a
+        # refused grant: it must not end the login.
+        if e.code in (400, 401):
             raise _auth_error("MyAnimeList refused the login")
         raise _transient("MyAnimeList login server error (HTTP %d)" % e.code, status=e.code)
     except (URLError, OSError, TimeoutError, ValueError) as e:
@@ -163,13 +173,13 @@ def _refresh(used):
         if cur["access_token"] != used:
             return cur
         if not cur.get("refresh_token"):
-            clear_token()
+            _drop_login()
             raise _auth_error("MyAnimeList login expired — reconnect")
         try:
             data = _token_call({"grant_type": "refresh_token", "refresh_token": cur["refresh_token"]})
             fresh = _token_fields(data)
         except _errors()[0]:
-            clear_token()
+            _drop_login()
             raise _auth_error("MyAnimeList login expired — reconnect")
         rec = {**cur, **{k: v for k, v in fresh.items() if v is not None or k == "expires_at"}}
         return store_token(rec)
@@ -226,7 +236,7 @@ def api(method, path, params=None, form=None, token=None):
                 if attempt == 0:
                     tok = _refresh(access)
                     continue
-                clear_token()
+                _drop_login()
                 raise _auth_error("MyAnimeList rejected the saved login — reconnect")
             if e.code >= 500 or e.code in (403, 429):
                 raise _transient("MyAnimeList unavailable (HTTP %d)" % e.code, status=e.code)
@@ -356,8 +366,9 @@ def catalog(mal_ids, report=None):
     last answer at any age stands in; an id never asked raises."""
     from . import anilist
     out, ask = {}, []
+    cached = database.cache_get_ts_many(_catalog_key(mid) for mid in mal_ids)
     for mid in mal_ids:
-        row = database.cache_get_ts(_catalog_key(mid))
+        row = cached.get(_catalog_key(mid))
         if row and _catalog_fresh(row):
             out[mid] = row[0].get("media")
         else:
@@ -371,7 +382,7 @@ def catalog(mal_ids, report=None):
             found = ((data.get("data") or {}).get("Page") or {}).get("media") or []
         except Exception:
             for mid in ask[i:]:
-                row = database.cache_get_ts(_catalog_key(mid))
+                row = cached.get(_catalog_key(mid))
                 if row is None:
                     raise
                 out[mid] = row[0].get("media")
@@ -380,12 +391,14 @@ def catalog(mal_ids, report=None):
         for m in found:
             if isinstance(m, dict) and m.get("idMal") in batch and m["idMal"] not in by_mal:
                 by_mal[m["idMal"]] = m
+        rows = []
         for mid in batch:
             m = by_mal.get(mid)
-            database.cache_put(_catalog_key(mid), {"media": m})
+            rows.append((_catalog_key(mid), {"media": m}))
             if m:
-                database.cache_put("idmal:%d" % m["id"], {"idMal": mid})
+                rows.append(("idmal:%d" % m["id"], {"idMal": mid}))
             out[mid] = m
+        database.cache_put_many(rows)
     return out
 
 

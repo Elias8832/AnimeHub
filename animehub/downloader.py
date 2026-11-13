@@ -198,7 +198,11 @@ def _dl_fetch(job, link, dest, had_file, created):
     # the user's (mpv) flags would break them.
     mode = job.get("mode") or link["mode"]
     env = anicli.anicli_env(link, ANI_CLI_DOWNLOAD_DIR=system.shell_path(dest), ANI_CLI_PLAYER_FLAGS="", ANI_CLI_MODE=mode)
-    proc = anicli.anicli_spawn(["-d", "-e", job["token"], link["query"]], env, subprocess.PIPE, subprocess.STDOUT)
+    try:
+        proc = anicli.anicli_spawn(["-d", "-e", job["token"], link["query"]], env, subprocess.PIPE, subprocess.STDOUT)
+    except Exception:
+        _dl_cleanup(dest, job["token"], had_file, created)  # the folder made for it goes too
+        raise
     with _dl_cv:
         job["proc"] = proc
         if job.get("cancel"):

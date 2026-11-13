@@ -186,7 +186,7 @@ class MatchDialog(unittest.TestCase):
 
     def test_episode_count_is_green_only_when_it_fits(self):
         # search rows and the guess rail: green when it equals the file count, plain otherwise
-        got = self.node("const esc = (x) => x; const FMT = { TV: \"TV\" };\n" + _js_fn("const candMeta = ", ";\n")
+        got = self.node("const esc = (x) => x; const FMT = { TV: \"TV\" }; const fmtName = (f) => FMT[f] || f;\n" + _js_fn("const candMeta = ", ";\n")
                         + _js_fn("const candFits = ", ";\n") + """console.log(JSON.stringify(
             [11, 12].map((n) => candFits({ seasonYear: 2013, format: "TV", episodes: 11 }, n))));""")
         self.assertEqual(got, ['2013 · TV · <em class="mok">11 ep</em>', "2013 · TV · 11 ep"])

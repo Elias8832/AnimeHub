@@ -125,8 +125,15 @@ def refresh(name):
         for _ in range(BACK_PAGES):
             if log["complete"] or not log["items"]:
                 break
-            acts, more = _page(log["uid"], before=log["items"][-1]["at"])  # older than the oldest we have
-            merge_page(log, acts)
+            # From the oldest we have's second on (createdAt_lesser is strict):
+            # its neighbours in that second come along, the held ones are
+            # dropped by id. A page of nothing but held ones (a whole page in
+            # that second) moves on to the seconds before it.
+            oldest = log["items"][-1].get("at")
+            acts, more = _page(log["uid"], before=oldest + 1 if oldest else None)
+            if acts and not merge_page(log, acts) and oldest:
+                acts, more = _page(log["uid"], before=oldest)
+                merge_page(log, acts)
             if not more or not acts:
                 log["complete"] = True
         log["ts"] = time.time()

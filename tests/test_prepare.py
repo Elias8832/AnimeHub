@@ -117,6 +117,24 @@ class HeldBack(unittest.TestCase):
         self.assertFalse(self.held(eps=("1", "2", "3", "4", "5")))
         self.assertFalse(self.held(m={"status": "FINISHED", "episodes": 3}))
 
+    def test_next_episode_counts_once_its_airing_time_passed(self):
+        # A stored AniList copy is up to a day old: E6 aired an hour ago
+        # (Apothecary Diaries S3: 6 listed, E7 "next" though it was out).
+        m = {"status": "RELEASING", "nextAiringEpisode": {"episode": 6, "airingAt": time.time() - 3600}}
+        self.assertEqual(streaming.release_aired(m), 6)
+        self.assertTrue(self.held(eps=("1", "2", "3", "4", "5"), m=m))
+        m["nextAiringEpisode"]["airingAt"] = time.time() + 3600
+        self.assertEqual(streaming.release_aired(m), 5)
+        self.assertFalse(self.held(eps=("1", "2", "3", "4", "5"), m=m))
+
+    def test_a_list_behind_is_due_after_half_an_hour(self):
+        # Asked right as an episode aired, the site often hasn't got it yet.
+        self.assertTrue(self.held(age=31 * 60))
+        self.assertFalse(self.held(age=29 * 60))
+        link = {"episodes_ts": time.time() - 31 * 60, "episodes": ["1", "2", "3", "4", "5"]}
+        self.assertFalse(pages.list_stale(self.AIRING, link))
+        self.assertTrue(pages.list_stale(self.AIRING, dict(link, episodes=["1"])))
+
     def test_no_link_says_nothing(self):
         with mock.patch.object(settings, "site_ok", return_value=False):
             self.assertFalse(pages.vpn_held(self.AIRING, None))

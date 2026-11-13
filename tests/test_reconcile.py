@@ -189,6 +189,8 @@ class ReconcileAnalyzeTests(unittest.TestCase):
         entry = dict(entry_fixture(5114, progress=8, eps=24), airing="RELEASING", next_episode={"number": 7})
         self.assertEqual(sync._aired(entry), 6)
         self.assertEqual(sync._aired(dict(entry, airing="NOT_YET_RELEASED")), 0)
+        # the stored list row is older than E7's airing time: E7 is out too
+        self.assertEqual(sync._aired(dict(entry, next_episode={"number": 7, "at": 1})), 7)
 
     def test_an_online_list_too_long_for_the_entry_sits_out(self):
         """A wrong link (more episodes than the entry has) marks nothing."""

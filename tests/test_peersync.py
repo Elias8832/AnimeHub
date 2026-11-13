@@ -87,7 +87,16 @@ class Merge(unittest.TestCase):
 
     def test_a_slot_only_one_side_has(self):
         self.assertEqual(peersync.merge_episodes({}, {"1:2": self.B}, {}), {"1:2": self.B})
-        self.assertEqual(peersync.merge_episodes({}, {"1:2": self.B}, {"1:2": self.B}), {"1:2": peersync.EMPTY})
+        # Missing here (a deleted file): unchanged, not unwatched. An explicit
+        # EMPTY is a real untick and wins.
+        self.assertEqual(peersync.merge_episodes({}, {"1:2": self.B}, {"1:2": self.B}), {"1:2": self.B})
+        self.assertEqual(peersync.merge_episodes({"1:2": peersync.EMPTY}, {"1:2": self.B}, {"1:2": self.B}),
+                         {"1:2": peersync.EMPTY})
+
+    def test_an_older_peer_merges_as_before(self):
+        # Its answer has no every_slot: a slot it leaves out is EMPTY.
+        self.assertEqual(peersync.merge_episodes({"1:2": self.B}, {}, {"1:2": self.B}, False), {"1:2": peersync.EMPTY})
+        self.assertEqual(peersync.merge_episodes({"1:2": self.B}, {}, {"1:2": self.B}), {"1:2": self.B})
 
     def test_addresses(self):
         for raw in ("192.168.2.31:8789", " http://192.168.2.31:8789/ ", "HTTP://192.168.2.31:8789"):
@@ -132,6 +141,31 @@ class Episodes(unittest.TestCase):
         ep(APP_DB, "stream:5:1", 0, 0, 1420, "2026-11-10 20:00:00")
         sync()
         self.assertFalse(row(PC_DB, "stream:5:1")[0])
+
+    def test_an_untick_on_the_pc_reaches_the_app(self):
+        ep(PC_DB, "stream:5:1", 1, 0, 1420, "2026-11-10 20:00:00")
+        sync()
+        ep(PC_DB, "stream:5:1", 0, 0, 0, None)  # not meaningful: sent as an explicit EMPTY
+        sync()
+        self.assertFalse(row(APP_DB, "stream:5:1")[0])
+
+    def test_a_file_deleted_on_the_pc_keeps_the_apps_mark(self):
+        pc_slots = {"7:3": ["file-abc"]}
+        real = peersync.slot_map
+        ep(PC_DB, "file-abc", 1, 0, 1400, "2026-11-12 08:00:00")
+        with patch.object(peersync, "slot_map", lambda: dict(pc_slots) if config.DB == PC_DB else real()):
+            sync()
+            self.assertEqual(row(APP_DB, "stream:7:3"), (True, 0, 1400, "2026-11-12 08:00:00"))
+            pc_slots.clear()  # watched, then deleted (or the drive unplugged)
+            self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+            self.assertEqual(row(APP_DB, "stream:7:3"), (True, 0, 1400, "2026-11-12 08:00:00"))
+            self.assertIsNone(row(PC_DB, "stream:7:3"))  # nothing new for the PC: no online twin made
+            # Played again on the app: that is new, and reaches the PC as its online episode.
+            ep(APP_DB, "stream:7:3", 1, 300, 1400, "2026-11-13 08:00:00")
+            sync()
+            self.assertEqual(row(PC_DB, "stream:7:3"), (True, 300, 1400, "2026-11-13 08:00:00"))
+            pc_slots["7:3"] = ["file-abc", "stream:7:3"]  # downloaded again (slot_map adds its online row)
+            self.assertEqual(sync(), {"pulled": 0, "pushed": 0})  # the two agree
 
     def test_both_played_the_later_stop_point_wins(self):
         sync()

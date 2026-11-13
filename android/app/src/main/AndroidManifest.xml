@@ -11,7 +11,9 @@
     <!-- ani-cli runs in the user's Termux (Decision 88) -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <queries><package android:name="com.termux" /></queries>
+    <!-- no backup: the hub's data holds the AniList and MyAnimeList tokens -->
     <application android:label="AnimeHub" android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true"

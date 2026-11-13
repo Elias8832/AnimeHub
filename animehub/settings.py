@@ -231,6 +231,11 @@ def _update_payload():
     return update.payload()
 
 
+def _recap_after():
+    from . import recap  # recap.py needs this module
+    return str(recap.after_months())
+
+
 def _tools_payload():
     from . import tools  # tools.py needs this module
     return tools.payload()
@@ -330,7 +335,7 @@ def settings_payload():
         "phone_play_both": automation_enabled("phone_play_both"),
         # additive (Decision 85): the "Remember Season 1?" popup and its wait in months
         "recap_ask": automation_enabled("recap_ask"),
-        "recap_after": get_setting("recap_after") if get_setting("recap_after") in ("1", "2", "3", "6", "12") else "2",
+        "recap_after": _recap_after(),
         # additive (Decision 45): mpv options, "on" / "off" / "own"
         "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks"),
                 "look": player_look(), "looks": list(PLAYER_LOOKS),
@@ -454,11 +459,21 @@ def browse_dirs(path=None):
     }
 
 
+# Two settings saved at once (the PC and a phone) must not both rewrite the
+# file from the same old copy, nor share the temp file.
+_config_lock = threading.Lock()
+
+
 def write_config_key(key, value):
     """Set one key in the config file, keeping every other key (unknown
     ones included) as the user wrote them. A missing file is created; an
     unreadable one is refused rather than overwritten — it is the user's
     file. Written via a temp file + rename so a crash never truncates it."""
+    with _config_lock:
+        _write_config_key(key, value)
+
+
+def _write_config_key(key, value):
     path = CONFIG_PATH
     try:
         # utf-8-sig: Windows editors may start the file with a BOM.

@@ -67,7 +67,12 @@ public class MainActivity extends Activity {
         if (code == 2) { web.evaluateJavascript("window.hubFilesBack && hubFilesBack()", null); return; }  // Android 8–10
         new Thread(() -> {
             try {
-                while (hub == null || !up()) Thread.sleep(100);
+                // Give up after 2 min (a first start unpacks the hub first): it didn't start.
+                int tries = 0;
+                while (hub == null || !up()) {
+                    if (++tries > 1200) { Log.e(TAG, "the hub did not start within 2 min"); return; }
+                    Thread.sleep(100);
+                }
                 Python.getInstance().getModule("animehub.android").callAttr("fetch_anicli", true);
             } catch (Exception e) {
                 Log.e(TAG, "ani-cli check after the permission failed", e);
@@ -105,7 +110,7 @@ public class MainActivity extends Activity {
             // AniList's and MyAnimeList's sign-in stays here until it comes back,
             // including the login page their sign-in address redirects to at once.
             String path = u.getPath() == null ? "" : u.getPath();
-            boolean account = host.endsWith("anilist.co") || host.endsWith("myanimelist.net");
+            boolean account = site(host, "anilist.co") || site(host, "myanimelist.net");
             if (account && (path.startsWith("/api/v2/oauth") || path.startsWith("/v1/oauth2"))) signingIn = true;
             if (account && signingIn) return false;
             try {
@@ -115,6 +120,11 @@ public class MainActivity extends Activity {
             }
             return true;
         }
+    }
+
+    /** The site itself or one of its subdomains, not a lookalike (evilanilist.co). */
+    static boolean site(String host, String domain) {
+        return host.equals(domain) || host.endsWith("." + domain);
     }
 
     /** Back from Android's file-access screen: reload, so the page sees the answer. */
@@ -221,13 +231,17 @@ public class MainActivity extends Activity {
     }
 
     static boolean up() {
+        HttpURLConnection c = null;
         try {
-            HttpURLConnection c = (HttpURLConnection) new URL(hub).openConnection();
+            c = (HttpURLConnection) new URL(hub).openConnection();
             c.setConnectTimeout(300);
+            c.setReadTimeout(2000);
             c.setRequestProperty("Cookie", "animehub_app=" + KEY);
             return c.getResponseCode() == 200;
         } catch (IOException e) {
             return false;
+        } finally {
+            if (c != null) c.disconnect();
         }
     }
 
