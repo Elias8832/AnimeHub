@@ -2474,7 +2474,7 @@ body.has-side #app{padding-left:340px}
   .home2.phone .disc{display:inline-flex;height:34px;padding:0 13px;font-size:13px;gap:6px}
   .home2.phone .disc .ico,.lib2 .swb .ico{width:15px;height:15px}
   .lib2 .fltb .att{position:absolute;right:6px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
-  #app .lib2 .filters{display:none}
+  #app .lib2 .filters,.tpeek .lib2 .filters{display:none}
   .fsheet .filters{display:flex;flex-direction:column;align-items:stretch;gap:14px;position:fixed;left:0;right:0;bottom:0;z-index:46;margin:0;padding:22px 18px calc(24px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;background:var(--glass-pop);box-shadow:var(--sh-pop);backdrop-filter:blur(22px);max-height:82vh;overflow-y:auto;animation:rvIn .3s var(--ease) both}
   .fsheet .filters .fill{display:none}
   .fsheet .filters .fltdone{display:inline-flex;height:48px;color:#111;font-size:15px}
@@ -2523,7 +2523,7 @@ body.has-side #app{padding-left:340px}
      soft look for ~1/16 of the drawing work on every art change. */
   .cv-blur{inset:auto;left:50%;top:50%;width:34%;height:34%;transform:translate(-50%,-50%) scale(3.6);filter:blur(15px) saturate(1.5) brightness(.85)}
   :root[data-art=soft] .cv-blur{inset:auto;filter:blur(35px) saturate(1.3) brightness(.5)}
-  #app *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  #app *,.tpeek *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
   #app.nav-in *,.wall.fade .card,.wall.fade .prog i{animation:none!important}
   .sp2 .eps .ep{content-visibility:auto;contain-intrinsic-size:auto 90px}
   .prow{content-visibility:auto;contain-intrinsic-size:auto 64px}
@@ -2534,6 +2534,13 @@ body.has-side #app{padding-left:340px}
 @keyframes tabR{from{opacity:0;transform:translateX(-34px)}}
 #app.tab-l{animation:tabL .34s cubic-bezier(.2,.8,.2,1)}
 #app.tab-r{animation:tabR .34s cubic-bezier(.2,.8,.2,1)}
+/* The tab pager's copies of the tabs beside this one (app.js peekBuild): fixed
+   beside #app, moved by their own transform, never touched; parked off the
+   screen until a swipe moves one in. */
+/* Parked in place, too faint to see (opacity .004: at 0 or off to the side Chrome doesn't keep it drawn, and on the phone it slid in as holes filled in mid-swipe). */
+.tpeek{position:fixed;inset:0;overflow:hidden;pointer-events:none;will-change:transform,opacity;contain:strict;opacity:.004}
+.tpeek>.pkpg{position:absolute;left:0;right:0}
+.tpeek *,.tpeek *::before,.tpeek *::after{animation:none!important;transition:none!important} /* a still copy: no entrances, no shimmer running off the screen */
 .pal2.touch{display:block;height:100%}
 .pal2.touch .plist{height:100%;overflow-y:auto;padding:calc(18px + env(safe-area-inset-top)) 16px 20px;scrollbar-width:none}
 .pal2.touch .srhd{margin:4px 0 18px}
@@ -3386,13 +3393,16 @@ body.pp-open #modal{z-index:70}
 @media (max-width:700px){
   /* Sideways rows snap a tile to the page's 16 px edge; tiles sit 10 px apart, so
      6 px of the one before peeked in. The row fades out over that edge instead (Elias). */
-  #app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px);mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px)}
+  #app .sp2.frpage .eps.strip,#app .home2.phone .crail,#app .home2.phone .rdy,.tpeek .home2.phone .crail,.tpeek .home2.phone .rdy{-webkit-mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px);mask:linear-gradient(90deg,transparent 0,transparent 8px,#000 16px)}
 }
 @media (max-width:700px){
   /* Home's hero is the art: the blurred art behind the page made a lighter band the
      hero's fade didn't meet, an edge under Play while scrolling (Elias). Plain dark here. */
   body.pg-uph #canvas>i:not(.cv-grain){opacity:0!important}
   body.pg-uph #canvas{background:var(--bg)} /* and the accent glow at the top */
+  /* Art and wash go together, with the tab swipe: the art's own longer fade outlived its
+     wash, and arriving on Home flashed the bright blurred art (Elias, 2026-11-13: "a lot gets white"). */
+  body.pg-uph #canvas>i:not(.cv-grain){transition:opacity .25s}
 }
 /* Show page episode tiles (Elias): the art may not zoom past its outline, and the
    progress bar follows the art's 16px corners instead of 4px ones */

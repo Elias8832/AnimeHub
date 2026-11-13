@@ -864,7 +864,7 @@ class ShowPagePolish(unittest.TestCase):
 
     def test_season_tabs_stay_one_row(self):
         self.assertIn(".sp2 .rels{flex-wrap:nowrap;max-width:100%;overflow-x:auto", CSS)
-        self.assertIn('$$("#app .sp2 .rels")', APP)
+        self.assertIn('root.querySelectorAll(".sp2 .rels")', APP)
 
     def test_art_dims_when_scrolled(self):
         self.assertIn("body.pg-fr .cv-wash:after{opacity:var(--sd,0)}", CSS)  # Decision 67: fades with the scroll
