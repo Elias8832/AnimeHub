@@ -75,6 +75,24 @@ class Frontend(unittest.TestCase):
                          [True, False, "TV, Movie"])
         self.assertEqual(run_js("S.lib.fmt = ['TV', 'MOVIE', 'OVA']; return fval('fmt', [['all', 'any']]);"), "3 picked")
 
+    def test_phone_card_says_one_fact_for_its_list(self):
+        """TODO 239: a phone card's line fits its list, from data only. Watching:
+        what's next and how many are left (or behind, or the next airing);
+        Planning: what it is; Completed: what and when; Dropped: where you stopped."""
+        fact = lambda e, air=None: run_js(
+            f"globalThis.airState = () => ({json.dumps(air or {})}); return phoneFact({json.dumps(e)});")
+        self.assertEqual(fact({"status": "CURRENT", "progress": 4, "episodes": 12, "airing": "FINISHED"}), "E5 next · 8 left")
+        self.assertEqual(fact({"status": "PAUSED", "progress": 6, "episodes": None}), "E7 next")
+        self.assertEqual(fact({"status": "CURRENT", "progress": 12, "episodes": 12}), "all seen")
+        airing = {"status": "CURRENT", "progress": 4, "episodes": 12, "airing": "RELEASING", "next_episode": {"number": 8, "in_seconds": 3600}}
+        self.assertEqual(fact(airing, {"behind": 3, "next": {"ep": 8}}), "E5 next · 3 behind")
+        self.assertEqual(fact(airing, {"behind": 0, "next": {"ep": 8}}), "E8 in 1h 0m")
+        self.assertEqual(fact({"status": "PLANNING", "format": "TV", "episodes": 12}), "TV · 12 ep")
+        self.assertEqual(fact({"status": "PLANNING", "format": "MOVIE", "episodes": 1}), "Movie")
+        self.assertEqual(fact({"status": "PLANNING", "format": "ONA", "episodes": None}), "ONA")  # no count yet: none guessed
+        self.assertEqual(fact({"status": "COMPLETED", "format": "TV", "year": 2019, "episodes": 12, "progress": 12}), "TV · 2019")
+        self.assertEqual(fact({"status": "DROPPED", "progress": 3, "episodes": 12, "format": "TV"}), "stopped after E3")
+
     def test_genre_tray_counts_the_open_tab(self):
         m = json.dumps({"entries": ENTRIES})
         self.assertEqual(run_js(f"return genreCounts({m});"), [["Action", 2], ["Drama", 2]])
@@ -334,7 +352,7 @@ class LibraryCards(unittest.TestCase):
         wall with its opening animation; a range only once it's let go."""
         self.assertIn("filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === \"group\") { S.fadeNext = true; return render(); } paintWall(true);", APP)
         self.assertIn("srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true);", APP)
-        self.assertIn('if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); paintWall(true);', APP)
+        self.assertIn('if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); saveLib(); if (e.target.closest(".fsheet")) return fltRepaint(); paintWall(true);', APP)
         self.assertNotIn("saveLib(); paintWall(); syncFilters();", APP)
 
 
@@ -384,7 +402,7 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn('const FMULTI = new Set(["src", "fmt", "air"]);', APP)
         self.assertIn('S.lib[k] = next.length ? next : "all";', APP)
         self.assertIn('(multi ? opts.filter(([v]) => v !== "all") : opts)', APP)  # nothing ticked = any, no "any" row
-        self.assertIn('const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);', APP)
+        self.assertIn('if (k === "group" || isPhone()) { fltRepaint(); return; }', APP)  # phones: the sheet stays on its page (TODO 239)
         self.assertIn(".lib2 .filters>.fdrop .fpanel{display:none;position:absolute;", CSS)
         self.assertIn('data-a="fpick" data-k="${k}"', APP)
         self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills

@@ -72,6 +72,10 @@ const ICONS = {
   cc: ['<rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="M7.5 13h3M13.5 13h3M7.5 10h9"/>'],
   speed: ['<path d="M4.5 17.5a8.5 8.5 0 1 1 15 0"/><path d="m12 13 3.5-4"/>'],
   lock: ['<rect x="5.5" y="10.5" width="13" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>'],
+  layers: ['<path d="m12 3.5 8.5 4.3-8.5 4.3-8.5-4.3z"/><path d="m3.5 12 8.5 4.3 8.5-4.3"/><path d="m3.5 16.2 8.5 4.3 8.5-4.3"/>'],
+  disk: ['<rect x="3.5" y="12.5" width="17" height="7" rx="2"/><path d="M5.5 12.5 8 5.5h8l2.5 7"/><path d="M16.5 16h.01"/>'],
+  radio: ['<circle cx="12" cy="12" r="2"/><path d="M8 8a5.6 5.6 0 0 0 0 8M16 8a5.6 5.6 0 0 1 0 8M5 5a9.9 9.9 0 0 0 0 14M19 5a9.9 9.9 0 0 1 0 14"/>'],
+  tag: ['<path d="M3.5 12V5a1.5 1.5 0 0 1 1.5-1.5h7l8.5 8.5-8.5 8.5z"/><circle cx="8.2" cy="8.2" r="1.4"/>'],
 };
 const ico = (n, c = "") => `<svg class="ico${ICONS[n][1] ? " ico-f" : ""}${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n][0]}</svg>`;
 /* Lucide icons (ISC licence, web/icons/LICENSE-lucide.txt, v1.61.0): a playlist's
@@ -867,6 +871,23 @@ function genreCounts(m) {
     for (const g of e.genres || []) (c.get(g) || c.set(g, new Set()).get(g)).add(libKey(e));
   return [...c].map(([g, set]) => [g, set.size]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
+/* Phones (TODO 239): each card says the one thing that matters on its list.
+   Only what the data states (never-estimate rule). */
+function phoneFact(e) {
+  const p = e.progress || 0, n = e.episodes, kind = FMT[e.format] || e.format || "";
+  if (inProg(e.status)) {
+    if (n && p >= n) return "all seen";
+    if (e.airing === "RELEASING" && e.next_episode) {
+      const a = airState(e, Date.now());
+      if (a.behind) return `E${p + 1} next · ${a.behind} behind`;
+      if (a.next) return airText(e.next_episode);
+    }
+    return n ? `E${p + 1} next · ${n - p} left` : `E${p + 1} next`;
+  }
+  if (e.status === "DROPPED" && p) return `stopped after E${p}`;
+  if (e.status === "COMPLETED") return [kind, e.year].filter(Boolean).join(" · ");
+  return [kind, e.format === "MOVIE" || !n ? "" : `${n} ep`].filter(Boolean).join(" · ");
+}
 /* @lib:end */
 /* Playlists (Decision 64): your own named lists of shows, in your order. A
    show is "aid:<AniList id>", else "sid:<folder id>". */
@@ -1374,18 +1395,23 @@ function entryCard(e, i) {
   const res = tg && tg.kind === "resume" && inProg(e.status) ? tg : null;
   const prog = e.progress || 0, pct = e.episodes ? Math.min(100, Math.round((100 * prog) / e.episodes)) : 0;
   /* The poster stays clean (Elias): the score is a key badge by the title, like the top bar's; phones keep only progress below it. */
-  const facts = e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
-  const more = [FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
+  /* Phones: on Planning, whether it's on disk (it can start at once); on All, which list it's on. */
+  const ph = isPhone(), disk = ph && e.status === "PLANNING" && (e.capability === "installed" || e.capability === "partial");
+  const facts = ph ? phoneFact(e) : e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
+  const pre = (ph && S.lib.tab === "ALL" ? esc(statusLabel(e.status)) + " · " : "") + (disk ? `<span class="dsk">${ico("disk")}${e.capability === "partial" ? "some on disk" : "on disk"}</span> · ` : "");
+  const more = ph ? "" : [FMT[e.format] || e.format, e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
   /* Sorting or filtering by the average shows the average, or the order would look random. */
   const byAvg = S.lib.sort === "average" || Array.isArray(S.lib.average);
   const badge = byAvg ? (e.average ? `<span class="kb" title="AniList average">${e.average}</span>` : "")
     : e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : "";
-  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}">
-    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}
+  /* Phone posters carry no text; sorted by a score, the number sits on the poster, or the order looks random. */
+  const onArt = ph && badge && (byAvg || S.lib.sort === "score") ? badge.replace('class="kb"', 'class="kb pkb"') : "";
+  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}"${ph ? ` aria-label="${esc(e.title)}"` : ""}>
+    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${onArt}
     ${res ? `<span class="resume-tag">${ico("play")}${esc(epCode(res.sea, res.ep))}${res.ep.position ? " · " + fmtTime(res.ep.position) : ""}</span>` : ""}
     ${inProg(e.status) && pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
     <h3><span class="ttl">${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(e.title)}</span>${badge}</h3>
-    <div class="m">${esc(facts)}${more ? `<span class="mx">${facts ? " · " : ""}${esc(more)}</span>` : ""}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
+    ${ph && inProg(e.status) && pct ? `<i class="rprog"><i style="width:${pct}%"></i></i>` : ""}<div class="m">${pre}${esc(facts)}${more ? `<span class="mx">${facts ? " · " : ""}${esc(more)}</span>` : ""}${e.more ? ` <span class="more" title="${e.more} more season${e.more === 1 ? "" : "s"} or movie${e.more === 1 ? "" : "s"} on its page">+${e.more}</span>` : ""}</div></button>`;
 }
 function showCard(s, i) {
   const total = epTotal(s), w = epWatched(s), pct = total ? Math.round((100 * w) / total) : 0;
@@ -1583,13 +1609,14 @@ const fsel = (k, label, opts, locked) => {
   return `<label class="fl">${label}<select data-a="filt" data-k="${k}" class="${set ? "set" : ""}" ${locked ? "disabled" : ""}>${(locked ? [opts[1]] : opts).map(([v, l]) => `<option value="${esc(v)}" ${v === S.lib[k] || locked ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
 };
 /* Two-handle range: two stacked range inputs over one painted track. */
-function frng(k, label, lo, hi, step, fmt) {
+/* `all`: what the value says while nothing is narrowed (the phone sheet shows the whole span, not "any"). */
+function frng(k, label, lo, hi, step, fmt, all = "any") {
   const v = Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi];
   const a = Math.max(lo, Math.min(hi, v[0])), b = Math.max(a, Math.min(hi, v[1]));
   const pct = (x) => ((x - lo) / (hi - lo || 1)) * 100;
   const inp = (n, val, l) => `<input type="range" aria-label="${label} ${l}" min="${lo}" max="${hi}" step="${step}" value="${val}" data-r="${n}">`;
-  return `<div class="fl rng${Array.isArray(S.lib[k]) ? " set" : ""}" data-k="${k}" style="--a:${pct(a)}%;--b:${pct(b)}%"><span>${label}</span>
-    <div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div><b class="rv"><i>${a <= lo && b >= hi ? "any" : `${fmt(a)} – ${fmt(b)}`}</i></b></div>`;
+  return `<div class="fl rng${Array.isArray(S.lib[k]) ? " set" : ""}" data-k="${k}" style="--a:${pct(a)}%;--b:${pct(b)}%"${all !== "any" ? ` data-all="${esc(all)}"` : ""}><span>${label}</span>
+    <div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div><b class="rv"><i>${a <= lo && b >= hi ? esc(all) : `${fmt(a)} – ${fmt(b)}`}</i></b></div>`;
 }
 /* The side-list layout (Library polish, 2026-11-06): a range sits behind a chip
    like the selects; the chip says its value, the slider opens under it. */
@@ -1617,7 +1644,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".fdro
 let rngFrame = 0;
 /* Every filter change replays the cards' rise-in (Elias, TODO 210); a range
    does it once, when it's let go, not on every step of the drag. */
-document.addEventListener("change", (e) => { if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); paintWall(true); syncFilters(); saveLib(); } });
+document.addEventListener("change", (e) => { if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); saveLib(); if (e.target.closest(".fsheet")) return fltRepaint(); paintWall(true); syncFilters(); } });
 document.addEventListener("input", (e) => {
   const r = e.target.closest?.(".rng input");
   if (!r) return;
@@ -1628,7 +1655,7 @@ document.addEventListener("input", (e) => {
   S.lib[k] = all ? "all" : [a, b];
   box.style.setProperty("--a", ((a - lo) / (hi - lo || 1)) * 100 + "%");
   box.style.setProperty("--b", ((b - lo) / (hi - lo || 1)) * 100 + "%");
-  box.querySelector(".rv i").textContent = all ? "any" : `${a} – ${b}`;
+  box.querySelector(".rv i").textContent = all ? box.dataset.all || "any" : `${a} – ${b}`;
   box.classList.toggle("set", !all);
   const dd = box.closest(".fdrop");
   if (dd) { dd.classList.toggle("set", !all); dd.querySelector(".fdb b").textContent = all ? "any" : `${a} – ${b}`; }
@@ -1679,23 +1706,195 @@ function Lib() {
     const rail = (railNow = isRail());
     /* Phones (TODO 177): the sheet lists the filters as rows, like the PC's side
        list; sort sits on the line above the grid. */
-    const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
-    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>
-      <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
+    const ph = isPhone();
+    const filters = (m.cold || isUn) ? "" : ph ? '<div class="filters"></div>' /* the sheet itself is built in paintPortals */ : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
       <span class="fill"></span>${revBtn()}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
-    const nf = [!srcLocked() && S.lib.src !== "all", S.lib.fmt !== "all", S.lib.air !== "all", ...["year", "score", "average"].map((k) => Array.isArray(S.lib[k])), S.lib.group !== "all"].filter(Boolean).length;
-    const fltb = !filters ? "" : ph ? `<div class="lsort"><label class="srt">${ico("sort")}<select data-a="filt" data-k="sort" aria-label="Sort">${[["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]].map(([v, l]) => `<option value="${v}" ${v === S.lib.sort ? "selected" : ""}>${l}</option>`).join("")}</select></label>${revBtn()}<span class="fill"></span>
-      <button class="lsb" data-a="deck" data-v="lib">${ico("up")}Swipe</button><button class="lsb${nf ? " on" : ""}" data-a="fltopen">${ico("filter")}Filter${nf ? `<b>${nf}</b>` : ""}</button></div><i class="fltscrim" data-a="fltclose"></i>` : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
-    main = `${fltb}${filters}${(m.cold || isUn || rail) ? "" : genreTray(m)}<div id="wall"></div>`;
+    /* Phones: sort, filter and the view live in the bar above the dock (libBar). */
+    const fltb = !filters || ph ? "" : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
+    main = `${fltb}${filters}${(m.cold || isUn || rail || ph) ? "" : genreTray(m)}<div id="wall"></div>`;
   }
-  const solo = m.cold ? `<div class="lsolo"><div class="lhw"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${mrow}</div>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
+  const solo = m.cold && isPhone() ? (loading ? `<p class="lsub">Your ${acct()} lists fill in when they're ready.</p>` : "")
+    : m.cold ? `<div class="lsolo"><div class="lhw"><h2 class="lh">On this PC<span class="n">${d.shows.length}</span></h2>${mrow}</div>${loading ? `<p class="lsub">Your ${acct()} lists fill in on the left when they're ready.</p>` : ""}</div>`
     : plCur ? (mrow ? `<div class="lsolo"><div class="lhw">${mrow}</div></div>` : "")
     : (isPl || isMatch || isUn) && lhead ? `<div class="lsolo"><div class="lhw">${lhead}${mrow}</div></div>` : "";
   const plPh = plCur && isPhone(); // an open playlist on a phone: its panel is the page (Elias: the tabs crowded it); ‹ Playlists goes back
-  return `<div class="lib2${plPh ? " plph" : ""}">${notes.join("")}${plPh ? "" : `<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}`}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${fetching && !mrow ? `<div class="lload mload inl">${metaLoad(true)}</div>` : ""}${main}</div></div></div>`;
+  /* Phones (TODO 239, Elias picked mockup 1): the list you're on is the title;
+     the bar above the dock switches lists, sorts, filters and swaps posters ⇄ rows. */
+  const [lt, ln] = libTitle(m), lists = !m.cold && !["PLAYLISTS", "MATCH", "UNTRACKED"].includes(S.lib.tab);
+  const head = isPhone() ? `<div class="hello lph"><h1 class="hd">${esc(lt)}</h1><span class="n">${ln}</span>${lists ? `<button class="lsb lswipe" data-a="deck" data-v="lib">${ico("up")}Swipe</button>` : ""}</div>`
+    : `<div class="hello"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>${tabs}`;
+  return `<div class="lib2${plPh ? " plph" : ""}">${notes.join("")}${plPh ? "" : head}<div class="libg">${isPhone() ? "" : libRail(m, sum, loading)}<div class="lmain">${solo}${loading ? `<div class="lload inl">${listLoad(true)}</div>` : ""}${fetching && !mrow ? `<div class="lload mload inl">${metaLoad(true)}</div>` : ""}${main}</div></div></div>`;
+}
+/* The list you're on, and how many shows it has (what the filters leave). */
+function libTitle(m) {
+  const cur = m.tabs.find((t) => t.k === S.lib.tab);
+  if (m.cold || !cur) return ["On this PC", S.data.shows.length];
+  return [cur.k === "ALL" ? "All shows" : cur.l, cur.side ? cur.n : libList(m).length];
+}
+/* The bar above the dock (phones, TODO 239): the list (its name joins once the
+   title has scrolled away), then sort, filter and posters ⇄ rows, by the thumb. */
+const libFilterN = () => [!srcLocked() && S.lib.src !== "all", S.lib.fmt !== "all", S.lib.air !== "all", ...["year", "score", "average"].map((k) => Array.isArray(S.lib[k])), S.lib.genres.length > 0].filter(Boolean).length;
+const libView = () => (S.lib.view === "rows" ? "rows" : "posters");
+function libBar() {
+  const m = libModel(), [t, n] = libTitle(m), k = S.lib.tab, list = !m.cold && !["PLAYLISTS", "MATCH", "UNTRACKED"].includes(k), nf = list ? libFilterN() : 0;
+  const seg = list || m.cold || k === "UNTRACKED" ? `<span class="lseg" role="radiogroup" aria-label="Show as">${[["posters", "grid", "Posters"], ["rows", "list", "Rows"]].map(([v, i, l]) => `<button class="${libView() === v ? "on" : ""}" data-a="lview" data-v="${v}" role="radio" aria-checked="${libView() === v}" aria-label="${l}">${ico(i)}</button>`).join("")}</span>` : "";
+  /* No lists yet (no account, or still loading): only the view; nothing to switch to. */
+  if (!m.tabs.length) return `<div class="libbar solo end">${seg}</div>`;
+  return `<div class="libbar${list || seg ? "" : " solo"}"><button class="lbn" data-a="lpick" aria-label="Switch list">${ico("layers")}<span class="lnm">${esc(t)}<i>${n}</i></span>${ico("chevd")}</button><span class="fill"></span>${list ?`<button class="lbi" data-a="lsortm" aria-label="Sort">${ico("sort")}</button><button class="lbi${nf ? " on" : ""}" data-a="fltopen" aria-label="Filter">${ico("filter")}${nf ? `<b>${nf}</b>` : ""}</button>` : ""}${seg}</div>`;
+}
+/* The phone's filter sheet (TODO 239, Elias picked look 2 of "rows, then a
+   page"): what's on comes first, each with ×; the rest are plain rows (no
+   "any" anywhere); a tap opens that filter's own page. "Show N" closes it. */
+const FLT = [["src", "Source", "disk"], ["fmt", "Format", "tv"], ["air", "Airing", "radio"], ["year", "Year", "cal"], ["score", "My score", "star"], ["average", "Average", "speed"], ["genres", "Genres", "tag"]];
+const FRANGE = { year: () => [...yearBounds(), 1], score: () => [0, 10, 0.5], average: () => [0, 100, 5] };
+const fOn = (k) => (k === "genres" ? S.lib.genres.length > 0 : FRANGE[k] ? Array.isArray(S.lib[k]) : fpicked(k).length > 0);
+const SRC_L = () => ({ installed: "On disk", partial: "Some on disk", online: "Online", none: capLabel("none").replace(/^./, (c) => c.toUpperCase()) });
+/* A pick filter's choices in this list, with how many shows each has; empty ones only while picked. */
+function fOpts(k, m) {
+  if (k === "genres") { const c = genreCounts(m), have = new Set(c.map(([g]) => g)); return [...c, ...S.lib.genres.filter((g) => !have.has(g)).map((g) => [g, 0])].map(([g, n]) => [g, g, n]); }
+  const field = { src: "capability", fmt: "format", air: "airing" }[k], n = {};
+  for (const e of m.entries) if (S.lib.tab === "ALL" || e.status === S.lib.tab) (n[e[field]] ||= new Set()).add(libKey(e));
+  const name = k === "src" ? SRC_L() : {};
+  return FOPTS()[k].filter(([v]) => v !== "all").map(([v, l]) => [v, name[v] || l, n[v]?.size || 0]).filter(([v, , c]) => c || fpicked(k).includes(v));
+}
+function fText(k, m) {
+  if (FRANGE[k]) return S.lib[k].join(" – ");
+  const p = k === "genres" ? S.lib.genres : fpicked(k), o = fOpts(k, m);
+  return p.length > 2 ? `${p.length} picked` : p.map((v) => (o.find(([x]) => x === v) || [v, v])[1]).join(", ");
+}
+function fltSheet(m) {
+  const n = libList(m).length, list = FLT.filter(([k]) => k !== "src" || !srcLocked());
+  const foot = `<div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Show ${n}</button></div>`;
+  const pg = list.find(([k]) => k === S.fltPage);
+  if (pg) {
+    const [k, l] = pg;
+    let body;
+    if (FRANGE[k]) body = fslider(k, ...FRANGE[k]());
+    else {
+      const p = k === "genres" ? S.lib.genres : fpicked(k);
+      body = `<div class="fsopts">${fOpts(k, m).map(([v, lab, c]) => { const on = p.includes(v); return `<button class="fso${on ? " on" : ""}" aria-pressed="${on}" data-a="${k === "genres" ? "genre" : "fpick"}" data-k="${k}" data-v="${esc(v)}"><span>${esc(lab)}</span><span class="c">${c}</span>${ico("check")}</button>`; }).join("")}</div>`;
+    }
+    return `<div class="fspg ${S.fltDir || ""}" id="fspg-${k}"><div class="fshd"><button class="fsback" data-a="fpage" data-v="" aria-label="Back to all filters">${ico("chevl")}</button><b class="fsh">${esc(l)}</b><span class="fsn">${fOn(k) && !FRANGE[k] ? (k === "genres" ? S.lib.genres : fpicked(k)).length + " picked" : ""}</span></div>${body}</div>${foot}`;
+  }
+  const card = ([k, l, i]) => `<div class="fson" role="button" tabindex="0" data-a="fpage" data-v="${k}">${ico(i)}<span class="fsv"><small>${esc(l)}</small><b>${esc(fText(k, m))}</b></span><button class="fsx" data-a="foff" data-v="${k}" aria-label="Remove ${esc(l)}">${ico("close")}</button></div>`;
+  const row = ([k, l, i]) => `<button class="fsr" data-a="fpage" data-v="${k}">${ico(i)}<span>${esc(l)}</span>${ico("chevr")}</button>`;
+  return `<div class="fspg ${S.fltDir || ""}" id="fspg-main"><div class="fshd"><b class="fsh">Filter</b></div>${list.filter(([k]) => fOn(k)).map(card).join("")}<div class="fsrows">${list.filter(([k]) => !fOn(k)).map(row).join("")}</div></div>${foot}`;
+}
+/* A pick repaints only the sheet: never the page under it. The posters behind
+   follow once it closes (repainting ~200 of them per tap lagged the phone,
+   TODO 239). Another page slides in at its top; the same page keeps its place. */
+function fltRepaint(top) {
+  const f = $(".fsheet .filters"), sc = f?.scrollTop;
+  if (top) f?.querySelector(".fspg")?.remove(); // a new page is a new node (its slide plays), never the old one patched
+  if (f) S.fltDirty = true; else paintWall(false);
+  paintPortals();
+  const g = $(".fsheet .filters");
+  if (g) g.scrollTop = top ? 0 : sc || 0;
+}
+/* A range on the phone sheet: one track, two thumbs you drag (or tap the track:
+   the nearer thumb comes), the span written big above. Native double range
+   inputs looked broken there (TODO 239). */
+const fslNum = (x, st) => +(Math.round(x / st) * st).toFixed(st < 1 ? 1 : 0);
+function fslider(k, lo, hi, st) {
+  const v = Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi], a = Math.max(lo, v[0]), b = Math.min(hi, v[1]), pct = (x) => ((x - lo) / (hi - lo || 1)) * 100;
+  const set = a > lo || b < hi;
+  return `<div class="fsl${set ? " set" : ""}" data-k="${k}" data-lo="${lo}" data-hi="${hi}" data-st="${st}" style="--a:${pct(a)}%;--b:${pct(b)}%">
+    <b class="fslv">${a} – ${b}</b><div class="fst"><i class="fsf"></i><span class="fsk" data-i="0" role="slider" aria-label="From" aria-valuemin="${lo}" aria-valuemax="${hi}" aria-valuenow="${a}"></span><span class="fsk" data-i="1" role="slider" aria-label="To" aria-valuemin="${lo}" aria-valuemax="${hi}" aria-valuenow="${b}"></span></div></div>`;
+}
+let fsd = null;
+document.addEventListener("pointerdown", (e) => {
+  const t = e.target.closest?.(".fsl .fst");
+  if (!t) return;
+  const box = t.closest(".fsl"), k = box.dataset.k, lo = +box.dataset.lo, hi = +box.dataset.hi, st = +box.dataset.st, r = t.getBoundingClientRect();
+  const [a, b] = Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi];
+  const val = (x) => fslNum(lo + Math.min(1, Math.max(0, (x - r.left) / r.width)) * (hi - lo), st);
+  const v0 = val(e.clientX), knob = e.target.closest(".fsk");
+  const i = knob ? +knob.dataset.i : Math.abs(v0 - a) < Math.abs(v0 - b) || (a === b && v0 < a) ? 0 : 1;
+  fsd = { box, k, lo, hi, i, a, b, val };
+  t.setPointerCapture?.(e.pointerId);
+  box.classList.add("drag"); box.querySelectorAll(".fsk")[i].classList.add("on");
+  fslMove(e.clientX); e.preventDefault();
+});
+function fslMove(x) {
+  const d = fsd, v = d.val(x);
+  if (d.i === 0) d.a = Math.min(v, d.b); else d.b = Math.max(v, d.a);
+  const pct = (n) => ((n - d.lo) / (d.hi - d.lo || 1)) * 100;
+  d.box.style.setProperty("--a", pct(d.a) + "%"); d.box.style.setProperty("--b", pct(d.b) + "%");
+  d.box.querySelector(".fslv").textContent = `${d.a} – ${d.b}`;
+  d.box.classList.toggle("set", d.a > d.lo || d.b < d.hi);
+  const ks = d.box.querySelectorAll(".fsk"); ks[0].setAttribute("aria-valuenow", d.a); ks[1].setAttribute("aria-valuenow", d.b);
+}
+document.addEventListener("pointermove", (e) => { if (fsd) fslMove(e.clientX); });
+const fslEnd = () => {
+  const d = fsd; fsd = null;
+  if (!d) return;
+  d.box.classList.remove("drag"); d.box.querySelector(".fsk.on")?.classList.remove("on");
+  const all = d.a <= d.lo && d.b >= d.hi, was = JSON.stringify(S.lib[d.k]);
+  S.lib[d.k] = all ? "all" : [d.a, d.b];
+  if (JSON.stringify(S.lib[d.k]) !== was) { saveLib(); fltRepaint(); }
+};
+document.addEventListener("pointerup", fslEnd); document.addEventListener("pointercancel", fslEnd);
+/* Swipe right on a filter's page: back to all filters (the page follows the finger). */
+let fsw = null;
+document.addEventListener("touchstart", (e) => {
+  const pg = S.fltPage && e.touches.length === 1 && !e.target.closest?.("input[type=range], .fsl") && e.target.closest?.(".fsheet .fspg");
+  fsw = pg ? { x: e.touches[0].clientX, y: e.touches[0].clientY, el: pg, on: false, dx: 0 } : null;
+}, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  if (!fsw) return;
+  const dx = e.touches[0].clientX - fsw.x, dy = e.touches[0].clientY - fsw.y;
+  if (!fsw.on) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)) { fsw = null; return; }
+    if (!(dx > 10 && dx > Math.abs(dy) * 1.5)) return;
+    fsw.on = true;
+  }
+  fsw.dx = Math.max(0, dx);
+  fsw.el.style.transition = "none";
+  fsw.el.style.transform = `translate3d(${fsw.dx}px,0,0)`;
+  fsw.el.style.opacity = String(1 - Math.min(fsw.dx / innerWidth, 1) * 0.7);
+}, { passive: true });
+document.addEventListener("touchend", () => {
+  const s = fsw; fsw = null;
+  if (!s?.on) return;
+  if (s.dx > 70) { buzz(); A.fpage(""); return; }
+  s.el.style.transition = "transform .22s cubic-bezier(.2,.8,.2,1),opacity .22s"; s.el.style.transform = s.el.style.opacity = "";
+});
+/* The lists, as a sheet from the bottom: each with its first poster and count. */
+function libPickMenu() {
+  const m = libModel(), cm = $("#cm");
+  if (!m.tabs.length) return;
+  const first = (k) => m.entries.filter((e) => k === "ALL" || e.status === k).sort(SORT.updated)[0]?.poster;
+  const SIDE = { PLAYLISTS: "list", UNTRACKED: "folder", MATCH: "search" };
+  const row = (t) => {
+    const on = S.lib.tab === t.k, art = !t.side && first(t.k);
+    return `<button class="mi lpk${on ? " on" : ""}" data-a="tab" data-v="${t.k}"><span class="lpi">${art ? `<img src="${esc(pic(art))}" alt="" loading="lazy">` : ico(SIDE[t.k] || "list")}</span><span class="ml">${esc(t.k === "ALL" ? "All shows" : t.l)}${t.attn ? '<i class="att"></i>' : ""}</span><span class="mn">${t.n}</span>${on ? ico("check") : ""}</button>`;
+  };
+  const side = m.tabs.filter((t) => t.side);
+  cm.innerHTML = m.tabs.filter((t) => !t.side).map(row).join("") + (side.length ? '<div class="sep"></div>' + side.map(row).join("") : "");
+  cmShow(cm, 0, innerHeight);
+  cm.querySelector(".mi.sel")?.classList.remove("sel");
+}
+/* Sort as a sheet: the order, its direction in words, and franchises on one card. */
+const SORTS = [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]];
+const SORT_DIR = { updated: ["Newest first", "Oldest first"], score: ["Highest first", "Lowest first"], average: ["Highest first", "Lowest first"], year: ["Newest first", "Oldest first"], title: ["A to Z", "Z to A"] };
+function libSortMenu() {
+  const cm = $("#cm"), k = SORT[S.lib.sort] ? S.lib.sort : "updated";
+  const r = (a, v, label, on) => `<button class="mi lso${on ? " on" : ""}" data-a="${a}" data-v="${v}"><span class="ml">${label}</span>${on ? ico("check") : ""}</button>`;
+  cm.innerHTML = `<div class="cap">Sort</div>${SORTS.map(([v, l]) => r("lsort", v, l, v === k)).join("")}<div class="sep"></div>${SORT_DIR[k].map((l, i) => r("lrev", i, l, !!S.lib.rev === !!i)).join("")}<div class="sep"></div>${r("lgroup", "", "One card per franchise", byFranchise())}`;
+  cmShow(cm, 0, innerHeight);
+  cm.querySelector(".mi.sel")?.classList.remove("sel");
+}
+/* The title on screen hides the bar's copy of the list name (say it once). */
+let ltIO = null;
+function libTitleWatch() {
+  ltIO?.disconnect(); ltIO = null;
+  const h = isPhone() && S.view === "library" && $("#app .lib2 .lph .hd");
+  if (!h || !("IntersectionObserver" in window)) { document.body.classList.remove("lt-vis"); return; }
+  ltIO = new IntersectionObserver(([en]) => document.body.classList.toggle("lt-vis", en.isIntersecting), { rootMargin: "-64px 0px 0px 0px" });
+  ltIO.observe(h);
 }
 /* The filter controls; on the PC they live in the side list (Elias,
    2026-11-06: "most of them could easily be in the left panel"). */
@@ -1770,7 +1969,11 @@ function paintWall(fade, w = $("#wall"), still) {
   if (lc) lc.textContent = cards.length;
   const fx = fade && !reduceMotion();
   const plc = S.lib.tab === "PLAYLISTS" && !m.cold ? plCurrent() : null;
-  w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !m.cold ? (plc ? (plc.view === "posters" ? " plposters" : " plrows") + (plc.dim ? " pldim" : "") : " plgrid") : "") + (fx ? " fade" : "");
+  const lv = isPhone() && (m.cold || S.lib.tab !== "PLAYLISTS") ? " lv-" + libView() : ""; // phones: posters only, or rows with the words (TODO 239)
+  /* Phones: the title and the bar count what the filters leave. */
+  const pk = w.closest(".tpeek");
+  if (lv && S.lib.tab !== "UNTRACKED") for (const el of pk ? [pk.querySelector(".lph .n")] : $$("#app .lph .n, .libbar .lnm i")) if (el) el.textContent = cards.length;
+  w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !m.cold ? (plc ? (plc.view === "posters" ? " plposters" : " plrows") + (plc.dim ? " pldim" : "") : " plgrid") : "") + lv + (fx ? " fade" : "");
   if (plc) w.style.setProperty("--plc", plColor(plc)); else w.style.removeProperty("--plc"); // the rows take the playlist's colour
   if (still) { w.innerHTML = cards.slice(0, 24).join("") || empty; return; } // the pager's copy: what's in sight
   clearTimeout(paintWall.more);
@@ -4065,7 +4268,7 @@ function paintTabbar() {
   if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   /* Phone polish (TODO 177, Elias picked A): one glass dock, search inside the
-     pill so it sits centred; the remote strip and the show's Play row dock on top. */
+     pill so it sits centred; the bars above it are their own pills (TODO 239). */
   if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">${ico("search")}<span>Search</span></button></div>`;
   /* The highlight glides to the open tab (One UI 9); none on Settings. */
   let on = null;
@@ -4493,6 +4696,16 @@ function pageMarks(app = $("#app")) {
   cvRestSoon(); // a page can hide the art (pg-sfr, pg-uph)
   cvLook(); // and a show page on a phone blurs it more (pg-sfr)
 }
+/* The show page's Play row as a strip like the remote's (Elias, TODO 239: "still
+   not a strip"): the episode's still, its number and name, ⋯, then Play. */
+function playStrip(b, tile, more) {
+  const img = tile.querySelector(".epimg"), art = img?.dataset.bg || img?._bg || "";
+  const num = tile.querySelector(".enum")?.textContent.trim() || "", name = tile.querySelector(".et b")?.textContent.trim() || "", meta = tile.querySelector(".et small")?.textContent.trim() || "";
+  const label = b.querySelector("span")?.textContent.trim() || "", verb = b.classList.contains("loading") ? label : label.split(" ")[0];
+  const head = [num, name && name !== num ? name : ""].filter(Boolean).join(" · ");
+  return `<div class="pbar strip"><span class="pbi"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}></span><span class="pbt"><b>${esc(head)}</b>${meta ? `<small>${esc(meta)}</small>` : ""}</span>`
+    + `${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}<button class="${esc(b.className.replace(/\s*\bbig\b/, ""))}" data-a="play" data-v="${esc(b.dataset.v)}">${b.querySelector(".spin, .ico")?.outerHTML || ""}<span>${esc(verb)}</span></button></div>`;
+}
 function paintPortals() {
   pageMarks();
   const el = $("#portal");
@@ -4500,13 +4713,22 @@ function paintPortals() {
   let html = "";
   if (isPhone() && (S.view === "show" || S.view === "fr")) {
     const b = $("#app .sp2 .cta .btn.pri"), more = $("#app .frpage .cta [data-a=frmore]");
-    if (b) html += `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
+    const tile = b?.dataset.v && $(`#app .eps .ep[data-v="${CSS.escape(b.dataset.v)}"]`);
+    if (b) html += tile ? playStrip(b, tile, more) : `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
   }
-  const flt = isPhone() && S.view === "library" && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
-  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet">${flt.outerHTML.replace('<div class="filters">', '<div class="filters">' + grab + '<b class="fsh">Filter</b>')}</div>`;
+  if (isPhone() && S.view === "library" && S.data && !$("#app .lib2.plph")) html += libBar();
+  /* The filter sheet is built here, not copied from the page: while it's open,
+     a pick repaints only the sheet, the bar and the posters behind (TODO 239:
+     re-rendering the page under it made it and the backdrop flicker). */
+  const flt = isPhone() && S.view === "library" && S.data && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
+  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet"><div class="filters">${grab}${fltSheet(libModel())}</div></div>`;
   else document.body.classList.remove("flt-open");
-  if (el._html !== html) { el._html = html; el.innerHTML = html; }
+  /* Updated in place: a bar or sheet that stays keeps its node, so its entrance
+     doesn't replay on every sort, filter or view change (Elias, TODO 239). */
+  if (el._html !== html) { el._html = html; morphHTML(el, html); }
   document.body.classList.toggle("has-pbar", html.includes('class="pbar"'));
+  document.body.classList.toggle("has-lbar", html.includes('class="libbar'));
+  libTitleWatch();
 }
 /* Search on touch screens (Elias, 2026-10-27: "rework the design of
    search"): a full page over the art with the field at the thumb.
@@ -5876,7 +6098,7 @@ function loadLine(t, label, row) {
 }
 /* Polls change the line in place, so the bar slides on instead of restarting. */
 function loadPatch(el, t) {
-  const bar = el.querySelector(".lbar"), now = el.querySelector(".lnow");
+  const bar = el.querySelector(".libbar"), now = el.querySelector(".lnow");
   el.querySelector(".lt").textContent = t.what;
   el.querySelector(".lc").textContent = t.count;
   el.querySelector(".ll").title = t.tip;
@@ -6588,7 +6810,7 @@ function matchAdvance(done) {
 /* ---------- actions ---------- */
 const A = {
   strip: (v, t) => { const st = t.closest("section")?.querySelector(".strip") || $("#app .strip"); st && st.scrollBy({ left: +t.dataset.d * st.clientWidth * 0.8, behavior: reduceMotion() ? "auto" : "smooth" }); },
-  fclear: () => { for (const k of ["fmt", "air", "year", "score", "average"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); S.fadeNext = true; render(); },
+  fclear: () => { for (const k of ["fmt", "air", "year", "score", "average"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); if ($(".fsheet .filters")) return fltRepaint(); S.fadeNext = true; render(); },
   airgo: (v) => {
     const c = S.airCal;
     if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
@@ -6612,15 +6834,7 @@ const A = {
     if (multi) { const p = fpicked(k), next = v === "all" ? [] : p.includes(v) ? p.filter((x) => x !== v) : [...p, v]; S.lib[k] = next.length ? next : "all"; }
     else S.lib[k] = v;
     saveLib();
-    if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow
-      const sc = $(".fsheet .filters")?.scrollTop;
-      S.fadeNext = true; render();
-      /* several can be picked: the list stays open for the next one */
-      const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);
-      if (nd) { nd.querySelector(".fpanel").style.animation = "none"; nd.classList.add("open"); nd.querySelector(".fdb").setAttribute("aria-expanded", "true"); }
-      const f = $(".fsheet .filters"); if (f && sc) f.scrollTop = sc;
-      return;
-    }
+    if (k === "group" || isPhone()) { fltRepaint(); return; } // phones: the sheet, its counts and the bar follow
     paintWall(true); syncFilters();
     const opts = FOPTS()[k];
     for (const b of d.querySelectorAll(".fopt")) { const bv = b.dataset.v, on = multi ? (bv === "all" ? S.lib[k] === "all" : fpicked(k).includes(bv)) : b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
@@ -6631,6 +6845,7 @@ const A = {
   genre: (v, t) => {
     const on = !S.lib.genres.includes(v);
     S.lib.genres = on ? [...S.lib.genres, v] : S.lib.genres.filter((g) => g !== v);
+    if (isPhone()) { saveLib(); fltRepaint(); return; }
     for (const b of $$(`[data-a=genre][data-v="${CSS.escape(v)}"]`)) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     const gd = $('.fdrop[data-k="genres"]');
     if (gd) { gd.classList.toggle("set", S.lib.genres.length > 0); gd.querySelector(".fdb b").textContent = genLabel(); }
@@ -6644,8 +6859,9 @@ const A = {
     }
     if (v === "settings") { S.setOpen = false; setClear(); }
     const same = v === S.view || (v === "history" && S.view === "stats");
-    /* Library again, while on it: back to All shows (and to the top). */
-    if (v === "library" && same && S.lib.tab !== "ALL") {
+    /* Library again, while on it: back to All shows (and to the top). Phones
+       pick the list in the bar, so there it only goes to the top (TODO 239). */
+    if (v === "library" && same && S.lib.tab !== "ALL" && !isPhone()) {
       S.lib.tab = "ALL"; saveLib(); S.fadeNext = true; render();
       scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
       return;
@@ -6673,8 +6889,15 @@ const A = {
     const step = v === "PLAYLISTS" && S.lib.tab !== v && S.view === "library";
     if (step) navKeep();
     S.lib.tab = v; if (v === "PLAYLISTS") S.lib.pl = null; saveLib(); S.fadeNext = true; render(true); // the side list stays put
+    if (isPhone()) scrollTo(0, 0); // another list starts at its title (TODO 239)
     if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();
   },
+  /* Phones: the bar above the dock (TODO 239). */
+  lpick: () => libPickMenu(), lsortm: () => libSortMenu(),
+  lsort: (v) => { S.lib.sort = v; saveLib(); S.fadeNext = true; render(true); },
+  lrev: (v) => { S.lib.rev = v === "1"; saveLib(); S.fadeNext = true; render(true); },
+  lgroup: () => { S.lib.group = byFranchise() ? "all" : "fr"; saveLib(); S.fadeNext = true; render(true); },
+  lview: (v) => { if (libView() === v) return; S.lib.view = v; saveLib(); S.fadeNext = true; render(true); },
   srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true); $$(".srev").forEach((b) => { b.classList.toggle("on", S.lib.rev); b.setAttribute("aria-pressed", S.lib.rev); }); },
   filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") { S.fadeNext = true; return render(); } paintWall(true); syncFilters(); },
   jtab: (v) => {
@@ -7065,8 +7288,18 @@ const A = {
     }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
   },
   sidetab: (v) => { S.sideTab = v; paintSide(); },
-  fltopen: () => { document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); render(); },
-  fltclose: () => { document.body.classList.remove("flt-open"); paintPortals(); ovClosed("flt"); },
+  /* Phones: the sheet opens and closes over the page without redrawing it (TODO 239). */
+  fltopen: () => { S.fltPage = null; S.fltDir = ""; document.body.classList.add("flt-open"); ovOpen("flt", () => A.fltclose()); isPhone() ? paintPortals() : render(); },
+  fltclose: () => {
+    const f = $(".fsheet .filters");
+    if (f?.classList.contains("closing")) return;
+    const done = () => { S.fltPage = null; document.body.classList.remove("flt-open"); paintPortals(); if (S.fltDirty) { S.fltDirty = false; paintWall(true); } };
+    ovClosed("flt");
+    if (f && isPhone() && !reduceMotion()) { f.classList.add("closing"); $("#portal .fltscrim")?.classList.add("closing"); setTimeout(done, 200); } else done();
+  },
+  /* Phones: a filter's own page in the sheet, and × on one that's on (TODO 239). */
+  fpage: (v) => { S.fltDir = v ? "fwd" : "back"; S.fltPage = v || null; fltRepaint(true); },
+  foff: (v) => { if (v === "genres") S.lib.genres = []; else if (v !== "src" || !srcLocked()) S.lib[v] = "all"; saveLib(); fltRepaint(); },
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
@@ -7923,7 +8156,7 @@ const PULL = [
   { sel: "#modal .dialog", scroller: (el) => el.querySelector(".rcbody") || el, close: () => modalDismiss(), /* the connect dialog scrolls its rows, not itself */ when: () => isPhone() && S.modal && S.modal.t !== "tour" },
   { sel: "#cm", scroller: (el) => el, close: () => { cmHide(); ovClosed("cm"); }, when: () => isPhone() },
 ];
-const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srchips, .dgen, .gtray, .switch";
+const NO_PULL = "input[type=range], .fsl, .seg, .strip, .eps.strip, .srposters, .hstrip, .srchips, .dgen, .gtray, .switch";
 /* Pull to refresh (Home, Library, Journal, the week): installed web apps
    get no browser pull-to-refresh, so the app draws its own — a circle that
    drops in with the pull, turns with it, and spins while the hub reloads. */
@@ -8101,6 +8334,8 @@ function pagerMove(p, x) {
   p.d = tx;
   swSet(() => {
     $("#app").style.transform = `translate3d(${tx.toFixed(1)}px,0,0)`;
+    const lb = $("#portal .libbar"); // the Library's bar belongs to its page: it slides with it
+    if (lb) { lb.style.animation = "none"; lb.style.transform = `translate3d(${tx.toFixed(1)}px,0,0)`; }
     const pk = p.pk;
     if (pk) { pk.style.transform = `translate3d(${(tx - dir * W).toFixed(1)}px,0,0)`; pk.style.opacity = "1"; }
     pagerInd(p, k);
@@ -8117,6 +8352,8 @@ function pagerEnd(p, cancel) {
   const ease = `transform ${dur}ms cubic-bezier(.22,.8,.3,1)`;
   pagerBusy = true;
   app.style.transition = ease; app.style.transform = `translate3d(${end}px,0,0)`;
+  const lb = $("#portal .libbar");
+  if (lb) { lb.style.transition = ease; lb.style.transform = `translate3d(${end}px,0,0)`; }
   if (pk) { pk.style.transition = ease; pk.style.transform = `translate3d(${end - dir * W}px,0,0)`; }
   if (ind && p.indFrom) { ind.style.transition = `${ease}, width ${dur}ms cubic-bezier(.22,.8,.3,1)`; pagerInd(p, go ? 1 : 0); }
   /* The backdrop and colour of the new tab fade in with the slide, not after
@@ -8137,6 +8374,7 @@ function pagerEnd(p, cancel) {
     if (!go) { // back where it was: #app is still drawn, the copy goes
       swEnd(app);
       app.style.transition = "none"; app.style.transform = ""; getComputedStyle(app).transform; app.style.transition = "";
+      if (lb) lb.style.transition = lb.style.transform = "";
       peekHide(pk);
       pagerBusy = false;
       return pagerStale();
