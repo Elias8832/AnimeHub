@@ -1054,7 +1054,7 @@ function plFindRow(x, i, p) {
   const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
   const sub = [st.status ? statusLabel(st.status) : "", prog].filter(Boolean).join(" · ") || x.sub;
   return `<button class="plfr${added ? " added" : ""}${i === 0 && (S.plq || "").trim() ? " sel" : ""}" data-a="plfadd" data-v="${esc(x.ref)}" data-t="${esc(x.title)}" data-p="${esc(x.poster || "")}" aria-pressed="${added}"><span class="plth">${poster(x.title, x.poster)}</span>
-    <span class="plt"><b>${esc(x.title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="plfa" title="${added ? "Added · click to take it off" : "Add"}">${ico(added ? "check" : "plus")}<i>${added ? "Added" : "Add"}</i></span></button>`;
+    <span class="plt"><b>${esc(x.title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="plfa" title="${added ? "Added · click to take it off" : "Add"}">${added ? dotTxt("Added") : "Add<b>›</b>"}</span></button>`;
 }
 function plFindList(p) {
   const q = S.plq || "", groups = plFindGroups(q, p);
@@ -1062,10 +1062,9 @@ function plFindList(p) {
   let i = 0;
   return groups.map((g) => `${g.cap ? `<div class="plfcap">${g.cap}</div>` : ""}${g.rows.map((x) => plFindRow(x, i++, p)).join("")}`).join("");
 }
-const plFindHTML = (p) => `<div class="plfind" style="--plc:${esc(plColor(p))}"><h2 id="dt">Add shows</h2><p class="sub">To ${plIcon(p)}<b>${esc(p.name)}</b>. Each one goes to the end.</p>
+const plFindHTML = (p) => dlHead("Add shows", `to ${esc(p.name)}`, null, "", p.color) + `<div class="dlb plfind" style="--plc:${esc(plColor(p))}">
   <label class="plfq">${ico("search")}<input id="plq" type="search" autocomplete="off" spellcheck="false" placeholder="Search your library" aria-label="Find a show for this playlist" value="${esc(S.plq || "")}"></label>
-  <div class="plres" id="plres">${plFindList(p)}</div>
-  <div class="actions"><span class="note2"></span><button class="btn" data-a="close">Done</button></div></div>`;
+  <div class="plres" id="plres">${plFindList(p)}</div></div>` + dlFoot("", `<button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 const PlFindDlg = () => { const p = plCurrent(); return p ? plFindHTML(p) : ""; };
 const plTip = (coarse) => (coarse ? "open it and use Add to playlist in its ⋯ menu" : "right-click its poster, or use ⋯ on its page");
 const plHolds = (p, ref) => p.items.some((x) => x.ref === ref);
@@ -1344,14 +1343,18 @@ async function contHide(id, hide) {
 const PL_COLORS = [...ACCENTS, "#e5737a", "#7fd1c7"];
 /* New playlist / Edit: name, then the looks Elias picked (icon, description, colour). */
 function PlNameDlg() {
-  const m = S.modal;
-  return `<h2 id="dt">${m.id ? "Edit playlist" : "New playlist"}</h2>${m.item ? `<p class="sub">${esc(m.item.title)} goes on it first.</p>` : ""}
-  <div class="plform"><label class="plf"><span>Name</span><input id="plname" maxlength="60" placeholder="Name" value="${esc(m.name || "")}"></label>
-  <label class="plf"><span>Description <small>optional</small></span><input id="plnote" maxlength="140" placeholder="What's on it, or when to watch it" value="${esc(m.note || "")}"></label>
-  <div class="plf"><span>Icon <small>optional</small></span><div class="plicons" role="group" aria-label="Icon"${m.color ? ` style="--plk:${esc(m.color)}"` : ""}>${plIconPick(m.icon)}</div></div>
-  <div class="plf"><span>Colour</span><div class="plcols"><button class="sw none${m.color ? "" : " on"}" data-a="plcol" data-v="" aria-label="No colour" aria-pressed="${!m.color}">${ico("close")}</button>${PL_COLORS.map((c) => `<button class="sw${m.color === c ? " on" : ""}" style="--c:${c}" data-a="plcol" data-v="${c}" aria-label="Colour ${c}" aria-pressed="${m.color === c}"></button>`).join("")}</div></div></div>
-  <div class="msg">${esc(m.err || "")}</div>
-  <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="plsave" ${m.busy ? "disabled" : ""}>${m.id ? "Save" : "Create"}</button></div>`;
+  const m = S.modal, k = m.color ? ` style="--plk:${esc(m.color)}"` : "";
+  /* One line that is the playlist: its icon in its colour, then the name you type. The glow
+     takes the colour too; picking one fades everything over (plcol, @property --plk). */
+  return dlHead(m.id ? "Edit playlist" : "New playlist", m.item ? `${esc(m.item.title)} goes on it first` : "", null, "", m.color)
+    + dlBody(`<div class="pnw"${k}>
+    <div class="pnh"><span class="pnt" aria-hidden="true">${m.icon && LUCIDE[m.icon] ? lu(m.icon) : ico("list")}</span>
+      <div class="pnf"><input id="plname" maxlength="60" placeholder="Name" aria-label="Name" value="${esc(m.name || "")}">
+      <input id="plnote" class="pnd" maxlength="140" placeholder="Description (optional)" aria-label="Description" value="${esc(m.note || "")}"></div></div>
+    <h3 class="pncap">Colour</h3><div class="plcols" role="group" aria-label="Colour"><button class="sw none${m.color ? "" : " on"}" data-a="plcol" data-v="" aria-label="No colour" aria-pressed="${!m.color}">${ico("close")}</button>${PL_COLORS.map((c) => `<button class="sw${m.color === c ? " on" : ""}" style="--c:${c}" data-a="plcol" data-v="${c}" aria-label="Colour ${c}" aria-pressed="${m.color === c}"></button>`).join("")}</div>
+    <h3 class="pncap">Icon</h3><div class="plicons" role="group" aria-label="Icon">${plIconPick(m.icon)}</div>
+    <div class="msg">${esc(m.err || "")}</div></div>`)
+    + dlFoot("", escBtn() + `<button class="btn pri" data-a="plsave" ${m.busy ? "disabled" : ""}>${m.id ? "Save" : "Create"}${kb("↵")}</button>`);
 }
 /* The icon picker: each group under its name; No icon (plus an old icon the playlist has) leads the first. */
 function plIconPick(cur) {
@@ -1441,7 +1444,7 @@ function MatchDlg() {
   const head = m.busy && !best ? `<div class="mqw"><span class="cap">${esc(s.title)}</span><h2 id="dt">Searching AniList…</h2><div class="found"><i class="spin"></i>looking for the right show</div></div>`
     : best ? `<div class="mqw"><span class="cap">is this</span><h2 id="dt"${candLabel(best).length > 28 ? ' class="long"' : ""}>${esc(candLabel(best))}?</h2>
       <div class="mcmp"><span>your folder</span><span>AniList</span><b>${esc(folderFacts(s).join(" · ") || "no files")}</b><b>${am}</b></div></div>`
-    : `<div class="mqw"><span class="cap">no match found</span><h2 id="dt">${esc(s.title)}</h2><p class="sub">AniList has nothing under that name. Try another name below, paste an anilist.co link, or keep it on this PC only.</p></div>`;
+    : `<div class="mqw"><span class="cap">no match found</span><h2 id="dt">${esc(s.title)}</h2></div>`;
   /* Numbered by place in the row: key 1 picks the first one shown. */
   const others = c.map((x, i) => [x, i]).filter(([, i]) => i !== m.pick).map(([x, i], k) => `<button class="moth" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge || null)}<b>${esc(candLabel(x))}</b><small>${candFits(x, n)}</small><kbd class="kb">${k + 1}</kbd></button>`).join("");
   return `<div class="mdh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}
@@ -1880,14 +1883,15 @@ const slst = (mid) => (S.slink[mid] ||= { q: "", res: null, pick: 0, busy: "", e
 const normT = (t) => String(t || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "");
 function SrcDlg() {
   const { mid, title } = S.modal, st = slst(mid), res = st.res || [], cur = res[st.pick];
-  return `<h2 id="dt">Wrong episodes?</h2>
-  <p class="sub">Pick the search result that is “${esc(title)}”. Your choice is kept.</p>
-  <div class="row" style="margin-top:14px"><input id="slq" aria-label="Search" placeholder="Search for the show" value="${esc(st.q)}"><button class="btn" data-a="slsearch">${ico("search")}Search</button></div>
-  ${st.busy ? `<div class="found"><i class="spin"></i>${esc(st.busy)}</div>` : ""}
-  ${res.length ? `<div class="slres" style="margin-top:12px">${res.map((r, i) => `<button class="mi${i === st.pick ? " on" : ""}" data-a="slpick" data-v="${i}">${ico(i === st.pick ? "checkc" : "tv")}<span><b>${esc(r.title || st.q)}</b>${r.title ? "" : "<small>The only result for this search</small>"}</span></button>`).join("")}</div>`
-    : st.res && !st.busy ? '<p class="sub" style="margin-top:12px">Nothing found — try another spelling.</p>' : ""}
-  <div class="msg">${esc(st.err)}</div>
-  <div class="actions"><button class="btn" data-a="close">Cancel</button>${cur ? `<button class="btn pri" data-a="sllink" ${st.busy ? "disabled" : ""}>Use this one</button>` : "<span></span>"}</div>`;
+  const e = S.data?.spine?.entries?.find((x) => x.id === mid), sh = e?.local_show_id ? showById(e.local_show_id) : null;
+  const rows = res.map((r, i) => srow(esc(r.title || st.q), r.title ? (normT(r.title) === normT(title) ? "same name as this show" : "") : "The only result for this search",
+    pkdo(i === st.pick ? dotTxt("Picked") : `<button class="btn" data-a="slpick" data-v="${i}">Pick</button>`), i === st.pick ? "on" : "")).join("");
+  return dlHead("Wrong episodes?", esc(title), e?.banner || sh?.banner || e?.poster || null)
+    + dlBody(`<div class="path dlq"><input id="slq" aria-label="Search" placeholder="Search for the show" value="${esc(st.q)}"><button class="btn" data-a="slsearch">Search</button></div>
+    ${st.busy ? `<p class="sub">${dotTxt(esc(st.busy), "live")}</p>` : ""}
+    ${res.length ? rows : st.res && !st.busy ? '<p class="sub">Nothing found. Try another spelling.</p>' : ""}
+    <div class="msg">${esc(st.err)}</div>`)
+    + dlFoot("", escBtn() + (cur ? `<button class="btn pri" data-a="sllink" ${st.busy ? "disabled" : ""}>Use this one${kb("↵")}</button>` : ""));
 }
 async function slSearch(mid, text, titles) {
   const st = slst(mid);
@@ -2297,10 +2301,10 @@ function frMore(x0, y0) {
 function PinDlg() {
   const m = S.modal, p = S.fr?.page, opts = [...(p?.entries || []).map((x) => [String(x.id), x.label, [x.format_label, x.year].filter(Boolean).join(" · ")]),
     ["none", "None of these", "Keep the files as other files"], ["auto", "Decide automatically", "The hub matches the folder by itself"]];
-  return `<h2 id="dt">Which season is this?</h2><p class="sub">${esc(m.label)}</p>
-  <div class="slres" style="margin-top:12px">${opts.map(([v, l, s]) => `<button class="mi${m.pick === v ? " on" : ""}" data-a="pinpick" data-v="${esc(v)}">${ico(m.pick === v ? "checkc" : "tv")}<span><b>${esc(l)}</b>${s ? `<small>${esc(s)}</small>` : ""}</span></button>`).join("")}</div>
-  <div class="msg">${esc(m.err || "")}</div>
-  <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="pinsave" ${m.pick && !m.busy ? "" : "disabled"}>Save</button></div>`;
+  return dlHead("Which season is this?", esc(m.label), p?.banner || null)
+    + dlBody(opts.map(([v, l, d]) => srow(esc(l), esc(d), pkdo(m.pick === v ? dotTxt("Picked") : `<button class="btn" data-a="pinpick" data-v="${esc(v)}">Pick</button>`), m.pick === v ? "on" : "")).join("")
+      + `<div class="msg">${esc(m.err || "")}</div>`)
+    + dlFoot("", escBtn() + `<button class="btn pri" data-a="pinsave" ${m.pick && !m.busy ? "" : "disabled"}>Save${kb("↵")}</button>`);
 }
 /* The episode menu (right-click or ⋯, Decision 38): play / resume at the
    saved time / from the start / the other language · watched · reset ·
@@ -2555,11 +2559,11 @@ function EntryDlg() {
   const on = svcPick(), sw = bothAccts() ? `<div class="seg edsvc" role="radiogroup" aria-label="Edit your entry on">${Object.entries(SVC_NAME).map(([v, l]) =>
     `<button role="radio" class="${v === on ? "on" : ""}" aria-checked="${v === on}" data-a="esvc" data-v="${v}">${l}</button>`).join("")}</div>` : "";
   return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${sw}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
-    <div class="edt"><span class="cap">your entry</span><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
+    <div class="edt"><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
   <div class="edb"><div id="entrybox"><p class="note">Loading…</p></div></div>
-  <div class="actions"><span class="mono note2" id="edfoot">${edFoot(on)}</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
+  <div class="actions"><span class="note2" id="edfoot">${edFoot(on)}</span><button class="btn" data-a="close">Done${kb("Esc")}</button></div>`;
 }
-const edFoot = (v) => `saves as you go · if ${SVC_NAME[v] || acct()} is offline, it waits and retries`;
+const edFoot = (v) => `Saves as you go, and retries if ${SVC_NAME[v] || acct()} is offline.`;
 /* The panel never sits on "Loading…" for a page it has shown before
    (TODO 61): the last answer per entry draws at once, the fresh one
    replaces it when it differs. A "stale" answer (the hub's stored read
@@ -3213,20 +3217,20 @@ function fontRows(s) {
 const famKey = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 function FontDlg() {
   const m = S.modal;
-  return `<h2 id="dt">Add a font</h2><p class="sub">The fonts on this PC. Click one to add it.</p>
-  <label class="fq">${ico("search")}<input id="fontq" type="search" placeholder="Find a font" autocomplete="off" value="${esc(m.q || "")}"></label>
-  <div class="flist" id="fontlist">${fontListRows()}</div>
-  <div class="actions"><label class="btn fimp">${ico("download")}From a file…<input type="file" data-a="fontfile" accept=".ttf,.otf,.woff,.woff2" hidden></label><span class="note2"></span><button class="btn" data-a="close">Done</button></div>`;
+  return dlHead("Add a font") + dlBody(`<label class="path dlq fq">${ico("search")}<input id="fontq" type="search" placeholder="Find a font" aria-label="Find a font" autocomplete="off" value="${esc(m.q || "")}"></label>
+  <div class="flist" id="fontlist">${fontListRows()}</div>`)
+    + dlFoot("", `<label class="btn fimp">${ico("download")}From a file…<input type="file" data-a="fontfile" accept=".ttf,.otf,.woff,.woff2" hidden></label><button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 }
+/* Each font as a Settings row in its own face: the name, a line, then Add › or ● Added. */
 function fontListRows() {
   const m = S.modal;
-  if (!m.list) return `<div class="dim">${m.err ? esc(m.err) : "Looking for fonts…"}</div>`;
+  if (!m.list) return `<div class="dim">${m.err ? esc(m.err) : dotTxt("Looking for fonts…", "live")}</div>`;
   const q = famKey(m.q), have = new Set(fontList().map((f) => famKey(f.name)));
   const rows = m.list.filter((f) => !q || famKey(f.family).includes(q));
   if (!rows.length) return `<div class="dim">No font called “${esc(m.q)}”.</div>`;
   return rows.map((f) => {
     const on = have.has(famKey(f.family)), busy = m.busy === f.family;
-    return `<button class="frow${on ? " on" : ""}" data-a="fontadd" data-v="${esc(f.family)}" ${on || busy ? "disabled" : ""}><span class="fn" style="font-family:&quot;${esc(f.family)}&quot;, var(--ui)">${esc(f.family)}</span><small>${busy ? "adding…" : on ? `${ico("check")}added` : f.styles > 1 ? `${f.styles} styles` : ""}</small></button>`;
+    return `<button class="frow${on ? " on" : ""}" data-a="fontadd" data-v="${esc(f.family)}" ${on || busy ? "disabled" : ""}><span class="fn" style="font-family:&quot;${esc(f.family)}&quot;, var(--ui)">${esc(f.family)}</span><i class="fline" aria-hidden="true"></i><small>${busy ? dotTxt("adding…", "live") : on ? dotTxt("Added") : `${f.styles > 1 ? `<em>${f.styles} styles</em>` : ""}<b>Add</b>`}</small></button>`;
   }).join("");
 }
 async function fontPickOpen() {
@@ -3858,6 +3862,20 @@ function nextChip(now) {
   const v = S.data?.vpn, vpn = !v?.known ? "" : v.active ? " · vpn" : " · no vpn";
   return `<span class="st nx${v?.known && !v.active ? " warn" : ""}" title="The next episode plays online through ani-cli">next: online${vpn}</span>`;
 }
+/* Pop-ups (TODO 226) are built from Settings' parts (Decision 73): a head with
+   the show's art or a soft glow, the big title and a mono note, rows with a
+   line and a value, states as a dot and a word, and a bar of quiet buttons
+   with ›, the one that matters most in the accent. */
+const dlHead = (title, sum = "", art = null, extra = "", glow = null) => `<div class="dlh${art ? " art" : ""}"${art ? ` style="--art:${esc(cssUrl(art))}"` : glow ? ` style="--glow:${esc(glow)}"` : ""}>${extra}<div class="dlt"><h2 id="dt"${title.replace(/<[^>]+>/g, "").length > 20 ? ' class="long"' : ""}>${title}</h2>${sum ? `<span class="dls">${sum}</span>` : ""}</div></div>`;
+const dlBody = (html, cls = "") => `<div class="dlb set2${cls ? " " + cls : ""}"><div class="settings"><div class="group">${html}</div></div></div>`;
+const dlFoot = (note, btns, cls = "") => `<div class="actions${cls ? " " + cls : ""}"><span class="note2">${note}</span>${btns}</div>`;
+/* "● Found", "● watching for one…": a state as a dot and a word, like Settings. */
+const dotTxt = (t, c = "ok") => `<span class="chip${c === "live" || c === "warn" ? " warn" : ""}"><i class="dot ${c}"></i>${t}</span>`;
+/* Where a pop-up's choice lives in Settings: closes the pop-up and lights the row. */
+const setLink = (tab, row, label) => `<button class="lnk" data-a="setgo" data-t="${tab}" data-v="${esc(row)}">${label} settings ›</button>`;
+const whoTxt = (u) => `<span class="who"><i class="avatar">${esc((u || "?")[0].toUpperCase())}</i>${esc(u || "")}</span>`;
+/* The pop-ups drawn this way (paintModal gives them the .dl2 frame). */
+const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done"]);
 /* skp: the play would also use AniSkip (Decision 39), so the dialog asks
    that too; go(true/false) carries the answer. */
 function vpnGate(go, skp = false) {
@@ -3871,34 +3889,33 @@ function vpnGate(go, skp = false) {
 const ipLine = (online, skp) => `Without a VPN, ${online && skp ? "the streaming site and AniSkip see" : online ? "the streaming site sees" : "AniSkip sees"} your IP address.`;
 /* Use AniSkip / Without AniSkip in place of one Continue button. */
 const skpBtns = (yes, no, key = "") => `<button class="btn" data-a="${no}">Without AniSkip</button><button class="btn pri" data-a="${yes}">Use AniSkip${key}</button>`;
+const escBtn = (a = "close", l = "Cancel") => `<button class="btn" data-a="${a}">${l}${kb("Esc")}</button>`;
 const aniskipAsk = () => S.settings?.aniskip === true && S.settings?.aniskip_vpn_warn !== false && !!S.data?.vpn?.known && !vpnOn();
 /* Once, before the very first play: the two things Enter does in mpv. */
 function TipDlg() {
-  return `<h2 id="dt">While you watch</h2>
-  <p class="sub">Press Enter in mpv:</p>
-  <div class="ptip"><div><kbd class="kb">↵</kbd><span><b>In an opening or ending</b>Skips it. A button shows up in the corner too.</span></div>
-  <div><kbd class="kb">↵</kbd><span><b>Anywhere else</b>Finishes the episode, marks it watched and plays the next one.</span></div></div>
-  <div class="actions"><span class="note2 mono">change this in Settings → Skipping</span><button class="btn pri" data-a="tipgo">Got it, play</button></div>`;
+  return dlHead("Enter in mpv") + dlBody(`
+    ${srow("In an opening or ending", "Skips it.", pkdo(kb("↵")))}
+    ${srow("Anywhere else", "Marks it watched and plays the next episode.", pkdo(kb("↵")))}`)
+    + dlFoot(setLink("skipping", "Skip openings", "Skipping"), `<button class="btn pri" data-a="tipgo">Got it, play${kb("↵")}</button>`);
 }
 function UpDlg() {
-  return `<h2 id="dt">Tell you about new versions?</h2>
-  <p class="sub">Once a day, AnimeHub can ask GitHub for new releases. GitHub sees your IP address, nothing about your library.</p>
-  <div class="actions three"><span class="note2 mono">change this in Settings → System</span><button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button></div>`;
+  return dlHead("New versions?") + dlBody(`<p class="sub">Once a day, AnimeHub can ask GitHub. GitHub sees your IP address.</p>`)
+    + dlFoot("", '<button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button>', "three");
 }
 function SkpDlg() {
-  return `<h2 id="dt">No VPN detected</h2>
-  <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
-  <div class="actions three"><span class="note2 mono">switch this off in Settings → Skipping</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skpBtns("skpgo", "skpno")}</div>`;
+  return dlHead("No VPN on") + dlBody(vpnRow(S.data?.vpn, ipLine(false, true)))
+    + dlFoot(setLink("privacy", "AniSkip", "Privacy & VPN"), escBtn() + skpBtns("skpgo", "skpno"), "three");
 }
 /* A shield with a line through it: no VPN (the "More episodes are out" tile, TODO 183). */
 const SHIELD_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.7 14a7 7 0 0 0 .3-2V6l-8-3-3.2 1.2"/><path d="M4.7 4.7 4 5v6c0 6 8 10 8 10a20 20 0 0 0 5.4-4.6"/><path d="m2 2 20 20"/></svg>';
 const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/><path d="M12 8v4M12 15.5v.01"/></svg>';
-const vpnWait = () => `<div class="warn2"><span class="wi">${SHIELD}</span><div><b>No VPN is on</b><span>Turn it on and this starts by itself.</span><div class="watching"><i class="spin"></i>watching for a VPN…</div></div></div>`;
+/* The VPN as a Settings row: amber while the hub waits for one, green once it's up. */
+const vpnRow = (v = S.data?.vpn, who = "") => v?.active ? srow("VPN", v.iface ? `Through ${esc(v.iface)}.` : "", pkdo(dotTxt("On")))
+  : srow("VPN", `${who ? who + " " : ""}Turn one on and this starts by itself.`, pkdo(dotTxt("Off", "live")));
 function VpnDlg() {
   const skp = S.modal.skp;
-  return `<h2 id="dt">No VPN detected</h2>
-  <p class="sub">${ipLine(true, skp)}</p>${vpnWait()}
-  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">switch this off in Settings → Online episodes${skp ? " / Skipping" : ""}</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skp ? skpBtns("vpngo", "vpnno") : '<button class="btn pri" data-a="vpngo">Continue anyway</button>'}</div>`;
+  return dlHead("No VPN on") + dlBody(vpnRow(S.data?.vpn, ipLine(true, skp)))
+    + dlFoot(setLink("privacy", "Online episodes and downloads", "Privacy & VPN"), escBtn() + (skp ? skpBtns("vpngo", "vpnno") : `<button class="btn pri" data-a="vpngo">Continue anyway${kb("↵")}</button>`), skp ? "three" : "");
 }
 /* Next-episode prompt (TODO 10): the last file finished and the next
    episode is online only — autoplay waits for Continue / Stop here. */
@@ -3908,10 +3925,9 @@ function maybeNextPrompt(p) {
   lastNextPrompt = p.id;
   openModal({ t: "nxt", p });
 }
-function nxVpn() {
+function nxVpn(who = "") {
   const v = S.data?.vpn;
-  if (!v?.known) return `<span class="dim mono">vpn status unknown</span>`;
-  return v.active ? `<span class="okv mono">vpn on · ${esc(v.iface)}</span>` : vpnWait();
+  return v?.known ? vpnRow(v, who) : srow("VPN", "The hub can't tell whether one is on.", pkdo(dotTxt("unknown", "")));
 }
 function NextDlg() {
   const p = S.modal.p, c = p.id && findEpContext(p.id), art = c ? (safeThumb(c.sea, c.ep) || c.s.banner || c.s.poster) : null, v = S.data?.vpn;
@@ -3920,11 +3936,11 @@ function NextDlg() {
   const ask = p.kind === "aniskip", online = String(p.id).startsWith("stream:"), noVpn = v?.known && !v.active, skp = noVpn && (ask || aniskipAsk());
   const label = p.label || (c ? epCode(c.sea, c.ep) : "Next episode"), show = p.show || c?.s?.title;
   const go = skp ? skpBtns("nxgo", "nxno", '<kbd class="kb">↵</kbd>') : `<button class="btn pri" data-a="nxgo">${noVpn ? "Stream anyway" : "Continue"}<kbd class="kb">↵</kbd></button>`;
-  return `<div class="nx2">${art ? `<span class="nxa" style="background-image:${esc(cssUrl(art))}"><span class="lab">${esc(label)}${online ? " · online" : ""}</span></span>` : ""}<div>
-    <h2 id="dt">${esc(label)}${show ? ` <small>${esc(show)}</small>` : ""}</h2>
-    <p class="sub">${online ? "Not on your disk, so it streams online. " : ""}${noVpn ? ipLine(online, skp) : ""}</p>
-    <div id="nx-vpn">${nxVpn()}</div></div></div>
-  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">${noVpn ? "starts by itself when a VPN comes on" : ""}</span><button class="btn" data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button>${go}</div>`;
+
+  /* The show is the big title, the episode the note beside it (an episode code alone looked empty). */
+  return dlHead(esc(show || label), [show ? label : "", online ? "online" : "on disk"].filter(Boolean).map(esc).join(" · "), art, '<span class="dlcap">up next</span>')
+    + dlBody(`<div id="nx-vpn">${nxVpn(noVpn ? ipLine(online, skp) : "")}</div>`)
+    + dlFoot("", escBtn("nxstop", "Stop here") + go, skp ? "three" : "");
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
@@ -4796,37 +4812,41 @@ function AniDlg() {
   const a0 = S.ani || {}, a = { ...(a0.accounts?.anilist || (a0.service === "anilist" ? a0 : {})), client_id_configured: a0.client_id_configured };
   const mal = !a.user && a0.service === "mal";
   const exp = a.expires_at ? new Date(a.expires_at * 1000).toLocaleDateString() : null;
-  return `<h2 id="dt">AniList account</h2>
-  <p class="sub">${a.connected ? `Connected as <b>${esc(a.user)}</b>${exp ? ` · token expires ${exp}` : ""}${a0.service === "anilist" ? "" : ". Paused: MyAnimeList is in use."}` : a.expired ? "The saved token has expired — reconnect below." : mal ? "MyAnimeList is in use. Connecting AniList puts AniList in use; MyAnimeList stays logged in." : `Not connected. Everything runs on what you watch on this ${S.settings?.android ? "phone" : "PC"}.`}</p>
-  ${a.connected ? '<div class="bulk"><button class="btn" data-a="aniout" data-v="anilist">Disconnect</button></div>' : ""}
-  ${!a.connected && a.client_id_configured ? '<div class="bulk"><button class="btn pri" data-a="anioauth">Connect via AniList</button></div>' : ""}
-  ${!a.connected && location.port !== "8787" && !S.settings?.android ? `<p class="hint-line">The hub runs on port ${esc(location.port || "80")}, but the bundled AniList client redirects to port 8787 — one-click connect needs the hub on its default port, or your own client registered for this port (add <code>anilist_client_id</code> to the config file).</p>` : ""}
-  ${!a.connected ? `<p class="hint-line">The browser flow opens anilist.co for one Authorize click. Prefer a token? AniList → Settings → Apps → Create New Token, then paste it below.</p>
-    <div class="row" style="margin-top:12px"><input id="tok" type="text" placeholder="…or paste an AniList token" autocomplete="off" spellcheck="false"><button class="btn" data-a="anitoken">Use token</button></div>` : ""}
-  <div class="msg" id="animsg"></div>
-  <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
+  const state = a.connected ? `${a0.service === "anilist" ? "In use." : "Paused: MyAnimeList is in use."}${exp ? ` Token runs until ${exp}.` : ""}`
+    : a.expired ? "The saved token has expired. Reconnect below." : mal ? "MyAnimeList is in use. Connecting AniList puts AniList in use; MyAnimeList stays logged in." : `Not connected. Everything runs on what you watch on this ${S.settings?.android ? "phone" : "PC"}.`;
+  const port = !a.connected && location.port !== "8787" && !S.settings?.android;
+  return dlHead("AniList")
+    + dlBody(`${srow("Account", state, pkdo(a.connected ? whoTxt(a.user) + '<button class="btn" data-a="aniout" data-v="anilist">Disconnect</button>' : a.client_id_configured ? '<button class="btn pri" data-a="anioauth">Connect via AniList</button>' : dotTxt("Not connected", "")))}
+    ${port ? `<p class="sub">The hub runs on port ${esc(location.port || "80")}, but the bundled AniList client redirects to port 8787. One-click connect needs the hub on its default port, or your own client registered for this port (add <code>anilist_client_id</code> to the config file).</p>` : ""}
+    ${!a.connected ? `${srow("Or use a token", "Make one on anilist.co: Settings → Apps → Create New Token.", "")}
+    <div class="path dlq"><input id="tok" type="text" placeholder="Paste an AniList token" aria-label="AniList token" autocomplete="off" spellcheck="false"><button class="btn" data-a="anitoken">Use token</button></div>` : ""}
+    <div class="msg" id="animsg"></div>`)
+    + dlFoot(setLink("anilist", "AniList", "Account"), `<button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 }
 /* MyAnimeList as the account (Decision 75). Show info stays AniList's. MAL
    sends the browser back to port 8787 only: on another port, the address it
    lands on is pasted here. */
 function MalDlg() {
   const a = S.ani || {}, m = a.mal || {}, me = a.accounts?.mal || {}, in_use = a.service === "mal", on = !!me.connected, n = in_use ? S.alData?.unmatched?.length || 0 : 0;
-  return `<h2 id="dt">MyAnimeList account</h2>
-  <p class="sub">${on ? `Connected as <b>${esc(me.user)}</b>. ${in_use ? "Your MyAnimeList lists are the sections of your library; show info still comes from AniList." : "Paused: AniList is in use. Switch Lists from in Settings → Account to use it."}`
-    : me.user ? "The login has run out — reconnect below." : a.service === "anilist" ? "AniList is in use. Connecting MyAnimeList puts it in use; AniList stays logged in." : "Use your MyAnimeList lists, progress and scores. Show info still comes from AniList."}</p>
-  ${on ? `<p class="hint-line">MyAnimeList doesn't let apps change favourites, so the heart is hidden while it's in use.${n ? ` ${n} of your MyAnimeList entr${n === 1 ? "y has" : "ies have"} no AniList match and don't show in the library.` : ""}</p>
-    <div class="bulk"><button class="btn" data-a="aniout" data-v="mal">Disconnect</button></div>` : ""}
-  ${!on && m.client_id_configured ? '<div class="bulk"><button class="btn pri" data-a="maloauth">Connect via MyAnimeList</button></div>' : ""}
-  ${!on && !m.client_id_configured ? '<p class="hint-line">This copy of Anime Hub has no MyAnimeList app id. Add <code>mal_client_id</code> to the config file.</p>' : ""}
-  ${!on && m.client_id_configured ? `<p class="hint-line">${location.port !== "8787" ? `MyAnimeList sends you back to port 8787, and this hub runs on port ${esc(location.port || "80")}. After you approve, copy the address you land on and paste it here.` : "Opens myanimelist.net for one Allow click. If the page you land on says so, paste its address here."}</p>
-    <div class="row" style="margin-top:12px"><input id="malurl" type="text" placeholder="…paste the address MyAnimeList sent you to" autocomplete="off" spellcheck="false"><button class="btn" data-a="malpaste">Connect</button></div>` : ""}
-  <div class="msg" id="animsg"></div>
-  <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
+  const state = on ? (in_use ? "In use." : "Paused: AniList is in use.")
+    : me.user ? "The login has run out. Reconnect." : a.service === "anilist" ? "Connecting puts it in use. AniList stays logged in." : "Your lists, progress and scores.";
+  return dlHead("MyAnimeList")
+    + dlBody(`<p class="sub">Show info still comes from AniList.</p>
+    ${srow("Account", state, pkdo(on ? whoTxt(me.user) + '<button class="btn" data-a="aniout" data-v="mal">Disconnect</button>' : m.client_id_configured ? '<button class="btn pri" data-a="maloauth">Connect via MyAnimeList</button>' : dotTxt("No app id", "")))}
+    ${on && n ? srow("Not in the library", `${n} entr${n === 1 ? "y has" : "ies have"} no AniList match.`, "") : ""}
+    ${!on && !m.client_id_configured ? '<p class="sub">This copy of Anime Hub has no MyAnimeList app id. Add <code>mal_client_id</code> to the config file.</p>' : ""}
+    ${!on && m.client_id_configured ? `${srow("After you approve", location.port !== "8787" ? `Paste the address MyAnimeList sends you to (port 8787; this hub runs on ${esc(location.port || "80")}).` : "If the page you land on asks, paste its address here.", "")}
+    <div class="path dlq"><input id="malurl" type="text" placeholder="Paste the address MyAnimeList sent you to" aria-label="MyAnimeList address" autocomplete="off" spellcheck="false"><button class="btn" data-a="malpaste">Connect</button></div>` : ""}
+    <div class="msg" id="animsg"></div>`)
+    + dlFoot(setLink("anilist", "MyAnimeList", "Account"), `<button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 }
 /* The tour's last page (mockup): what the hub found — ✓ found, ! needed, – optional. */
 const MPV_BTN = '<button class="btn sm" data-a="ext" data-v="https://mpv.io/installation/">Get mpv</button>';
 const UPSCAYL_BTN = '<button class="btn sm" data-a="ext" data-v="https://upscayl.org/download">Get Upscayl</button>';
-const tourRow = (st, k, v, more = "") => `<div class="${st}"><span class="okc">${st === "ok" ? ico("check") : st === "bad" ? "!" : "–"}</span><b>${k}</b><span class="v">${esc(v)}</span>${more}</div>`;
+/* What the tour found, as a Settings row (TODO 226): the thing, what was found, and a state on the right —
+   ● Found, ● the problem in amber, or Optional — with the button that fixes it. */
+const TOUR_ST = { ok: ["Found", "ok"], bad: ["Needed", "warn"], opt: ["Optional", ""] };
+const tourRow = (st, k, v, more = "", word = "") => srow(k, esc(st === "ok" ? v.replace(/ found$/, "") : v), pkdo(more + dotTxt(word || TOUR_ST[st][0], TOUR_ST[st][1])), st === "bad" ? "bad" : "");
 /* The ani-cli button (Decision 47): the official script, only when clicked. */
 const aniWord = (s) => (s.stream?.own && !s.stream?.outdated ? "Check for updates" : s.stream?.own ? "Update ani-cli" : "Get ani-cli");
 const aniBtn = (s) => (s.stream?.can_get ? `<button class="btn sm" data-a="aniget" ${S.aniGet ? "disabled" : ""}>${S.aniGet ? "Getting it…" : aniWord(s)}</button>` : "");
@@ -4849,33 +4869,37 @@ const toolsShown = (ti) => ti.can && (ti.groups?.length || ["working", "failed"]
 function toolsBox(s, inTour) {
   const ti = s.tools_install || {}, j = ti.job || {}, busy = j.state === "working", failed = j.state === "failed";
   if (!toolsShown(ti)) return "";
-  const mark = (st) => st === "ok" ? ico("check") : st === "working" ? '<i class="spin"></i>' : st === "failed" ? "!" : "–";
+  const word = { ok: ["Done", "ok"], working: ["installing…", "live"], failed: ["Failed", "warn"] };
   const picked = toolsPicked(ti);
   const rows = busy || failed
-    ? (j.steps || []).map((x) => `<div class="${x.state === "ok" ? "ok" : x.state === "failed" ? "bad" : "opt"}"><span class="okc">${mark(x.state)}</span><b>${esc(x.name)}</b><span class="v">${x.state === "working" ? "installing…" : x.state === "ok" ? "done" : x.state === "failed" ? "failed" : ""}</span></div>`).join("")
-    : ti.groups.map((g) => { const on = picked.includes(g.id);
-      return `<div class="${on ? "ok" : "opt"}"><b>${esc(g.name)}</b><span class="v">${esc(TOOL_HINT[g.id] || "")}</span><button class="switch" role="switch" aria-checked="${on}" aria-label="Install ${esc(g.name)}" data-a="toolpick" data-v="${g.id}"></button></div>`; }).join("");
+    ? (j.steps || []).map((x) => srow(esc(x.name), "", pkdo(word[x.state] ? dotTxt(...word[x.state]) : ""))).join("")
+    : ti.groups.map((g) => srow(esc(g.name), esc(TOOL_HINT[g.id] || ""), pick(`Install ${g.name}`, "toolpick", g.id, [["on", "Install"], ["off", "Skip"]], picked.includes(g.id) ? "on" : "off"))).join("");
   const foot = busy ? "Installing… you can keep going." : failed ? j.error || "Something didn't install." : "No admin rights needed. The rest can come later.";
   const btn = busy || inTour ? "" : toolsBtn(ti, "btn pri sm");
-  return `<div class="tinst"><div class="sum2 tpick">${rows}</div><div class="tfoot"><p class="${failed ? "swarn" : ""}">${esc(foot)}</p>${btn}</div></div>`;
+  return `<div class="tinst">${rows}<div class="tfoot"><p class="${failed ? "swarn" : ""}">${esc(foot)}</p>${btn}</div></div>`;
 }
 function tourTools(s) {
   const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? `${ani && !st.outdated ? "." : ""} It also needs ${st.needs.join(", ")}.` : "";
+  const aniSt = ani && !st.outdated && !st.needs?.length ? "ok" : st.outdated || (ani && st.needs?.length) ? "bad" : "opt";
   return [
-    tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN),
-    tourRow(ani && !st.outdated && !st.needs?.length ? "ok" : st.outdated || (ani && st.needs?.length) ? "bad" : "opt", "Online episodes", aniLine(s) + need, ani && !st.outdated ? (st.needs?.includes("curl-impersonate") ? IMP_BTN : "") : aniBtn(s)),
-    tourRow(up ? "ok" : "opt", "Sharper banners", up ? "Upscayl found" : "Optional: install Upscayl for sharper show banners.", up ? tgl("upscale_banners", "Sharper banners", s.upscale_banners) : UPSCAYL_BTN),
+    tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN, s.tools?.mpv ? "" : "Not found"),
+    tourRow(aniSt, "Online episodes", aniLine(s) + need, ani && !st.outdated ? (st.needs?.includes("curl-impersonate") ? IMP_BTN : "") : aniBtn(s), st.outdated ? "Too old" : ""),
+    up ? srow("Sharper banners", "Upscayl found. Redraws new banners sharper.", onoff("upscale_banners", "Sharper banners", s.upscale_banners))
+      : tourRow("opt", "Sharper banners", "Optional: install Upscayl for sharper show banners.", UPSCAYL_BTN),
   ].join("");
 }
 function tourFound(s, a, n, ok) {
-  const row = tourRow;
+  const row = tourRow, T = S.tour || {};
   return [
-    row(ok ? "ok" : "bad", "Library", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : s.library_root ? `${s.library_root} · can't be read` : "no folder chosen yet"),
-    row(s.tools?.mpv ? "ok" : "bad", "Player", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "mpv not found — install it to play files"),
+    row(ok ? "ok" : "bad", "Library", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : s.library_root ? `${s.library_root} · can't be read` : "no folder chosen yet", "", ok ? "" : "Not set"),
+    row(s.tools?.mpv ? "ok" : "bad", "Player", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "mpv not found — install it to play files", "", s.tools?.mpv ? "" : "Not found"),
     row(s.tools?.["ani-cli"] ? "ok" : "opt", "Online episodes", s.tools?.["ani-cli"] ? aniLine(s) : "not set up, optional"),
-    row(a.connected ? "ok" : "opt", acct(), a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected"),
+    tourAcct(a, T),
   ].join("");
 }
+/* The account row: who's connected, or Connect (in the accent when page 3 picked it). */
+const tourAcct = (a, T) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
+  : srow(acct(), "Not connected yet.", pkdo(`<button class="btn${T.choice === "connect" ? " pri" : ""}" data-a="tourconnect">Connect ${acct()}</button>`));
 /* The phone page needs the desktop app: without it the tour skips that page. */
 const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 6));
 /* A small drawing of each player look for the tour: the real layout over a neutral scene, no show's art. */
@@ -4902,20 +4926,20 @@ const PL_LOOKS = {
 const TOUR_OWN = { mpv_fullscreen: "own", mpv_smooth: "own" }, TOUR_HUB = { mpv_fullscreen: "on", mpv_smooth: "on" };
 function tourMpv(s) {
   const m = s.mpv || {}, own = m.fullscreen === "own" && m.smooth === "own";
-  const card = (v, on, title, line) => `<button class="choice ${on ? "on" : ""}" aria-pressed="${on}" data-a="tourmpv" data-v="${v}"><b>${title}</b><span>${line}</span></button>`;
-  return `<div class="choices">${card("hub", !own, "Anime Hub's settings", "Episodes start fullscreen, and the controls stay smooth while playing.")}${card("own", own, "My own settings", "mpv.conf decides. Good if you have tuned mpv yourself.")}</div>`;
+  return srow("Fullscreen and smooth controls", own ? "Your mpv.conf decides." : "Anime Hub turns both on.",
+    pick("Fullscreen and smooth controls", "tourmpv", null, [["hub", "Anime Hub"], ["own", "My mpv.conf"]], own ? "own" : "hub"));
 }
 function tourLooks(s) {
-  const m = s.mpv || {}, own = m.design === "own";
-  const card = (v, title, line) => `<button class="choice lkcard ${!own && (m.look || "soft") === v ? "on" : ""}" aria-pressed="${!own && (m.look || "soft") === v}" data-a="tourlook" data-v="${v}">${PL_LOOKS[v]()}<b>${title}</b><span>${line}</span></button>`;
-  return `<div class="choices lkpick">${card("soft", PLAYER_LOOKS.soft, "Controls float over the picture, with lively hover effects.")}${card("deck", PLAYER_LOOKS.deck, "One slim bar along the bottom, with the most room for the seek bar.")}
-    <button class="choice lkown ${own ? "on" : ""}" aria-pressed="${own}" data-a="tourlook" data-v="own"><b>Keep my own mpv look</b><span>For a skin you already use. Anime Hub adds no controls.</span></button></div>`;
+  const m = s.mpv || {}, look = m.design === "own" ? "own" : m.look || "soft";
+  return srow("Player layout", look === "own" ? "Your own skin. Anime Hub adds no controls." : PLAYER_LINES[look] || "",
+    pick("Player layout", "tourlook", null, [["soft", PLAYER_LOOKS.soft], ["deck", PLAYER_LOOKS.deck], ["own", "My own"]], look), "prev",
+    look === "own" ? "" : `<span class="choice pkprev" aria-hidden="true">${PL_LOOKS[look]()}</span>`);
 }
 /* The search page: only what search does today, in the words of its own sections. */
 function tourSearch() {
-  const row = (icon, title, line) => `<div>${ico(icon)}<span><b>${title}</b>${line}</span></div>`;
-  return `<h2 id="dt">What search can find</h2><p class="sub">${isPhone() ? "Tap the search button to open it." : 'Press <kbd class="kb">/</kbd> on any page to open it.'}</p>
-    <div class="ptip">${row("folder", "Shows in your library", "Type part of a name to open a show.")}${row("search", "Shows you don't have", "Finds anything on AniList. Needs an AniList account or ani-cli.")}${row("sliders", "Settings", "Type a setting's name. Switches can be flipped right in the results.")}${row("arrowr", "Commands", "Go to a page, rescan your library or show your downloads.")}</div>`;
+  return ["Search", "", (isPhone() ? "" : `<p class="sub">Press ${kb("/")} on any page.</p>`)
+    + srow("Your shows", "Type part of a name.", "") + srow("Any anime", "From AniList, with an account or ani-cli.", "")
+    + srow("Settings", "Flip a switch right in the results.", "") + srow("Commands", "Go to a page, rescan, open downloads.", "")];
 }
 /* The tour's pages. The Android app (Decision 88) has no
    library folder, mpv or phone remote: it sets up Termux instead. */
@@ -4924,27 +4948,25 @@ function tourBlocks() {
   if (s.android) return tourAndroid(T, s, a);
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
   return tourPages([
-    `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">It plays the anime on this computer in mpv.</p>
-     <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
-     <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
-     <div>${ico("play")}<span><b>Playback</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
-    `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}
-     <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>`,
-    `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
-      <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
-      <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what you watch on this PC.</span></button></div>`,
-    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p>${toolsShown(s.tools_install || {}) ? toolsBox(s, true) : `<div class="sum2">${tourTools(s)}</div>`}`,
-    `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
-    `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
-    `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
+    ["Welcome to Anime Hub", "",
+      srow("Your library", "Your files, with art and episode names.", "") + srow("Online episodes", "Missing ones, streamed or downloaded. Optional.", "")
+      + srow("Playback", "Resumes, skips openings, plays the next one.", "")],
+    ["Where's your anime?", "", `${srow("Library folder", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.",
+        `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide")}${DirPick("tour")}`],
+    ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this PC.")}`],
+    ["A few tools", "", toolsShown(s.tools_install || {}) ? toolsBox(s, true) : tourTools(s)],
+    ["Pick your player", "", tourLooks(s)],
+    ["Your mpv settings", "", `<p class="sub">Your mpv.conf always loads.</p>${tourMpv(s)}`],
+    ["Use it from your phone?", "", `<p class="sub">The phone remote needs the server running on this PC.</p>${bgRows(s)}`],
     tourSearch(),
-    `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
-     <div class="sum2">${tourFound(s, a, n, ok)}</div>
-     ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
-     ${tourSwitches(s, a)}`,
+    ["You're set", "", `<div class="group"><h3>Found</h3>${tourFound(s, a, n, ok)}</div>${tourSwitches(s, a)}`],
   ], s);
 }
-const tourSwitches = (s, a) => `<div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`;
+/* Page 3: Connect or Skip, as Settings rows with Pick ›. Already connected: who. */
+const tourPickAcct = (T, a, skipLine) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
+  : [["connect", `Connect ${acct()}`, "Syncs progress and scores."], ["skip", "Skip for now", skipLine]]
+    .map(([v, l, d]) => srow(l, d, pkdo(T.choice === v ? dotTxt("Picked") : `<button class="btn" data-a="tourpick" data-v="${v}">Pick</button>`), T.choice === v ? "on" : "")).join("");
+const tourSwitches = (s, a) => `<div class="group"><h3>While you watch</h3>${srow("Send watched episodes", "Sends your highest watched episode to AniList.", onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, !a.connected))}${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, !a.connected))}</div>`;
 /* Termux commands (Decision 88), the same words the hub's errors use. */
 const TERMUX_INSTALL = "pkg upgrade -y && pkg install -y ani-cli";
 const TERMUX_ALLOW = "mkdir -p ~/.termux && echo allow-external-apps=true >> ~/.termux/termux.properties && termux-reload-settings";
@@ -4955,42 +4977,38 @@ const filesAsk = () => srow("Your anime files", "To play episodes saved on this 
 /* Back from Android's file-access screen: fresh settings, same page (the tour keeps its step). */
 window.hubFilesBack = () => loadSettings().then(() => { if (S.modal) paintModal(); else render(true); }).catch(() => {});
 function termuxBox(s) {
-  if (termuxReady(s)) return `<div class="found"><i class="dot ok"></i>ani-cli ${esc(s.stream?.version || "")} found in Termux. Online episodes are ready.</div>`;
+  if (termuxReady(s)) return srow("ani-cli", `${esc(s.stream?.version || "")} in Termux. Online episodes are ready.`, pkdo(dotTxt("Found")));
   const cmd = (t) => `<div class="tcmd"><code>${esc(t)}</code><button class="btn sm" data-a="copy" data-v="${esc(t)}">Copy</button></div>`;
   return `<ol class="tsteps">
     <li>Install <b>Termux</b> from <a href="https://f-droid.org/packages/com.termux/" target="_blank" rel="noopener">F-Droid</a>. The Play Store's version is too old.</li>
     <li>Open Termux and run:${cmd(TERMUX_INSTALL)}</li>
     <li>Then run this, so Anime Hub may use it:${cmd(TERMUX_ALLOW)}</li>
     <li>Come back here, tap Check again and allow Anime Hub when Android asks.</li></ol>
-    <div class="found"><i class="dot"></i><span>${esc(s.termux || "ani-cli not found in Termux yet.")}</span></div>
-    <div class="bulk"><button class="btn" data-a="termuxcheck" ${S.termuxBusy ? "disabled" : ""}>${S.termuxBusy ? "Checking…" : "Check again"}</button></div>`;
+    ${srow("ani-cli", esc(s.termux || "Not found in Termux yet."), pkdo(`<button class="btn" data-a="termuxcheck" ${S.termuxBusy ? "disabled" : ""}>${S.termuxBusy ? "Checking…" : "Check again"}</button>`))}`;
 }
 function tourAndroid(T, s, a) {
   const row = tourRow, n = S.data.shows.length, ok = s.library_root && s.scan?.state === "ok";
   return [
-    `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">Your anime on this phone, no PC needed.</p>
-     <div class="ptip"><div>${ico("download")}<span><b>Online episodes</b>Search any show and watch it. Set up once with the free Termux app.</span></div>
-     <div>${ico("play")}<span><b>Playback</b>Resumes where you stopped, skips openings and plays the next episode.</span></div>
-     <div>${ico("check")}<span><b>${acct()}</b>Your lists and progress, kept in sync. Optional.</span></div></div>`,
-    `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
-      <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
-      <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything stays on this phone.</span></button></div>`,
-    `<h2 id="dt">Online episodes</h2><p class="sub">Anime Hub finds episodes with ani-cli, which runs in Termux. You can do this later in Settings.</p>${termuxBox(s)}`,
-    `<h2 id="dt">Anime files on this phone?</h2><p class="sub">Optional. Episodes you keep on this phone or an SD card play here too. You can do this later in Settings → Library.</p>
-     ${s.files_ok ? `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}<div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"}` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>` : filesAsk()}`,
+    ["Welcome to Anime Hub", "",
+      srow("Online episodes", "Search any show and watch it. Needs the free Termux app.", "") + srow("Playback", "Resumes, skips openings, plays the next one.", "")
+      + srow(acct(), "Your lists and progress. Optional.", "")],
+    ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this phone.")}`],
+    ["Online episodes", "", `<p class="sub">ani-cli finds them. It runs in Termux.</p>${termuxBox(s)}`],
+    ["Files on this phone?", "", `<p class="sub">Optional. Episodes on this phone or an SD card.</p>
+     ${s.files_ok ? srow("Your files", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"}`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.", `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}`],
     tourSearch(),
-    `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
-     <div class="sum2">${row(termuxReady(s) ? "ok" : "opt", "Online episodes", termuxReady(s) ? aniLine(s) : "Termux not set up yet")}${row(ok ? "ok" : "opt", "Your files", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : "none chosen")}${row(a.connected ? "ok" : "opt", acct(), a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected")}</div>
-     ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
-     ${tourSwitches(s, a)}`,
+    ["You're set", "", `<div class="group"><h3>Found</h3>${row(termuxReady(s) ? "ok" : "opt", "Online episodes", termuxReady(s) ? aniLine(s) : "Termux not set up yet")}${row(ok ? "ok" : "opt", "Your files", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : "none chosen")}${tourAcct(a, T)}</div>
+     ${tourSwitches(s, a)}`],
   ];
 }
 function Tour() {
   const T = S.tour, s = S.settings || {}, b = tourBlocks();
-  const last = b.length - 1, ti = s.tools_install || {};
+  const last = b.length - 1, ti = s.tools_install || {}, [title, note, body] = b[T.step];
   const toolsHere = !s.android && T.step === 3 && toolsShown(ti) && ti.job?.state !== "working";
-  return `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b[T.step]}
-  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}${toolsHere ? `<span class="aright"><button class="btn" data-a="tournext">Continue</button>${toolsBtn(ti, "btn pri")}</span>` : `<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button>`}</div>`;
+  const steps = `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>`;
+  return dlHead(title, note, null, steps) + dlBody(body)
+    + dlFoot("", (T.step ? '<button class="btn" data-a="tourback">Back</button>' : `<button class="btn" data-a="tourskip">Skip${kb("Esc")}</button>`)
+      + (toolsHere ? `<button class="btn" data-a="tournext">Continue</button>${toolsBtn(ti, "btn pri")}` : `<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}${kb("↵")}</button>`));
 }
 /* The connect dialog (Decisions 14, 48, 75; polish TODO 191): rows like
    Settings — the show, a line of its episodes, the value on the right.
@@ -5066,14 +5084,14 @@ function Rec() {
   const note = eps ? `${pl(marks.length, "show")} · ${pl(eps, "episode")}` : n ? pl(n, "show") : `${pl(facts.length, "show")} sent`;
   const sub = eps ? `${A2} is ahead of this PC. Bright ticks get marked, faint ones are already watched here${gap ? ", outlined ones are neither on this PC nor online" : ""}.`
     : n ? `These shows have a different status or score on ${A2} and on this PC. Pick what to keep.` : `What you watched on this PC went to ${A2}.`;
-  const sw = n && eps ? `<div class="rcrow rcsw" style="--r:${r++}"><span class="rct"><b>Mark ${eps === 1 ? "it" : `these ${eps}`} watched here</b><small>Off leaves this PC as it is.</small></span><i class="rcl"></i><span class="rcv"><button class="switch" role="switch" aria-checked="${!!mark}" aria-label="Mark watched here" data-a="recmark" data-v="${mark ? 0 : 1}"></button></span></div>` : "";
+  const sw = n && eps ? `<div class="rcrow rcsw" style="--r:${r++}"><span class="rct"><b>Mark ${eps === 1 ? "it" : `these ${eps}`} watched here</b><small>Off leaves this PC as it is.</small></span><i class="rcl"></i>${pick("Mark watched here", "recmark", null, [["1", "On"], ["0", "Off"]], mark ? "1" : "0")}</div>` : "";
   const acts = n
-    ? `<span class="note2 mono">${[`keeps ${pl(n, "choice")}`, mark && eps ? `marks ${pl(eps, "episode")}` : ""].filter(Boolean).join(" · ")}</span><button class="btn" data-a="recclose">Skip</button><button class="btn pri" data-a="recapply">Apply<kbd class="kb">↵</kbd></button>`
-    : eps ? `<span class="note2 mono">marks this pc only</span><button class="btn" data-a="recclose">Leave as is</button><button class="btn pri" data-a="recapply">Mark ${eps.toLocaleString("en")} watched<kbd class="kb">↵</kbd></button>`
-    : `<span class="note2"></span><button class="btn pri" data-a="recclose">Close<kbd class="kb">↵</kbd></button>`;
-  return `<h2 id="dt">${title}<small>${note}</small></h2><p class="sub">${sub}</p>
+    ? dlFoot("", escBtn("recclose", "Skip") + `<button class="btn pri" data-a="recapply">Apply${kb("↵")}</button>`)
+    : eps ? dlFoot("", escBtn("recclose", "Leave as is") + `<button class="btn pri" data-a="recapply">Mark ${eps.toLocaleString("en")} watched${kb("↵")}</button>`)
+    : dlFoot("", `<button class="btn pri" data-a="recclose">Close${kb("↵")}</button>`);
+  return `${dlHead(title, note)}<div class="dlb rcsub"><p class="sub">${sub}</p></div>
   <div class="rcbody${n && eps && !mark ? " nomark" : ""}">${markRows ? cap(`ahead on ${A2}`) + markRows + sw : ""}${confRows ? cap("different status or score", `<span class="rcalls">all: ${all("anilist", A2)}${all("local", "This PC")}</span>`) + confRows : ""}${factRows ? cap("sent from this pc") + factRows : ""}</div>
-  <div class="actions">${acts}</div>`;
+  ${acts}`;
 }
 /* You finished a show (Decision 25 → 38): poster, the big title, rate it
    (1–10 pills) with ♥ beside, and what comes next in its franchise. */
@@ -5081,15 +5099,13 @@ function Done() {
   const c = S.modal.c, e = S.data?.spine?.entries?.find((x) => x.id === c.media_id) || null;
   const p = frMemo.get(c.media_id), nx = p ? p.entries.filter((x) => x.group === "main").find((x, i, all) => all[i - 1]?.id === c.media_id) || p.entries.find((x) => x.group === "extra" && !S.data.spine?.entries?.some((y) => y.id === x.id)) : null;
   const nxOn = nx && S.data.spine?.entries?.find((y) => y.id === nx.id);
-  return `<div class="dn"><div class="dnp">${poster(c.title || "", e?.poster || null)}</div><div class="dnb">
-    <span class="cap">you finished</span><h2 id="dt">${esc(c.title || "a show")}</h2>
-    <div class="facts">${[e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on " + acct() : "saved on this PC"].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
-    <span class="cap" style="margin-top:22px">how was it?</span>
-    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : favPill(false, 'id="dn-fav" data-a="dnfav"')}</div><div id="dn-fine" hidden>${scoreSlider("dnfine", 0)}</div>
+  const facts = [e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on " + acct() : "saved on this PC"].filter(Boolean).map(esc).join(" · ");
+  /* The show's banner on top (its poster when it has none), the score as the main row, what comes next under it. */
+  return dlHead(esc(c.title || "a show"), facts, e?.banner || e?.poster || null, '<span class="dlcap">you finished</span>')
+    + dlBody(`${srow("How was it?", "", `<div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : favPill(false, 'id="dn-fav" data-a="dnfav"')}</div>`, "wide")}<div id="dn-fine" hidden>${scoreSlider("dnfine", 0)}</div>
     <input type="hidden" id="dn-score" value=""><input type="hidden" id="dn-status" value="COMPLETED"><span id="dn-max" hidden></span>
-    ${nx ? `<div class="dnnext">${poster(nx.title || nx.label, nx.poster || null, { c: "t" })}<span class="tx"><b>${esc(nx.title || nx.label)}</b><small>${esc([nx.format_label, "next in this franchise", nxOn ? "on your list" : "not on your list"].filter(Boolean).join(" · "))}</small></span>${nxOn ? "" : `<button class="btn sm" data-a="dnplan" data-v="${nx.id}">+ Planning</button>`}</div>` : ""}
-  </div></div>
-  <div class="actions"><span class="note2 mono">the score saves when you close</span><button class="btn" data-a="dnskip">Skip</button><button class="btn pri" data-a="dnsave">Done<kbd class="kb">↵</kbd></button></div>`;
+    ${nx ? `<div class="group"><h3>Next in this franchise</h3>${srow(esc(nx.title || nx.label), esc(nx.format_label || ""), pkdo(nxOn ? dotTxt("On your list") : `<button class="btn" data-a="dnplan" data-v="${nx.id}">Add to Planning</button>`))}</div>` : ""}`)
+    + dlFoot("", `<button class="btn" data-a="dnskip">Skip${kb("Esc")}</button><button class="btn pri" data-a="dnsave">Done${kb("↵")}</button>`);
 }
 /* The overlay is built once per dialog; later paints (tour steps, option picks) swap only the dialog body
    so the backdrop and entrance don't replay. A tour paint with no new page (a switch, a card) updates in
@@ -5123,7 +5139,7 @@ function paintModal(focus) {
       }
     }
   } else {
-    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "match" || m.t === "recap" || m.t === "plfd" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon dl2" : m.t === "recap" || m.t === "plfd" ? m.t + " dl2" : m.t === "entry" || m.t === "match" ? m.t : DL2.has(m.t) ? "dl2" : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
   else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
@@ -5908,7 +5924,7 @@ async function pollNow() {
     if (now.vpn && S.data) {
       const vpnMoved = JSON.stringify(now.vpn) !== JSON.stringify(S.data.vpn);
       S.data.vpn = now.vpn; // the VPN chip follows the connection, not only reloads
-      if (vpnMoved && S.modal?.t === "nxt") { const el = $("#nx-vpn"); if (el) el.innerHTML = nxVpn(); }
+      if (vpnMoved && S.modal?.t === "nxt") paintModal(); // the row and the buttons follow the VPN
       /* "Turn it on and this starts by itself": a VPN coming up continues what waited for it. */
       if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();
       else if (vpnMoved && now.vpn.active && S.modal?.t === "vpn") A.vpngo();
@@ -6011,9 +6027,8 @@ const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::
 const playWhere = () => { if (S.settings?.android) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app has no PC (Decision 88)
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
 function WhereDlg() {
-  return `<h2 id="dt">Play where?</h2>
-  <p class="sub">Episodes can play on this phone, online ones too (they come through the PC). Change it any time in Settings → Player.</p>
-  <div class="actions"><button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button></div>`;
+  return dlHead("Play where?") + dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`)
+    + dlFoot(setLink("player", "", "Player"), '<button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button>');
 }
 /* Remember the season before (TODO 133, Decision 85): Play on the first
    episode of a new season asks first when you finished the season before a
@@ -6042,13 +6057,13 @@ function RecapDlg() {
     s: [c.format === "MOVIE" ? "Recap movie" : `Recap · ${esc(c.format_label)}`, c.episodes === 1 && c.duration ? `${c.duration} min` : c.episodes > 1 ? `${c.episodes} episodes` : "", c.watched ? '<span class="seen">you watched it</span>' : ""].filter(Boolean).join(" · ") });
   const main = (x?.characters || []).filter((c) => c.role === "MAIN").slice(0, 5), side = (x?.characters || []).filter((c) => c.role !== "MAIN").slice(0, 8 - main.length);
   const face = (c, big) => `<span class="f${big ? "" : " s"}" title="${esc(c.name)}"><i${c.image ? ` style="background-image:url('${esc(c.image)}')"` : ""}></i><small>${esc(c.name.split(" ")[0])}</small></span>`;
-  const who = main.length || side.length ? `<h3>Characters from ${esc(p.label)}</h3><div class="rcpw">${main.map((c) => face(c, true)).join("")}${side.length && main.length ? '<span class="gap"></span>' : ""}${side.map((c) => face(c)).join("")}</div>` : "";
+  const who = main.length || side.length ? `<div class="group"><h3>Characters from ${esc(p.label)}</h3><div class="rcpw">${main.map((c) => face(c, true)).join("")}${side.length && main.length ? '<span class="gap"></span>' : ""}${side.map((c) => face(c)).join("")}</div></div>` : "";
   const start = r.entry.label.length <= 14 ? `Start ${esc(r.entry.label)}` : "Start episode 1";
-  return `<div class="rcpart"${p.banner || p.poster ? ` style="background-image:url('${esc(p.banner || p.poster)}')"` : ""}></div><div class="rcpin">
-  <h2 id="dt"${p.label.length > 16 ? ' class="long"' : ""}>Remember ${esc(p.label)}?</h2>
-  <p class="lead">You finished ${esc(p.label)} on <b>${day}</b>, ${agoText(p.months)}${score}.</p>
-  ${rows.length ? `<h3>Watch first?</h3>${rows.map(row).join("")}` : ""}${who}
-  <div class="rcpf"><button class="quiet" data-a="recapoff">Don’t show this again</button><button class="btn pri" data-a="recapgo">${ico("play")}<span>${start}</span></button></div></div>`;
+  /* The pop-up frame (TODO 226): the season's art behind the question, Settings' headings, a quiet footer. */
+  return dlHead(`Remember ${esc(p.label)}?`, "", p.banner || p.poster)
+    + dlBody(`<p class="sub">You finished ${esc(p.label)} on <b>${day}</b>, ${agoText(p.months)}${score}.</p>
+    ${rows.length ? `<div class="group"><h3>Watch first?</h3>${rows.map(row).join("")}</div>` : ""}${who}`, "rcpb")
+    + dlFoot(`<button class="lnk" data-a="recapoff">Don’t show this again</button>`, escBtn() + `<button class="btn pri" data-a="recapgo">${start}${kb("↵")}</button>`);
 }
 const ppVideo = () => $("#pp video");
 /* The player opens at the tap (a tap lets it play with sound and go full
@@ -7031,7 +7046,7 @@ const A = {
   /* settings + account */
   adv: (v, t) => { if (!S.settings) return; const on = t.getAttribute("aria-checked") !== "true"; t.setAttribute("aria-checked", String(on)); setToggle(v, on); }, // the switch knows its state: some live under s.mpv
   srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; t.setAttribute("aria-checked", String(!S.settings[v])); await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
-  setgo: (v, t) => { const tab = t.dataset.t; setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
+  setgo: (v, t) => { const tab = t.dataset.t; if (S.modal) closeModal(); setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
   srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
   srshow: (v) => {
@@ -7215,8 +7230,10 @@ const A = {
     if (S.view === "settings") render(true);
     toast("AnimeHub didn't come back. Open it again by hand.", "err");
   },
-  toolpick: (v) => {
-    const skip = S.toolSkip = { ...(S.toolSkip || {}) }, off = skip[v] !== true;
+  toolpick: (v, t) => {
+    /* ‹ Install / Skip › sends the group in data-k and the choice as v (TODO 226). */
+    const k = t?.dataset?.k, want = v; if (k) v = k;
+    const skip = S.toolSkip = { ...(S.toolSkip || {}) }, off = k ? want === "off" : skip[v] !== true;
     skip[v] = off;
     if (v === "online" && off) skip.download = true; // downloads run through ani-cli
     if (v === "download" && !off) skip.online = false;
@@ -7269,7 +7286,7 @@ const A = {
   tourconnect: () => { api("/api/settings", { tour_done: true }).catch(() => {}); if (S.settings) S.settings.tour_done = true; closeModal(); openModal({ t: "ani" }); },
   recset: (v, t) => { S.rec.pick[t.dataset.k || t.dataset.m] = v; paintModal(); },
   recall: (v) => { for (const k of Object.keys(S.rec.pick)) S.rec.pick[k] = v; paintModal(); },
-  recmark: (v) => { S.rec.mark = v === "1"; paintModal(); },
+  recmark: (v) => { S.rec.mark = v === "1"; paintModal(); }, // ‹ On / Off › (TODO 226; was a switch)
   recclose: () => recDone(),
   /* Settings → Account → Compare (TODO 191): the connect check on demand. */
   reccheck: (v, t) => {
@@ -7314,7 +7331,7 @@ const A = {
       const card = t.closest(".rec"); card?.classList.add("gone"); setTimeout(() => { refreshData(); if (S.view === "home") render(); }, reduceMotion() ? 0 : 320);
     }).catch(() => { t.disabled = false; t.classList.remove("busy"); toast("Could not add it — try again"); });
   },
-  dnplan: (v, t) => { t.disabled = true; entrySave(+v, { status: "PLANNING" }).then((r) => { t.textContent = r && !r.error ? "✓ On Planning" : "Could not add"; refreshData(); }).catch(() => { t.textContent = "Could not add"; }); },
+  dnplan: (v, t) => { t.disabled = true; const say = (ok) => { t.outerHTML = ok ? dotTxt("On Planning") : dotTxt("Could not add", "warn"); }; entrySave(+v, { status: "PLANNING" }).then((r) => { say(r && !r.error); refreshData(); }).catch(() => say(false)); },
   dnfav: (v, t) => { const on = !t.classList.contains("on"); favSet(t, on); t.classList.remove("pop1"); void t.offsetWidth; t.classList.add("pop1"); if (on) burstAt(t); },
   dnskip: () => { const c = S.modal.c; api("/api/completion-seen", { media_id: c.media_id, count: c.count }).catch(() => {}); closeModal(); },
   dnsave: (v, t) => {
@@ -7430,13 +7447,20 @@ const A = {
     const g = $(".plicons"), o = g?.querySelector(".pic.on"); // its icon can be far down the list
     if (o) g.scrollTop = o.getBoundingClientRect().top - g.getBoundingClientRect().top - 40;
   },
-  plicon: (v) => { plDlgRead(); S.modal.icon = v; const y = $(".plicons")?.scrollTop || 0; paintModal(); const g = $(".plicons"); if (g) g.scrollTop = y; }, // the list is long: stay where the click was
+  plicon: (v) => { // in place too: the preview shows the icon, the list keeps its scroll
+    S.modal.icon = v || "";
+    const pv = $("#modal .pnt");
+    if (!pv) { plDlgRead(); return paintModal(); }
+    pv.innerHTML = v && LUCIDE[v] ? lu(v) : ico("list");
+    if (!reduceMotion()) pv.animate([{ transform: "scale(.8)" }, { transform: "scale(1)" }], { duration: 260, easing: "cubic-bezier(.3,1.45,.5,1)" });
+    for (const b of $$("#modal .plicons .pic")) { const on = b.dataset.v === (v || ""); b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+  }, // the list is long: stay where the click was
   plfocus: () => { if (!plCurrent()) return; S.plq = ""; S.plJust2 = null; openModal({ t: "plfd" }); },
-  plcol: (v) => { // in place, so the icons fade to the colour and the list keeps its scroll
+  plcol: (v) => { // in place, so the preview, the icons and the glow fade to the colour and the list keeps its scroll
     S.modal.color = v || null;
-    const g = $(".plicons");
-    if (!g) return paintModal();
-    if (v) g.style.setProperty("--plk", v); else g.style.removeProperty("--plk");
+    const w = $("#modal .pnw");
+    if (!w) return paintModal();
+    for (const [el, k] of [[w, "--plk"], [$("#modal .dlh"), "--glow"]]) if (el) { if (v) el.style.setProperty(k, v); else el.style.removeProperty(k); }
     for (const b of document.querySelectorAll(".plcols .sw")) { const on = b.dataset.v === (v || ""); b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
   },
   plsave: async () => {
