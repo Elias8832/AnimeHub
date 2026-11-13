@@ -117,8 +117,8 @@ class Frontend(unittest.TestCase):
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
         self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["tabs", "classic", "line", "capsule", "island"],
-                                                    "fan": ["fan", "wide", "cascade", "peek"]})  # Playlist stacks (Decision 64)
-        self.assertEqual(run_js("return lookGet('fan');"), "fan")
+                                                    "fan": ["cascade", "fan", "wide", "peek"]})  # Playlist stacks (Decision 64)
+        self.assertEqual(run_js("return lookGet('fan');"), "cascade")  # Cascade is the default (Elias, 2026-11-13)
         self.assertEqual(run_js("return lookGet('fan');", {"fan": "peek"}), "peek")
         for fan in ("fan", "wide", "cascade", "peek"):
             self.assertIn('[data-plfan="%s"] .plbox:hover' % fan, CSS)
