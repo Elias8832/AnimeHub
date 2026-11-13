@@ -1759,19 +1759,20 @@ function gtrayFit() {
   const t = $(".gtray"), b = $(".gmore");
   if (t && b) b.hidden = !S.genOpen && t.scrollHeight <= t.clientHeight + 2;
 }
-function paintWall(fade) {
-  const w = $("#wall");
+const wallCards = (m) => m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
+function paintWall(fade, w = $("#wall"), still) {
   if (!w || plDrag?.on) return;
   const m = libModel();
-  const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
+  const cards = wallCards(m);
   let html = cards.join("");
   const empty = S.lib.tab === "PLAYLISTS" ? "" /* the open playlist's banner says it's empty and has the Add button */ : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : S.settings?.android ? "<span>Shows you watch show up here. Search to find one.</span>" : "<span>Check your library folder, then rescan.</span>"}</div>`;
-  const lc = $(".lmain .filters .lh .n"); // the heading counts what the filters leave
+  const lc = (w.closest(".tpeek") || document).querySelector(".lmain .filters .lh .n"); // the heading counts what the filters leave
   if (lc) lc.textContent = cards.length;
   const fx = fade && !reduceMotion();
   const plc = S.lib.tab === "PLAYLISTS" && !m.cold ? plCurrent() : null;
   w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !m.cold ? (plc ? (plc.view === "posters" ? " plposters" : " plrows") + (plc.dim ? " pldim" : "") : " plgrid") : "") + (fx ? " fade" : "");
   if (plc) w.style.setProperty("--plc", plColor(plc)); else w.style.removeProperty("--plc"); // the rows take the playlist's colour
+  if (still) { w.innerHTML = cards.slice(0, 24).join("") || empty; return; } // the pager's copy: what's in sight
   clearTimeout(paintWall.more);
   /* A fresh wall shows its first screenful at once and the rest in batches
      over the next frames — building all ~300 cards in one go froze the page
@@ -2756,7 +2757,7 @@ function loadJournal() {
     const more = r.state === "loading" || r.syncing || r.complete === false;
     if (more && jrTries++ < 40) setTimeout(() => { if (S.view === "history" || S.view === "stats") loadJournal(); }, 3000);
     else jrTries = 0;
-    if (S.view === "history" || S.view === "stats") render(true);
+    if (S.view === "history" || S.view === "stats") render(true); else pagerStale();
   }, () => { jrBusy = false; }); // only the request: a drawing error should show, not hang on "Reading…"
 }
 function jEvents() {
@@ -2981,7 +2982,7 @@ function loadAlData() {
   if (!aniMode() || S.alData || loadAlData.busy) return;
   loadAlData.busy = true;
   api("/api/anilist").then((res) => {
-    if (res && res.user) { S.alData = res; if (S.view === "stats" || S.view === "history") render(true); }
+    if (res && res.user) { S.alData = res; if (S.view === "stats" || S.view === "history") render(true); else pagerStale(); }
   }).catch(() => {}).finally(() => { loadAlData.busy = false; });
 }
 
@@ -4309,7 +4310,8 @@ function loadSched() {
   api("/api/schedule").then((r) => {
     S.schedBusy = false; S.sched = { at: r.state === "loading" ? 0 : Date.now(), state: r.state, items: r.items || [] };
     if (S.view === "week") render(true);
-    else if (S.view === "home" && !isPhone() && !isTabletP()) { const el = $("#app .hsec.tw"); if (el) el.outerHTML = weekHTML(airingList()); }
+    else pagerStale(); // the tab pager's copy of the Calendar
+    if (S.view === "home" && !isPhone() && !isTabletP()) { const el = $("#app .hsec.tw"); if (el) el.outerHTML = weekHTML(airingList()); }
     if (r.state === "loading") setTimeout(() => S.view === "week" && loadSched(), 2500);
   }).catch(() => { S.schedBusy = false; });
 }
@@ -4486,8 +4488,8 @@ function paintSide() {
    the whole page's styles, ~300 ms of a phone's Library switch (TODO 213). */
 const PAGE_MARKS = [["pg-fr", ".frpage"], ["pg-sfr", ".sp2.frpage"], ["pg-uph", ".home2.has-uph"],
   ["pg-back", ".sp2 .backbtn:not([data-a=rmtclose]), .set2 .sback"]];
-function pageMarks() {
-  for (const [cls, sel] of PAGE_MARKS) document.body.classList.toggle(cls, !!document.querySelector(sel));
+function pageMarks(app = $("#app")) {
+  for (const [cls, sel] of PAGE_MARKS) document.body.classList.toggle(cls, !!app.querySelector(sel));
   cvRestSoon(); // a page can hide the art (pg-sfr, pg-uph)
   cvLook(); // and a show page on a phone blurs it more (pg-sfr)
 }
@@ -5296,13 +5298,13 @@ function glide(box) {
   set(to); glideMem[key] = to;
 }
 /* Edge fades + arrow state for horizontally scrolling strips. */
-function strips() {
+function strips(root = $("#app")) {
   /* Every strip is measured first, then every strip is marked. A mark
      written between two measurements made the browser lay the page out
      again for each strip (Home: 8 strips, a third of a tab switch). Each
      `read` measures and hands back the marking. */
   const marks = [];
-  $$("#app .strip").forEach((st) => {
+  root.querySelectorAll(".strip").forEach((st) => {
     const arrows = st.previousElementSibling ? st.previousElementSibling.querySelectorAll(".arr") : [];
     const read = () => {
       const max = st.scrollWidth - st.clientWidth, x = st.scrollLeft;
@@ -5321,7 +5323,7 @@ function strips() {
   });
   /* The show page's season tabs: one row that scrolls sideways (fades at
      the cut edge, the wheel scrolls it, the picked tab starts in view). */
-  $$("#app .sp2 .rels").forEach((r) => {
+  root.querySelectorAll(".sp2 .rels").forEach((r) => {
     const read = () => { const max = r.scrollWidth - r.clientWidth, x = r.scrollLeft; return () => { r.classList.toggle("ml", x > 4); r.classList.toggle("mr", x < max - 4); }; };
     if (!r._rels) {
       r._rels = true; r.addEventListener("scroll", () => read()(), { passive: true });
@@ -5615,7 +5617,8 @@ function render(inPlace = false) {
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
   const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
-  if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !reduceMotion()); app.innerHTML = html; }
+  if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion()); app.innerHTML = html; }
+  S.navQuiet = false;
   /* What restyles the whole page (the accent on <html>, the page marks on
      <body>) goes on before anything below measures the new page: after it,
      every tab switch that changed the accent styled the page twice (a third
@@ -5646,6 +5649,7 @@ function render(inPlace = false) {
   if (S.view === "stats" || S.view === "history") loadAlData();
   applyFocus();
   paintPortals();
+  pagerStale();
 }
 /* Background refreshes must not clobber a field the user is typing in. */
 function softRender() {
@@ -5679,16 +5683,27 @@ function tabSlide(from, to) {
   app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add(cls);
 }
 const tabScroll = {};
-function nav(view, fn) {
+/* quiet: the tab pager already showed the page sliding in, so it is drawn
+   with no entrance at all (no fade, no slide, nothing rising). */
+/* A tab a swipe brought in was already on screen as its copy: it stays as it
+   is, so its entrance animations (bars growing, numbers rising, the segment
+   pill gliding in) jump to their end instead of playing again. Endless ones
+   (loading shimmer) keep going. */
+function calmIn(el) {
+  for (const a of el?.getAnimations?.({ subtree: true }) || []) if (a.effect?.getComputedTiming().endTime !== Infinity) a.finish();
+}
+function nav(view, fn, quiet) {
   const from = S.view;
   if (TAB_AT[from] != null) tabScroll[from] = scrollY;
-  dip(() => {
+  const go = () => {
     const prev = S.view;
-    S.navIn = true; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
-    if (view === "library") S.fadeNext = true;
+    S.navIn = true; S.navQuiet = !!quiet; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
+    if (view === "library" && !quiet) S.fadeNext = true;
     if (fn) fn(prev);
     render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); dockY = scrollY; pushNav();
-  });
+  };
+  if (quiet) { go(); return calmIn($("#app")); }
+  dip(go);
   tabSlide(from, view);
 }
 function openShow(id) {
@@ -7964,9 +7979,202 @@ function swSet(fn) { swWrite = fn; if (!swFrame) swFrame = requestAnimationFrame
 function swBegin(el) { document.body.classList.add("swiping"); el.style.willChange = "transform"; }
 function swEnd(el) { document.body.classList.remove("swiping"); if (el) el.style.willChange = ""; }
 const TAB_NAME = { home: "Home", library: "Library", history: "Journal", week: "Calendar" };
+/* ---------- the tab pager (Elias, 2026-11-12: the sideways swipe between
+   Home · Library · Journal · Calendar "is laggy and slow and doesn't look
+   good") ----------
+   Like a native pager: the tab you swipe toward is drawn beside this one (a
+   .peek, a still copy) and both follow the finger one to one, as does the
+   dock's highlight. Letting go carries on at the finger's speed; then the tab
+   is built for real where the copy was, with no entrance, so nothing on screen
+   changes. Before, the page trailed the finger at half speed with nothing
+   beside it, faded out, and the new one was only built after that and slid
+   in: ~0.5 s and a stall.
+   Building a copy costs a whole page build (Home ~100 ms on a slow phone), so
+   the two neighbours are built ahead, one per idle moment after a tab has
+   settled, parked in place too faint to see (opacity .004), laid out, drawn and ready; a swipe
+   only shows and moves one (1-3 ms; parked off the screen they were never drawn
+   and came in as holes on the phone; hiding them with visibility or content-visibility
+   cost 20-30 ms to show again, every element restyled). Any render makes them
+   stale; a stale one is built again at the swipe's start. */
+const PAGER = ["home", "library", "history", "week"];
+const pagerAt = () => PAGER.indexOf(S.view === "stats" ? "history" : S.view);
+const pagerNext = (dir) => PAGER[pagerAt() - dir] || null; // dir -1: finger moves left, the tab to the right
+const peeks = {};
+let pagerBusy = false, pagerGen = 0, peekIO = null;
+/* What a copy shows: its page, and for the Library the wall's first screenful. */
+function peekHTML(to) {
+  const was = S.view;
+  S.view = to;
+  try { return { home: Home, library: Lib, history: Hist, week: Week }[to]() + (to === "library" ? wallCards(libModel()).slice(0, 24).join("") : ""); } finally { S.view = was; }
+}
+/* The copy of a tab, up to date: rebuilt only when what it shows changed. */
+function peekFresh(to) {
+  let el = peeks[to];
+  if (el?._gen === pagerGen) return el;
+  const sig = peekHTML(to), app = $("#app");
+  if (!el) { el = peeks[to] = document.createElement("div"); el.className = "tpeek"; el.setAttribute("aria-hidden", "true"); el.inert = true; app.after(el); }
+  /* The page starts at the body's content top (not #app's: a first margin
+     collapses through #app, and the copy's box keeps it inside). */
+  const bs = getComputedStyle(document.body), top = document.body.getBoundingClientRect().top + scrollY + parseFloat(bs.paddingTop);
+  if (el._sig !== sig) {
+    const was = S.view;
+    S.view = to;
+    try { el.innerHTML = `<div class="pkpg">${{ home: Home, library: Lib, history: Hist, week: Week }[to]()}</div>`; } finally { S.view = was; }
+    if (to === "history") loadAlData(); // render() asks for it on the Journal; it lands in pagerStale
+    const w = el.firstChild.querySelector("#wall");
+    if (w) paintWall(false, w, true);
+    peekIO ||= "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) { peekIO.unobserve(en.target); applyBg(en.target); } }), { rootMargin: "300px 100%" }) : null;
+    for (const b of el.querySelectorAll("[data-bg]")) (bgSeen.has(b.dataset.bg) || !peekIO ? applyBg(b) : peekIO.observe(b));
+    el.querySelectorAll("[data-glide]").forEach(glide);
+    strips(el.firstChild);
+    el._sig = sig;
+  }
+  /* Where nav() will scroll the tab to, held to what the page can scroll. */
+  const pg = el.firstChild, sy = Math.max(0, Math.min(tabScroll[to] || 0, top + pg.offsetHeight + parseFloat(bs.paddingBottom) - innerHeight));
+  pg.style.top = Math.round(top - sy) + "px";
+  el._sy = sy;
+  /* Its first screenful's posters load now, not mid-swipe, and the tab that
+     lands then finds them in the browser's memory and shows them at once,
+     no shimmer and no fade. */
+  const o = el.getBoundingClientRect();
+  for (const i of el.querySelectorAll('img[loading="lazy"]')) {
+    const r = i.getBoundingClientRect();
+    if (r.bottom > o.top - 200 && r.top < o.top + innerHeight + 200 && r.right > o.left && r.left < o.left + innerWidth * 1.5) i.loading = "eager";
+  }
+  el._gen = pagerGen;
+  return el;
+}
+function peekHide(el) { if (el) el.style.transform = el.style.transition = el.style.opacity = ""; }
+function peekDrop(keep = []) {
+  for (const k in peeks) if (!keep.includes(k)) { peeks[k].remove(); delete peeks[k]; }
+  if (!Object.keys(peeks).length) { peekIO?.disconnect(); peekIO = null; }
+}
+/* After a render the copies may be stale: they are checked (and rebuilt if
+   needed) once the page has settled, one per idle moment, never while the
+   app is hidden or a layer covers it. Copies of tabs that aren't beside this
+   one go. */
+const idle = window.requestIdleCallback || ((f) => setTimeout(f, 50));
+const pagerOn = () => isPhone() && mq("(pointer:coarse)") && pagerAt() >= 0;
+function pagerStale() {
+  pagerGen++;
+  clearTimeout(pagerStale.t);
+  const held = pull?.side && pull.kind === "tab";
+  if (held || pagerBusy) return; // the swipe's end renders again
+  const near = pagerOn() ? [pagerNext(-1), pagerNext(1)].filter(Boolean) : [];
+  peekDrop(near);
+  if (!near.length) return;
+  const gen = pagerGen;
+  const step = () => idle(() => {
+    if (gen !== pagerGen) return;
+    if (document.hidden || pull?.side || pagerBusy || S.menu || S.modal || /\b(rmt-open|deck-open)\b/.test(document.body.className)) { pagerStale.t = setTimeout(step, 1000); return; }
+    const to = near.find((v) => peeks[v]?._gen !== gen);
+    if (!to) return;
+    peekFresh(to);
+    pagerStale.t = setTimeout(step, 60);
+  }, { timeout: 2500 });
+  pagerStale.t = setTimeout(step, 700); // after the page's own settling (the Library wall fills at 380 ms)
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && pagerOn()) pagerStale(); });
+/* The dock's highlight between the tab you're on and the one you swipe to. */
+function pagerInd(p, k) {
+  const ind = $("#tabbar .ind"), a = p.indFrom, b = p.indTo;
+  if (!ind || !a) return;
+  const to = b || a, x = a.x + (to.x - a.x) * k, w = a.w + (to.w - a.w) * k;
+  ind.style.transform = `translateX(${x.toFixed(1)}px)`; ind.style.width = w.toFixed(1) + "px";
+}
+const indOf = (v) => { const b = $(`#tabbar .tb button[data-v="${v === "stats" ? "history" : v}"]`); return b && { x: b.offsetLeft, w: b.offsetWidth }; };
+function pagerLock(p) {
+  const app = $("#app"), ind = $("#tabbar .ind");
+  app.style.transition = "none"; swBegin(app);
+  if (ind) ind.style.transition = "none";
+  p.indFrom = indOf(S.view); p.peekFor = undefined; p.v = [];
+}
+function pagerMove(p, x) {
+  const W = innerWidth, d = x - p.x0, now = performance.now();
+  p.v.push([now, x]); while (p.v.length > 2 && now - p.v[0][0] > 90) p.v.shift();
+  const dir = d < 0 ? -1 : d > 0 ? 1 : p.dir || (x < p.x ? -1 : 1);
+  p.dir = dir; p.lx = x;
+  const to = pagerNext(dir);
+  if (to !== p.peekFor) { peekHide(peeks[p.peekFor]); p.peekFor = to; p.indTo = to && indOf(to); p.pk = to && peekFresh(to); }
+  /* Nothing that way (first/last tab): a give that tightens the further you pull. */
+  const tx = to ? d : (d * 0.3) / (1 + Math.abs(d) / W * 2), k = to ? Math.min(Math.abs(d) / W, 1) : 0;
+  p.d = tx;
+  swSet(() => {
+    $("#app").style.transform = `translate3d(${tx.toFixed(1)}px,0,0)`;
+    const pk = p.pk;
+    if (pk) { pk.style.transform = `translate3d(${(tx - dir * W).toFixed(1)}px,0,0)`; pk.style.opacity = "1"; }
+    pagerInd(p, k);
+  });
+}
+function pagerEnd(p, cancel) {
+  const W = innerWidth, app = $("#app"), pk = p.pk, ind = $("#tabbar .ind"), d = p.d || 0, dir = p.dir || 1, to = p.peekFor;
+  const s = p.v || [], a = s[0], b = s[s.length - 1], v = a && b && b[0] > a[0] && performance.now() - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0; // px/ms, last ~90 ms
+  const fling = Math.abs(v) > 0.3;
+  const go = !cancel && !!to && (fling ? Math.sign(v) === dir : Math.abs(d) > W * 0.35);
+  const end = go ? dir * W : 0, rem = Math.abs(end - d);
+  /* Carry on at the finger's speed (the curve starts ~3.5× its average speed), never longer than a calm settle. */
+  const dur = Math.round(Math.max(120, Math.min(140 + rem * 0.45, fling && Math.sign(v) === Math.sign(end - d) ? (3.5 * rem) / Math.abs(v) : 1e9, 330)));
+  const ease = `transform ${dur}ms cubic-bezier(.22,.8,.3,1)`;
+  pagerBusy = true;
+  app.style.transition = ease; app.style.transform = `translate3d(${end}px,0,0)`;
+  if (pk) { pk.style.transition = ease; pk.style.transform = `translate3d(${end - dir * W}px,0,0)`; }
+  if (ind && p.indFrom) { ind.style.transition = `${ease}, width ${dur}ms cubic-bezier(.22,.8,.3,1)`; pagerInd(p, go ? 1 : 0); }
+  /* The backdrop and colour of the new tab fade in with the slide, not after
+     it, and so do its marks on <body>: Home's art hides the backdrop
+     (pg-uph), the top bar darkens once scrolled (sc). Flipped only after the
+     landing, they faded for 0.3 s over the tab that had just landed, and on
+     Home the bright backdrop showed through first (Elias, 2026-11-13: "home
+     has a bad flicker where a lot gets white"). */
+  if (go) {
+    const was = S.view, b = document.body, sy = pk?._sy || 0;
+    S.view = to;
+    try { ambient(); } finally { S.view = was; }
+    if (pk) pageMarks(pk.firstChild);
+    b.classList.toggle("sc", sy > 8); b.classList.toggle("sc2", sy > 84);
+  }
+  setTimeout(() => {
+    if (ind) ind.style.transition = "";
+    if (!go) { // back where it was: #app is still drawn, the copy goes
+      swEnd(app);
+      app.style.transition = "none"; app.style.transform = ""; getComputedStyle(app).transform; app.style.transition = "";
+      peekHide(pk);
+      pagerBusy = false;
+      return pagerStale();
+    }
+    /* The tab is built in #app in its place but unseen, under the copy, and
+       the copy goes only once the phone has drawn it: right after a swipe
+       Chrome puts layers on screen before it has drawn them, and the new tab
+       flashed up half empty (no text, no posters) for a frame or two (Elias,
+       2026-11-13: "a big refresh flicker every time you switch tabs"). Showing
+       it then is only an opacity change, nothing to draw. It waits too faint to
+       see, not at 0: Chrome doesn't draw a layer at 0, and the Library's pills
+       came up blurred, then sharp (Elias: "the pills in library are
+       flickering"). A touch or a scroll shows it at once, so the page under
+       the finger is the real one. */
+    app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = ".004"; app.style.transform = "";
+    nav(to, null, true);
+    const y0 = scrollY;
+    let shown = false;
+    const show = () => {
+      if (shown) return;
+      shown = true;
+      removeEventListener("touchstart", show, true); removeEventListener("scroll", moved);
+      swEnd(app); // the dock's glass comes back with it
+      app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";
+      peekHide(pk);
+      pagerBusy = false;
+      pagerStale(); // the copies for where you are now
+    };
+    addEventListener("touchstart", show, { capture: true, passive: true });
+    const moved = () => Math.abs(scrollY - y0) > 2 && show(); // not the landing's own scroll to where the tab was
+    requestAnimationFrame(() => { addEventListener("scroll", moved, { passive: true }); requestAnimationFrame(() => setTimeout(show, PAGER_DRAW)); });
+  }, dur + 10);
+}
+/* How long a landed tab waits under its copy after two frames, for the phone to draw it. */
+const PAGER_DRAW = 140;
 document.addEventListener("touchstart", (e) => {
   pull = null;
-  if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
+  if (e.touches.length !== 1 || !mq("(pointer:coarse)") || pagerBusy) return;
   const t = e.target, L = PULL.find((p) => t.closest?.(p.sel) && (!p.when || p.when()));
   /* Sideways swipes leave real sideways scrollers alone: the show page's
      episode row and Home's rails scroll (TODO 177); only an unmatched
@@ -8013,10 +8221,14 @@ document.addEventListener("touchmove", (e) => {
       if (p.ptrOK && dy > 10 && dy > Math.abs(dx) && scrollY <= 0) { p.kind = "ptr"; p.y0 = y; e.preventDefault(); return; }
       if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pull = null; return; }
       if (p.jp && Math.abs(dx) > 12 && (S.jTab === "stats") === dx > 0) { pull = null; return; } // the Journal's tabs take it
-      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
-      else return;
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        p.side = true; p.x0 = x;
+        if (p.kind === "tab") pagerLock(p);
+        else { $("#app").style.transition = "none"; $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
+      } else return;
     }
     e.preventDefault();
+    if (p.kind === "tab") { pagerMove(p, x); return; }
     const d = x - p.x0, tg = sideTarget(p, d), lim = innerWidth * 0.3;
     p.lx = x; p.ly = y; p.tg = tg;
     /* Nothing that way (first/last tab): only a little give. */
@@ -8055,12 +8267,13 @@ document.addEventListener("touchmove", (e) => {
   if (p.dy > 120 && !p.armed) { p.armed = true; buzz(); } else if (p.dy <= 120) p.armed = false;
 }, { passive: false });
 const unstyle = (...els) => { for (const el of els) if (el) { el.style.transform = el.style.opacity = el.style.transition = el.style.borderRadius = el.style.transformOrigin = ""; } };
-document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
+document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; if (pull?.side && pull.kind === "tab") { pagerEnd(pull, true); pull = null; return; } swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
 document.addEventListener("touchend", () => {
   const p = pull;
   pull = null;
   if (!p) return;
   cancelAnimationFrame(swFrame); swFrame = 0; swWrite = null;
+  if (p.kind === "tab" && p.side) return pagerEnd(p);
   if (p.side || p.live) swEnd(p.side ? $("#app") : p.el);
   if (p.kind === "ptr") { if ((p.dist || 0) >= 70) ptrRun(); else ptrHide(); return; }
   if (p.kind === "tab" || p.kind === "back") {

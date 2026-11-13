@@ -151,7 +151,7 @@ class PagePins(unittest.TestCase):
         self.assertIn('off.classList.remove("out", "rest");', APP)
 
     def test_strips_are_measured_together(self):
-        body = APP.split("function strips() {", 1)[1].split("\n}\n", 1)[0]
+        body = APP.split("function strips(root = $(\"#app\")) {", 1)[1].split("\n}\n", 1)[0]
         self.assertIn("for (const mark of marks) mark();", body)
         self.assertEqual(body.count("marks.push(read());"), 2)
 
