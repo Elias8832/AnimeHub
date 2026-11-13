@@ -175,7 +175,7 @@ class Frontend(unittest.TestCase):
         self.assertIn("const TABS = [", APP)
         self.assertIn("<kbd>${i + 1}</kbd>", APP)
         self.assertIn('if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }', APP)
-        self.assertIn("function paintCanvas()", APP)
+        self.assertIn("function paintCanvas(art = canvasArt())", APP)
         self.assertIn('swapLayer("cv-art", mode === "full" ? art?.sharp : null);', APP)
 
 
