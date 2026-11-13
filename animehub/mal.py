@@ -366,8 +366,9 @@ def catalog(mal_ids, report=None):
     last answer at any age stands in; an id never asked raises."""
     from . import anilist
     out, ask = {}, []
+    cached = database.cache_get_ts_many(_catalog_key(mid) for mid in mal_ids)
     for mid in mal_ids:
-        row = database.cache_get_ts(_catalog_key(mid))
+        row = cached.get(_catalog_key(mid))
         if row and _catalog_fresh(row):
             out[mid] = row[0].get("media")
         else:
@@ -381,7 +382,7 @@ def catalog(mal_ids, report=None):
             found = ((data.get("data") or {}).get("Page") or {}).get("media") or []
         except Exception:
             for mid in ask[i:]:
-                row = database.cache_get_ts(_catalog_key(mid))
+                row = cached.get(_catalog_key(mid))
                 if row is None:
                     raise
                 out[mid] = row[0].get("media")
@@ -390,12 +391,14 @@ def catalog(mal_ids, report=None):
         for m in found:
             if isinstance(m, dict) and m.get("idMal") in batch and m["idMal"] not in by_mal:
                 by_mal[m["idMal"]] = m
+        rows = []
         for mid in batch:
             m = by_mal.get(mid)
-            database.cache_put(_catalog_key(mid), {"media": m})
+            rows.append((_catalog_key(mid), {"media": m}))
             if m:
-                database.cache_put("idmal:%d" % m["id"], {"idMal": mid})
+                rows.append(("idmal:%d" % m["id"], {"idMal": mid}))
             out[mid] = m
+        database.cache_put_many(rows)
     return out
 
 
