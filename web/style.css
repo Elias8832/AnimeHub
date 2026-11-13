@@ -3296,6 +3296,9 @@ body.pp-open #modal{z-index:70}
   .sp2:not(.frpage) .backbtn:not([data-a=rmtclose]){margin:-62px 0 24px!important}
   .set2 .sback{margin:-66px 0 26px!important}
   body.pg-back #nav .brand{visibility:hidden}
+  /* The bar lies over the back button: let taps through it, but not through its own buttons. */
+  body.pg-back #nav{pointer-events:none}
+  body.pg-back #nav>*{pointer-events:auto}
 }
 @media (max-width:700px),(pointer:coarse){
   /* results fade out above the search field instead of showing through it (phone polish) */
