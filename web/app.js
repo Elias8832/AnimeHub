@@ -277,6 +277,7 @@ const LU_GROUPS = [
 ];
 const lu = (n, c = "") => (LUCIDE[n] ? `<svg class="ico lu${c ? " " + c : ""}" viewBox="0 0 24 24" aria-hidden="true">${LUCIDE[n]}</svg>` : "");
 const FMT = { TV: "TV", TV_SHORT: "TV short", MOVIE: "Movie", OVA: "OVA", ONA: "ONA", SPECIAL: "Special", MUSIC: "Music" };
+const fmtName = (f) => FMT[f] || f;
 /* Escape text and wrap the first case-insensitive match of q in <mark>. */
 const hl = (t, q) => {
   const s = String(t ?? ""), i = q ? s.toLowerCase().indexOf(q.toLowerCase()) : -1;
