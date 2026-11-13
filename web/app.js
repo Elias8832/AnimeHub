@@ -1723,16 +1723,58 @@ function libRail(m, sum, loading) {
   /* The lists just arrived: their rows rise into the placeholders' spot, once. */
   const landed = !m.cold && Date.now() - (S.listsLanded || 0) < 4000;
   if (landed) S.listsLanded = 0;
-  const it = (t) => `<button class="${S.lib.tab === t.k ? "on" : ""}" style="--i:${n++}"${landed && !t.side ? " data-land" : ""} data-a="tab" data-v="${t.k}">${esc(t.l)}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
+  const cur = plCurrent(), up = (t) => t.k === "PLAYLISTS" && cur;
+  if (m.tabs.some((t) => t.k === "PLAYLISTS")) railPlSync(S.lib.tab === "PLAYLISTS", cur);
+  const it = (t) => `<button class="${S.lib.tab === t.k ? (up(t) ? "up" : "on") : ""}" style="--i:${n++}"${landed && !t.side ? " data-land" : ""}${up(t) ? ' title="Back to all playlists"' : ""} data-a="tab" data-v="${t.k}">${esc(t.l)}${t.k === "PLAYLISTS" ? railChev() : ""}${t.attn ? '<i class="att"></i>' : ""}<span class="n">${t.n}</span></button>`;
   const head = (t) => `<h4 style="--i:${n++}">${t}</h4>`;
   const lists = m.tabs.filter((t) => !t.side), pl = m.tabs.filter((t) => t.k === "PLAYLISTS"), pc = m.tabs.filter((t) => t.k === "UNTRACKED" || t.k === "MATCH");
   const gen = !m.cold && lists.some((t) => t.k === S.lib.tab) ? railGenres(m) : "";
+  /* Yours sits above Filter (Elias, 2026-11-12): what opens and closes as you
+     click (the filters, your playlists) is always below the row you clicked,
+     so that row never jumps away from the mouse. */
   return `<aside class="lnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Library</h1><div class="sum">${sum}</div></div>
     ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
     ${loading ? head(acct() + " lists") + `<div class="lghost" style="--i:${n++}" aria-hidden="true">${[58, 76, 88, 70].map((w) => `<i><b style="width:${w}px"></b><u></u></i>`).join("")}</div><div class="lload" style="--i:${n++}">${listLoad()}</div>` : ""}
+    ${pl.length ? head("Yours") + pl.map(it).join("") + railPlRows(S.lib.tab === "PLAYLISTS", cur, () => n++) : ""}
     ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1))}${gen}</div>` : ""}
-    ${pl.length ? head("Yours") + pl.map(it).join("") : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
+}
+/* Your playlists, under Playlists while its tab is open (Elias, 2026-11-12:
+   "if I click on Playlists it should expand so I can click the playlists from
+   there"); the open one is picked, the Playlists row above it leads back.
+   They grow in one after another when the tab opens and fold away when it
+   closes; a redraw mid-way carries on where the motion was (--d). The look
+   is a quiet indent (Elias picked mockup A, 2026-11-13): one thin guide
+   line, full-width rows, a chevron on Playlists that turns as they open. */
+let plFrom; // the Library tab before Playlists: where a second click on Playlists goes back to
+let railPl; // { rows: the rows shown (null: closed), prev: the rows before, t: when it opened/closed, pick: the open id, pt: when that changed }
+const RAIL_MS = 420, RAIL_STEP = 26;
+function railPlSync(open, cur) { // the same draw may ask twice: only a change starts a motion
+  const now = Date.now(), pick = cur?.id ?? null;
+  const rows = open ? (S.data.playlists || []).map((p) => ({ id: p.id, name: p.name, color: plColor(p), icon: plIcon(p), n: p.items.length })) : null;
+  if (!railPl) railPl = { rows, t: 0, pick, pt: 0 }; // first draw: no motion
+  else {
+    if (!rows !== !railPl.rows) Object.assign(railPl, { prev: railPl.rows, t: now });
+    if (pick !== railPl.pick) Object.assign(railPl, { pick, pt: now });
+    railPl.rows = rows;
+  }
+  return now;
+}
+function railChev() { // no playlists, nothing to open: no chevron
+  if (!railPl || !S.data.playlists?.length) return "";
+  const age = Date.now() - railPl.t;
+  return `<span class="lchev${railPl.rows ? " open" : ""}${age < 300 ? " turn" : ""}" style="--d:${-age}ms" aria-hidden="true">${ico("chevr")}</span>`;
+}
+function railPlRows(open, cur, next) {
+  const now = railPlSync(open, cur), rows = railPl.rows, pick = railPl.pick;
+  const age = now - railPl.t, list = rows || (age < RAIL_MS && railPl.prev) || [];
+  const grow = rows && age < RAIL_MS + Math.min(list.length, 8) * RAIL_STEP, pk = now - railPl.pt < 260;
+  return list.map((o, k) => {
+    const on = rows && o.id === pick, d = rows ? Math.min(k, 8) * RAIL_STEP - age : -age;
+    const cls = `lsubw${k === list.length - 1 ? " last" : ""}${rows ? (grow ? " grow" : "") : " gone"}${on ? " on" + (pk ? " fresh" : "") : ""}`;
+    const act = !rows ? ' tabindex="-1"' : on ? ' aria-current="page"' : ` data-a="plgo" data-v="${o.id}"`;
+    return `<div class="${cls}" style="--plc:${esc(o.color)};--i:${next()};--d:${d}ms;--pd:${railPl.pt - now}ms"${rows ? "" : ' aria-hidden="true"'}><button class="lsubpl"${act} title="${esc(o.name)}"><span class="lsubin">${o.icon || '<i class="dot"></i>'}<b>${esc(o.name)}</b><span class="n">${o.n}</span></span></button></div>`;
+  }).join("");
 }
 /* Genres open in place like the other filters (Elias, 2026-11-08: "there are
    just too many genres"); pick several, the row says how many. */
@@ -6685,10 +6727,13 @@ const A = {
      the tab before it (Elias, 2026-11-11). Other tabs just switch. */
   tab: (v) => {
     if (v === "PLAYLISTS" && S.lib.tab === v && plCurrent()) return A.plback(); // inside one: same as ‹ Playlists
+    /* On the overview, the side list's Playlists closes again (Elias, 2026-11-12:
+       "it should act as a back button"): back to the tab you came from. */
+    if (v === "PLAYLISTS" && S.lib.tab === v && isRail()) return history.state?.plTab ? history.back() : A.tab(plFrom && plFrom !== v ? plFrom : $(".lnav button[data-a=tab]:not([data-v=PLAYLISTS])")?.dataset.v || "ALL");
     const step = v === "PLAYLISTS" && S.lib.tab !== v && S.view === "library";
-    if (step) navKeep();
+    if (step) { navKeep(); plFrom = S.lib.tab; }
     S.lib.tab = v; if (v === "PLAYLISTS") S.lib.pl = null; saveLib(); S.fadeNext = true; render(true); // the side list stays put
-    if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();
+    if (step) history.pushState({ ...navSnap(), inApp: true, plTab: true }, "", navUrl()); else navKeep();
   },
   srev: () => { S.lib.rev = !S.lib.rev; saveLib(); paintWall(true); $$(".srev").forEach((b) => { b.classList.toggle("on", S.lib.rev); b.setAttribute("aria-pressed", S.lib.rev); }); },
   filt: (v, t) => { S.lib[t.dataset.k] = v; saveLib(); if (t.dataset.k === "group") { S.fadeNext = true; return render(); } paintWall(true); syncFilters(); },
@@ -7370,7 +7415,7 @@ const A = {
   frahead: (v) => { const e = frEntry(); if (e) frMark(e, JSON.parse(v), true); },
   /* Opening a playlist is a step back can undo (Elias: back quit the Library):
      it gets its own history entry, and ‹ Playlists goes back through it. */
-  plgo: (v) => { navKeep(); S.lib.pl = +v; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plin"); scrollTo(0, 0); history.pushState({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },
+  plgo: (v) => { navKeep(); const swap = !!plCurrent(); S.lib.pl = +v; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plin"); scrollTo(0, 0); history[swap ? "replaceState" : "pushState"]({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); }, // from one playlist to another (the side list): back still leads to the overview
   plback: () => {
     if (history.state?.plStep && history.state.pl === S.lib.pl) return history.back(); // the list we came from, scrolled where it was
     S.lib.pl = null; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true; render(true); plSlide("plout"); navKeep();

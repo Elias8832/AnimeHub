@@ -75,6 +75,13 @@ input[type=range]:hover:not(:disabled){background:none}
 /* span.rpl (not .rpl): ripple is absolutely positioned inside isolated buttons/pills; keep it non-layout so it can't stretch them (bug found 2026-10-17) */
 span.rpl{position:absolute;border-radius:50%;pointer-events:none;background:#fff;opacity:.14;transform:scale(0);animation:ripple .65s var(--ease) forwards;z-index:0}
 .pri .rpl{opacity:.34}
+@keyframes lsubIn{from{grid-template-rows:0fr;margin-top:-2px;opacity:0}}
+@keyframes lsubOut{to{grid-template-rows:0fr;margin-top:-2px;opacity:0}}
+@keyframes lsubLine{from{transform:scaleY(0)}}
+@keyframes lsubTxt{0%,20%{opacity:0;transform:translateY(-6px)}}
+@keyframes lsubPick{from{background:transparent}}
+@keyframes lchevOpen{from{transform:none}}
+@keyframes lchevShut{from{transform:rotate(90deg)}}
 @keyframes ripple{to{transform:scale(1);opacity:0}}
 .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);border:0;border-radius:999px;padding:5px 12px;white-space:nowrap;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
 button.chip:hover,a.chip:hover{color:var(--ink);background:var(--glass-h)}
@@ -2981,6 +2988,29 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .lnav .lhello .lload{padding:16px 0 0;max-width:220px} /* the metadata pass, under the summary: always in view (TODO 199) */
   .lload.inl{display:none}
   .lnav>button[data-land]{animation:rise .4s var(--ease) backwards;animation-delay:calc(min(var(--i,0),8)*35ms)}
+  /* The Playlists tab open: your playlists under it, a quiet indent on one thin guide line (Elias picked mockup A, 2026-11-13); inside one, Playlists leads back */
+  .lnav>button.up{color:var(--ink)}
+  .lchev{display:grid;place-items:center;margin-left:-3px;color:var(--mute);transition:color .2s}.lchev .ico{width:13px;height:13px}
+  .lchev.open{transform:rotate(90deg)}.lnav>button:hover .lchev,.lnav>button.on .lchev,.lnav>button.up .lchev{color:var(--ink-2)}
+  .lchev.turn{animation:lchevShut .26s var(--ease) both;animation-delay:var(--d)}.lchev.open.turn{animation-name:lchevOpen}
+  .lsubw{position:relative;display:grid;grid-template-rows:1fr;flex:none}
+  .lsubw::before{content:"";position:absolute;z-index:1;left:20px;top:-2px;bottom:0;width:1.5px;background:rgba(255,255,255,.1);pointer-events:none;transform-origin:top}
+  .lnav>button+.lsubw::before{top:3px}.lsubw.last::before{bottom:5px}
+  .lsubpl{display:block;width:100%;min-height:0;overflow:hidden;padding:0;border:0;border-radius:12px;font:500 14px/18px var(--ui);color:var(--ink-2);text-align:left;background:none;transition:background .2s,color .2s}
+  .lsubpl[data-a]:hover,.lsubpl[data-a]:focus-visible{color:var(--ink);background:rgba(255,255,255,.05)}
+  .lsubw.on .lsubpl{color:var(--ink);background:var(--pick);cursor:default}
+  .lsubin{display:flex;align-items:center;gap:11px;padding:9px 14px 9px 31px}
+  .lsubpl .dot{flex:none;width:7px;height:7px;margin:0 4px;border-radius:50%;background:var(--plc)}
+  .lsubpl .plico{flex:none;display:grid;place-items:center;width:15px}.lsubpl .plico .ico{width:15px;height:15px}
+  .lsubpl b{flex:1;min-width:0;font-weight:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lsubpl .n{flex:none;font:400 11px var(--mono);color:var(--mute)}.lsubw.on .n{color:var(--ink-2)}
+  #app .lnav>.lsubw.grow{animation:lsubIn .42s var(--ease) both;animation-delay:var(--d)}
+  #app .lnav>.lsubw.gone{animation:lsubOut .3s var(--ease) both;animation-delay:var(--d);pointer-events:none}
+  .lsubw.grow::before{animation:lsubLine .42s var(--ease) both;animation-delay:var(--d)}
+  .lsubw.gone::before{animation:lsubLine .3s var(--ease) reverse both;animation-delay:var(--d)}
+  .lsubw.grow .lsubin{animation:lsubTxt .42s var(--ease) both;animation-delay:var(--d)}
+  .lsubw.fresh:not(.grow) .lsubpl{animation:lsubPick .26s var(--ease) both;animation-delay:var(--pd)}
+  @media (prefers-reduced-motion:reduce){#app .lnav>.lsubw,.lsubw::before,.lsubw .lsubin,.lsubw .lsubpl,.lchev{animation:none}.lsubw.gone{display:none}}
   .lib2 .lmain .filters{padding:0;animation:none} /* rebuilt on every click in the side list: rising each time flickered (Elias) */
   #app.nav-in .lib2 .lmain .filters{animation:rise .4s var(--ease) both}
   /* show + sort as plain words, no pill (Elias, 2026-11-06); a soft wash on hover */

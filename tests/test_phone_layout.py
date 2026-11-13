@@ -156,8 +156,12 @@ class BackAndSwipes(unittest.TestCase):
         """Elias: back inside a playlist left the Library. Opening one is its own
         step and so is the Playlists tab (always the overview); landing inside one
         from elsewhere, back goes where you came from."""
-        self.assertIn('history.pushState({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },', APP)
-        self.assertIn('if (step) history.pushState({ ...navSnap(), inApp: true }, "", navUrl()); else navKeep();', APP)
+        # from one playlist to another (the side list) the step is replaced, so back still lands on the overview
+        self.assertIn('history[swap ? "replaceState" : "pushState"]({ ...navSnap(), inApp: true, plStep: true }, "", navUrl()); },', APP)
+        self.assertIn('const swap = !!plCurrent(); S.lib.pl = +v;', APP)
+        self.assertIn('if (step) history.pushState({ ...navSnap(), inApp: true, plTab: true }, "", navUrl()); else navKeep();', APP)
+        # on the overview, a second click on the side list's Playlists goes back to the tab before
+        self.assertIn('if (v === "PLAYLISTS" && S.lib.tab === v && isRail()) return history.state?.plTab ? history.back() : A.tab(plFrom', APP)
         self.assertIn('if (S.view === "library" && plCurrent() && history.state?.plStep) pull = { kind: "back"', APP)
         self.assertIn('S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl;', APP)
 
