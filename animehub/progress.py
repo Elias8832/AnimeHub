@@ -144,8 +144,9 @@ def _track(s, manual=False, only=None):
                 continue
             if sync.outbox_pending_for(aid):
                 # Offline E5 then E6: fold the newer count into the queued
-                # progress-only row instead of dropping it.
-                if sync.outbox_raise_progress(aid, highest):
+                # progress-only row; behind the user's own edit it queues
+                # as its own row instead of being dropped.
+                if sync.outbox_queue_progress(aid, highest):
                     patches[aid] = {"progress": highest}
                 continue
             patches[aid] = {"progress": highest}
@@ -176,7 +177,7 @@ def _track_blind(s, only, add):
             continue
         aid, highest = u["media_id"], max(watched)
         if sync.outbox_pending_for(aid):
-            if sync.outbox_raise_progress(aid, highest):
+            if sync.outbox_queue_progress(aid, highest, verify={"add": add}):
                 patches[aid] = {"progress": highest}
             continue
         patches[aid] = {"progress": highest}

@@ -3,6 +3,7 @@ worker measuring each file once (again when it changes), the library and
 show-page payloads carrying `length`, and the Settings switch."""
 import os
 import subprocess
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -76,6 +77,19 @@ class Worker(unittest.TestCase):
             lengths._work()
         library.merge_db(self.scan)
         self.assertFalse(any("length" in ep for s in self.scan for ep in library.eps_of(s)))
+
+    def test_a_finished_worker_lets_the_next_scan_start_one(self):
+        """The worker gives up its slot under the lock scan_done takes: a scan
+        landing as it ends used to find it still "alive" and start nothing."""
+        lengths._worker["thread"] = threading.current_thread()
+        self.addCleanup(lengths._worker.update, thread=None)
+        with patch.object(lengths, "measure", return_value=1440.0):
+            lengths._work()
+        self.assertIsNone(lengths._worker["thread"])
+        self.assertEqual(lengths.status["state"], "idle")
+        with patch.dict(lengths._worker, started=True), patch.object(lengths.threading, "Thread") as th:
+            lengths.scan_done(self.rels)
+        th.return_value.start.assert_called_once()
 
     def test_switched_off_measures_nothing(self):
         settings.set_automation("measure_lengths", False)

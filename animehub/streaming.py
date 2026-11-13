@@ -416,6 +416,9 @@ def stream_resolve_async(media_id):
 def stream_link_set(media_id, query, title, idx=1, mode=None, display=None):
     """A user-picked result ("Wrong episodes?"): wins over the automatic
     match. The episode probe runs first, so only a working pick is kept."""
+    query = anicli.clean_query(query)  # it becomes ani-cli's argument: never one of its options
+    if not query:
+        raise anicli.AniCliError("Enter a title to search for.")
     link = stream_link_get(media_id)
     mode = mode if mode in anicli.STREAM_MODES else (link["mode"] if link else anicli.stream_prefs()["mode"])
     episodes = anicli.anicli_episodes({"query": query, "title": title or None, "idx": idx or 1, "mode": mode})
@@ -782,7 +785,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     the sub once; a result ani-cli stopped listing is re-matched once. A
     run prepared before the click (prepare.py) is used when it fits; cold
     skips that, for the retry after one failed. handoff: the player's
-    Sub/Dub switch (player.handoff_args) — its own prepared run, the spot
+    Sub/Dub switch (player._switch) — its own prepared run, the spot
     to start at, and the old player left running until this one plays."""
     mid = stream_media_id(ep_id)
     token = ep_id.split(":", 2)[2] if mid else ""
@@ -869,6 +872,10 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
             text = ""
         msg = anicli.anicli_message(text)
         util.log("stream %s failed: %s" % (ep_id, msg or "exit code %s" % rc))
+        if handoff:
+            # The player's Sub/Dub switch: no retry, the old player is still
+            # on screen and plays on (player._await_takeover gives it back).
+            return friendly_stream_error(msg, code)
         if play_mode == "dub" and "no sources found for dub" in msg.lower():
             _session_notice.update(msg=f"{code} isn't dubbed yet — playing it subbed.", ts=time.time())
             r = start_stream(ep_id, sub_once=True, from_start=from_start, handoff=handoff)

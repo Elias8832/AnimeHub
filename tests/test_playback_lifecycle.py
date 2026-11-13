@@ -22,7 +22,7 @@ from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, Mock, patch
 
 from tests import support
-from animehub import anicli, database, library, player, system
+from animehub import anicli, database, library, player, streaming, system
 from animehub.config import config
 
 
@@ -531,10 +531,210 @@ class SeasonOrderTests(LifecycleBase):
         scan = library.scan_library()
         show = next(s for s in scan if s["title"] == "Show")
         s1 = next(sea for sea in show["seasons"] if sea["label"] == "Season 1")
-        nxt = player.next_episode(s1["episodes"][-1]["id"])  # an episode id
+        nxt = player.next_up(s1["episodes"][-1]["id"])["id"]  # an episode id
         s2 = next(sea for sea in show["seasons"] if sea["label"] == "Season 2")
         self.assertEqual(nxt, s2["episodes"][0]["id"])
 
+
+class QuietFailureTests(LifecycleBase):
+    """A session that ends without playing says why, and no session
+    outlives its watcher (full code review, 2026-11)."""
+
+    def connected_then(self, rc, failure=None):
+        sock = Path(self.directory.name) / "fake.sock"
+        sock.write_text("")
+        proc = Mock(hub_pty=None, hub_retired=False)
+        proc.poll.side_effect = [None, None]  # connects, then one poll
+        proc.wait.return_value = rc  # exits before mpv ever reports a position
+        self.register("ep1", proc)
+        with patch.object(player, "mpv_ipc", return_value={}):
+            player.watch_process(proc, "ep1", sock, failure=failure)
+        return sock
+
+    def test_mpv_failing_after_its_socket_opened_says_so(self):
+        self.connected_then(2)
+        self.assertIn("exit code 2", player._session_error["error"])
+        self.assertEqual(player._session_error["ep_id"], "ep1")
+
+    def test_a_stream_failing_after_its_socket_opened_reports_or_retries(self):
+        failure = Mock(return_value="Couldn't play E3.")
+        self.connected_then(2, failure)
+        failure.assert_called_once_with(2)
+        self.assertEqual(player._session_error["error"], "Couldn't play E3.")
+
+    def test_quitting_while_it_loads_is_no_error(self):
+        self.connected_then(0)
+        self.assertIsNone(player._session_error["error"])
+
+    def test_a_player_that_never_starts_is_ended_and_explained(self):
+        proc = Mock(hub_pty=None, hub_retired=False)
+        proc.poll.return_value = None  # still running, never opens a socket
+        proc.wait.return_value = -9
+        self.register("ep1", proc)
+        with patch.object(anicli, "stop_process_group") as stop:
+            player.watch_process(proc, "ep1", Path(self.directory.name) / "absent.sock", startup=0)
+        stop.assert_called_once_with(proc, system.SIGKILL)
+        self.assertIn("didn't start within 0 s", player._session_error["error"])
+        with player._active_lock:
+            self.assertNotIn("ep1", player._active)
+
+    def test_a_watcher_error_leaves_no_ghost_session(self):
+        import sqlite3
+        sock = Path(self.directory.name) / "fake.sock"
+        sock.write_text("")
+        proc = Mock(hub_pty=None, hub_retired=False)
+        proc.poll.return_value = None
+        proc.wait.return_value = 0
+        self.register("ep1", proc)
+
+        def fake_ipc(sock_path, cmd):
+            return {"data": 100.0} if cmd[:2] == ["get_property", "time-pos"] else \
+                {"data": 1440.0} if cmd[:2] == ["get_property", "duration"] else {}
+
+        with patch.object(player, "mpv_ipc", side_effect=fake_ipc), patch.object(player, "send_info"), \
+                patch.object(player, "save_position", side_effect=sqlite3.OperationalError("database is locked")):
+            player.watch_process(proc, "ep1", sock)
+        with player._active_lock:
+            self.assertNotIn("ep1", player._active)
+        if not system.WINDOWS:  # Windows talks over a named pipe: nothing to delete
+            self.assertFalse(sock.exists())
+        proc.wait.assert_called_with()  # it waited for the player to end first
+
+    def test_autoplay_that_cannot_start_says_why(self):
+        with patch.object(player, "start_play", return_value={"error": "file missing"}), \
+                patch.object(player, "aniskip_question", return_value=False):
+            player._chain_to("ep1", {"id": "ep2", "source": "local"}, 0)
+        self.assertEqual((player._session_error["ep_id"], player._session_error["error"]), ("ep2", "file missing"))
+
+    def test_unmatched_folder_menu_shows_what_was_watched(self):
+        eps = [{"id": "a", "number": 1, "watched": True}, {"id": "b", "number": 2, "watched": False}]
+        show = {"seasons": [{"episodes": eps}]}
+        with patch.object(player, "entry_of_episode", return_value=None), \
+                patch.object(player.library, "episode_by_id", return_value=(show, eps[1])):
+            self.assertEqual([x["watched"] for x in player.episode_menu("b")], [True, False])
+
+
+
+class SwitchTakeoverTests(LifecycleBase):
+    """A Sub/Dub switch whose new player ends or never plays keeps the old
+    one: it plays on and stays the tracked session (Elias, 2026-11). Only a
+    new player that plays ends the old one."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(streaming._session_notice.update, msg=None, ts=0.0)
+        self.old = Mock(hub_pty=None, hub_retired=False, hub_handoff=False)
+        self.old.poll.return_value = None
+        self.new = Mock(hub_pty=None, hub_retired=False)
+
+    def hand_over(self, ep_id="e1", sock=None):
+        """What start_play/start_stream do with a handoff: the old player
+        stays, flagged, and the new one takes the slot."""
+        player.retire_session(self.old, {"old": self.old})
+        with player._active_lock:
+            player._active.clear()
+            player._active[ep_id] = {"proc": self.new, "ep_id": ep_id, "loading": True, "sock": sock}
+
+    def test_a_new_player_that_dies_leaves_the_old_one_playing(self):
+        self.new.poll.return_value = 2  # the dub file wouldn't open
+        self.register("e1", self.old)
+        with player._active_lock:
+            player._active["e1"].update(sock="/old", switch="dub", percent=40)
+        sent = []
+
+        def ipc(sock, cmd, timeout=2.0):
+            sent.append((sock, cmd))
+            return {"data": 120.0} if cmd[:2] == ["get_property", "time-pos"] else None
+
+        def start(ep_id, version, handoff):
+            self.assertIs(handoff["old"], self.old)
+            self.hand_over(ep_id)
+            return {"ok": True}
+
+        ep = {"files": [{"label": "default"}, {"label": "Dub"}]}
+        with patch.object(library, "episode_by_id", return_value=({}, ep)), \
+                patch.object(player, "start_play", side_effect=start), \
+                patch.object(player, "mpv_ipc", side_effect=ipc), \
+                patch.object(anicli, "stop_process_group") as stop:
+            player._switch("e1", self.old, "/old", "dub")
+        with player._active_lock:
+            entry = dict(player._active["e1"])
+        self.assertIs(entry["proc"], self.old)  # tracked again: /api/now, remote, progress, autoplay
+        self.assertEqual((entry["sock"], entry["percent"], entry["switch"], entry["loading"]), ("/old", 40, None, False))
+        self.assertFalse(self.old.hub_retired or self.old.hub_handoff)
+        self.assertTrue(self.new.hub_retired)
+        self.assertEqual(player._session_state("e1", self.old), "own")
+        stop.assert_not_called()  # the old one was never ended (the new one had ended already)
+        self.assertIn(("/old", ["set_property", "pause", False]), sent)
+        notes = [json.loads(c[2]) for _, c in sent if c[:2] == ["script-message", "anime-hub-switch"]]
+        self.assertEqual(notes[-1]["state"], "failed")
+        self.assertEqual(notes[-1]["text"], "Couldn't switch to the English dub — kept the Japanese audio playing.")
+        self.assertEqual(streaming._session_notice["msg"], notes[-1]["text"])
+
+    def test_a_new_player_that_never_plays_is_ended_and_the_old_one_kept(self):
+        self.new.poll.return_value = None
+        saved = {"proc": self.old, "ep_id": "e1", "sock": "/old"}
+        self.hand_over(sock="/new")
+        with patch.object(player, "SWITCH_TIMEOUT", 0), patch.object(player, "mpv_ipc", return_value={}), \
+                patch.object(anicli, "stop_process_group") as stop:
+            self.assertEqual(player._await_takeover("e1", self.old, saved), "kept")
+        stop.assert_called_once_with(self.new, system.SIGKILL)
+        self.assertIs(player._active["e1"]["proc"], self.old)
+
+    def test_a_new_player_that_plays_ends_the_old_one(self):
+        self.new.poll.return_value = None
+        self.hand_over(sock="/new")
+        with patch.object(player, "mpv_ipc", return_value={"data": 5.0}), \
+                patch.object(anicli, "stop_process_group") as stop:
+            self.assertEqual(player._await_takeover("e1", self.old, {"proc": self.old}), "played")
+        stop.assert_called_once_with(self.old)
+        self.assertIs(player._active["e1"]["proc"], self.new)
+
+    def test_another_episode_started_meanwhile_ends_the_old_one(self):
+        self.new.poll.return_value = 2
+        self.hand_over()
+        with player._active_lock:
+            player._active.clear()
+            player._active["other"] = {"proc": Mock(hub_pty=None, hub_retired=False)}
+        with patch.object(anicli, "stop_process_group") as stop:
+            self.assertEqual(player._await_takeover("e1", self.old, {"proc": self.old}), "superseded")
+        stop.assert_called_once_with(self.old)
+        self.assertNotIn("e1", player._active)
+
+    def test_the_old_watcher_waits_out_the_switch_and_tracks_again(self):
+        """While the switch is pending the old watcher neither retires
+        itself nor writes anything; given its session back, it tracks the
+        episode to its end and autoplay follows."""
+        sock = Path(self.directory.name) / "old.sock"
+        sock.write_text("")
+        self.new.poll.return_value = 2
+        self.register("e1", self.old)
+        self.seed("e1", watched=0, position=0.0)
+        saved = dict(player._active["e1"])
+        self.old.wait.side_effect = [subprocess.TimeoutExpired("mpv", 2), subprocess.TimeoutExpired("mpv", 0.5), 0, 0]
+        reads = {"n": 0}
+
+        def fake_ipc(sock_path, cmd):
+            if cmd[:2] == ["get_property", "duration"]:
+                return {"data": 1440.0}
+            if cmd[:2] != ["get_property", "time-pos"]:
+                return {}
+            reads["n"] += 1
+            if reads["n"] == 2:
+                self.hand_over()  # the switch starts: the old watcher must wait
+                return {"data": 700.0}
+            if reads["n"] == 3:
+                self.assertTrue(player._restore("e1", self.old, self.new, saved))
+                return {"data": 1439.0}
+            return {"data": 100.0}
+
+        with patch.object(player, "mpv_ipc", side_effect=fake_ipc), patch.object(player, "send_info"), \
+                patch.object(player, "autoplay_next") as auto:
+            player.watch_process(self.old, "e1", sock)
+        watched, position, duration, _ = row("e1", self.db)
+        self.assertEqual(watched, 1)  # tracked to its end after the restore
+        self.assertEqual(position, 1439.0)
+        auto.assert_called_once_with("e1", 0)
 
 if __name__ == "__main__":
     unittest.main()

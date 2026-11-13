@@ -20,10 +20,17 @@ OUTBOX_BACKOFF = [30, 60, 120, 300, 900, 1800]
 OUTBOX_MAX_ATTEMPTS = 8
 
 
-def outbox_enqueue(media_id, patch=None, favourite=None, verify=None):
+def outbox_enqueue(media_id, patch=None, favourite=None, verify=None, account=None):
     """`verify` ({"add": bool}) marks a progress guess queued without a
-    fresh AniList list — outbox_verify settles it before it is sent."""
-    account = anilist.account_id()
+    fresh AniList list — outbox_verify settles it before it is sent.
+    `account` is who the change is for, read before the service was asked;
+    without it, the account in use — or, when the failed call just ended
+    that login, the account it belonged to (Decision 24: a row must never
+    lose its account, or a different account's connect would send it)."""
+    if account is None:
+        account = anilist.account_id()
+    if account is None:
+        account = anilist.cleared_account_id()
     payload = {"patch": patch or {}, "account_id": account}
     if favourite is not None:
         payload["favourite"] = bool(favourite)
@@ -53,6 +60,13 @@ def outbox_defer(show_id, eps, manual):
                   (json.dumps({"resync": show_id, "eps": sorted(eps), "manual": bool(manual),
                                "account_id": account}),
                    account, util.utc_stamp()))
+
+
+def _delete_sent(row_id, payload_s):
+    """Drop a row the flush settled — only while it still holds what the
+    flush read: a mark that raised or joined it meanwhile goes next pass."""
+    with database.db() as c:
+        c.execute("DELETE FROM outbox WHERE id=? AND payload=?", (row_id, payload_s))
 
 
 def outbox_count():
@@ -199,7 +213,7 @@ def _outbox_flush(limit):
                 payload["account_id"] != account:
             other = _paused_for(payload)
             if other:
-                sent += _flush_paused(row_id, media_id, payload, attempts, other)
+                sent += _flush_paused(row_id, media_id, payload_s, payload, attempts, other)
             continue
         if "resync" in payload:
             try:
@@ -210,8 +224,7 @@ def _outbox_flush(limit):
             if not settled:
                 outbox_fail(row_id, attempts, "seasons not mapped yet", transient=True)
                 continue
-            with database.db() as c:
-                c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
+            _delete_sent(row_id, payload_s)
             continue
         if payload.get("verify"):
             if remote is None:
@@ -223,8 +236,7 @@ def _outbox_flush(limit):
                 remote = {e["id"]: e for e in data.get("entries", [])}
             payload["patch"] = outbox_verify(payload, remote.get(media_id))
             if payload["patch"] is None:
-                with database.db() as c:
-                    c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
+                _delete_sent(row_id, payload_s)
                 continue
         try:
             if payload.get("patch"):
@@ -241,8 +253,7 @@ def _outbox_flush(limit):
         except ValueError as e:
             outbox_fail(row_id, attempts, e)
             continue
-        with database.db() as c:
-            c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
+        _delete_sent(row_id, payload_s)
         sent += 1
     return sent
 
@@ -263,7 +274,7 @@ def _paused_for(payload):
     return which if str(anilist.account_id(which)) == str(acc) else None
 
 
-def _flush_paused(row_id, media_id, payload, attempts, which):
+def _flush_paused(row_id, media_id, payload_s, payload, attempts, which):
     """Send one row to the paused service. Its trouble is its own: a
     failure backs this row off without stopping the in-use service's rows."""
     try:
@@ -280,8 +291,7 @@ def _flush_paused(row_id, media_id, payload, attempts, which):
     except ValueError as e:
         outbox_fail(row_id, attempts, e)
         return 0
-    with database.db() as c:
-        c.execute("DELETE FROM outbox WHERE id=?", (row_id,))
+    _delete_sent(row_id, payload_s)
     return 1
 
 
@@ -579,6 +589,71 @@ def outbox_raise_progress(media_id, progress):
         payload["patch"] = {"progress": progress}
         c.execute("UPDATE outbox SET payload=? WHERE id=?", (json.dumps(payload), row[0]))
         return True
+
+
+def outbox_trim_saved(media_id, fields, account, progress=None):
+    """A direct save of `fields` (patch keys, and "favourite") just went
+    through for this entry and account: queued rows would only send older
+    values over it later. Those fields leave them, a plain progress row at
+    or below the saved `progress` goes, and rows left empty go. Guarded like
+    the flush: a row that changed meanwhile is left as it is. Never raises
+    (the save itself succeeded). Returns how many rows changed."""
+    fields, changed = set(fields), 0
+    try:
+        with database.db() as c:
+            rows = c.execute("SELECT id, payload, account_id FROM outbox WHERE media_id=?",
+                             (media_id,)).fetchall()
+        for row_id, payload_s, acc in rows:
+            if acc is not None and str(acc) != str(account):
+                continue
+            try:
+                payload = json.loads(payload_s)
+            except ValueError:
+                continue
+            if not isinstance(payload, dict) or "resync" in payload:
+                continue
+            patch = {k: v for k, v in (payload.get("patch") or {}).items() if k not in fields}
+            if set(patch) == {"progress"} and isinstance(progress, int) \
+                    and isinstance(patch["progress"], int) and patch["progress"] <= progress:
+                patch = {}
+            new = dict(payload, patch=patch)
+            if "favourite" in fields:
+                new.pop("favourite", None)
+            if new == payload:
+                continue
+            with database.db() as c:
+                if not patch and "favourite" not in new:
+                    n = c.execute("DELETE FROM outbox WHERE id=? AND payload=?", (row_id, payload_s)).rowcount
+                else:
+                    n = c.execute("UPDATE outbox SET payload=? WHERE id=? AND payload=?",
+                                  (json.dumps(new), row_id, payload_s)).rowcount
+            changed += n
+    except Exception as e:
+        util.log("outbox: queued rows for %s not trimmed: %s" % (media_id, e))
+    return changed
+
+
+def outbox_queue_progress(media_id, progress, verify=None):
+    """Watched up to `progress` while rows for the entry wait: raise the
+    newest plain progress row, else queue the progress as its own row
+    (behind the user's own edit, which stays as it is) — unless a waiting
+    row already sends this much. True when queued or raised."""
+    if outbox_raise_progress(media_id, progress):
+        return True
+    account = anilist.account_id()
+    with database.db() as c:
+        rows = c.execute("SELECT payload, account_id FROM outbox WHERE media_id=?", (media_id,)).fetchall()
+    for payload_s, acc in rows:
+        if acc is not None and str(acc) != str(account):
+            continue
+        try:
+            sent = (json.loads(payload_s).get("patch") or {}).get("progress")
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(sent, int) and sent >= progress:
+            return False
+    outbox_enqueue(media_id, patch={"progress": progress}, verify=verify)
+    return True
 
 
 def reconcile_apply(decisions):

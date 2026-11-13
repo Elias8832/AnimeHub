@@ -269,7 +269,8 @@ def add_system_font(family):
 
 def font_path(fid):
     """The file of an added font, or None. Basename only."""
-    if not isinstance(fid, str) or "/" in fid or "\\" in fid or fid.startswith("."):
+    # ":" too: on Windows "D:x.ttf" joined to a folder is a path on drive D:.
+    if not isinstance(fid, str) or "/" in fid or "\\" in fid or ":" in fid or fid.startswith("."):
         return None
     p = font_dir() / fid
     return p if p.suffix.lstrip(".").lower() in TYPES and p.is_file() else None

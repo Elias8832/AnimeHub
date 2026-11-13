@@ -411,7 +411,7 @@ class SearchPalette(unittest.TestCase):
     def test_palette(self):
         self.assertIn('["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"]', APP)
         self.assertIn('data-a="srsw" data-v="${key}"', APP)
-        self.assertIn('if (S.menu === "sr") srPreview(', APP)
+        self.assertIn('if (S.menu === "sr" && (keep != null || !touchSearch())) srPreview(', APP)  # touch: no keyboard ring until the arrows are used (TODO 238)
         # the palette opens centred with its own line; the top bar only holds the button
         self.assertIn('function openSearch() { if (S.menu !== "sr") { S.menu = "sr"; ovOpen("sr", () => A.srclose()); paintNav(); } q.focus(); }', APP)
         self.assertIn('if (e.key === "/" && !inInput) { e.preventDefault(); openSearch(); return; }', APP)
@@ -678,6 +678,7 @@ class NextAiringAt(unittest.TestCase):
         cache.parent.mkdir(parents=True, exist_ok=True)
         self.addCleanup(cache.unlink, missing_ok=True)
         with mock.patch.object(anilist, "load_anilist_username", return_value="u"), \
+             mock.patch.object(anilist, "service", return_value="anilist"), \
              mock.patch.object(anilist, "anilist_request", return_value=data):
             out = anilist.anilist_user_data(force=True)
         self.assertEqual(out["entries"][0]["next_episode"], {"number": 5, "in_seconds": 3600, "at": 1_800_000_000})

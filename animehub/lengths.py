@@ -144,10 +144,15 @@ def _todo(rels):
 def _work():
     tool = find_tool()
     seen = -1
-    while tool and enabled():
+    while True:
         with _lock:
-            if _files["gen"] == seen:
-                break
+            if not tool or not enabled() or _files["gen"] == seen:
+                # Done, and said so under the lock scan_done takes: a scan
+                # landing from here on finds no worker and starts one.
+                status.update(state="idle", left=0)
+                if _worker["thread"] is threading.current_thread():
+                    _worker["thread"] = None
+                return
             seen, rels = _files["gen"], _files["rels"]
         todo = _todo(rels)
         status.update(state="working" if todo else "idle", left=len(todo))
@@ -166,7 +171,6 @@ def _work():
                 pass
             status["done"] += 1
             status["left"] = max(0, status["left"] - 1)
-    status.update(state="idle", left=0)
 
 
 def payload():

@@ -403,10 +403,17 @@ def _anicli_failed(rc, err, link=None):
     return AniCliError(f"ani-cli: {msg}" if msg else f"ani-cli failed (exit code {rc}).")
 
 
+def clean_query(query):
+    """A search query as ani-cli gets it, one argument: never one of its
+    options ("-U" updates it, "-D" wipes its history), so no leading
+    dashes, not even after a space ("- -U")."""
+    return " ".join(query.split()).lstrip("- ")
+
+
 def anicli_search(query):
     """ani-cli's search results for a query: [{index, title}]. A single hit
     is taken by ani-cli without asking, so its title stays unknown (None)."""
-    query = " ".join(query.split()).lstrip("-").strip()
+    query = clean_query(query)
     if not query:
         raise AniCliError("Enter a title to search for.")
     rc, err, lists = anicli_probe([query])

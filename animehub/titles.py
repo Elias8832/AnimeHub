@@ -14,7 +14,6 @@ works as before, through AniList's own search."""
 
 import bisect
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -23,7 +22,7 @@ import time
 import unicodedata
 from urllib.request import Request, urlopen
 
-from . import VERSION
+from . import VERSION, system
 from .config import config
 
 RELEASE = "https://github.com/manami-project/anime-offline-database/releases/latest/download/"
@@ -204,7 +203,7 @@ def _refresh():
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".part")
         tmp.write_text(json.dumps({"rows": rows}, separators=(",", ":")), encoding="utf-8")
-        os.replace(tmp, path)
+        system.replace(tmp, path)  # Windows: a search may be reading it
         index = _Index(rows)
         with _lock:
             _index = index
@@ -217,7 +216,7 @@ def _refresh():
 def _load():
     global _index
     try:
-        rows = json.loads(_path().read_text(encoding="utf-8"))["rows"]
+        rows = json.loads(system.read_bytes(_path()))["rows"]
     except (OSError, ValueError, KeyError, TypeError):
         return
     index = _Index(rows)

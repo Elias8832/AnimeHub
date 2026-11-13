@@ -8,6 +8,7 @@ Only files the library knows are served: the request names an episode id,
 never a path. Playing on the phone stops mpv on the PC unless Settings →
 Phone remote allows both at once."""
 
+import ipaddress
 import json
 import mimetypes
 import re
@@ -17,7 +18,6 @@ import subprocess
 import threading
 import time
 import uuid
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
@@ -336,7 +336,8 @@ def start_online(ep_id, mode=None, from_start=False, at=None, switch=False):
     player's Sub/Dub pick: no falling back to the sub, and the pick only
     becomes the show's Sub/Dub once it was found (Decision 70)."""
     mid = streaming.stream_media_id(ep_id)
-    token = ep_id.split(":", 2)[2] if mid else ""
+    parts = ep_id.split(":", 2)
+    token = parts[2] if mid and len(parts) == 3 else ""
     if not mid or not anicli.STREAM_EP_RE.match(token):
         return {"error": "unknown episode"}
     try:
@@ -413,6 +414,30 @@ def _link(tok):
         return L
 
 
+def _inside(host):
+    """A host name that means this PC or the home network: localhost, or a
+    loopback, private, link-local or reserved address."""
+    host = (host or "").lower().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        a = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return a.is_loopback or a.is_private or a.is_link_local or a.is_reserved or a.is_unspecified
+
+
+def relay_may_fetch(base, url):
+    """May a playlist at `base` name `url` for the relay? Web addresses only
+    (no file: or data:), and none inside the PC or the home network unless
+    the playlist itself came from there: a site's playlist must not turn
+    the relay into a way in to the hub's PC-only routes or the router."""
+    u, b = urlparse(url), urlparse(base)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
+    return not _inside(u.hostname) or (u.hostname or "").lower() == (b.hostname or "").lower()
+
+
 def rewrite_playlist(tok, base, text):
     """An HLS playlist with every address pointed back at the relay. Only
     addresses that appear here may be fetched through it later."""
@@ -421,7 +446,8 @@ def rewrite_playlist(tok, base, text):
 
     def to_relay(u):
         full = urljoin(base, u.strip())
-        allowed.add(full)
+        if relay_may_fetch(base, full):
+            allowed.add(full)
         return relay_url(tok, full)
 
     out = []

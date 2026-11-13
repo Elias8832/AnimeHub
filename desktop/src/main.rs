@@ -167,7 +167,9 @@ fn config_json() -> Option<serde_json::Value> {
 fn configured_port() -> u16 {
     config_json()
         .and_then(|v| v.get("port").and_then(|p| p.as_u64()))
-        .map(|p| p as u16)
+        // As animehub/config.py: anything outside 1–65535 means the default.
+        .and_then(|p| u16::try_from(p).ok())
+        .filter(|p| *p != 0)
         .unwrap_or(8787)
 }
 
@@ -291,13 +293,21 @@ fn chromium_exe() -> Option<String> {
         .map(|p| p.display().to_string())
 }
 
-/// The app window's browser profile. Windows keeps one per port: two Anime
-/// Hubs (another config, another port) sharing one profile handed the
-/// second app's window to the first app's browser, at a port nobody
-/// served (found on Windows, TODO 74). The default port keeps the old name.
+/// The app window's browser profile, one per port: two Anime Hubs (another
+/// config, another port) sharing one profile handed the second app's window
+/// to the first app's browser, at a port nobody served (found on Windows,
+/// TODO 74; Linux the same since). The default port keeps the old name, so
+/// its browser data (zoom, the page's storage) stays where it was. The
+/// Wayland class doesn't depend on this folder (see WAYLAND_CLASS).
 fn wrapper_profile(port: u16) -> PathBuf {
-    let dir = data_base().join("anime-hub-wrapper");
-    if cfg!(windows) && port != 8787 { dir.join(format!("chrome-profile-{port}")) } else { dir.join("chrome-profile") }
+    data_base().join("anime-hub-wrapper").join(per_port("chrome-profile", "", port))
+}
+
+/// A file or folder of one port's app: `name.ext` for the default port (the
+/// old name), `name-<port>.ext` for any other, as hub.log / hub-<port>.log.
+fn per_port(name: &str, ext: &str, port: u16) -> String {
+    let dot = if ext.is_empty() { String::new() } else { format!(".{ext}") };
+    if port == 8787 { format!("{name}{dot}") } else { format!("{name}-{port}{dot}") }
 }
 
 /// Spawn hub.py with --no-browser (the wrapper owns the window) and with
@@ -346,8 +356,7 @@ fn python_exe() -> Option<PathBuf> {
 /// header, so a failed first start isn't lost to the next one.
 #[cfg(windows)]
 fn hub_log(port: u16) -> PathBuf {
-    let name = if port == 8787 { "hub.log".to_string() } else { format!("hub-{port}.log") };
-    wrapper_profile(port).with_file_name(name)
+    wrapper_profile(port).with_file_name(per_port("hub", "log", port))
 }
 
 /// Windows: the hub runs without a console window; what it prints goes to
@@ -388,6 +397,14 @@ fn spawn_hub(python: &PathBuf, hub_py: &PathBuf, port: u16, leash: &windows::Lea
         .ok()?;
     leash.hold(&child);
     Some(child)
+}
+
+/// spawn_hub, or a fatal error: no window is opened at a port nobody serves.
+#[cfg(unix)]
+fn start_hub(hub_py: &PathBuf) -> Child {
+    spawn_hub(hub_py).unwrap_or_else(|| {
+        fail(&format!("could not start the hub (python3 {}). Is Python 3 installed?", hub_py.display()))
+    })
 }
 
 #[cfg(unix)]
@@ -489,7 +506,10 @@ fn kill_hub(hub: &mut Option<Child>) {
 
 /// The window's class on native Wayland: chromium ignores --class there
 /// and names an app window chrome-<host>__-<profile> (tested 2026-10-22,
-/// Chromium 155). desktop/install.sh writes the same into StartupWMClass.
+/// Chromium 155). <profile> is the profile folder inside --user-data-dir
+/// ("Default"), not that dir's own name (chrome-profile, seen live): every
+/// port's window has this class. The host has no port in it either.
+/// desktop/install.sh writes the same into StartupWMClass.
 #[cfg(unix)]
 pub const WAYLAND_CLASS: &str = "chrome-127.0.0.1__-Default";
 
@@ -528,7 +548,7 @@ fn app_window(exe: &str, port: u16) -> Child {
             })
             .spawn()
     };
-    result.expect("chromium-family browser spawns")
+    result.unwrap_or_else(|e| fail(&format!("could not open its window ({exe}): {e}")))
 }
 
 /// Windows: the same window on the same leash as the hub.
@@ -554,16 +574,17 @@ fn fail(msg: &str) -> ! {
 }
 
 /// A later launch holds this (shared) while its window is open, so the
-/// launch that owns the hub can see that a window still needs it.
+/// launch that owns the hub can see that a window still needs it. One per
+/// port, like the profile: another port's window is another app's.
 #[cfg(unix)]
-fn hold_window_lock(dir: &std::path::Path) -> Option<File> {
-    let file = File::create(dir.join("window.lock")).ok()?;
+fn hold_window_lock(dir: &std::path::Path, port: u16) -> Option<File> {
+    let file = File::create(dir.join(per_port("window", "lock", port))).ok()?;
     (unsafe { flock(file.as_raw_fd(), libc::LOCK_SH) } == 0).then_some(file)
 }
 
 #[cfg(unix)]
-fn window_lock_held(dir: &std::path::Path) -> bool {
-    File::create(dir.join("window.lock"))
+fn window_lock_held(dir: &std::path::Path, port: u16) -> bool {
+    File::create(dir.join(per_port("window", "lock", port)))
         .is_ok_and(|f| unsafe { flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0)
 }
 
@@ -597,25 +618,28 @@ fn main() {
     // "window closed" would kill the hub under a live app window.
     let dir = wrapper_profile(port).parent().unwrap().to_path_buf();
     let _ = fs::create_dir_all(&dir);
-    let lock = File::create(dir.join("wrapper.lock")).expect("lock file");
+    // One per port (TODO 74, as Windows' mutex): a launch on another port is
+    // another app and starts its own hub; the same port's second launch only
+    // asks for a window.
+    let lock = File::create(dir.join(per_port("wrapper", "lock", port))).expect("lock file");
     let first = unsafe { flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0;
 
     if background {
         // Already running: nothing to do. No window, whatever happens.
         if first {
-            let mut hub = spawn_hub(&hub_py);
-            in_background(&mut hub, || window_lock_held(&dir));
+            let mut hub = Some(start_hub(&hub_py));
+            in_background(&mut hub, || window_lock_held(&dir, port));
         }
     } else if first {
-        let mut hub = spawn_hub(&hub_py);
+        let mut hub = Some(start_hub(&hub_py));
         wait_for_port(port, 15);
         let mut win = app_window(&exe, port);
         let _ = win.wait();
-        in_background(&mut hub, || window_lock_held(&dir));
+        in_background(&mut hub, || window_lock_held(&dir, port));
     } else {
         // The first launch may still be starting its hub (a login entry).
         wait_for_port(port, 15);
-        let _held = hold_window_lock(&dir);
+        let _held = hold_window_lock(&dir, port);
         // This chromium hands the window to the running instance's profile
         // singleton and exits. Wait for that: returning now would fire its
         // PR_SET_PDEATHSIG and kill it before the handoff.

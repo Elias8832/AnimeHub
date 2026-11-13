@@ -70,5 +70,33 @@ class Check(unittest.TestCase):
         self.assertEqual(streaming.friendly_stream_error(msg), msg)
 
 
+class QueryIsNoOption(unittest.TestCase):
+    """The query is one argument to ani-cli: "-U" there updates ani-cli and
+    "-D" wipes its history, so no query may become one (review, 2026-11)."""
+
+    def test_search_strips_dashes_even_after_a_space(self):
+        seen = []
+        with mock.patch.object(anicli, "anicli_probe", side_effect=lambda args, *a, **k: seen.append(args) or (0, "", [])):
+            anicli.anicli_search("- -U")
+            anicli.anicli_search("--  Dan Da Dan")
+        self.assertEqual(seen, [["U"], ["Dan Da Dan"]])
+
+    def test_a_picked_result_is_cleaned_the_same_way(self):
+        seen = []
+
+        def episodes(link):
+            seen.append(link["query"])
+            raise anicli.AniCliError("stop here")
+
+        with mock.patch.object(streaming, "stream_link_get", return_value=None), \
+                mock.patch.object(anicli, "stream_prefs", return_value={"quality": "best", "mode": "sub"}), \
+                mock.patch.object(anicli, "anicli_episodes", side_effect=episodes):
+            with self.assertRaises(anicli.AniCliError):
+                streaming.stream_link_set(1, "-D", None)
+            with self.assertRaisesRegex(anicli.AniCliError, "Enter a title"):
+                streaming.stream_link_set(1, " -- ", None)
+        self.assertEqual(seen, ["D"])
+
+
 if __name__ == "__main__":
     unittest.main()

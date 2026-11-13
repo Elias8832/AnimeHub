@@ -174,18 +174,18 @@ class View(unittest.TestCase):
         Season 2 → Season 3."""
         show = support.folder(self.scan, "The Apothecary Diaries")
         s1, s2 = (support.season(show, f"Season {i}")["episodes"] for i in (1, 2))
-        self.assertEqual(player.next_episode(s1[-1]["id"]), s2[0]["id"])
-        self.assertEqual(player.next_episode(s2[-1]["id"]), "stream:176301:11")
-        self.assertEqual(player.next_episode("stream:176301:11"), "stream:176301:12")
+        self.assertEqual(player.next_up(s1[-1]["id"])["id"], s2[0]["id"])
+        self.assertEqual(player.next_up(s2[-1]["id"])["id"], "stream:176301:11")
+        self.assertEqual(player.next_up("stream:176301:11")["id"], "stream:176301:12")
         s3 = self.entry(pages.franchise_view(195516), 195516)["slots"]
-        self.assertEqual(player.next_episode("stream:176301:24"), s3[0]["id"] if s3 else None)
+        self.assertEqual(player.next_up("stream:176301:24")["id"], s3[0]["id"] if s3 else None)
 
     def test_autoplay_never_skips_ahead(self):
         """Without ani-cli, Season 2's missing episodes can't play: the
         chain stops instead of jumping to whatever comes next on disk."""
         show = support.folder(self.scan, "The Apothecary Diaries")
         with mock.patch.object(anicli, "anicli_path", return_value=None):
-            self.assertIsNone(player.next_episode(support.season(show, "Season 2")["episodes"][-1]["id"]))
+            self.assertIsNone(player.next_up(support.season(show, "Season 2")["episodes"][-1]["id"])["id"])
 
     def test_next_up_names_the_source(self):
         """TODO 10: what plays next and from where — a file, online, or
@@ -311,8 +311,8 @@ class Unmapped(unittest.TestCase):
         scan = support.use_library(support.case("unmatched"))
         library.merge_db(scan)
         eps = scan[0]["seasons"][0]["episodes"]
-        self.assertEqual(player.next_episode(eps[0]["id"]), eps[1]["id"])
-        self.assertIsNone(player.next_episode(eps[1]["id"]))
+        self.assertEqual(player.next_up(eps[0]["id"])["id"], eps[1]["id"])
+        self.assertIsNone(player.next_up(eps[1]["id"])["id"])
 
     def test_absolute_numbered_season_is_no_download_folder(self):
         """AoT's Season 2 folder counts 26–37: a download saved as

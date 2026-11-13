@@ -16,15 +16,16 @@ MOVIE_RE = re.compile(r"^(?:movies?|films?)$", re.I)
 SPECIAL_RE = re.compile(r"^(?:specials?|ova|oav)$", re.I)
 PART_RE = re.compile(r"^part\s*(\d+)$", re.I)
 EP_RE = re.compile(r"\bE(\d{1,4})\b", re.I)
-SE_EP_RE = re.compile(r"\bS\d{1,3}\s*E(\d{1,4})\b", re.I)
+SE_EP_RE = re.compile(r"\bS(\d{1,3})\s*E(\d{1,4})\b", re.I)
 SEP_NUM_RE = re.compile(r"^(?:ep(?:isode)?)\.?\s*(\d{1,4})", re.I)
 # "<title> Episode 5.mp4" — the name ani-cli gives its downloads.
 EPISODE_WORD_RE = re.compile(r"\bEpisode\s*(\d{1,4})\b", re.I)
 # "[Group] Title - 05v2 (1080p).mkv" — the usual release naming: the number
 # after a spaced dash, once [..] / (..) tags are gone (group, resolution,
 # checksum, year). The last one wins: "86 - 01", "Mob Psycho 100 - 03".
+# "12.5" (a recap between 12 and 13) is no number: never episode 12.
 TAGS_RE = re.compile(r"\[[^\]]*\]|\([^)]*\)")
-DASH_NUM_RE = re.compile(r"(?:^|\s)-\s+(\d{1,4})(?:v\d+)?(?=$|[\s\-_.])", re.I)
+DASH_NUM_RE = re.compile(r"(?:^|\s)-\s+(\d{1,4})(?:v\d+)?(?=$|[\s\-_]|\.(?!\d))", re.I)
 MIN_VALID_SCAN = 10
 # Last scan's health (TODO 23): "ok", "missing" (root not a directory),
 # "partial" (some directories unreadable). "root" is "changed" when the configured
@@ -96,17 +97,19 @@ def parse_ep_number(name):
     """Episode number from a filename: S01E02-style first (more specific),
     then a standalone E-token, else None. Fixes the S01E02 renumbering trap
     (TODO 23): plain EP_RE never matched "S01E02" — no word boundary between
-    the season digits and E — so files fell back to lexical order numbering."""
+    the season digits and E — so files fell back to lexical order numbering.
+    The E-token is read without the [..] / (..) tags ("(… DDP5.1 E2)")."""
     m = SE_EP_RE.search(name)
     if m:
-        return int(m.group(1))
-    m = EP_RE.search(name)
+        return int(m.group(2))
+    bare = TAGS_RE.sub(" ", Path(name).stem)
+    m = EP_RE.search(bare)
     if m:
         return int(m.group(1))
     m = EPISODE_WORD_RE.search(name)
     if m:
         return int(m.group(1))
-    found = DASH_NUM_RE.findall(TAGS_RE.sub(" ", Path(name).stem))
+    found = DASH_NUM_RE.findall(bare)
     if found:
         return int(found[-1])
     return None
@@ -148,30 +151,79 @@ def set_episode_numbers(show_id, numbers):
 _scan_memo = {"sig": None, "json": None, "state": None}
 
 
-def _library_sig(root):
-    """Every walked folder (os.walk's rules: no dot-folders, no symlinked
-    folders) with its mtime; an unreadable folder signs as None."""
-    sig, stack = [], [str(root)]
+# Symlinked folders (a show on another disk linked into the library; on
+# Windows a directory junction) are followed. Each real folder is read once:
+# a link loop or two links to one folder can't hang the scan or show it
+# twice. A link to a folder inside a library folder is that folder's second
+# name and is left out, so its episodes keep their own paths. Paths through
+# a link stay library paths (the link's name, not its target's).
+_isjunction = getattr(os.path, "isjunction", lambda path: False)
+
+
+def _real(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def _real_roots():
+    return [_real(r) for _, r in roots()]
+
+
+def _follow(path, real_roots):
+    """Whether the scan goes into this sub-folder: a plain one always, a
+    linked one only when it leads outside every library folder."""
+    if not (os.path.islink(path) or _isjunction(path)):
+        return True
+    real = _real(path)
+    return not any(real == r or real.startswith(r.rstrip(os.sep) + os.sep) for r in real_roots)
+
+
+def _first_visit(path, seen):
+    """False when this real folder was read already (by another name);
+    marks it read otherwise."""
+    try:
+        st = os.stat(path)
+        key = (st.st_dev, st.st_ino) if st.st_ino else _real(path)
+    except OSError:
+        return True  # unreadable: os.walk reports it
+    if key in seen:
+        return False
+    seen.add(key)
+    return True
+
+
+def _library_sig(root, seen, real_roots):
+    """Every folder the scan reads (no dot-folders; linked ones followed by
+    the scan's rules) with its mtime; an unreadable folder signs as -1. Each
+    symlink also signs with whether it leads anywhere, so a broken link
+    whose disk comes back (or a link whose disk goes) rescans."""
+    sig, links, stack = [], [], [str(root)]
     while stack:
         d = stack.pop()
+        if not _first_visit(d, seen):
+            continue
         try:
             mtime = os.stat(d).st_mtime_ns
             with os.scandir(d) as it:
                 for e in it:
+                    if e.name.startswith("."):
+                        continue
                     try:
-                        if not e.name.startswith(".") and e.is_dir() and not e.is_symlink():
+                        if e.is_symlink():
+                            links.append((e.path, os.path.exists(e.path)))
+                        if e.is_dir() and _follow(e.path, real_roots):
                             stack.append(e.path)
                     except OSError:
                         pass
             sig.append((d, mtime))
         except OSError:
-            sig.append((d, None))
-    return (str(root), tuple(sorted(sig)))
+            sig.append((d, -1))
+    return (str(root), tuple(sorted(sig)), tuple(sorted(links)))
 
 
 def scan_library():
     if config.LIBRARY is not None and config.LIBRARY.is_dir():
-        sig = tuple(_library_sig(r) if r.is_dir() else (str(r), None) for _, r in roots())
+        seen, real_roots = set(), _real_roots()
+        sig = tuple(_library_sig(r, seen, real_roots) if r.is_dir() else (str(r), None) for _, r in roots())
         if sig == _scan_memo["sig"]:
             scan_state.update(_scan_memo["state"])
             stored_root = settings.get_setting("library_root")
@@ -183,6 +235,75 @@ def scan_library():
         return shows
     _scan_memo["sig"] = None
     return _scan_library()
+
+
+def _season_label(season):
+    return "Specials" if season == 0 else f"Season {season}"
+
+
+def _version(v, ep_rel):
+    """One file of an episode: "(1080p)" in its name is its label."""
+    vm = re.search(r"\(([^)]+)\)", v)
+    return {"path": ep_rel, "label": vm.group(1) if vm else "default"}
+
+
+def _file_show(shows, key, ep_rel, v, kind, season, label, number, prefix):
+    """A one-file show (a video loose in a library folder, a film loose in a
+    top-level Movies/ folder), its id namespaced by `key` so it never
+    collides with a folder show claiming the same name."""
+    show_id = hashlib.sha1(key.encode()).hexdigest()[:12]
+    entry = shows.setdefault(
+        show_id,
+        {"id": show_id, "path": ep_rel, "title": Path(v).stem, "collection": None, "kind": kind,
+         "seasons": [{"key": season, "season": season, "label": label, "episodes": []}],
+         **({"path_label": path_label(ep_rel)} if prefix else {})},
+    )
+    entry["seasons"][0]["episodes"].append(
+        {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel, "number": number,
+         "files": [_version(v, ep_rel)], "season": season, "season_label": label})
+
+
+def _seasons_by_name(videos):
+    """A folder that names no season but holds S01Exx and S02Exx files: one
+    group per season the names give ((key, season, label, files); a file
+    with no SxxEyy is Season 1), else None — one season, as before."""
+    by = {}
+    for v in videos:
+        m = SE_EP_RE.search(v)
+        by.setdefault(int(m.group(1)) if m else 1, []).append(v)
+    if len(by) < 2:
+        return None
+    return [(s, s, _season_label(s), vids) for s, vids in sorted(by.items())]
+
+
+def _add_episodes(sea, videos, rel, prefix, overrides):
+    """One folder's files into a season. Files whose name gives no number
+    are numbered in file order over the numbers left free (never merged into
+    a read one as a "version") and flagged `guessed` for Needs a look, until
+    the user confirms."""
+    read, unread = [], []
+    for v in videos:
+        ep_rel = prefix + (rel / v).as_posix()
+        n = overrides.get(ep_rel)
+        if n is None:
+            n = parse_ep_number(v)
+        (read if n is not None else unread).append((v, ep_rel, n))
+    taken = {e["number"] for e in sea["episodes"]} | {n for _, _, n in read}
+    free = (n for n in range(1, 100000) if n not in taken)
+    for v, ep_rel, n in read + [(v, r, None) for v, r, _ in unread]:
+        guessed = n is None
+        if guessed:
+            n = next(free)
+        ver = _version(v, ep_rel)
+        existing = next((e for e in sea["episodes"] if e["number"] == n), None)
+        if existing is None:
+            sea["episodes"].append(
+                {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel, "number": n,
+                 "files": [ver], "season": sea["season"], "season_label": sea["label"],
+                 **({"guessed": True} if guessed else {})}
+            )
+        else:
+            existing["files"].append(ver)
 
 
 def _scan_library():
@@ -208,6 +329,7 @@ def _scan_library():
     def walk_error(err):
         scan_state["walk_errors"] += 1
 
+    seen, real_roots = set(), _real_roots()  # see _follow
     for prefix, root in roots():
         if prefix:
             # An extra folder (Decision 42): a missing one is a state, not
@@ -216,9 +338,16 @@ def _scan_library():
             scan_state["extra"][prefix[1:-1]] = "ok" if ok else "missing"
             if not ok:
                 continue
-        for dirpath, dirnames, filenames in os.walk(root, onerror=walk_error):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
-            videos = sorted(f for f in filenames if Path(f).suffix.lower() in VIDEO_EXTS)
+        for dirpath, dirnames, filenames in os.walk(root, onerror=walk_error, followlinks=True):
+            if not _first_visit(dirpath, seen):
+                dirnames[:] = []  # a link loop, or a second link to one folder
+                continue
+            dirnames[:] = sorted(d for d in dirnames
+                                 if not d.startswith(".") and _follow(os.path.join(dirpath, d), real_roots))
+            # A broken link (its disk unplugged) is skipped quietly; a broken
+            # folder link never gets here (os.walk lists it as a file).
+            videos = sorted(f for f in filenames if Path(f).suffix.lower() in VIDEO_EXTS
+                            and os.path.exists(os.path.join(dirpath, f)))
             if not videos:
                 continue
             rel = Path(dirpath).relative_to(root)
@@ -228,27 +357,17 @@ def _scan_library():
                 # show id is namespaced "loose:" so it can never collide with a
                 # real folder show later claiming the same name.
                 for v in videos:
-                    n = parse_ep_number(v) or 1
-                    ep_rel = prefix + str(Path(v))
-                    vm = re.search(r"\(([^)]+)\)", v)
-                    ver = {"path": ep_rel, "label": vm.group(1) if vm else "default"}
-                    show_id = hashlib.sha1(f"loose:{prefix}{v}".encode()).hexdigest()[:12]
-                    entry = shows.setdefault(
-                        show_id,
-                        {"id": show_id, "path": ep_rel, "title": Path(v).stem,
-                         "collection": None, "kind": "show", "seasons": [],
-                         **({"path_label": path_label(ep_rel)} if prefix else {})},
-                    )
-                    sea = entry["seasons"][0] if entry["seasons"] else None
-                    if sea is None:
-                        sea = {"key": 1, "season": 1, "label": "Season 1", "episodes": []}
-                        entry["seasons"].append(sea)
-                    sea["episodes"].append(
-                        {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel,
-                         "number": n, "files": [ver], "season": 1, "season_label": "Season 1"}
-                    )
+                    _file_show(shows, f"loose:{prefix}{v}", prefix + str(Path(v)), v, "show",
+                               1, "Season 1", parse_ep_number(v) or 1, prefix)
                 continue
             parts = list(rel.parts)
+            if len(parts) == 1 and MOVIE_RE.match(parts[0]):
+                # Films loose in a top-level Movies/ folder: each its own
+                # movie, not one "Movies Movie" holding them all.
+                for v in videos:
+                    ep_rel = prefix + (rel / v).as_posix()
+                    _file_show(shows, f"movie:{ep_rel}", ep_rel, v, "movie", 0, "Movies", 1, prefix)
+                continue
             show_parts = []
             season = None
             label = None
@@ -278,6 +397,7 @@ def _scan_library():
                     label = p
                 else:
                     show_parts.append(p)
+            named = season is not None or label is not None  # by a Season / Part / Specials folder
             if kind == "movie":
                 title = movie_leaf or f"{parts[0]} Movie"
                 collection = parts[0] if len(parts) > 2 and parts[0] != title else None
@@ -294,7 +414,10 @@ def _scan_library():
                 if season is None:
                     season = 1
                 season_key = season
-                season_label = label if label else ("Specials" if season == 0 else f"Season {season}")
+                season_label = label if label else _season_label(season)
+            groups = [(season_key, season, season_label, videos)]
+            if kind == "show" and not named:
+                groups = _seasons_by_name(videos) or groups
             show_id = hashlib.sha1(show_rel.encode()).hexdigest()[:12]
             entry = shows.setdefault(
                 show_id,
@@ -302,37 +425,12 @@ def _scan_library():
                  # additive (Decision 42): "<extra folder>/Show" instead of "@2/Show"
                  **({"path_label": path_label(show_rel)} if prefix else {})},
             )
-            sea = next((s for s in entry["seasons"] if s["key"] == season_key and s["label"] == season_label), None)
-            if sea is None:
-                sea = {"key": season_key, "season": season, "label": season_label, "episodes": []}
-                entry["seasons"].append(sea)
-            # Files whose name gives no number are numbered in file order over
-            # the numbers left free (never merged into a read one as a "version")
-            # and flagged `guessed` for Needs a look, until the user confirms.
-            read, unread = [], []
-            for v in videos:
-                ep_rel = prefix + (rel / v).as_posix()
-                n = overrides.get(ep_rel)
-                if n is None:
-                    n = parse_ep_number(v)
-                (read if n is not None else unread).append((v, ep_rel, n))
-            taken = {e["number"] for e in sea["episodes"]} | {n for _, _, n in read}
-            free = (n for n in range(1, 100000) if n not in taken)
-            for v, ep_rel, n in read + [(v, r, None) for v, r, _ in unread]:
-                guessed = n is None
-                if guessed:
-                    n = next(free)
-                vm = re.search(r"\(([^)]+)\)", v)
-                ver = {"path": ep_rel, "label": vm.group(1) if vm else "default"}
-                existing = next((e for e in sea["episodes"] if e["number"] == n), None)
-                if existing is None:
-                    sea["episodes"].append(
-                        {"id": hashlib.sha1(ep_rel.encode()).hexdigest()[:16], "rel": ep_rel, "number": n,
-                         "files": [ver], "season": season, "season_label": season_label,
-                         **({"guessed": True} if guessed else {})}
-                    )
-                else:
-                    existing["files"].append(ver)
+            for season_key, season, season_label, vids in groups:
+                sea = next((s for s in entry["seasons"] if s["key"] == season_key and s["label"] == season_label), None)
+                if sea is None:
+                    sea = {"key": season_key, "season": season, "label": season_label, "episodes": []}
+                    entry["seasons"].append(sea)
+                _add_episodes(sea, vids, rel, prefix, overrides)
     show_list = list(shows.values())
     for s in show_list:
         # Authoritative season order (TODO 24): the same rank the UI shows,

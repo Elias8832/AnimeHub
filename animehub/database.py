@@ -445,13 +445,20 @@ def cache_del(key):
 # Longest any reader keeps a row is 12 h (EPISODE_META_TTL); stale panel
 # reads (anilist_entry_state_quick) take any age, so a week is plenty.
 CACHE_KEEP = 7 * 24 * 3600
+# Kept at any age: the MAL list's AniList matches stand in when AniList
+# can't be asked (mal.catalog), MAL ids are kept a year (mal.mal_id_of),
+# and the About section falls back to its stored copy (media_about). One
+# row per show, so they stay small.
+CACHE_KEEP_ALWAYS = ("malcat:", "idmal:", "media-about:")
 
 
 def cache_prune(now=None):
     """Drop catalog rows nobody reads any more (TODO 61: it never pruned)."""
+    keep = " AND ".join("key NOT LIKE ?" for _ in CACHE_KEEP_ALWAYS)
     with db() as c:
-        return c.execute("DELETE FROM catalog_cache WHERE ts < ?",
-                         ((now or time.time()) - CACHE_KEEP,)).rowcount
+        return c.execute(f"DELETE FROM catalog_cache WHERE ts < ? AND {keep}",
+                         ((now or time.time()) - CACHE_KEEP,
+                          *(p + "%" for p in CACHE_KEEP_ALWAYS))).rowcount
 
 
 def cache_put(key, payload):

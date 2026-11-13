@@ -415,10 +415,13 @@ class PhoneRound3(unittest.TestCase):
 class PhoneRound4(unittest.TestCase):
     """TODO 177 round 4: Elias picked Search B (field at the thumb, tidied) and Remote B (big controls on the art)."""
 
-    def test_search_library_hits_are_wide_cards(self):
-        self.assertIn('"srwide", `<span class="tx"><b>${hl(s.title, qq)}</b>', APP)
-        self.assertIn("sec(`On AniList <small>${remote.length}</small>`)", APP)
-        self.assertIn('.pal2.touch .mi.srwide:before{content:"";display:block;position:absolute;inset:0;width:auto;', CSS)  # beats the PC list's 3 px selection bar
+    def test_search_top_hit_rises_from_the_field(self):
+        # TODO 238 (Elias: A's look, B's list): one top hit right above the field, the rest stacked upward.
+        self.assertIn(".pal2.touch.up .plist{display:flex;flex-direction:column-reverse;", CSS)
+        self.assertIn('"srtop art" + fresh', APP)
+        self.assertIn('<div class="srscope">', APP)
+        self.assertIn('srplan: (v, t) => {', APP)
+        self.assertIn("return l?.closest(\".up\") ? { scrollTop: l.scrollHeight - l.clientHeight + l.scrollTop } : l;", APP)  # pull-to-close only from the visual top
 
     def test_search_field_is_a_dock_pill(self):
         self.assertIn("#pal .pin{height:62px;padding:0 9px 0 18px;gap:12px;border-radius:26px;background:rgba(28,29,34,.96)", CSS)
@@ -431,10 +434,6 @@ class PhoneRound4(unittest.TestCase):
         self.assertIn("S.rmtRow]);", APP)  # opening a row redraws the remote
         self.assertNotIn("rsleep", APP)
         self.assertIn(".sp2.rv .eps.strip{flex-direction:row", CSS.replace(".sp2.frpage .eps.strip,", ""))
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class PlayOnTheOtherSide(unittest.TestCase):
@@ -646,3 +645,7 @@ class BackPager(unittest.TestCase):
         self.assertIn("calmIn(app);", land)
         # where the copy showed it, again after the browser's own scroll restore
         self.assertIn("requestAnimationFrame(() => { scrollTo(0, L.sy); pagerReveal(reveal); });", land)
+
+
+if __name__ == "__main__":
+    unittest.main()

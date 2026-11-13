@@ -320,6 +320,20 @@ class Relay(unittest.TestCase):
         tok = self.add(self.base + "/video.mp4")
         st, h, body = self.get(phoneplay.relay_url(tok, self.base + "/video.mp4"), {"Range": "bytes=10-19"})
         self.assertEqual((st, h["Content-Range"], body), (206, f"bytes 10-19/{len(MP4)}", MP4[10:20]))
+        self.assertEqual(h["X-Content-Type-Options"], "nosniff")  # the site's type never makes it a hub page
+
+    def test_a_playlist_cant_point_inside(self):
+        # A site's playlist must not reach the hub's PC-only routes, the home
+        # network or local files through the relay.
+        site = "https://cdn.example/a/master.m3u8"
+        for bad in ("http://127.0.0.1:8787/api/browse?path=/", "http://localhost/x", "http://192.168.1.1/",
+                    "http://[::1]/x", "http://169.254.169.254/", "file:///etc/hostname", "data:,x", "ftp://cdn.example/x"):
+            self.assertFalse(phoneplay.relay_may_fetch(site, bad), bad)
+        self.assertTrue(phoneplay.relay_may_fetch(site, "https://other-cdn.example/seg.ts"))
+        self.assertTrue(phoneplay.relay_may_fetch(self.base + "/m.m3u8", self.base + "/seg.ts"))  # the playlist's own host
+        tok = self.add(site)
+        phoneplay.rewrite_playlist(tok, site, "#EXTM3U\nfile:///etc/hostname\nhttp://127.0.0.1:8787/api/browse\nseg.ts\n")
+        self.assertEqual(phoneplay._links[tok]["allowed"], {site, "https://cdn.example/a/seg.ts"})
 
     def test_the_site_saying_no_is_passed_on(self):
         tok = self.add(self.base + "/gone.m3u8")
@@ -397,6 +411,9 @@ class OnlineStart(unittest.TestCase):
 
     def test_not_out_yet(self):
         self.assertEqual(phoneplay.start_online("stream:900:3"), {"error": "E3 isn't out yet."})
+
+    def test_an_id_without_an_episode(self):
+        self.assertEqual(phoneplay.start_online("stream:900"), {"error": "unknown episode"})
 
 
 class PlayerMenu(unittest.TestCase):
