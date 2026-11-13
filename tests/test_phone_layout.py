@@ -199,9 +199,9 @@ class ShowPagePhone(unittest.TestCase):
         # Elias, 2026-11-10: the select bar was drawn behind the dock on phones
         self.assertIn('document.body.classList.toggle("sel-on", !!on)', APP)
         self.assertIn('<span class="fill"></span><i class="selbr"></i>', APP)
-        self.assertIn("#selbar{left:12px;right:12px;width:auto;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom))", CSS)
+        self.assertIn("#selbar{left:12px;right:12px;width:auto;bottom:var(--bar-at)", CSS)
         self.assertIn("body.sel-on .pbar{visibility:hidden}", CSS)
-        self.assertIn("body.rmt-on #selbar{bottom:calc(72px + var(--dock)", CSS)
+        self.assertIn("body.rmt-on{--bar-at:calc(92px + var(--dock)", CSS)  # above the remote strip
         self.assertIn("#selbar .selbr{display:none}", CSS)  # one row on the PC
 
 
@@ -256,16 +256,88 @@ class PhonePolish(unittest.TestCase):
         self.assertIn('document.body.classList.remove("tb-min");', APP)
         self.assertIn("body.tb-min{--dock:46px}", CSS)
 
-    def test_play_row_and_remote_dock_on_the_tabs(self):
-        self.assertIn("bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom))", CSS)
-        self.assertIn("body.rmt-on #tabbar .tb,body.has-pbar #tabbar .tb{border-radius:0 0 26px 26px", CSS)
+    def test_bars_above_the_dock_are_their_own_pills(self):
+        # Elias, TODO 239: joined to the dock as one block they "looked bad"
+        self.assertIn("--bar-at:calc(22px + var(--dock) + env(safe-area-inset-bottom))", CSS)  # 10 px above the dock
+        self.assertIn(".rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:60px;padding:0 8px 0 9px;border-radius:26px;", CSS)
+        self.assertIn(".pbar{display:flex;gap:8px;padding:7px;border-radius:31px;background:var(--dockbg);box-shadow:var(--pill-sh)", CSS)
+        self.assertIn("border-radius:26px;background:var(--dockbg);box-shadow:var(--pill-sh);transition:bottom .3s var(--ease)}", CSS)  # #selbar
+        self.assertNotIn("0 0 26px 26px", CSS)  # the dock is never flattened to join a bar
+        self.assertNotIn("26px 26px 0 0;background:var(--dockbg)", CSS)
 
-    def test_library_sort_line_and_row_sheet(self):
-        self.assertIn('<div class="lsort"><label class="srt">', APP)
-        self.assertIn('data-a="fltopen">${ico("filter")}Filter', APP)
-        self.assertIn('<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>', APP)
-        self.assertIn(".fsheet .filters{gap:0;padding-top:12px;flex-wrap:nowrap}", CSS)  # a tall sheet wrapped into columns
-        self.assertIn('if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow', APP)
+    def test_library_filter_sheet(self):
+        # Elias picked look 2 of "rows, then a page": what's on first with ×, the rest as rows, a page per filter
+        self.assertIn('<div class="lib2 fsheet"><div class="filters">${grab}${fltSheet(libModel())}</div></div>', APP)  # built over the page, not copied from it
+        # a pick repaints the sheet, the bar and the posters, never the page (it flickered)
+        self.assertIn("if (f) S.fltDirty = true; else paintWall(false);", APP)  # the posters follow on close: per-tap repaints lagged
+        self.assertIn("if (S.fltDirty) { S.fltDirty = false; paintWall(true); }", APP)
+        # ranges: one track, two thumbs you drag; no native double range there
+        self.assertIn("if (FRANGE[k]) body = fslider(k, ...FRANGE[k]());", APP)
+        self.assertIn('const NO_PULL = "input[type=range], .fsl,', APP)  # dragging a thumb never pulls the sheet down
+        self.assertIn(".fsheet .fst{position:relative;height:48px;margin:0 16px;touch-action:none;cursor:pointer}", CSS)
+        self.assertIn(".pbar,#selbar,.libbar,.fsheet .filters,#portal .fltscrim{-webkit-backdrop-filter:none!important", CSS)  # no blur behind the sheet on touch
+        self.assertIn("isPhone() ? paintPortals() : render(); },", APP)  # opening doesn't redraw the page
+        self.assertIn('id="fspg-${k}"', APP)  # each page its own node: it slides in
+        self.assertIn("if (s.dx > 70) { buzz(); A.fpage(\"\"); return; }", APP)  # swipe right: back
+        self.assertIn(".fsheet .filters.closing{animation:sheetOut .2s var(--ease) both}", CSS)
+        self.assertIn('["genres", "Genres", "tag"]]', APP)  # genres moved in
+        self.assertIn('data-a="foff" data-v="${k}" aria-label="Remove ${esc(l)}"', APP)
+        self.assertIn('<button class="btn pri fltdone" data-a="fltclose">Show ${n}</button>', APP)  # says what you'll get
+        self.assertNotIn(">any<", APP[APP.index("function fltSheet"):APP.index("function fltRepaint")])  # no "any" rows
+        self.assertIn('if (k === "group" || isPhone()) { fltRepaint(); return; }', APP)
+        self.assertIn(".fsheet .filters{gap:0;padding:12px 16px 0;flex-wrap:nowrap}", CSS)  # a tall sheet wrapped into columns
+
+
+class PhoneLibrary(unittest.TestCase):
+    """TODO 239 (Elias picked mockup 1): the list's name is the title; one bar
+    above the dock switches lists, sorts, filters and swaps posters ⇄ rows."""
+
+    def test_the_list_is_the_title(self):
+        self.assertIn('<div class="hello lph"><h1 class="hd">${esc(lt)}</h1><span class="n">${ln}</span>', APP)
+        self.assertIn('return [cur.k === "ALL" ? "All shows" : cur.l, cur.side ? cur.n : libList(m).length];', APP)  # what the filters leave
+        # no chips row, no sort line, no genre row on a phone
+        self.assertIn("(m.cold || isUn || rail || ph) ? \"\" : genreTray(m)", APP)
+        self.assertNotIn('<div class="lsort">', APP)
+
+    def test_the_bar(self):
+        self.assertIn('if (isPhone() && S.view === "library" && S.data && !$("#app .lib2.plph")) html += libBar();', APP)
+        self.assertIn('document.body.classList.toggle("has-lbar", html.includes(\'class="libbar\'));', APP)
+        for a in ('data-a="lpick"', 'data-a="lsortm"', 'data-a="fltopen"', 'data-a="lview"'):
+            self.assertIn(a, APP)
+        self.assertIn(".libbar{position:fixed;left:12px;right:12px;bottom:var(--bar-at);z-index:32", CSS)  # above the dock's fade
+        self.assertIn("body.lt-vis .libbar .lnm{max-width:0;opacity:0}", CSS)  # the name only once the title is gone
+        self.assertIn("body.flt-open .libbar,body.rmt-open .libbar,body.deck-open .libbar,body.srch .libbar{visibility:hidden}", CSS)
+        self.assertIn(".pbar,#selbar,.libbar,.fsheet .filters,#portal .fltscrim{-webkit-backdrop-filter:none!important", CSS)  # no blur over a moving page on touch
+
+    def test_posters_or_rows(self):
+        self.assertIn('lview: (v) => { if (libView() === v) return; S.lib.view = v; saveLib();', APP)  # remembered
+        self.assertIn('const lv = isPhone() && (m.cold || S.lib.tab !== "PLAYLISTS") ? " lv-" + libView() : "";', APP)
+        self.assertIn(".lib2 .wall.lv-posters .card h3,.lib2 .wall.lv-posters .card .m{display:none}", CSS)  # posters carry no text
+        self.assertIn(".lib2 .wall.lv-rows .card{width:100%;display:grid;grid-template-columns:56px minmax(0,1fr)", CSS)
+
+    def test_sort_sheet_says_the_direction(self):
+        self.assertIn('title: ["A to Z", "Z to A"]', APP)
+        self.assertIn('r("lgroup", "", "One card per franchise", byFranchise())', APP)  # was "show: each show" in the filters
+
+    def test_lists_sheet_and_tab_again(self):
+        self.assertIn('const SIDE = { PLAYLISTS: "list", UNTRACKED: "folder", MATCH: "search" };', APP)
+        self.assertIn('if (v === "library" && same && S.lib.tab !== "ALL" && !isPhone()) {', APP)  # phones: only to the top
+        self.assertIn("if (isPhone()) scrollTo(0, 0); // another list starts at its title", APP)
+
+    def test_round_two_fixes(self):
+        # Elias, 2026-11-13: the bar flashed on every change (rebuilt each time)
+        self.assertIn("if (el._html !== html) { el._html = html; morphHTML(el, html); }", APP)
+        # the progress line sits under the words in rows, not on the small poster
+        self.assertIn('${ph && inProg(e.status) && pct ? `<i class="rprog">', APP)
+        self.assertIn(".lib2 .wall.lv-rows .card .pw .prog{display:none}", CSS)
+        # the show page's Play row is a strip like the remote's
+        self.assertIn("if (b) html += tile ? playStrip(b, tile, more) :", APP)
+        self.assertIn(".pbar.strip{align-items:center;gap:8px;height:62px;padding:0 8px}", CSS)
+        # a drag on a bar or the dock doesn't scroll the page behind it
+        self.assertIn("#tabbar,.rbar,.pbar,#selbar,.libbar{touch-action:none;overscroll-behavior:contain}", CSS)
+
+    def test_bar_slides_with_the_page(self):
+        self.assertIn('const lb = $("#portal .libbar"); // the Library\'s bar belongs to its page: it slides with it', APP)
 
     def test_small_fixes(self):
         self.assertIn("#totop{display:none}", CSS)  # the open tab again goes to the top

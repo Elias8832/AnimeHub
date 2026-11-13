@@ -2336,8 +2336,8 @@ body.has-side #app{padding-left:340px}
 
 @media (max-width:700px){
   /* One glass dock (phone polish, TODO 177, Elias picked mockup A): the tabs and
-     search share one centred pill; the remote strip and the show's Play row dock
-     on top of it as one unit; while you scroll down it drops its labels. */
+     search share one centred pill; the bars above it (remote, Play, the Library's)
+     are pills of their own; while you scroll down it drops its labels. */
   body{--dock:62px;--dockbg:rgba(28,29,34,.6)}
   body.tb-min{--dock:46px}
   #tabbar{display:flex;position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:31}
@@ -2356,9 +2356,14 @@ body.has-side #app{padding-left:340px}
   #tabbar .sq{color:var(--ink)}
   #tabbar .sq.on{background:rgba(255,255,255,.16)}
   #tabbar .sq.on .ico{color:var(--accent)}
-  /* The docked rows: same glass, flush on the tabs, one rounded outline for the whole unit. */
+  /* Every bar above the dock is its own pill, the dock's glass, 10 px above it
+     (Elias, TODO 239: joined to the dock as one block they "looked bad").
+     Stacked: the remote strip first, then the page's bar. */
+  body{--pill-sh:0 14px 38px -10px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.1);--bar-at:calc(22px + var(--dock) + env(safe-area-inset-bottom))}
+  body.rmt-on{--bar-at:calc(92px + var(--dock) + env(safe-area-inset-bottom))}
   body .rbar,body .pbar{transition:bottom .3s var(--ease),transform .16s var(--ease),opacity .16s,background .2s}
-  body.rmt-on #tabbar .tb,body.has-pbar #tabbar .tb{border-radius:0 0 26px 26px;box-shadow:0 14px 38px -10px rgba(0,0,0,.7),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.07)}
+  /* A drag on a bar or the dock doesn't scroll the page behind it (Elias: "I can scroll on that strip, doesn't make sense"). */
+  #tabbar,.rbar,.pbar,#selbar,.libbar{touch-action:none;overscroll-behavior:contain}
   body.rmt-open #tabbar,body.deck-open #tabbar,body.flt-open #tabbar,body.srch #tabbar{visibility:hidden}
   #links,#nav .search,#nav .tvs{display:none!important}
   /* Nothing may make the page wider than the screen: the browser would
@@ -2367,10 +2372,9 @@ body.has-side #app{padding-left:340px}
   #status{display:none}
   body{padding-bottom:110px}
   body.rmt-on{padding-bottom:170px}
-  .rbar{left:12px;right:12px;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom));height:60px;padding:0 8px 0 9px;border-radius:26px 26px 0 0;background:var(--dockbg);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
+  .rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:60px;padding:0 8px 0 9px;border-radius:26px;background:var(--dockbg);box-shadow:var(--pill-sh);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
   .rbar img,.rbar .rph{width:40px;height:40px;border-radius:11px}
   .rbar .rprog{left:18px;right:18px}
-  body.has-pbar .rbar{border-radius:0}
   .rbar{z-index:32} /* above the dock's fade */
   /* Home */
   .home2.phone .hello{margin:14px 0 18px}
@@ -2382,18 +2386,25 @@ body.has-side #app{padding-left:340px}
   .sp2 .eps.strip .ep .et{flex:1;min-width:0;margin:0}
   .sp2 .ctl .arr{display:none}
   body.has-pbar .sp2 .cta .btn.pri{display:none}
-  .pbar{position:fixed;left:12px;right:12px;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom));z-index:25;animation:rmtIn .35s var(--ease) both}
-  .pbar{display:flex;gap:8px;padding:8px 8px 7px;border-radius:26px 26px 0 0;background:var(--dockbg);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
+  .pbar{position:fixed;left:12px;right:12px;bottom:var(--bar-at);z-index:25;animation:rmtIn .35s var(--ease) both}
+  .pbar{display:flex;gap:8px;padding:7px;border-radius:31px;background:var(--dockbg);box-shadow:var(--pill-sh);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
   .pbar .btn{flex:1;height:48px;font-size:16px}
+  /* the strip (TODO 239): still · number and name · ⋯ · Play, like the remote's */
+  .pbar.strip{align-items:center;gap:8px;height:62px;padding:0 8px}
+  .pbar.strip .pbi{flex:none;width:46px;height:46px;border-radius:50%; /* follows the pill's round end (31 px corner − 8 px gap = a circle) */background:#25262b center/cover no-repeat;box-shadow:var(--edge)}
+  .pbar.strip .pbt{flex:1;min-width:0;margin-left:3px;line-height:1.3}
+  .pbar.strip .pbt b{display:block;font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pbar.strip .pbt small{display:block;font:400 11px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pbar.strip .btn{flex:none;height:46px;font-size:15px}
+  .pbar.strip .btn.pri{padding:0 18px 0 15px;gap:7px}
+  .pbar.strip .btn.ic{width:46px;background:none}
   .pbar .btn.ic{flex:none;width:48px;padding:0;background:rgba(255,255,255,.1);box-shadow:none}
   .pbar .btn .kb{display:none}
-  body.rmt-on .pbar{bottom:calc(72px + var(--dock) + env(safe-area-inset-bottom))}
   body.rmt-open .pbar,body.deck-open .pbar,body.srch .pbar{visibility:hidden}
   /* Selecting episodes: the bar takes the Play row's place, flush on the dock, two rows */
   body.sel-on .pbar{visibility:hidden}
-  body.sel-on #tabbar .tb{border-radius:0 0 26px 26px;box-shadow:0 14px 38px -10px rgba(0,0,0,.7),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.07)}
   body.sel-on #tabbar:before{display:none}
-  #selbar{left:12px;right:12px;width:auto;bottom:calc(12px + var(--dock) + env(safe-area-inset-bottom));transform:none;animation:rmtIn .35s var(--ease) both;flex-wrap:wrap;gap:4px 6px;padding:8px;border:0;border-radius:26px 26px 0 0;background:var(--dockbg);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13),inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13);transition:bottom .3s var(--ease)}
+  #selbar{left:12px;right:12px;width:auto;bottom:var(--bar-at);transform:none;animation:rmtIn .35s var(--ease) both;flex-wrap:wrap;gap:4px 6px;padding:8px;border:0;border-radius:26px;background:var(--dockbg);box-shadow:var(--pill-sh);transition:bottom .3s var(--ease)}
   #selbar:before{content:"";position:absolute;z-index:-1;left:-12px;right:-12px;top:-34px;bottom:calc(-200px - env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--bg) 58px);pointer-events:none}
   #selbar .selbr{display:block;flex-basis:100%;height:0}
   #selbar .selbr~.btn:not([data-a=selmode]){order:2;flex:1 1 0;min-width:0;flex-direction:column;gap:3px;height:56px;padding:0 4px;font:600 12px var(--ui);background:rgba(255,255,255,.08);box-shadow:none;border-radius:16px}
@@ -2401,12 +2412,10 @@ body.has-side #app{padding-left:340px}
   #selbar .selbr{order:2}
   #selbar>b{margin-left:8px}
   #selbar [data-a=selmode]{width:40px;height:40px;padding:0;border-radius:50%;background:none;box-shadow:none}
-  body.rmt-on #selbar{bottom:calc(72px + var(--dock) + env(safe-area-inset-bottom))}
   body.rmt-open #selbar,body.deck-open #selbar,body.srch #selbar{visibility:hidden}
   body.sel-on .sp2,body.sel-on .sp2.frpage{padding-bottom:250px}
   .sp2{padding-bottom:180px}
   /* library: three posters across, filters in a sheet */
-  .lib2 .tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}.lib2 .tabs::-webkit-scrollbar{display:none}
   .lib2 .wall{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px 12px;margin-top:18px}
   .lib2 .card .mx{display:none}
   .lib2 .hello{position:relative;padding-right:112px}.lib2 .sum span:nth-of-type(n+2),.lib2 .sum .sep{display:none}
@@ -2424,7 +2433,7 @@ body.has-side #app{padding-left:340px}
   .fsheet .filters .fill{display:none}
   .fsheet .filters .fltdone{display:inline-flex;height:48px;color:#111;font-size:15px}
   #portal .fltscrim{display:block;position:fixed;inset:0;z-index:45;background:rgba(4,6,9,.55);backdrop-filter:blur(4px)}
-  .lib2 .gtray{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-right:0;max-height:none}.gmore{display:none}
+  .gmore{display:none}
   #totop{display:none} /* tapping the open tab again goes to the top (phone polish, TODO 177) */
   /* search: the command line at the bottom, by the thumb */
   #pal{padding:12px 10px calc(14px + env(safe-area-inset-bottom));place-items:end center}
@@ -2670,7 +2679,6 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   /* sideways rows show that they scroll on */
   .lib2 .tabs,.lib2 .gtray,.frpage .eps-head{-webkit-mask:linear-gradient(90deg,#000 85%,transparent);mask:linear-gradient(90deg,#000 85%,transparent)}
   /* the filter sheet: a title, no stray rescan button */
-  .fsheet .filters .fsh{font:600 18px var(--ui);margin:0 0 4px}
   .fsheet .filters [data-a=rescan],.fsheet .filters .clr{display:none}
   /* dialogs open as sheets from the bottom */
   .overlay{align-items:flex-end}
@@ -2830,7 +2838,9 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   #nav .setb{background:rgba(14,15,18,.72)}
   #tabbar .tb{background:#1c1d22}
   body{--dockbg:#1c1d22}
-  .pbar,#selbar{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  .pbar,#selbar,.libbar,.fsheet .filters,#portal .fltscrim{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  .fsheet .filters{background:#1b1c21}
+  #portal .fltscrim{background:rgba(4,6,9,.7)} /* no blur over the page on touch screens: it lagged (TODO 239) */
   #toast{background:#1c1d22}
   #totop{background:var(--glass-pop)}
   body.srch #app,body.srch #status{filter:brightness(.55)}
@@ -3146,58 +3156,132 @@ body.pp-open #modal{z-index:70}
   #pp .pp-top{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
 }
 
-/* ───────── phone polish (TODO 177, Elias picked mockup A, 2026-11-07) ─────────
-   Library: the lists as chips, one line for sort / Swipe / Filter, the filter
-   sheet as rows like the PC's side list. The page fades out under the dock. */
-.lsort{display:none}
+/* ───────── phone Library (TODO 239, Elias picked mockup 1, 2026-11-13) ─────────
+   The list you're on is the title. Switching lists, sort, filter and posters ⇄
+   rows sit in one bar above the dock, by the thumb. Posters carry no text; rows
+   carry one fact that fits the list. The page fades out under the bars. */
+.libbar{display:none}
 @media (max-width:700px){
   #tabbar:before{content:"";position:fixed;left:0;right:0;bottom:0;z-index:-1;height:calc(var(--dock) + 64px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,rgba(12,13,16,.82) 62%);pointer-events:none;transition:height .3s var(--ease)}
-  body.rmt-on #tabbar:before{height:calc(var(--dock) + 124px + env(safe-area-inset-bottom))}
+  body.rmt-on #tabbar:before{height:calc(var(--dock) + 134px + env(safe-area-inset-bottom))}
+  body.has-lbar #tabbar:before{height:calc(var(--dock) + 130px + env(safe-area-inset-bottom))}
+  body.has-lbar.rmt-on #tabbar:before{height:calc(var(--dock) + 200px + env(safe-area-inset-bottom))}
   body.has-pbar #tabbar:before{display:none} /* the Play row brings its own */
-  .lib2 .hello{padding-right:0}
-  .lib2 .tabs{gap:7px;margin:16px -16px 0 0;padding-right:16px}
-  .lib2 .tabs button{height:36px;padding:0 14px;background:rgba(255,255,255,.07);flex:none}
-  .lib2 .tabs button.on{background:var(--ink);color:#111}
-  .lib2 .tabs button.on .n{color:#55565c}
-  .lib2 .tabs .glide{display:none}
-  .lib2 .tabs .vs{margin:0 4px}
-  .lsort{display:flex;align-items:center;gap:2px;margin:12px -6px 2px}
-  .lsort .fill{flex:1}
-  .lsort .srev{width:34px;height:38px;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;color:var(--ink-2)}
-  .lsort .srt{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 0 0 8px;color:var(--ink-2)}
-  .lsort .srt .ico{width:16px;height:16px;flex:none}
-  .lsort .srt select{height:38px;padding:0 24px 0 0;background-color:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;border-radius:0;font:600 14px var(--ui);color:var(--ink-2);background-position:right 4px center}
-  .lsb{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 12px;border-radius:999px;font:600 14px var(--ui);color:var(--ink-2)}
-  .lsb .ico{width:16px;height:16px}
-  .lsb.on{color:var(--ink)}
-  .lsb b{display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font:700 11px var(--mono)}
-  .lib2 .wall{margin-top:10px}
-  /* the sheet: rows, name left, value right; a list opens in place under its row */
-  .fsheet .filters{gap:0;padding-top:12px;flex-wrap:nowrap}
+  /* the title: the list's name, how many, Swipe */
+  .lib2 .lph{flex-direction:row;flex-wrap:nowrap;align-items:flex-end;gap:10px;padding-right:0}
+  .lib2 .lph .hd{min-width:0;overflow-wrap:anywhere}
+  .lib2 .lph .n{flex:none;padding-bottom:5px;font:500 14px var(--mono);color:var(--ink-2)}
+  .lib2 .lph .lswipe{flex:none;align-self:center;display:inline-flex;align-items:center;gap:6px;height:36px;margin-left:auto;padding:0 13px 0 11px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink);background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+  .lib2 .lph .lswipe .ico{width:15px;height:15px}
+  /* posters: four across, nothing but the art (and progress) */
+  .lib2 .wall.lv-posters{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:4px}
+  .lib2 .wall.lv-posters .card h3,.lib2 .wall.lv-posters .card .m{display:none}
+  .lib2 .wall.lv-posters .card .pw,.lib2 .wall.lv-posters .card .pw .poster{border-radius:12px}
+  .lib2 .wall.lv-posters .card .pw{box-shadow:0 8px 20px -8px rgba(0,0,0,.6),var(--edge);contain-intrinsic-size:auto 126px}
+  .lib2 .wall.lv-posters .card .prog{left:6px;right:6px;bottom:6px;height:3px}
+  .lib2 .wall .card .pkb{display:none}
+  .lib2 .wall.lv-posters .card .pkb{display:inline-grid;position:absolute;z-index:2;right:5px;top:5px;min-width:22px;height:20px;padding:0 5px;border-radius:7px;background:rgba(10,11,13,.78);color:var(--ink);font-size:10.5px}
+  /* rows: poster, title, one fact */
+  .lib2 .wall.lv-rows{display:flex;flex-direction:column;align-items:stretch;gap:0;margin-top:2px}
+  .lib2 .wall.lv-rows .card{width:100%;display:grid;grid-template-columns:56px minmax(0,1fr);grid-template-rows:1fr auto auto 1fr;column-gap:14px;align-items:center;padding:6px 0}
+  .lib2 .wall.lv-rows .card .pw{grid-column:1;grid-row:1/-1;width:56px;border-radius:10px;box-shadow:var(--edge);contain-intrinsic-size:auto 84px}
+  .lib2 .wall.lv-rows .card .pw .poster{border-radius:10px}
+  /* progress: under the words in rows (Elias: on the small poster it "doesn't make sense" and is hard to spot) */
+  .lib2 .card .rprog{display:none}
+  .lib2 .wall.lv-rows .card .pw .prog{display:none}
+  .lib2 .wall.lv-rows .card .rprog{display:block;grid-column:2;grid-row:4;align-self:start;width:min(100%,240px);height:4px;margin-top:9px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}
+  .lib2 .wall.lv-rows .card .rprog i{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+  .lib2 .wall.lv-rows .card h3{grid-column:2;grid-row:2;width:100%;margin:0;font:600 15.5px/1.25 var(--ui)}
+  .lib2 .wall.lv-rows .card h3 .kb{min-width:22px;height:20px;margin-left:auto;font-size:11px}
+  .lib2 .wall.lv-rows .card .m{grid-column:2;grid-row:3;width:100%;margin-top:4px;font:400 12px var(--mono)}
+  .lib2 .card .dsk{color:var(--ok)}
+  .lib2 .card .dsk .ico{width:13px;height:13px;margin-right:5px;vertical-align:-2px}
+  /* the bar: list ▾ · sort · filter · posters | rows */
+  .libbar{position:fixed;left:12px;right:12px;bottom:var(--bar-at);z-index:32;display:flex;align-items:center;height:54px;padding:0 6px 0 4px;border-radius:27px;background:var(--dockbg);box-shadow:var(--pill-sh);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6);animation:rmtIn .35s var(--ease) both;transition:bottom .3s var(--ease)}
+  .libbar .fill{flex:1}
+  .libbar.solo{right:auto;padding-right:4px} /* nothing to sort or filter (Playlists, Needs a look): just the list button */
+  .libbar.solo.end{left:auto;right:12px;padding:0 6px 0 2px} /* no lists to switch to yet: just posters | rows */
+  .libbar button{transition:transform .14s var(--ease),background .2s,color .2s}
+  .libbar button:active:not(:disabled){transform:scale(.93)}
+  .libbar .lbn{display:flex;align-items:center;gap:8px;min-width:0;height:44px;padding:0 10px 0 12px;border-radius:999px;font:700 15px var(--ui);color:var(--ink)}
+  .libbar .lbn .ico{flex:none;width:19px;height:19px;color:var(--ink-2)}
+  .libbar .lbn .ico:last-child{width:15px;height:15px;stroke-width:2.4}
+  .libbar .lnm{min-width:0;max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;transition:max-width .35s var(--ease),opacity .25s}
+  .libbar .lnm i{margin-left:7px;font:500 12px var(--mono);font-style:normal;color:var(--mute)}
+  body.lt-vis .libbar .lnm{max-width:0;opacity:0}
+  body.lt-vis .libbar .lbn{gap:3px}
+  .libbar .lbi{position:relative;display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:50%;color:var(--ink)}
+  .libbar .lbi .ico{width:20px;height:20px}
+  .libbar .lbi b{position:absolute;right:2px;top:3px;display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:var(--accent-ink);font:700 10.5px var(--mono)}
+  .libbar .lseg{flex:none;display:flex;gap:2px;margin-left:4px;padding:3px;border-radius:999px;background:rgba(255,255,255,.08)}
+  .libbar .lseg button{display:grid;place-items:center;width:40px;height:38px;border-radius:999px;color:var(--ink-2)}
+  .libbar .lseg button.on{background:var(--ink);color:#111}
+  .libbar .lseg .ico{width:18px;height:18px}
+  body.flt-open .libbar,body.rmt-open .libbar,body.deck-open .libbar,body.srch .libbar{visibility:hidden}
+  /* its sheets: the lists with their first poster; sort with a ✓ */
+  #cm .lpk{gap:14px;padding:6px 12px}
+  #cm .lpk .lpi{flex:none;display:grid;place-items:center;width:34px;height:48px;overflow:hidden;border-radius:8px;background:rgba(255,255,255,.08);color:var(--ink-2)}
+  #cm .lpk .lpi img{width:100%;height:100%;object-fit:cover}
+  #cm .lpk .lpi .ico{width:18px;height:18px;color:inherit}
+  #cm .lpk .ml,#cm .lso .ml{flex:1;min-width:0;font:600 16px var(--ui)}
+  #cm .lpk .att{display:inline-block;width:7px;height:7px;margin-left:9px;border-radius:50%;background:var(--warn);vertical-align:2px}
+  #cm .lpk .mn{font:500 13px var(--mono);color:var(--mute)}
+  #cm .lpk.on,#cm .lso.on{background:rgba(255,255,255,.07)}
+  #cm .lpk>.ico:last-child,#cm .lso>.ico:last-child{width:18px;height:18px;color:var(--accent-hi);stroke-width:2.4}
+  #cm .lso{height:50px;padding:0 14px}
+  #cm .lso .ml{font-weight:500}
+  #cm .lso.on .ml{font-weight:650}
+  /* the sheet (TODO 239, Elias picked look 2): what's on first, each with ×;
+     the rest as plain rows; a tap opens that filter's page of big rows */
+  .fsheet .filters{gap:0;padding:12px 16px 0;flex-wrap:nowrap}
   .fsheet .filters>*{flex:none}
-  .fsheet .fsh{font:600 18px var(--ui);margin:4px 4px 10px}
-  .fsheet .lflt{display:flex;flex-direction:column}
-  .fsheet .fdrop{display:block;border-top:1px solid var(--line)}
-  .fsheet .fdrop:first-child{border-top:0}
-  .fsheet .fpanel{display:none}
-  .fsheet .fdrop.open .fpanel{display:block;animation:rise .2s var(--ease) both}
-  .fsheet .fdb{display:flex;align-items:center;gap:8px;width:100%;height:52px;padding:0 4px;font:500 15.5px var(--ui);color:var(--ink);text-align:left}
-  .fsheet .fdb b{margin-left:auto;font:400 13px var(--mono);color:var(--mute)}
-  .fsheet .fdrop.set .fdb b{color:var(--accent-hi);font-weight:500}
-  .fsheet .fdb .ico{width:14px;height:14px;stroke-width:2.4;color:var(--mute);transition:transform .2s var(--ease)}
-  .fsheet .fdrop.open .fdb .ico{transform:rotate(180deg)}
-  .fsheet .fdrop.locked .fdb .ico{display:none}
-  .fsheet .fchips{display:flex;flex-direction:column;margin:0 0 10px 6px;padding-left:12px;border-left:1px solid var(--line)}
-  .fsheet .fopt{display:flex;align-items:center;gap:8px;height:44px;padding:0 6px 0 4px;font:500 15px var(--ui);color:var(--mute);text-align:left}
-  .fsheet .fopt.on{color:var(--ink);font-weight:600}
-  .fsheet .fopt .ico{margin-left:auto;width:16px;height:16px;stroke-width:2.4;color:var(--accent-hi);opacity:0}
-  .fsheet .fopt.on .ico{opacity:1}
-  .fsheet .fpanel .rng{display:flex;height:auto;padding:4px 4px 18px;background:none;box-shadow:none;backdrop-filter:none}
-  .fsheet .fpanel .rng>span,.fsheet .fpanel .rv{display:none}
-  .fsheet .fpanel .rng .rt{width:100%}
-  .fsheet .fsfoot{display:flex;gap:10px;margin-top:14px}
-  .fsheet .fsfoot .btn{flex:1;height:48px;justify-content:center;font-size:15px}
-  .fsheet .fsfoot .clr{display:inline-flex;flex:none;padding:0 18px}
+  .fsheet .fshd{display:flex;align-items:center;gap:12px;min-height:42px;margin:2px 4px 14px}
+  .fsheet .filters .fsh{margin:0;font:700 34px/1 var(--display);text-transform:uppercase;letter-spacing:.005em}
+  .fsheet .fsn{margin-left:auto;font:500 13px var(--mono);color:var(--mute)}
+  .fsheet .fsback{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--ink)}
+  .fsheet .fsback .ico{width:19px;height:19px}
+  .fsheet .fson{display:flex;align-items:center;gap:13px;min-height:62px;margin-bottom:8px;padding:0 6px 0 16px;border-radius:18px;background:color-mix(in srgb,var(--accent) 15%,var(--s2));cursor:pointer}
+  .fsheet .fson>.ico{flex:none;width:20px;height:20px;color:var(--accent-hi)}
+  .fsheet .fsv{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+  .fsheet .fsv small{font:400 11px var(--mono);color:var(--ink-2)}
+  .fsheet .fsv b{font:650 16.5px var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fsheet .fsx{flex:none;display:grid;place-items:center;width:44px;height:44px;margin-left:auto;border-radius:50%;color:var(--ink-2)}
+  .fsheet .fsx .ico{width:18px;height:18px}
+  .fsheet .fsrows{display:flex;flex-direction:column;margin-top:2px}
+  .fsheet .fsr{display:flex;align-items:center;gap:14px;width:100%;height:56px;padding:0 6px 0 16px;border-radius:16px;font:500 16.5px var(--ui);color:var(--ink);text-align:left}
+  .fsheet .fsr .ico{flex:none;width:20px;height:20px;color:var(--mute)}
+  .fsheet .fsr .ico:last-child{margin-left:auto;width:16px;height:16px}
+  .fsheet .fsopts{display:flex;flex-direction:column;gap:2px}
+  .fsheet .fso{display:flex;align-items:center;gap:10px;width:100%;height:56px;padding:0 14px;border-radius:16px;font:500 17px var(--ui);color:var(--ink-2);text-align:left}
+  .fsheet .fso .c{font:400 12px var(--mono);color:var(--mute)}
+  .fsheet .fso .ico{margin-left:auto;width:20px;height:20px;stroke-width:2.4;color:var(--accent-hi);opacity:0}
+  .fsheet .fso.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--ink);font-weight:650}
+  .fsheet .fso.on .ico{opacity:1}
+  /* motion (TODO 239): pages slide in from the side they come from, a filter that turns on
+     drops into place, ticks pop, the sheet slides away when it closes */
+  .fsheet .fspg.fwd{animation:fsFwd .26s var(--ease) both}
+  .fsheet .fspg.back{animation:fsBack .26s var(--ease) both}
+  .fsheet .fson{animation:fsCard .24s var(--ease) both}
+  .fsheet .fso,.fsheet .fsr,.fsheet .fson{transition:background .18s,color .18s,transform .14s var(--ease)}
+  .fsheet .fso:active,.fsheet .fsr:active,.fsheet .fson:active{transform:scale(.98)}
+  .fsheet .fso .ico{transform:scale(.5);transition:opacity .15s,transform .25s var(--spring)}
+  .fsheet .fso.on .ico{transform:none}
+  .fsheet .filters.closing{animation:sheetOut .2s var(--ease) both}
+  #portal .fltscrim{transition:opacity .2s}
+  #portal .fltscrim.closing{opacity:0}
+  /* a range: one track, two thumbs, the span big above (TODO 239) */
+  .fsheet .fsl{padding:4px 6px 8px}
+  .fsheet .fslv{display:block;margin:0 0 18px;font:700 42px/1 var(--display);color:var(--mute);transition:color .2s}
+  .fsheet .fsl.set .fslv{color:var(--ink)}
+  .fsheet .fst{position:relative;height:48px;margin:0 16px;touch-action:none;cursor:pointer}
+  .fsheet .fst:before{content:"";position:absolute;left:-16px;right:-16px;top:21px;height:6px;border-radius:3px;background:rgba(255,255,255,.12)}
+  .fsheet .fsf{position:absolute;left:var(--a);right:calc(100% - var(--b));top:21px;height:6px;border-radius:3px;background:var(--accent)}
+  .fsheet .fsk{position:absolute;top:8px;left:var(--a);width:32px;height:32px;margin-left:-16px;border-radius:50%;background:var(--ink);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 70%,transparent),0 4px 12px rgba(0,0,0,.5);transition:transform .15s var(--ease),box-shadow .15s}
+  .fsheet .fsk+.fsk{left:var(--b)}
+  .fsheet .fsk.on{transform:scale(1.15);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 45%,transparent),0 6px 16px rgba(0,0,0,.55)}
+  .fsheet .fsfoot{position:sticky;bottom:0;display:flex;gap:10px;margin:14px -16px 0;padding:12px 16px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--glass-pop) 26%)}
+  .fsheet .fsfoot .btn{flex:1;height:52px;justify-content:center;font-size:16px}
+  .fsheet .fsfoot .clr{display:inline-flex;flex:none;padding:0 20px}
 }
 @media (max-width:700px){
   /* Back is one round button where the app icon sits, on every page that has one. */
@@ -3590,6 +3674,9 @@ body.pp-open #modal{z-index:70}
 .set2 .tinst{padding:0}
 .actions .aright{display:flex;gap:10px;margin-left:auto}
 @media (max-width:700px){.tpick .v{white-space:normal}}
+@keyframes fsFwd{from{opacity:0;transform:translate3d(48px,0,0)}}
+@keyframes fsBack{from{opacity:0;transform:translate3d(-48px,0,0)}}
+@keyframes fsCard{from{opacity:0;transform:translateY(-6px) scale(.98)}}
 /* Phone search (TODO 238, Elias: A's look, B's list rising from the thumb). Typing: the list
    stacks from the bottom (column-reverse), the top hit a big card right above the field,
    the scope chips between them and the field. Before typing: Recent + your lists as tiles. */
