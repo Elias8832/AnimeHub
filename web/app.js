@@ -4001,8 +4001,11 @@ function paintSr() {
   const sr = $("#sr"), srHad = !!sr.firstElementChild;
   const keep = $("#sr .mi.sel")?.dataset.i;
   sr.innerHTML = S.menu === "sr" ? (touchSearch() ? srHTMLTouch() : srHTML()) : "";
+  const wasUp = srHad && sr._up;
   if (!srHad && sr.firstElementChild) sr.firstElementChild.classList.add("in"); // entrance only on open, not on every keystroke
-  if (S.menu === "sr") srPreview(keep != null && srPv[keep] ? keep : 0);
+  sr._up = !!sr.querySelector(".pal2.up");
+  if (sr._up && !wasUp && srHad) sr.firstElementChild.classList.add("rise"); // the first letter: the results rise from the field
+  if (S.menu === "sr" && (keep != null || !touchSearch())) srPreview(keep != null && srPv[keep] ? keep : 0);
 }
 function paintNav() {
   paintTabbar(); paintSide(); paintTop();
@@ -4530,41 +4533,121 @@ function srShows() {
 }
 const srSub = (x) => { if (!x.s) return "on anilist"; const sp = spineOf(x.s); return sp ? statusLabel(sp.status) : `${epTotal(x.s)} episodes`; };
 /* @srhist:end */
+/* Typing on a touch screen (TODO 238, Elias picked A's look with B's list):
+   the result you most likely meant is a big card right above the field, with
+   its button (Play, + Planning, Run); the rest rise above it in groups, the
+   closest match nearest the thumb. The list stacks from the bottom (column-
+   reverse), so the DOM stays best-first: Enter and the arrows walk it in rank
+   order. An exact command or setting beats AniList's loose guesses.
+   srModel: { top, groups: [{ k, items, more }], n: { lib, al, set } }. */
+/* @srtouch:start */
+const SR_KIND = ["lib", "cmd", "set", "al"]; // a tie goes to the earlier kind
+const srPop = (x) => [x.popularity || 0, x.averageScore || 0];
+function srModel(ql, scope = "all") {
+  const local = srLocal(ql, 6).map(({ r, s }) => ({ k: "lib", r, s }));
+  const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
+  /* Same match, better known first: AniList's own order put "001" above ONE PIECE for "one". */
+  const al = (alSearchable() && S.alres || []).map((x, i) => ({ k: "al", r: srRank(candLabel(x), ql), x, i })).filter((y) => !have.has(y.x.id))
+    .sort((a, b) => { const p = srPop(a.x), o = srPop(b.x); return a.r - b.r || o[0] - p[0] || o[1] - p[1]; }).slice(0, 8);
+  /* A setting or command found only through a typo ranks below every real match (r 4+). */
+  const near = (f, t) => f === 0 ? srRank(t, ql) : 4 + f;
+  const set = srSets(ql, 4).map((x) => ({ k: "set", r: near(srFuzzy(`${x[0]} ${x[2]} ${x[1]}`, ql), x[0]), x })).sort((a, b) => a.r - b.r);
+  const cmd = COMMANDS.map((c, i) => ({ k: "cmd", f: srFuzzy(`${c[0]} ${c[1]}`, ql), c, i })).filter((y) => y.f !== null).map((y) => ({ ...y, r: near(y.f, y.c[0]) })).sort((a, b) => a.r - b.r).slice(0, 3);
+  /* "frieren" is not a typo of "preferences": once anything really matched, the typo-only settings and commands go. */
+  const exact = [local, al, set, cmd].some((xs) => xs.some((y) => y.r < 3));
+  const set2 = exact ? set.filter((y) => y.r < 4) : set, cmd2 = exact ? cmd.filter((y) => y.r < 4) : cmd;
+  const n = { lib: local.length, al: al.length, set: set2.length + cmd2.length };
+  const want = (k) => scope === "all" || scope === k || (scope === "set" && k === "cmd");
+  const groups = [["lib", local], ["cmd", cmd2], ["set", set2], ["al", al]].filter(([k, xs]) => xs.length && want(k)).map(([k, items]) => ({ k, items: items.slice() }));
+  const rank = (g) => [g.items[0].r, SR_KIND.indexOf(g.k)];
+  groups.sort((a, b) => { const x = rank(a), y = rank(b); return x[0] - y[0] || x[1] - y[1]; });
+  const top = groups.length ? groups[0].items.shift() : null;
+  /* AniList only guessed (no title holds what you typed) while something else matched: one row, not nine posters. */
+  for (const g of groups) if (g.k === "al" && scope === "all" && top && top.k !== "al" && g.items.every((y) => y.r === 3)) g.more = g.items.length;
+  return { top, groups: groups.filter((g) => g.items.length), n };
+}
+/* @srtouch:end */
+const SR_SCOPES = [["all", "All"], ["lib", "Library"], ["al", "AniList"], ["set", "Settings"]];
+const SR_HEAD = { lib: "Your library", al: "On AniList", set: "Settings", cmd: "Commands" };
+const CMD_ICO = ["home", "grid", "clock", "cal", "sliders", "refresh", "download", "arrowr"];
+const srEntry = (x) => aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
+/* + Planning on an AniList hit: only with an AniList account, only when it isn't on a list yet. */
+function srPlanBtn(x, big) {
+  if (!aniMode() || srEntry(x)) return "";
+  const on = S.srAdded?.has(x.id);
+  return big ? `<button class="btn${on ? "" : " pri"}" data-a="srplan" data-v="${x.id}"${on ? " disabled" : ""}>${ico(on ? "check" : "plus")}<span>${on ? "On Planning" : "Planning"}</span></button>`
+    : `<button class="srplus${on ? " on" : ""}" data-a="srplan" data-v="${x.id}" aria-label="Add ${esc(candLabel(x))} to Planning"${on ? " disabled" : ""}>${ico(on ? "check" : "plus")}</button>`;
+}
+const srYear = (x) => [x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · ");
+let srTopKey = "";
 function srHTMLTouch() {
   const qq = S.q.trim(), ql = qq.toLowerCase();
   srPv = [];
-  let i = 0, h = "";
+  let i = 0;
   const mi = (attrs, cls, inner) => { srPv.push(null); return `<div class="mi ${cls}" tabindex="-1" data-i="${i++}" ${attrs}>${inner}</div>`; };
-  const sec = (t, extra = "") => `<div class="srsec"><h2>${t}</h2><span class="fill"></span>${extra}</div>`;
-  if (!qq) {
-    const recent = srShows();
-    if (recent.length) h += sec("Recent", '<button class="link-btn" data-a="srclr">Clear</button>') + `<div class="srposters">${recent.map((x) => mi(`data-a="srshow" data-v="${esc(x.k)}"`, "sp", `${poster(x.t, x.p)}<b>${esc(x.t)}</b>`)).join("")}</div>`;
-    const sp = S.data?.spine;
-    if (aniMode() && sp?.entries?.length) {
-      const n = (k) => new Set(sp.entries.filter((e) => e.status === k).map(libKey)).size;
-      const lists = LISTS.filter(([k]) => n(k)).map(([k, l]) => `<button class="chip" data-a="srlist" data-v="${k}">${esc(l)}<span class="n">${n(k)}</span></button>`).join("");
-      h += sec("Your lists") + `<div class="srchips">${lists}<button class="chip" data-a="srgo" data-v="week">${ico("cal")}This week</button></div>`;
-    }
-    const up = S.data && nextUpInfo(), shows = S.data ? [up?.s, ...keepWatching(up && up.s.id).map((x) => x.s)].filter(Boolean).slice(0, 8) : [];
-    if (shows.length) h += sec("Watching") + `<div class="srposters">${shows.map((s) => mi(`data-a="open" data-v="${esc(s.id)}"`, "sp", `${poster(s.title, s.poster)}<b>${esc(s.title)}</b>`)).join("")}</div>`;
-    if (!h) h = '<p class="srnone">Type a show, a setting or a command.</p>';
-  } else {
-    const local = srLocal(ql, 6);
-    const have = new Set(local.map((x) => x.s.meta?.anilist_id).filter(Boolean));
-    const remote = (alSearchable() && S.alres || []).map((x, k) => ({ r: srRank(candLabel(x), ql), x, k })).filter((y) => !have.has(y.x.id)).sort((a, b) => a.r - b.r).slice(0, 9);
-    /* Your own shows as wide cards on their banner (TODO 177, Elias picked B): they're what you're most likely after. */
-    if (local.length) h += sec("Your library") + local.map(({ s }) => { const sp = spineOf(s), t = pickTarget(s), art = s.banner || s.poster;
-      return mi(`data-a="open" data-v="${esc(s.id)}"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}`, "srwide", `<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc(sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`)}${t ? " · " + esc(KIND_WORD[t.kind].toLowerCase() + " " + epCode(t.sea, t.ep)) : ""}</small></span>`); }).join("");
-    if (remote.length) h += sec(`On AniList <small>${remote.length}</small>`) + `<div class="srgrid">${remote.map(({ x, k }) => { const e = aniMode() ? S.data.spine.entries.find((z) => z.id === x.id) : null;
-      return mi(`data-a="catpick" data-v="${k}"`, "srcard", `<span class="pw">${poster(candLabel(x), x.coverImage?.extraLarge)}${e ? `<span class="tg">${esc(statusLabel(e.status))}</span>` : '<span class="tg">not listed</span>'}</span><b>${hl(candLabel(x), qq)}</b><small>${esc([x.seasonYear || x.startDate?.year, FMT[x.format] || x.format].filter(Boolean).join(" · "))}</small>`); }).join("")}</div>`;
-    const sets = srSets(ql, 4);
-    if (sets.length) h += sec("Settings") + `<div class="srbox">${sets.map(([t, tab, , key]) => { const on = key && !!S.settings?.[key], tl = setTabName(tab);
-      return mi(`data-a="setgo" data-v="${esc(t)}" data-t="${tab}"`, "srrow set", `<i class="sic">${ico(SET_ICONS[tab] || "sliders")}</i><span class="tx"><b>${esc(t)}</b><small>${esc(tl)}</small></span>${key && S.settings ? `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : ico("chevr")}`); }).join("")}</div>`;
-    const cmds = COMMANDS.map((c, k) => [c, k]).filter(([[t, w]]) => srMatch(`${t} ${w}`.toLowerCase(), ql)).slice(0, 3);
-    if (cmds.length) h += sec("Do") + `<div class="srchips">${cmds.map(([[t], k]) => `<button class="chip" data-a="cmd" data-v="${k}">${ico("arrowr")}${esc(t)}</button>`).join("")}</div>`;
-    if (alSearchable() && (S.alBusy || (S.alq !== qq && qq.length >= 2))) h += '<p class="srnone"><i class="spin"></i> searching AniList…</p>';
-    if (!h) h = `<p class="srnone">Nothing for “${esc(qq)}”${alSearchable() ? " in your library, on AniList or in settings" : " in your library or settings"}.</p>`;
+  if (!qq) { srTopKey = ""; return srHTMLTouchEmpty(mi); }
+  const scope = S.srScope || "all", m = srModel(ql, scope), parts = [];
+  const sic = (name) => `<i class="sic">${ico(name)}</i>`;
+  const sw = (t, key) => key && S.settings ? `<button class="switch" role="switch" aria-checked="${!!S.settings[key]}" aria-label="${esc(t)}" data-a="srsw" data-v="${key}"></button>` : "";
+  const t = m.top, tkey = t ? t.k + ":" + (t.s?.id ?? t.x?.id ?? t.x?.[0] ?? t.i) : "";
+  const fresh = tkey !== srTopKey ? " fresh" : ""; srTopKey = tkey; // a new top hit rises in; the same one stays put while AniList answers
+  if (t?.k === "lib") {
+    const s = t.s, sp = spineOf(s), p = pickTarget(s), art = s.banner || s.poster;
+    parts.push(mi(`data-a="open" data-v="${esc(s.id)}"`, "srtop art" + fresh, `<span class="ta"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ` style="--h:${hueOf(s.title)}"`}></span>
+      <span class="tk">${sp ? "your library · " + esc(statusLabel(sp.status)) : "your library"}</span><b class="tt">${hl(s.title, qq)}</b><small>${epWatched(s)} / ${epTotal(s)} watched</small>
+      ${p ? `<span class="acts"><button class="btn pri" data-a="srplay" data-v="${esc(p.ep.id)}">${ico("play")}<span>${esc(KIND_WORD[p.kind])} ${esc(epCode(p.sea, p.ep))}</span></button></span>` : ""}`));
+  } else if (t?.k === "al") {
+    const x = t.x, e = srEntry(x), art = x.bannerImage || x.coverImage?.extraLarge, eps = x.episodes ? `${x.episodes} episode${x.episodes === 1 ? "" : "s"}` : "";
+    const plan = srPlanBtn(x, true);
+    parts.push(mi(`data-a="catpick" data-v="${t.i}"`, "srtop art" + fresh + (x.bannerImage ? "" : " cov"), `<span class="ta"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ` style="--h:${hueOf(candLabel(x))}"`}></span>
+      <span class="tk">on anilist · ${esc(srYear(x))}</span><b class="tt">${hl(candLabel(x), qq)}</b><small>${esc(e ? "on your list · " + statusLabel(e.status) : eps)}</small>
+      ${plan ? `<span class="acts">${plan}</span>` : ""}`));
+  } else if (t?.k === "cmd") {
+    parts.push(mi(`data-a="cmd" data-v="${t.i}"`, "srtop row" + fresh, `${sic(CMD_ICO[t.i] || "arrowr")}<span class="tx"><b>${hl(t.c[0], qq)}</b><small>command</small></span><button class="btn pri" data-a="cmd" data-v="${t.i}">Run</button>`));
+  } else if (t?.k === "set") {
+    const [st, tab, , key] = t.x;
+    parts.push(mi(`data-a="setgo" data-v="${esc(st)}" data-t="${tab}"`, "srtop row" + fresh, `${sic(SET_ICONS[tab] || "sliders")}<span class="tx"><b>${hl(st, qq)}</b><small>Settings · ${esc(setTabName(tab))}</small></span>${sw(st, key) || `<button class="btn pri" data-a="setgo" data-v="${esc(st)}" data-t="${tab}">Open</button>`}`));
   }
+  for (const g of m.groups) {
+    let rows;
+    if (g.more) rows = [mi(`data-a="srscope" data-v="al"`, "srrow more", `${sic("star")}<span class="tx"><b>${g.more} guess${g.more === 1 ? "" : "es"} on AniList</b><small>${esc(g.items.slice(0, 2).map((y) => candLabel(y.x)).join(", "))}</small></span>${ico("chevr")}`)];
+    else rows = g.items.map((y) => {
+      if (g.k === "lib") { const s = y.s, sp = spineOf(s), p = pickTarget(s);
+        return mi(`data-a="open" data-v="${esc(s.id)}"`, "srrow", `${poster(s.title, s.poster, { c: "t" })}<span class="tx"><b>${hl(s.title, qq)}</b><small>${esc([sp ? statusLabel(sp.status) : `${epTotal(s)} episodes`, p ? KIND_WORD[p.kind].toLowerCase() + " " + epCode(p.sea, p.ep) : ""].filter(Boolean).join(" · "))}</small></span>`); }
+      if (g.k === "al") { const x = y.x, e = srEntry(x);
+        return mi(`data-a="catpick" data-v="${y.i}"`, "srrow", `${poster(candLabel(x), x.coverImage?.extraLarge, { c: "t" })}<span class="tx"><b>${hl(candLabel(x), qq)}</b><small>${esc(srYear(x))}${e ? ` · <em>${esc(statusLabel(e.status))}</em>` : ""}</small></span>${srPlanBtn(x)}`); }
+      if (g.k === "set") { const [st, tab, , key] = y.x;
+        return mi(`data-a="setgo" data-v="${esc(st)}" data-t="${tab}"`, "srrow set", `${sic(SET_ICONS[tab] || "sliders")}<span class="tx"><b>${hl(st, qq)}</b><small>${esc(setTabName(tab))}</small></span>${sw(st, key) || ico("chevr")}`); }
+      return mi(`data-a="cmd" data-v="${y.i}"`, "srrow", `${sic(CMD_ICO[y.i] || "arrowr")}<span class="tx"><b>${hl(y.c[0], qq)}</b></span>`);
+    });
+    parts.push(...rows); // stacked from the bottom: the heading lands above its rows
+    if (!g.more) parts.push(`<h2 class="srlab">${SR_HEAD[g.k]}</h2>`);
+  }
+  if (alSearchable() && (scope === "all" || scope === "al") && (S.alBusy || (S.alq !== qq && qq.length >= 2))) parts.push('<p class="srnone"><i class="spin"></i> searching AniList…</p>');
+  if (!t) parts.unshift(`<p class="srnone">Nothing for “${esc(qq)}”.</p>`);
+  const kinds = SR_SCOPES.filter(([k]) => k === "all" || m.n[k]);
+  const chips = kinds.length > 2 || scope !== "all" ? `<div class="srscope">${kinds.map(([k, l]) => `<button class="chip${k === scope ? " on" : ""}" data-a="srscope" data-v="${k}" aria-pressed="${k === scope}">${l}${k !== "all" && m.n[k] ? `<small>${m.n[k]}</small>` : ""}</button>`).join("")}</div>` : "";
+  return `<div class="pal2 touch up${chips ? " scoped" : ""}"><div class="plist">${parts.join("")}</div>${chips}</div>`;
+}
+/* Before typing (A): Recent as posters, then your lists as big tiles to jump to. */
+function srHTMLTouchEmpty(mi) {
+  let h = "";
+  const recent = srShows();
+  if (recent.length) h += `<div class="srsec"><h2>Recent</h2><span class="fill"></span><button class="link-btn" data-a="srclr">Clear</button></div><div class="srposters">${recent.map((x) => mi(`data-a="srshow" data-v="${esc(x.k)}"`, "sp", `${poster(x.t, x.p)}<b>${esc(x.t)}</b>`)).join("")}</div>`;
+  const sp = S.data?.spine;
+  if (aniMode() && sp?.entries?.length) {
+    const ents = (k) => sp.entries.filter((e) => e.status === k), n = (k) => new Set(ents(k).map(libKey)).size, air = airingList();
+    const tiles = [["CURRENT", "Watching"], ["PLANNING", "Planning"], ["week", "This week"], ["COMPLETED", "Completed"]].map(([k, l], j) => {
+      const week = k === "week", c = week ? air.length : n(k), e = (week ? air : ents(k)).find((z) => z.poster);
+      if (!week && !c) return "";
+      return `<button class="srtile c${j}" data-a="${week ? "srgo" : "srlist"}" data-v="${week ? "week" : k}">${e ? `<span class="tp" style="background-image:${esc(cssUrl(e.poster))}"></span>` : ""}<b>${esc(l)}</b><small>${week ? (c ? `${c} airing` : "calendar") : `${c} show${c === 1 ? "" : "s"}`}</small></button>`;
+    }).join("");
+    h += `<div class="srsec"><h2>Jump to</h2></div><div class="srtiles">${tiles}</div>`;
+  } else {
+    const up = S.data && nextUpInfo(), shows = S.data ? [up?.s, ...keepWatching(up && up.s.id).map((x) => x.s)].filter(Boolean).slice(0, 8) : [];
+    if (shows.length) h += `<div class="srsec"><h2>Watching</h2></div><div class="srposters">${shows.map((s) => mi(`data-a="open" data-v="${esc(s.id)}"`, "sp", `${poster(s.title, s.poster)}<b>${esc(s.title)}</b>`)).join("")}</div>`;
+  }
+  if (!h) h = '<p class="srnone">Type a show, a setting or a command.</p>';
   return `<div class="pal2 touch"><div class="plist">${grab}<h1 class="hd srhd">Search</h1>${h}</div></div>`;
 }
 /* The keyboard (Elias: "the entire page goes up when I open my keyboard").
@@ -4584,13 +4667,15 @@ vv?.addEventListener("resize", fitPal);
 vv?.addEventListener("scroll", fitPal);
 /* Opening a show from the results puts it in Recent; settings and commands don't count. */
 document.addEventListener("click", (e) => {
-  const m = e.target.closest?.("#sr .mi");
-  if (!m || S.menu !== "sr" || !S.q.trim()) return;
+  const m = e.target.closest?.("#sr .mi"), b = e.target.closest?.("[data-a]");
+  if (!m || S.menu !== "sr" || !S.q.trim() || (b !== m && b?.dataset.a !== "srplay")) return;
   const v = m.dataset.v, x = m.dataset.a === "catpick" ? S.alres?.[+v] : null, s = m.dataset.a === "open" ? showById(v) : null;
   if (s) srAdd({ k: "s:" + s.id });
   else if (x) srAdd({ k: "a:" + x.id, t: candLabel(x), p: x.coverImage?.extraLarge, b: x.bannerImage });
 }, true);
 try { localStorage.removeItem("srRecent"); } catch {} // the old list of typed words
+/* The scope chips keep the keyboard up: a tap doesn't take the focus from the field. */
+document.addEventListener("mousedown", (e) => { if (e.target.closest?.("#pal .srscope")) e.preventDefault(); });
 
 /* Settings on a phone (S5): a grouped list; a section opens as its own page. */
 function setSummary(k, s) {
@@ -5669,7 +5754,7 @@ function dip(f) {
   if (reduceMotion()) return;
   a.classList.remove("enter"); void a.offsetWidth; a.classList.add("enter");
 }
-function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
+function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.srScope = null; S.q = ""; S.alres = null; S.alq = null; S.alBusy = false; S.menu = null; $("#q").value = ""; }
 /* Switching Home · Library · Journal · Calendar on a touch screen slides the page in
    from the side of the tab you went to (one transform on #app, no fill,
    so nothing stays transformed afterwards). */
@@ -7045,6 +7130,17 @@ const A = {
   srforget: (v) => { srForget(v); paintNav(); if (!touchSearch()) q.focus(); },
   srlist: (v) => { clearSearch(); q.blur(); S.lib.tab = v; saveLib(); nav("library"); },
   srgo: (v) => { clearSearch(); q.blur(); nav(v); },
+  /* The phone's search (TODO 238): play from the top hit, add an AniList hit to Planning, narrow to one kind. */
+  srplay: (v) => { A.srclose(); play(v); },
+  srplan: (v, t) => {
+    t.disabled = true;
+    entrySave(+v, { status: "PLANNING" }).then((r) => {
+      if (!r || r.error) throw 0;
+      (S.srAdded ||= new Set()).add(+v); buzz(); toast("Added to Planning");
+      paintSr(); refreshData();
+    }).catch(() => { t.disabled = false; toast("Could not add it — try again"); });
+  },
+  srscope: (v) => { S.srScope = v === "all" ? null : v; paintSr(); },
   cmd: (v) => { const c = COMMANDS[+v]; clearSearch(); q.blur(); paintNav(); c && c[2](); },
   /* A new section node, so every section opens with the same .settings entrance. */
   settab: (v) => { if (v !== S.setTab || S.setQ) $("#app .scol")?.remove(); setClear(); S.setTab = v; render(true); scrollTo(0, 0); },
@@ -7918,12 +8014,12 @@ function ovDrop(name) { const k = OV.findIndex((o) => o.name === name); if (k >=
 const PULL = [
   { sel: ".rview", scroller: (el) => el, close: () => A.rmtclose(), fade: () => ({ style: {} }) }, // stays solid, only shrinks
   { sel: "#deck .deck", scroller: () => ({ scrollTop: S.deck?.i ? 3 : 0 }), close: () => closeDeck() }, // deckPager moves a transform, not a scroll
-  { sel: "#pal .pbox", scroller: (el) => el.querySelector(".plist"), close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
+  { sel: "#pal .pbox", scroller: (el) => { const l = el.querySelector(".plist"); return l?.closest(".up") ? { scrollTop: l.scrollHeight - l.clientHeight + l.scrollTop } : l; }, close: () => A.srclose(), when: () => touchSearch(), fade: () => $("#pal") },
   { sel: ".fsheet .filters", scroller: (el) => el, close: () => A.fltclose() },
   { sel: "#modal .dialog", scroller: (el) => el.querySelector(".rcbody") || el, close: () => modalDismiss(), /* the connect dialog scrolls its rows, not itself */ when: () => isPhone() && S.modal && S.modal.t !== "tour" },
   { sel: "#cm", scroller: (el) => el, close: () => { cmHide(); ovClosed("cm"); }, when: () => isPhone() },
 ];
-const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srchips, .dgen, .gtray, .switch";
+const NO_PULL = "input[type=range], .seg, .strip, .eps.strip, .srposters, .hstrip, .srscope, .dgen, .gtray, .switch";
 /* Pull to refresh (Home, Library, Journal, the week): installed web apps
    get no browser pull-to-refresh, so the app draws its own — a circle that
    drops in with the pull, turns with it, and spins while the hub reloads. */
@@ -8180,7 +8276,7 @@ document.addEventListener("touchstart", (e) => {
      episode row and Home's rails scroll (TODO 177); only an unmatched
      folder's episode list is still vertical on a phone. */
   const x = e.touches[0].clientX, y = e.touches[0].clientY;
-  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srchips, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda, .crail")
+  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srscope, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda, .crail")
     && !(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")));
   if (L) {
     const el = t.closest(L.sel), sc = L.scroller(el);

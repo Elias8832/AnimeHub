@@ -2596,10 +2596,6 @@ body.has-side #app{padding-left:340px}
 .pal2.touch .srhd{margin:4px 0 18px}
 .srsec{display:flex;align-items:baseline;gap:10px;margin:22px 0 10px}
 .srsec h2{font:600 17px var(--ui);margin:0}.srsec .fill{flex:1}
-.srchips{display:flex;flex-wrap:wrap;gap:8px}
-.srchips .chip{height:36px;padding:0 14px;font-size:12px;gap:7px;border:0;color:var(--ink-2);cursor:pointer}
-.srchips .chip .ico{width:14px;height:14px;color:var(--accent)}
-.srchips .chip .n{color:var(--mute)}
 .srposters{display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:2px 16px}
 .srposters::-webkit-scrollbar{display:none}
 .srposters .mi{flex:none;width:104px;cursor:pointer}
@@ -2615,17 +2611,6 @@ body.has-side #app{padding-left:340px}
 .srrow.sel,.srrow:active{background:var(--pick)}
 .srrow .sic{width:34px;height:34px;flex:none;border-radius:11px;display:grid;place-items:center;background:rgba(255,255,255,.07);color:var(--accent)}
 .srrow .sic .ico{width:18px;height:18px}
-.srbox{border-radius:18px;background:var(--glass);box-shadow:var(--edge);padding:4px}
-.srgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 10px}
-.srcard{cursor:pointer;min-width:0}
-.srcard .pw{position:relative;display:block}
-.srcard .poster{border-radius:12px}
-.srcard .tg{position:absolute;left:6px;bottom:6px;height:22px;padding:0 8px;display:inline-flex;align-items:center;border-radius:999px;background:rgba(10,11,13,.72);backdrop-filter:blur(8px);font:500 10px var(--mono);color:var(--ink-2)}
-.srcard .tg.add{background:var(--ink);color:#111;font-weight:600}
-.srcard b{display:block;margin-top:7px;font:600 12.5px/1.3 var(--ui);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.srcard b mark{background:none;color:var(--accent)}
-.srcard small{font:400 10.5px var(--mono);color:var(--mute)}
-.srcard.sel .poster{outline:2px solid var(--ink);outline-offset:2px}
 .srnone{color:var(--mute);font-size:14px;padding:16px 4px}
 @media (max-width:700px),(pointer:coarse){
   body.srch{overflow:hidden}
@@ -2646,9 +2631,9 @@ body.has-side #app{padding-left:340px}
 .pal2.touch .mi .poster{width:auto;height:auto;font-size:inherit;padding:0}
 .pal2.touch .srposters .mi .poster{width:104px}
 .pal2.touch .mi.srrow .poster.t{width:46px;height:auto}
-.pal2.touch .srposters b,.pal2.touch .srcard b{white-space:normal;font-weight:600}
+.pal2.touch .srposters b{white-space:normal;font-weight:600}
 .pal2.touch .srhd{font:700 46px/.92 var(--display);text-transform:uppercase;letter-spacing:.004em}
-.pal2.touch .srposters .mi.sel,.pal2.touch .srcard.sel{background:none}
+.pal2.touch .srposters .mi.sel{background:none}
 .pal2.touch .srposters .mi.sel .poster{outline:2px solid var(--ink);outline-offset:2px}
 /* the deck as discovery */
 .dtop .dttl{flex:1;font:600 16px var(--ui);text-shadow:0 1px 10px rgba(0,0,0,.6)}
@@ -2746,10 +2731,10 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   html{-webkit-tap-highlight-color:transparent}
   img,.poster,.epimg,.upa2,.dart{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
   #tabbar,#nav,.rbar,.pbar,.chip,.btn,.seg,.prow,.sli{-webkit-user-select:none;user-select:none}
-  .btn,.chip,.seg button,.prow,.sli,.srrow,.srcard,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.upa2,.hc,.gb{transition:transform .16s var(--ease),opacity .16s,background .2s}
+  .btn,.chip,.seg button,.prow,.sli,.srrow,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.upa2,.hc,.gb{transition:transform .16s var(--ease),opacity .16s,background .2s}
   .btn:active:not(:disabled),.chip:active,.seg button:active,#tabbar .sq:active{transform:scale(.95)}
   .prow:active,.sli:active,.srrow:active,.mi:active{background:var(--pick)}
-  .lib2 .card:active,.rc:active,.rec .rcv:active,.srcard:active,.ep:active,.hc:active,.upa2:active{transform:scale(.97);opacity:.85}
+  .lib2 .card:active,.rc:active,.rec .rcv:active,.ep:active,.hc:active,.upa2:active{transform:scale(.97);opacity:.85}
 }
 @media (max-width:700px){
   /* the page title shrinks into the top bar once the big one scrolls away */
@@ -3547,15 +3532,8 @@ body.pp-open #modal{z-index:70}
   #pal .pclose{flex:none;width:44px;height:44px;padding:0;border-radius:50%;background:rgba(255,255,255,.1)}
   #pal .pclose:after{content:"";display:block;width:18px;height:18px;margin:auto;background:var(--ink);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M7 7l10 10M17 7 7 17'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M7 7l10 10M17 7 7 17'/%3E%3C/svg%3E") center/contain no-repeat}
   .pal2.touch .srsec{align-items:baseline;margin:24px 0 10px}
-  .pal2.touch .srsec h2{font:700 24px/1 var(--display);text-transform:uppercase;letter-spacing:.01em}
+  .pal2.touch .srsec h2{font:600 17px/1.2 var(--ui)} /* like Home's rows (TODO 238); the big SEARCH title is the one display line */
   .pal2.touch .srsec h2 small{margin-left:6px;font:400 12px var(--mono);color:var(--mute);text-transform:none}
-  .pal2.touch .mi.srwide{position:relative;display:flex;align-items:center;height:112px;margin:0 0 10px;padding:0 16px;border-radius:20px;overflow:hidden;background:var(--s2) 70% 30%/cover;box-shadow:var(--edge);cursor:pointer}
-  .pal2.touch .mi.srwide:before{content:"";display:block;position:absolute;inset:0;width:auto;border-radius:0;background:linear-gradient(90deg,rgba(10,11,13,.94) 30%,rgba(10,11,13,.35) 75%,rgba(10,11,13,.1))}
-  .pal2.touch .mi.srwide .tx{position:relative;max-width:72%;display:flex;flex-direction:column;gap:5px}
-  .pal2.touch .mi.srwide b{font:700 26px/.95 var(--display);text-transform:uppercase;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .pal2.touch .mi.srwide b mark{background:none;color:var(--accent)}
-  .pal2.touch .mi.srwide small{font:400 11.5px var(--mono);color:#cfcfcf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pal2.touch .mi.srwide.sel,.pal2.touch .mi.srwide:active{box-shadow:inset 0 0 0 2px var(--ink)}
 }
 /* The remote (TODO 177, Elias picked B): the show's art fills the top, big controls, rows that open in place */
 .rview:has(.rart){background:var(--bg)}
@@ -3708,3 +3686,69 @@ body.pp-open #modal{z-index:70}
 .set2 .tinst{padding:4px 16px 12px}
 .actions .aright{display:flex;gap:10px;margin-left:auto}
 @media (max-width:700px){.tpick .v{white-space:normal}}
+/* Phone search (TODO 238, Elias: A's look, B's list rising from the thumb). Typing: the list
+   stacks from the bottom (column-reverse), the top hit a big card right above the field,
+   the scope chips between them and the field. Before typing: Recent + your lists as tiles. */
+.pal2.touch.up .plist{display:flex;flex-direction:column-reverse;padding-top:calc(24px + env(safe-area-inset-top))}
+.pal2.touch.up .plist>*{flex:none}
+.pal2.touch .srlab{font:600 17px/1.2 var(--ui);margin:22px 6px 6px;color:var(--ink)}
+.pal2.touch .mi.srtop{position:relative;display:flex;cursor:pointer;border-radius:20px;margin:10px 0 2px;overflow:hidden;isolation:isolate}
+.pal2.touch .mi.srtop.art{flex-direction:column;justify-content:flex-end;align-items:flex-start;gap:6px;min-height:184px;padding:16px}
+.pal2.touch .srtop .ta{position:absolute;inset:0;z-index:-1;background:hsl(var(--h,220) 28% 22%) center 30%/cover no-repeat}
+.pal2.touch .srtop.cov .ta{background-position:center 22%}
+.pal2.touch .srtop .ta:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,11,13,.94) 12%,rgba(10,11,13,.55) 55%,rgba(10,11,13,.12)),linear-gradient(0deg,rgba(10,11,13,.6),transparent 60%)}
+.pal2.touch .srtop .tk{font:500 10.5px var(--mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+.pal2.touch .mi.srtop .tt{font:700 30px/.94 var(--display);text-transform:uppercase;letter-spacing:.005em;white-space:normal;max-width:82%;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 2px 14px rgba(0,0,0,.5)}
+.pal2.touch .mi.srtop.art>small{font:500 12.5px var(--ui);color:var(--ink-2);white-space:normal}
+.pal2.touch .srtop mark{background:none;color:var(--accent-hi)}
+.pal2.touch .srtop .acts{display:flex;gap:8px;margin-top:6px}
+.pal2.touch .srtop .btn{height:42px;padding:0 18px;gap:8px;font-size:14px}
+.pal2.touch .srtop .btn .ico{width:15px;height:15px}
+.pal2.touch .srtop .btn:not(.pri){background:rgba(255,255,255,.16);box-shadow:none;backdrop-filter:none}
+.pal2.touch .mi.srtop.row{align-items:center;gap:14px;padding:14px;background:rgba(255,255,255,.075);box-shadow:inset 0 0 0 1px rgba(255,255,255,.09)}
+.pal2.touch .srtop.row .sic{width:46px;height:46px;flex:none;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.08);color:var(--accent)}
+.pal2.touch .srtop.row .sic .ico{width:22px;height:22px}
+.pal2.touch .srtop.row .tx{flex:1;min-width:0}
+.pal2.touch .srtop.row b{font:600 17px/1.25 var(--ui);white-space:normal}
+.pal2.touch .srtop.row small{font:400 11.5px var(--mono);color:var(--mute);margin-top:3px}
+.pal2.touch .srtop.row .btn{height:38px;padding:0 18px;flex:none}
+.pal2.touch .srtop.row .switch{transform:none}
+.pal2.touch .mi.srtop:active{transform:scale(.985)}
+/* motion: the first letter lifts the results off the field; a new top hit rises in, the same one stays still */
+.pal2.touch.rise .plist>*{animation:srRise .32s cubic-bezier(.2,.8,.2,1) both}
+.pal2.touch.rise .plist>:nth-child(2){animation-delay:30ms}.pal2.touch.rise .plist>:nth-child(3){animation-delay:55ms}.pal2.touch.rise .plist>:nth-child(n+4){animation-delay:80ms}
+.pal2.touch .mi.srtop.fresh{animation:srRise .28s cubic-bezier(.2,.8,.2,1) both}
+.pal2.touch.rise .mi.srtop.fresh{animation-delay:0s}
+@keyframes srRise{from{opacity:0;transform:translateY(14px) scale(.985)}}
+@media (prefers-reduced-motion:reduce){.pal2.touch.rise .plist>*,.pal2.touch .mi.srtop.fresh{animation:none}}
+.pal2.touch .mi.srtop.sel{box-shadow:inset 0 0 0 2px var(--ink)}
+.pal2.touch .srrow .tx small em{font-style:normal;color:var(--ink-2)}
+.pal2.touch .srrow .switch{transform:scale(.85)}
+.pal2.touch .srrow.more{background:rgba(255,255,255,.05);margin-top:6px}
+.pal2.touch .srrow.more .sic{color:var(--ink-2)}
+.srplus{width:38px;height:38px;flex:none;border:0;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);color:var(--ink);cursor:pointer}
+.srplus .ico{width:18px;height:18px}.srplus.on{background:none;color:var(--ok,#7dd3a0)}
+.srplus:active{transform:scale(.9)}
+/* the scope chips: just above the field, scrolling sideways if they don't fit */
+.srscope{position:absolute;left:0;right:0;bottom:calc(86px + env(safe-area-inset-bottom));z-index:2;display:flex;gap:7px;padding:0 12px;overflow-x:auto;scrollbar-width:none}
+.srscope::-webkit-scrollbar{display:none}
+.srscope .chip{flex:none;height:34px;padding:0 14px;gap:6px;font:500 13px var(--ui);color:var(--ink-2);background:rgba(36,37,43,.96);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);backdrop-filter:none;cursor:pointer}
+.srscope .chip small{font:500 11px var(--mono);color:var(--mute)}
+.srscope .chip.on{background:var(--ink);color:#111;box-shadow:none}.srscope .chip.on small{color:rgba(0,0,0,.55)}
+.pal2.touch.up .srnone{padding:10px 8px}
+/* before typing: an art-less poster is a plain tile (the title is under it already) */
+.pal2.touch .srposters .poster span{display:none}
+.srtiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.srtile{position:relative;overflow:hidden;height:88px;border:0;border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;text-align:left;color:var(--ink);cursor:pointer;background:var(--tc)}
+.srtile:nth-child(odd):last-child{grid-column:1/-1}
+.srtile.c0{--tc:#2b4a6c}.srtile.c1{--tc:#56385d}.srtile.c2{--tc:#2c5747}.srtile.c3{--tc:#5c4430}
+.srtile .tp{position:absolute;right:-8px;bottom:-16px;width:60px;height:88px;border-radius:7px;background:center/cover no-repeat;transform:rotate(14deg);box-shadow:0 8px 18px rgba(0,0,0,.45)}
+.srtile b{position:relative;font:700 21px/1 var(--display);text-transform:uppercase;letter-spacing:.01em}
+.srtile small{position:relative;font:500 11px var(--mono);color:rgba(255,255,255,.75);margin-top:3px}
+.srtile:active{transform:scale(.97)}
+@media (max-width:700px),(pointer:coarse){
+  #pal .pal2.scoped .plist{padding-bottom:calc(130px + env(safe-area-inset-bottom))}
+  /* the fade sits in the padding, under the chips and the field: the top hit right above them stays whole */
+  #pal .pal2.up .plist{-webkit-mask:linear-gradient(180deg,#000 calc(100% - 84px - env(safe-area-inset-bottom)),transparent calc(100% - 64px - env(safe-area-inset-bottom)));mask:linear-gradient(180deg,#000 calc(100% - 84px - env(safe-area-inset-bottom)),transparent calc(100% - 64px - env(safe-area-inset-bottom)))}
+  #pal .pal2.up.scoped .plist{-webkit-mask:linear-gradient(180deg,#000 calc(100% - 130px - env(safe-area-inset-bottom)),transparent calc(100% - 108px - env(safe-area-inset-bottom)));mask:linear-gradient(180deg,#000 calc(100% - 130px - env(safe-area-inset-bottom)),transparent calc(100% - 108px - env(safe-area-inset-bottom)))}
+}
