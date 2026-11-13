@@ -93,7 +93,8 @@ jobs:
   # The oldest Python the README promises on Linux (3.9+, and the AppImage
   # runs on the system's): the suite on it too, so newer-only code shows up.
   linux-oldest-python:
-    runs-on: ubuntu-latest
+    # 24.04, not latest: setup-python has no 3.9 for Ubuntu 26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
