@@ -245,7 +245,8 @@ class TabSwitch(unittest.TestCase):
         look = APP.split("function cvLook() {", 1)[1].split("\n}\n", 1)[0]
         self.assertLess(look.index("if (mark === cvc.mark) return;"), look.index("requestAnimationFrame("))
         self.assertLess(look.index("requestAnimationFrame("), look.index("getComputedStyle("))
-        self.assertIn("  cvLook();\n  const art = canvasArt(), mode = lookGet(\"art\");", APP)
+        self.assertIn("function paintCanvas(art = canvasArt()) {", APP)
+        self.assertIn("  cvLook();\n  const mode = lookGet(\"art\");", APP)
         self.assertIn("  cvLook(); // and a show page on a phone blurs it more (pg-sfr)", APP)
 
     @unittest.skipUnless(shutil.which("node"), "node not installed")

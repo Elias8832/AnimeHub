@@ -193,5 +193,6 @@ class Web(unittest.TestCase):
         self.assertIn("${rc}${m.keys ? hkGroup(m)", rows)  # above Keys (Elias, 2026-11-10)
 
     def test_quiet_button_has_no_icon(self):
-        self.assertIn('<button class="quiet" data-a="recapoff">Don’t show this again</button>', self.app)
-        self.assertIn(".dialog.recap h2{", self.css)  # beats .dialog h2
+        """In the pop-up frame since TODO 226: the opt-out is the footer's link, Start the accent text."""
+        self.assertIn('<button class="lnk" data-a="recapoff">Don’t show this again</button>', self.app)
+        self.assertIn('data-a="recapgo">${start}${kb("↵")}</button>', self.app)
