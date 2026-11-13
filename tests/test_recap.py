@@ -190,7 +190,7 @@ class Web(unittest.TestCase):
         self.assertIn('"spref", "recap_after"', self.app)
         self.assertIn('["Season reminder", "player",', self.app)
         rows = self.app[self.app.index("function playerGroup("):self.app.index("function subsGroup(")]
-        self.assertIn("${rc}${m.keys ? hkGroup(m)", rows)  # above Keys (Elias, 2026-11-10)
+        self.assertIn("${rc}${m.keys && !pickTouch ? hkGroup(m)", rows)  # above Keys (Elias, 2026-11-10); no Keys on a phone (Decision 94)
 
     def test_quiet_button_has_no_icon(self):
         self.assertIn('<button class="quiet" data-a="recapoff">Don’t show this again</button>', self.app)

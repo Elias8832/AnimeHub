@@ -2998,10 +2998,18 @@ const srow = (t, desc, ctl, cls, after) => `<div class="srow${cls ? " " + cls : 
 function pick(label, act, k, opts, cur, o = {}) {
   const n = opts.length, i = Math.max(0, opts.findIndex(([v]) => v === cur));
   const dk = k == null ? "" : ` data-k="${esc(k)}"`, dis = o.off ? " disabled" : "";
+  if (pickTouch) { // Settings on a phone (Decision 94): a switch, a few buttons, or the value with a list behind it
+    const vals = opts.map(([v]) => v), cls = `pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}`, curV = opts[i][0];
+    if (n === 2 && vals.includes("on") && vals.includes("off"))
+      return `<span class="${cls} pksw"><button class="switch" role="switch" aria-checked="${curV === "on"}" aria-label="${esc(label)}" data-a="${act}"${dk} data-v="${curV === "on" ? "off" : "on"}"${dis}></button></span>`;
+    if (n <= 3 && !o.dot && !opts.some((x) => x[2]) && opts.reduce((t, x) => t + x[1].length, 0) <= 17)
+      return `<span class="${cls} pkseg" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => `<button class="${v === curV ? "on" : ""}" aria-pressed="${v === curV}" data-a="${act}"${dk} data-v="${esc(v)}"${dis}>${esc(l)}</button>`).join("")}</span>`;
+  }
   const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(opts[(i + d + n) % n][0])}" aria-label="${esc(label)}: ${word}"${dis}>${ico(icon)}</button>`;
   const font = opts[i][2] ? ` style="font-family:${esc(opts[i][2])}"` : "";
-  return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
+  return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}${pickTouch ? " pklist" : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
 }
+let pickTouch = false; // set while Settings builds on a phone
 const onoff = (key, label, on, off) => pick(label, "advset", key, [["on", "On"], ["off", "Off"]], on ? "on" : "off", { off });
 /* A row whose value is something to do (Rescan, Connect…): it sits where a value would. */
 const pkdo = (html) => `<span class="pk pkdo">${html}</span>`;
@@ -3126,8 +3134,18 @@ document.addEventListener("input", (e) => { if (e.target.id === "peeraddr") S.pe
 document.addEventListener("input", (e) => { if (e.target.id === "setq") { S.setQ = e.target.value; render(true); scrollTo(0, 0); } });
 const setSearch = () => `<label class="slsearch">${ico("search")}<input id="setq" type="search" value="${esc(S.setQ)}" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">${S.setQ ? `<button data-a="setclear" aria-label="Clear">${ico("close")}</button>` : `<kbd class="kb" aria-hidden="true">/</kbd>`}</label>`;
 /* Sections sorted by what you're after, under plain headings. */
-const setHeads = (tabs) => [...new Set(tabs.map((t) => t[2]))].map((g) => [S.settings?.android && g === "This PC" ? "This phone" : g, tabs.filter((t) => t[2] === g)]); // the Android app (Decision 88)
+/* On a phone (Decision 94, Elias picked mockup C): the show you're watching
+   behind the title, sections as tiles, each section's rows in cards with
+   switches and buttons (pickTouch). */
 function Sett() {
+  pickTouch = isPhone();
+  try { return settPage(); } finally { pickTouch = false; }
+}
+function setHero() {
+  const s = nextUpInfo()?.s || lastShow(), art = s && (s.banner || s.poster);
+  return art ? `<i class="shero" style="background-image:${esc(cssUrl(art))}" aria-hidden="true"></i>` : '<i class="shero none" aria-hidden="true"></i>';
+}
+function settPage() {
   const s = S.settings;
   if (!s) { loadSettings().then(() => S.view === "settings" && render(true)); return '<div class="wrap page"><p class="empty">Could not reach the hub — retrying…</p></div>'; }
   /* Settings (Decision 38, regrouped in 61): one section at a time; every setting can be found from the box on top. */
@@ -3137,7 +3155,7 @@ function Sett() {
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
   let n = 1; // the side list's entrance order
   const title = find ? "Settings" : (tabs.find(([k]) => k === tab) || [0, "Settings"])[1];
-  return `<div class="set2">${isPhone() ? `<button class="backbtn sback" data-a="setback">${ico("chevl")}Settings</button>` : ""}
+  return `<div class="set2${isPhone() ? " pset" : ""}">${isPhone() ? `${setHero()}<button class="backbtn sback" data-a="setback">${ico("chevl")}Settings</button>` : ""}
   <div class="setg"><nav class="snav" aria-label="Settings sections">${isPhone() ? "" : setSearch()}${tabs.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" style="--i:${n++}" data-a="settab" data-v="${k}">${ico(SET_ICONS[k] || "chevr")}<span>${esc(l)}</span></button>`).join("")}</nav>
   <div class="setmain"><div class="hello"><h1 class="hd">${esc(title)}</h1><div class="sum"><span>saves on its own</span></div></div>
   <div class="settings scol" data-sec="${find ? "find" : tab}">${find ? setResults(s, tabs) : setSections(s)[tab]}</div></div></div></div>`;
@@ -3383,7 +3401,7 @@ function playerGroup(s) {
     ${srow("Right click", "Menu: subtitles, audio, episodes and more.", mpick(m, "right", "Right click on the picture", CLICKS))}
     ${srow("Right double-click", "", mpick(m, "right_double", "Right double-click on the picture", CLICKS))}
     ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}
-    ${rc}${m.keys ? hkGroup(m) : ""}` : rc}`;
+    ${rc}${m.keys && !pickTouch ? hkGroup(m) : ""}` : rc}`;
 }
 function subsGroup(s) {
   const m = s.mpv || {}, st = s.stream || {};
@@ -3440,8 +3458,7 @@ function syncGroup() {
   if (!p) { api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Sync with your PC</h3><p class="sub">Loading…</p></div>'; }
   if (!p.paired) return `<div class="group"><h3>Sync with your PC</h3><p class="sub">Keeps what you watched and your playlists the same on both.</p>
     ${srow("1. On the PC", "Settings → Phone → Pair a phone.", "")}
-    ${srow("2. Here", "Type the address and code it shows.", "")}
-      <div class="row peerform"><input id="peeraddr" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="192.168.2.31:8788" aria-label="The PC's address" value="${esc(S.peerAddr || "")}"><input id="peercode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Pairing code" value="${esc(S.peerCode || "")}"><button class="btn pri" data-a="peerpair"${S.peerBusy ? " disabled" : ""}>${S.peerBusy ? "Pairing…" : "Pair"}</button></div>
+    ${srow("2. Here", "Type the address and code it shows.", `<div class="row peerform"><input id="peeraddr" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="192.168.2.31:8788" aria-label="The PC's address" value="${esc(S.peerAddr || "")}"><input id="peercode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Pairing code" value="${esc(S.peerCode || "")}"><button class="btn pri" data-a="peerpair"${S.peerBusy ? " disabled" : ""}>${S.peerBusy ? "Pairing…" : "Pair"}</button></div>`, "wide")}
     ${p.error ? `<p class="note">${swarn(esc(p.error))}</p>` : ""}</div>`;
   const err = p.error && (!p.last_ok || (p.last_try || "") > p.last_ok) ? p.error : "";
   const last = p.last_ok ? `Last synced ${syncAgo(p.last_ok)}.` : "Not synced yet.";
@@ -4618,8 +4635,9 @@ function setSummary(k, s) {
 const SET_ICONS = { player: "play", subs: "cc", skipping: "next", online: "download", appearance: "edit", library: "folder", privacy: "shield", anilist: "star", phone: "grid", data: "sliders" };
 function settingsList(tabs, s) {
   const find = !!S.setQ.trim();
-  return `<div class="set2 phone"><div class="hello"><h1 class="hd">Settings</h1></div>${setSearch()}
-    ${find ? `<div class="settings scol" data-sec="find">${setResults(s, tabs)}</div>` : setHeads(tabs).map(([g, ts]) => `<h4 class="slhead">${g}</h4><div class="slist">${ts.map(([k, l]) => `<button class="sli" data-a="setopen" data-v="${k}"><i class="sic">${ico(SET_ICONS[k] || "chevr")}</i><span><b>${l}</b><small>${esc(setSummary(k, s))}</small></span>${ico("chevr")}</button>`).join("")}</div>`).join("")}</div>`;
+  const warn = (k) => k === "privacy" && !S.data?.vpn?.active;
+  return `<div class="set2 phone">${setHero()}<div class="hello"><h1 class="hd">Settings</h1></div>${setSearch()}
+    ${find ? `<div class="settings scol" data-sec="find">${setResults(s, tabs)}</div>` : `<div class="stiles">${tabs.map(([k, l], i) => `<button class="stile${warn(k) ? " warn" : ""}" style="--i:${i}" data-a="setopen" data-v="${k}">${ico(SET_ICONS[k] || "chevr")}<b>${esc(l)}</b><small>${esc(setSummary(k, s))}</small></button>`).join("")}</div>`}</div>`;
 }
 
 /* ---------- phone remote (Decision 43) ---------- */
@@ -7049,8 +7067,11 @@ const A = {
   /* A new section node, so every section opens with the same .settings entrance. */
   settab: (v) => { if (v !== S.setTab || S.setQ) $("#app .scol")?.remove(); setClear(); S.setTab = v; render(true); scrollTo(0, 0); },
   setclear: () => { setClear(); render(true); $("#setq")?.focus(); },
-  setopen: (v) => { S.setTab = v; S.setOpen = true; S.navIn = true; ovOpen("set", () => A.setback()); render(); scrollTo(0, 0); },
-  setback: () => { S.setOpen = false; S.navIn = true; render(); scrollTo(0, 0); ovClosed("set"); },
+  setopen: (v) => { $("#app").classList.remove("setback"); S.setTab = v; S.setOpen = true; S.navIn = true; ovOpen("set", () => A.setback()); render(); scrollTo(0, 0); },
+  setback: () => { // back to the list: it slides in from the left (Decision 94); the class only flips the entrance's direction
+    const app = $("#app"); app.classList.add("setback"); clearTimeout(A.setback.t); A.setback.t = setTimeout(() => app.classList.remove("setback"), 1500);
+    S.setOpen = false; S.navIn = true; render(); scrollTo(0, 0); ovClosed("set");
+  },
   deck: (v) => openDeck(v === "lib" ? "lib" : "recs"), deckclose: () => closeDeck(),
   deckagain: () => deckFill("recs", 0, shuffled(deckItems("recs"))),
   deckplay: (v) => { closeDeck(); play(v); },
@@ -7519,10 +7540,18 @@ document.addEventListener("change", (e) => {
    event, keyboard), so every action keeps working. Touch keeps the phone's picker. */
 let ddPtr = "mouse", ddSel = null;
 document.addEventListener("pointerdown", (e) => { ddPtr = e.pointerType; }, { capture: true, passive: true });
+let ddEat = 0; // a tap that closed a settings sheet must not land on the row under it
 function ddClose(refocus) {
   const m = $("#ddm");
   if (!m || !ddSel) return;
-  m.classList.remove("open"); m.innerHTML = "";
+  clearTimeout(ddClose.t); m.classList.remove("out");
+  if (m.classList.contains("sheet")) {
+    ovClosed("dd");
+    if (!reduceMotion()) { // the sheet slides back down before it goes (Decision 94)
+      m.classList.add("out");
+      ddClose.t = setTimeout(() => { m.classList.remove("open", "sheet", "out"); m.innerHTML = ""; }, 200);
+    } else { m.classList.remove("open", "sheet"); m.innerHTML = ""; }
+  } else { m.classList.remove("open", "sheet"); m.innerHTML = ""; }
   ddSel.closest(".fl")?.classList.toggle("ddon", false);
   ddSel.closest(".frpick")?.classList.remove("ddon");
   if (refocus) ddSel.focus({ preventScroll: true });
@@ -7531,6 +7560,7 @@ function ddClose(refocus) {
 /* Puts the open list under (or over) its select; also on every scroll, so
    the list rides along with the page instead of closing (Elias, 2026-11-08). */
 function ddPos(sel, m, first) {
+  if (m.classList.contains("sheet")) return { p: { top: null }, right: false }; // a sheet sits at the bottom (CSS)
   const box = (sel.closest(".fl") || sel.closest(".pk") || sel).getBoundingClientRect(), z = zoomGet() / 100, p = ddPlace(box, z, innerWidth, innerHeight);
   if (first) m.style.minWidth = p.width + "px";
   m.style.left = p.left + "px"; m.style.maxHeight = p.maxHeight + "px";
@@ -7541,13 +7571,18 @@ function ddPos(sel, m, first) {
 }
 function ddOpen(sel) {
   const m = $("#ddm");
+  clearTimeout(ddClose.t); m.classList.remove("out"); // a sheet still sliding away
   ddSel = sel;
   sel.closest(".fl")?.classList.add("ddon"); // its chip stays lit while the list is open
   sel.closest(".frpick")?.classList.add("ddon"); // the season heading too
   m.classList.toggle("pkdd", !!sel.closest(".pk")); // a setting's list: as wide as its ‹ value ›, centred (Decision 73)
   m.classList.toggle("ttl", !!sel.closest(".pkfont.title"));
+  const sheet = !!sel.closest(".pklist"); // Settings on a phone (Decision 94): every choice rises from the bottom
+  m.classList.toggle("sheet", sheet);
+  if (sheet) { ["left", "top", "bottom", "maxHeight", "minWidth"].forEach((x) => { m.style[x] = ""; }); ovOpen("dd", () => ddClose(false)); }
   const cap = (sel.closest(".fl")?.firstChild?.nodeType === 3 ? sel.closest(".fl").firstChild.textContent : "").trim();
-  m.innerHTML = (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}>${o.dataset.dot ? `<i class="pkdot" style="background:${esc(o.dataset.dot)}"></i>` : ""}<span${o.dataset.f ? ` style="font-family:${esc(o.dataset.f)}"` : ""}>${esc(o.textContent)}</span>${o.selected ? ico("check") : o.dataset.r ? `<small class="r">${esc(o.dataset.r)}</small>` : ""}</button>`).join("");
+  m.innerHTML = (sheet ? `<i class="grabber" aria-hidden="true"></i><h4 class="ddhd">${esc(sel.closest(".srow")?.querySelector("b")?.textContent || sel.getAttribute("aria-label") || "")}</h4>` : "")
+    + (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}>${o.dataset.dot ? `<i class="pkdot" style="background:${esc(o.dataset.dot)}"></i>` : ""}<span${o.dataset.f ? ` style="font-family:${esc(o.dataset.f)}"` : ""}>${esc(o.textContent)}</span>${o.selected ? ico("check") : o.dataset.r ? `<small class="r">${esc(o.dataset.r)}</small>` : ""}</button>`).join("");
   ddPos(sel, m, true);
   m.classList.remove("open"); void m.offsetWidth; m.classList.add("open");
   const { p, right } = ddPos(sel, m); // measured once shown
@@ -7567,14 +7602,22 @@ document.addEventListener("mousedown", (e) => {
   const sel = e.target.closest?.("select") || e.target.closest?.("label.fl")?.querySelector("select"); // the chip's label opens it too
   /* Outside clicks close on the press: the click that follows a press on a
      chip's label would otherwise shut the list that press just opened. */
-  if (!sel || sel.disabled || ddPtr !== "mouse" || e.button !== 0) { if (ddSel && !e.target.closest?.("#ddm")) ddClose(false); return; }
+  if (!sel || sel.disabled || ddPtr !== "mouse" || e.button !== 0) { if (ddSel && !e.target.closest?.("#ddm")) { if ($("#ddm").classList.contains("sheet")) ddEat = Date.now(); ddClose(false); } return; }
   e.preventDefault();
   if (ddSel === sel) return ddClose(true);
   sel.focus({ preventScroll: true }); ddOpen(sel);
 });
 document.addEventListener("click", (e) => {
+  if (ddEat && Date.now() - ddEat < 700 && !e.target.closest?.("#ddm")) { ddEat = 0; e.preventDefault(); e.stopImmediatePropagation(); return; }
   const b = e.target.closest?.("#ddm button");
   if (b) { ddPick(b.dataset.i); return; }
+  /* Settings on a phone: the whole row is the target. A switch flips, a list opens. */
+  const row = !ddSel && e.target.closest?.(".set2 .srow:has(.pksw,.pklist)");
+  if (row && !e.target.closest("button,a,input,label,textarea")) {
+    const sw = row.querySelector(".pksw .switch:not(:disabled)"), sel = row.querySelector(".pklist select:not(:disabled)");
+    if (sw) sw.click(); else if (sel) ddOpen(sel);
+    return;
+  }
   if (ddSel && e.target.closest?.("label.fl")) e.preventDefault(); // the label would pull focus off the open list
 }, true);
 document.addEventListener("keydown", (e) => {
