@@ -437,6 +437,22 @@ def cache_get_ts(key):
         return None
 
 
+def cache_get_ts_many(keys):
+    """{key: (payload, ts)} for every key that has a readable row, in one
+    connection (a connection per key costs seconds on Windows)."""
+    keys, out = list(keys), {}
+    with db() as c:
+        for i in range(0, len(keys), 500):
+            part = keys[i:i + 500]
+            for key, payload, ts in c.execute(
+                    "SELECT key, payload, ts FROM catalog_cache WHERE key IN (%s)" % ",".join("?" * len(part)), part):
+                try:
+                    out[key] = (json.loads(payload), ts)
+                except Exception:
+                    pass
+    return out
+
+
 def cache_del(key):
     with db() as c:
         c.execute("DELETE FROM catalog_cache WHERE key=?", (key,))
@@ -462,6 +478,12 @@ def cache_prune(now=None):
 
 
 def cache_put(key, payload):
+    cache_put_many([(key, payload)])
+
+
+def cache_put_many(items):
+    """cache_put for several (key, payload) pairs in one transaction."""
+    now = time.time()
     with db() as c:
-        c.execute("INSERT INTO catalog_cache(key,payload,ts) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, ts=excluded.ts",
-                  (key, json.dumps(payload), time.time()))
+        c.executemany("INSERT INTO catalog_cache(key,payload,ts) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, ts=excluded.ts",
+                      [(key, json.dumps(payload), now) for key, payload in items])
