@@ -727,9 +727,22 @@ def _prepare_key(link, ep_id, mode):
     return (ep_id, mode, anicli.stream_prefs()["quality"], link["query"], link["title"], link["idx"])
 
 
+def player_flags(ep_id, sock, from_start=False, handoff=None):
+    """mpv's flags for an online episode (on top of ani-cli's own): the
+    hub's socket, where it starts, Settings → mpv, the hub's scripts. The
+    first one is the socket."""
+    flags = [f"--input-ipc-server={sock}", "--no-input-terminal",
+             *player.start_args(ep_id, from_start, handoff), *settings.mpv_flags()]
+    script = mpv_script_flag()
+    if script:
+        flags.append(script)
+    return flags + player.design_args(system.space_free_path)
+
+
 def prepare_episode(ep_id, delay=0.0):
-    """Get an online episode ready to start. Quietly nothing when it can't
-    be, or may not: the click starts it the normal way then."""
+    """Get an online episode ready to start, its mpv started ahead with the
+    flags a click would give it now (prepare.spawn). Quietly nothing when it
+    can't be, or may not: the click starts it the normal way then."""
     mid = stream_media_id(ep_id) if ep_id.startswith("stream:") else None
     link = stream_link_get(mid) if mid else None
     if not link or not settings.automation_enabled("prepare_online") or not settings.site_ok():
@@ -738,7 +751,7 @@ def prepare_episode(ep_id, delay=0.0):
     if token in link["episodes"] and anicli.anicli_path():
         sock = player.ipc_socket_path()
         prepare.request(_prepare_key(link, ep_id, link["mode"]), link, token, link["mode"], sock,
-                        player.mpv_env(sock), delay)
+                        player.mpv_env(sock), delay, ahead=player_flags(ep_id, sock))
 
 
 def prepare_page(ep_id):
@@ -804,12 +817,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     else:
         prep = None if cold else prepare.take(_prepare_key(link, ep_id, play_mode))
     sock = prep["sock"] if prep else player.ipc_socket_path()
-    flags = [f"--input-ipc-server={sock}", "--no-input-terminal",
-             *player.start_args(ep_id, from_start, handoff), *settings.mpv_flags()]
-    script = mpv_script_flag()
-    if script:
-        flags.append(script)
-    flags += player.design_args(system.space_free_path)
+    flags = player_flags(ep_id, sock, from_start, handoff)
     with database.db() as c:
         # Identity stamp (TODO 25): history stays readable without the link.
         c.execute("INSERT INTO episodes(id,show_id,label) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE"

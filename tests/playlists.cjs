@@ -23,6 +23,10 @@ function context(mode, entries, shows, playlists = [], untracked = []) {
     pickTarget: (s) => { for (const sea of s.seasons) { const ep = sea.episodes.find((e) => !e.watched); if (ep) return { sea, ep, kind: ep.position ? "resume" : "play" }; } return null; },
     resumable: (ep) => !!ep.position, epCode: (sea, ep) => `E${ep.number}`, epName: () => null, cssUrl: (u) => `url(${u})`,
     statusLabel: (st) => ({ CURRENT: "Watching", COMPLETED: "Completed", PLANNING: "Planning" })[st] || st,
+    /* the pop-up frame's parts (TODO 226), as plain as the real ones */
+    dlHead: (t, sum) => `<div class="dlh"><h2 id="dt">${t}</h2>${sum ? `<span class="dls">${sum}</span>` : ""}</div>`,
+    dlFoot: (n, b) => `<div class="actions"><span class="note2">${n}</span>${b}</div>`,
+    dotTxt: (t) => `<span class="chip"><i class="dot ok"></i>${t}</span>`, kb: (k) => `<kbd class="kb">${k}</kbd>`,
   });
   vm.runInContext(source.slice(from, to) + source.slice(source.indexOf("function plWall() {"), source.indexOf("function plResPaint()")) + ";this.api = { plEntryRef, plShowRef, plFind, plItemCard, plHead, plNext, plState, plFindGroups, plFindList, plFindHTML, plReorder, plSlotAt, plBox, plStack, plPos, plAddCands, plHomeHTML, plWall, plMenuRows };", ctx);
   ctx.api.ctx = ctx;
@@ -129,7 +133,8 @@ test("a playlist box: icon, name, note, colour and its shows as a stack of cards
 test("an unknown icon name draws nothing", () => {
   const html = context("local", [], []).plStack(list({ icon: "not-an-icon", items: [] }));
   assert.doesNotMatch(html, /data-icon/);
-  assert.match(html, /no shows yet/i);
+  assert.match(html, /plstack empty/);
+  assert.doesNotMatch(html, /no shows yet/i); // the empty card is clear without words
 });
 
 test("a stack: the front card first, two peeking behind, the rest hidden, a counter", () => {
@@ -287,7 +292,7 @@ test("find shows: before typing, your Watching and Planning shows not on the lis
   assert.equal(api.plFindGroups("mush", p)[0].rows.map((r) => r.title).join(), "Mushishi");
   const html = api.plFindHTML(p);
   assert.match(html, /<h2 id="dt">Add shows<\/h2>[\s\S]*id="plq"[\s\S]*data-a="close"/);
-  assert.match(html, /<button class="plfr" data-a="plfadd" data-v="aid:1"[\s\S]*?<i>Add<\/i><\/span><\/button>/); // the whole row adds
+  assert.match(html, /<button class="plfr" data-a="plfadd" data-v="aid:1"[\s\S]*?Add<b>›<\/b><\/span><\/button>/); // the whole row adds
   /* a show added here keeps its row, marked, so a second click takes it off */
   api.ctx.S.plJust2 = new Set(["aid:3"]);
   assert.match(api.plFindList(p), /plfr added[^>]*data-v="aid:3"[\s\S]*Added/);

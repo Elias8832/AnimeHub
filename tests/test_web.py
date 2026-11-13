@@ -64,6 +64,17 @@ class Frontend(unittest.TestCase):
         self.assertEqual(self.filtered(genres=["Action", "Drama"]), [1])
         self.assertEqual(self.filtered(genres=[]), [1, 2, 3, 4])
 
+    def test_source_format_airing_take_several_picks(self):
+        """Elias, 2026-11-12: two formats or two airing states at once; a show
+        passes when it matches any pick. A single pick saved before still works."""
+        self.assertEqual(self.filtered(air=["RELEASING", "HIATUS"]), [1, 3])
+        self.assertEqual(self.filtered(air="FINISHED"), [2])
+        self.assertEqual(self.filtered(air="all"), [1, 2, 3, 4])
+        self.assertEqual(run_js("S.lib.fmt = ['TV', 'MOVIE']; return [fhas('fmt', 'TV'), fhas('fmt', 'OVA'), fval('fmt', FOPTS_T)];"
+                                .replace("FOPTS_T", '[["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"]]')),
+                         [True, False, "TV, Movie"])
+        self.assertEqual(run_js("S.lib.fmt = ['TV', 'MOVIE', 'OVA']; return fval('fmt', [['all', 'any']]);"), "3 picked")
+
     def test_genre_tray_counts_the_open_tab(self):
         m = json.dumps({"entries": ENTRIES})
         self.assertEqual(run_js(f"return genreCounts({m});"), [["Action", 2], ["Drama", 2]])
@@ -368,7 +379,13 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn("#app.nav-in .lib2 .lmain .filters{animation:rise", block)
         self.assertIn("if (railTop) { const r = $(\".lnav\"); if (r) r.scrollTop = railTop; }", APP)
         # source / format / airing open in place as chips in the side list, no popup
-        self.assertIn("const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel;", APP)
+        self.assertIn('const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}', APP)
+        # several can be picked (Elias, 2026-11-12); the list stays open on a phone too
+        self.assertIn('const FMULTI = new Set(["src", "fmt", "air"]);', APP)
+        self.assertIn('S.lib[k] = next.length ? next : "all";', APP)
+        self.assertIn('(multi ? opts.filter(([v]) => v !== "all") : opts)', APP)  # nothing ticked = any, no "any" row
+        self.assertIn('const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);', APP)
+        self.assertIn(".lib2 .filters>.fdrop .fpanel{display:none;position:absolute;", CSS)
         self.assertIn('data-a="fpick" data-k="${k}"', APP)
         self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills
         # the drop-down list: a caption, a check on the picked one, hung from a right-hand chip's right edge
@@ -559,7 +576,7 @@ class Polish(unittest.TestCase):
         from animehub import settings
         for look in settings.PLAYER_LOOKS:
             self.assertIn(f"  {look}: () => `<div class=\"lkv {look}\">", APP)
-        self.assertIn("${tourLooks(s)}", APP)
+        self.assertIn('["Pick your player", "", tourLooks(s)]', APP)
         self.assertIn("pages.filter((_, i) => i !== 6)", APP)
         self.assertIn("${tourMpv(s)}", APP)
         self.assertIn('{ mpv_design: "on", mpv_look: v }', APP)
@@ -589,7 +606,7 @@ class Polish(unittest.TestCase):
         for pc_only in ("tourTools(", "tourLooks(", "tourMpv(", "bgRows("):
             self.assertNotIn(pc_only, fn)
         # own files: optional, and only after Android's file access
-        self.assertIn('${s.files_ok ? `<div class="path">${libPath("tour", s)}', fn)
+        self.assertIn('`<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}', fn)
         self.assertIn(": filesAsk()}", fn)
         self.assertIn("if (s.android) return tourAndroid(T, s, a);", APP)
 
@@ -605,13 +622,13 @@ class Polish(unittest.TestCase):
 
     def test_tour_explains_search(self):
         """Its own page, before the last one, and the phone page keeps its slot."""
-        self.assertIn("    tourSearch(),\n    `<h2 id=\"dt\">You're set</h2>", APP)
+        self.assertIn("    tourSearch(),\n    [\"You're set\",", APP)
         pages = APP[APP.index("  return tourPages(["):APP.index("tourSearch(),\n")]
-        self.assertEqual(pages.count('<h2 id="dt">'), 7)
-        self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`,"))
+        self.assertEqual(pages.count('\n    ["'), 7)  # TODO 226: a page is [title, note, body]
+        self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`],"))
 
     def test_tour_lists_what_it_found(self):
-        self.assertIn('<div class="sum2">${tourFound(s, a, n, ok)}</div>', APP)
+        self.assertIn('<div class="group"><h3>Found</h3>${tourFound(s, a, n, ok)}</div>', APP)
         self.assertIn('`mpv${s.mpv_version ? " " + s.mpv_version : ""} found`', APP)
 
     def test_home_recommendations(self):
@@ -641,7 +658,7 @@ class NextSource(unittest.TestCase):
         self.assertIn("S.data?.vpn]);", APP)  # a VPN change repaints the nav
         self.assertIn('addEventListener("focus", () => pollSoon(0));', APP)
         self.assertIn("if (now.next_prompt) maybeNextPrompt(now.next_prompt);", APP)
-        self.assertIn('data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button>${go}', APP)
+        self.assertIn('escBtn("nxstop", "Stop here") + go', APP)
         self.assertIn('<button class="btn pri" data-a="nxgo">${noVpn ? "Stream anyway" : "Continue"}', APP)
         self.assertIn('skpBtns("nxgo", "nxno"', APP)  # with AniSkip on: Use / Without AniSkip (D39)
         self.assertIn('if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();', APP)  # starts by itself once a VPN is up
@@ -864,12 +881,12 @@ class ShowPagePolish(unittest.TestCase):
 
     def test_season_tabs_stay_one_row(self):
         self.assertIn(".sp2 .rels{flex-wrap:nowrap;max-width:100%;overflow-x:auto", CSS)
-        self.assertIn('$$("#app .sp2 .rels")', APP)
+        self.assertIn('root.querySelectorAll(".sp2 .rels")', APP)
 
     def test_art_dims_when_scrolled(self):
         self.assertIn("body.pg-fr .cv-wash:after{opacity:var(--sd,0)}", CSS)  # Decision 67: fades with the scroll
         self.assertIn('w.style.setProperty("--sd", S.view === "fr"', APP)
-        self.assertIn("strips(); ambient(); artDim();", APP)
+        self.assertIn("strips(); artDim();", APP)
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")
@@ -1009,3 +1026,65 @@ class NoPageWideHas(unittest.TestCase):
         self.assertNotRegex(CSS, r"(^|[\s,}])(body|html|:root):has\(")
         for cls in re.findall(r"body\.(pg-[a-z]+)", CSS):
             self.assertIn(f'["{cls}", ', APP, cls)
+
+
+class PopupFrame(unittest.TestCase):
+    """TODO 226: the pop-ups are built from Settings' parts (Decision 73):
+    a head with art or a glow, Settings rows, quiet buttons with ›, and the
+    "change this" notes point at where the switch lives now."""
+    def test_popups_use_the_settings_frame(self):
+        for t in ("vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done"):
+            self.assertIn(f'"{t}"', APP[APP.index("const DL2 = new Set(["):APP.index("function vpnGate(")])
+        self.assertIn('DL2.has(m.t) ? "dl2" : ""', APP)
+        self.assertIn(":is(.dl2,.match,.entry) .actions .btn::after{content:\"›\"", CSS)
+        self.assertIn(":is(.dl2,.match,.entry) .actions .btn.pri{color:var(--accent-hi)", CSS)  # the main button is accent text, not a pill
+
+    def test_vpn_notes_point_at_privacy(self):
+        """D73 moved the ask-without-a-VPN switches to Privacy & VPN; the pop-ups said Online / Skipping."""
+        self.assertIn('setLink("privacy", "Online episodes and downloads", "Privacy & VPN")', APP)
+        self.assertIn('setLink("privacy", "AniSkip", "Privacy & VPN")', APP)
+        self.assertNotIn("switch this off in Settings → Online episodes", APP)
+        self.assertNotIn("switch this off in Settings → Skipping", APP)
+        self.assertIn("setgo: (v, t) => { const tab = t.dataset.t; if (S.modal) closeModal();", APP)
+
+    def test_vpn_is_a_settings_row(self):
+        self.assertNotIn("vpnWait", APP)
+        self.assertIn('`${who ? who + " " : ""}Turn one on and this starts by itself.`, pkdo(dotTxt("Off", "live"))', APP)
+        self.assertIn('if (vpnMoved && S.modal?.t === "nxt") paintModal();', APP)  # still repainted live while the prompt is open
+
+    def test_part_two(self):
+        """The tour, playlists, fonts, the connect check and You finished: no
+        switches or choice cards left, ‹ On › and Pick › like Settings."""
+        self.assertIn('m.t === "rec" ? "recon dl2"', APP)
+        self.assertIn('pick("Mark watched here", "recmark", null, [["1", "On"], ["0", "Off"]]', APP)
+        self.assertIn('pick("Player layout", "tourlook", null,', APP)
+        self.assertIn('pick(`Install ${g.name}`, "toolpick", g.id, [["on", "Install"], ["off", "Skip"]]', APP)
+        self.assertIn('onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, !a.connected)', APP)
+        self.assertNotIn('<button class="choice', APP)  # the old cards
+        self.assertNotIn('class="sum2', APP)
+        self.assertIn(".pkprev .lkv{width:280px", CSS)  # the player drawing has a size (it collapsed in Settings too)
+        self.assertIn('T.choice === "connect" ? " pri" : ""}" data-a="tourconnect"', APP)  # page 3's pick decides the last page's button
+
+    def test_no_text_twice(self):
+        """Elias: label + placeholder + help said the same thing; notes that add nothing are gone."""
+        fn = APP[APP.index("function PlNameDlg() {"):APP.index("/* The icon picker:")]
+        self.assertIn('placeholder="Name" aria-label="Name"', fn)
+        self.assertNotIn('srow("Name"', fn)
+        self.assertIn("@property --glow", CSS)  # a picked colour fades over
+        self.assertIn("transition:--glow .6s", CSS)
+        self.assertNotIn('"kept on this pc"', APP)
+        self.assertNotIn("of ${b.length}`", APP)  # the step bar already counts
+
+    def test_part_three(self):
+        """Elias picked Edit, Remember the season before, Add shows and Which show is this (TODO 226)."""
+        self.assertIn('m.t === "recap" || m.t === "plfd" ? m.t + " dl2"', APP)
+        rc = APP[APP.index("function RecapDlg() {"):APP.index("const ppVideo =")]
+        self.assertIn("dlHead(`Remember ${esc(p.label)}?`", rc)
+        self.assertIn('data-a="recapoff">Don’t show this again</button>`, escBtn()', rc)
+        self.assertNotIn("rcpf", APP + CSS)
+        self.assertIn('dlHead("Add shows", `to ${esc(p.name)}`', APP)
+        self.assertIn('dotTxt("Added") : "Add<b>›</b>"', APP)
+        self.assertIn(':is(.dl2,.match,.entry) .actions .btn.pri', CSS)
+        self.assertNotIn('<span class="cap">your entry</span>', APP)
+        self.assertNotIn("AniList has nothing under that name", APP)  # the field and the footer say it
+

@@ -133,8 +133,12 @@ class Prepared(unittest.TestCase):
         self.script = self.dir / "ani-cli"
         self.script.write_bytes(STAND_IN)
         self.mpv = self.dir / "mpv"
+        # Started paused (ahead), it stays like a real one until the test lets it go.
         self.mpv.write_bytes(b'#!/bin/sh\nfor a; do printf "%s\\n" "$a"; done >"$HUB_TEST_ARGS.tmp"\n'
-                             b'mv "$HUB_TEST_ARGS.tmp" "$HUB_TEST_ARGS"\n')
+                             b'mv "$HUB_TEST_ARGS.tmp" "$HUB_TEST_ARGS"\n'
+                             b'n=0\nfor a; do [ "$a" = "--pause" ] || continue\n'
+                             b'    while [ ! -e "$HUB_TEST_ARGS.end" ] && [ $n -lt 300 ]; do sleep 0.05; n=$((n + 1)); done\ndone\n')
+        self.addCleanup(lambda: Path(str(self.args) + ".end").touch())
         for f in (self.script, self.mpv):
             f.chmod(f.stat().st_mode | stat.S_IEXEC)
         for patcher in (mock.patch.object(anicli, "anicli_path", return_value=str(self.script)),
@@ -159,27 +163,133 @@ class Prepared(unittest.TestCase):
     def key(self, ep="stream:900:2"):
         return streaming._prepare_key(self.link, ep, "sub")
 
-    def test_it_waits_for_the_click_then_runs_mpv_with_the_click_flags(self):
-        streaming.prepare_episode("stream:900:2")
-        self.assertTrue(self.slot())
+    def test_the_switch_s_run_waits_for_the_click_then_runs_mpv_with_the_click_flags(self):
+        """The player's Sub/Dub switch (no `ahead`): mpv starts at the go."""
+        sock = player.ipc_socket_path()
+        taken = prepare.spawn(self.key(), self.link, "2", "sub", sock, player.mpv_env(sock))
+        self.assertTrue(wait_for(lambda: prepare.ready(taken)))
         time.sleep(0.5)
         self.assertFalse(self.args.exists(), "mpv started before the click")
-        taken = prepare.take(self.key())
-        self.assertTrue(taken)
-        self.assertIsNone(prepare._slot)
         self.assertTrue(prepare.go(taken, ["--start=1:40", "--input-ipc-server=/tmp/x y"]))
         self.assertTrue(wait_for(lambda: self.args.exists()))
         lines = self.args.read_text().splitlines()
         self.assertIn("--start=1:40", lines)
         self.assertIn("--input-ipc-server=/tmp/x y", lines)
+        self.assertNotIn("--pause", lines)
         self.assertEqual(lines[-1], "clip.mp4")
         taken["proc"].wait(timeout=5)
         anicli.anicli_release(taken["proc"])
         prepare.clean(taken)
 
-    def test_the_stop_file_ends_the_waiting_script_by_itself(self):
-        streaming.prepare_episode("stream:900:2")
+    def ahead(self, ep="stream:900:2"):
+        """A prepared run whose mpv has started ahead, taken by its click."""
+        streaming.prepare_episode(ep)
         slot = self.slot()
+        self.assertTrue(wait_for(lambda: self.args.exists()), "mpv didn't start ahead")
+        taken = prepare.take(self.key(ep))
+        self.assertIs(taken, slot)
+        self.addCleanup(prepare.end, taken)
+        return taken
+
+    def click(self, taken, flags, answers=()):
+        """The click's go, mpv's answers given: the commands it got.
+        Unless told otherwise mpv says yes, and it plays once told to."""
+        sent, answers = [], list(answers)
+
+        def ipc(sock, command):
+            self.assertEqual(sock, taken["sock"])
+            sent.append(command)
+            if answers:
+                return answers.pop(0)
+            return (None, False) if command == ["get_property", "pause"] else (None, None)
+        with mock.patch.object(prepare, "_ipc", side_effect=ipc), mock.patch.object(system, "ipc_ready", return_value=True):
+            ok = prepare.go(taken, flags)
+        return ok, sent
+
+    def test_mpv_starts_ahead_paused_hidden_and_reading_little(self):
+        taken = self.ahead()
+        lines = self.args.read_text().splitlines()
+        self.assertNotIn("--vid=no", lines)  # the picture is read ahead too (only shown nowhere: AHEAD_LUA)
+        for flag in ("--pause", "--force-window=no", f"--input-ipc-server={taken['sock']}",
+                     f"--script={config.DATA / 'anicli-mpv-ahead.lua'}", f"--script-opts-append=animehub-ahead-dir={taken['dir']}",
+                     f"--script-opts-append=animehub-ahead-ttl={prepare.TTL + 60}", "--script-opts-append=animehub-ahead-ahead=30"):
+            self.assertIn(flag, lines)
+        self.assertEqual(lines[-1], "clip.mp4")  # ani-cli's own arguments still come last
+        self.assertEqual((config.DATA / "anicli-mpv-ahead.lua").read_text(), prepare.AHEAD_LUA)
+        self.assertEqual(taken["ahead"], streaming.player_flags("stream:900:2", taken["sock"]))
+        self.assertTrue((taken["dir"] / "go.started").exists())
+
+    def test_the_click_shows_it_and_plays(self):
+        taken = self.ahead()
+        ok, sent = self.click(taken, streaming.player_flags("stream:900:2", taken["sock"]))
+        self.assertTrue(ok)
+        self.assertEqual(sent, [["script-message", "animehub-ahead-show"], ["get_property", "pause"]])
+
+    def test_a_click_its_script_missed_still_plays(self):
+        """mpv without scripts stays paused after the message: the hub plays it."""
+        taken = self.ahead()
+        with mock.patch.object(prepare._playing, "__defaults__", (0.2,)):
+            ok, sent = self.click(taken, taken["ahead"], answers=[(None, None)] + [(None, True)] * 100)
+        self.assertTrue(ok)
+        self.assertEqual(sent[-1], ["set_property", "pause", False])
+
+    def test_a_click_elsewhere_in_the_episode_seeks_first(self):
+        taken = self.ahead()
+        flags = [*taken["ahead"], "--start=1:40"]
+        ok, sent = self.click(taken, flags)
+        self.assertTrue(ok)
+        self.assertEqual(sent[:2], [["seek", 100.0, "absolute"], ["script-message", "animehub-ahead-show"]])
+        # not open yet: it starts there instead
+        ok, sent = self.click(taken, flags, answers=[("property unavailable", None)])
+        self.assertEqual(sent[:2], [["seek", 100.0, "absolute"], ["set_property", "start", "100.00"]])
+
+    def test_a_changed_setting_starts_afresh(self):
+        taken = self.ahead()
+        ok, sent = self.click(taken, [*taken["ahead"], "--fs"])
+        self.assertFalse(ok)
+        self.assertEqual(sent, [])
+        self.assertFalse((taken["dir"] / "go").exists())
+
+    def test_a_click_before_mpv_started_uses_the_go_file(self):
+        """The wait script itself: a go file it finds wins over go.ahead."""
+        if not (shutil.which("sh") or shutil.which("bash")):
+            self.skipTest("no sh")
+        for go_first in (True, False):
+            folder = Path(tempfile.mkdtemp(dir=support.TMP))
+            out = folder / "args"
+            (folder / "go.ahead").write_text("--pause\n--vid=no\n")
+            if go_first:
+                (folder / "go").write_text("--start=1:40\n")
+            env = dict(os.environ, HUB_ANICLI_GO=system.shell_path(folder / "go"), HUB_ANICLI_MPV=system.shell_path(self.mpv),
+                       HUB_ANICLI_WAIT="20", HUB_TEST_ARGS=system.shell_path(out))
+            Path(str(out) + ".end").touch()
+            import subprocess
+            subprocess.run([shutil.which("sh") or shutil.which("bash"), system.shell_path(Path(prepare.hub_file("anicli-mpv-wait.sh", prepare.WAIT_SH))),
+                            "clip.mp4"], env=env, timeout=10, check=False)
+            lines = out.read_text().splitlines()
+            self.assertEqual(lines, ["--start=1:40", "clip.mp4"] if go_first else ["--vid=no", "--pause", "clip.mp4"])
+            self.assertEqual((folder / "go.started").exists(), not go_first)
+
+    def test_the_lua_keeps_his_settings_for_after_the_click(self):
+        lua = prepare.AHEAD_LUA
+        for k in ('"cache-secs"', '"demuxer-readahead-secs"'):
+            self.assertIn(k, lua)
+        self.assertIn("mp.set_property_native(k, o.ahead)", lua)
+        self.assertIn('local vo = mp.get_property_native("vo")\nmp.set_property("vo", "null")', lua)
+        show = lua.split("local function show()", 1)[1].split("\nend\n", 1)[0]
+        # his picture output first, then play: picture and sound start together
+        self.assertLess(show.index('mp.set_property_native("vo", vo)'), show.index('mp.set_property_native("pause", false)'))
+        self.assertIn("for k, v in pairs(keep) do mp.set_property_native(k, v) end", show)
+        self.assertIn('mp.register_script_message("animehub-ahead-show", show)', lua)
+        self.assertIn('utils.file_info(o.dir .. "/go.stop")', lua)  # ended by the hub, or forgotten: quits by itself
+        self.assertIn("mp.get_time() - born > o.ttl", lua)
+
+    def test_the_stop_file_ends_the_waiting_script_by_itself(self):
+        """(an mpv started ahead quits on it by itself, AHEAD_LUA: RealMpv)"""
+        sock = player.ipc_socket_path()
+        slot = prepare.spawn(self.key(), self.link, "2", "sub", sock, player.mpv_env(sock))
+        self.addCleanup(prepare.end, slot)
+        self.assertTrue(wait_for(lambda: prepare.ready(slot)))
         (slot["dir"] / "go.stop").touch()
         self.assertTrue(wait_for(lambda: slot["proc"].poll() is not None))
 

@@ -291,12 +291,25 @@ function hueOf(str) {
   for (const c of String(str || "")) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return (h >>> 0) % 360;
 }
-const cssUrl = (u) => `url("${String(u).replace(/[\s"'()\\]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))}")`;
+/* AniList's own PNG covers are ~450 KB each (shows on your lists that aren't
+   on the PC). A phone asks the PC for them instead, which sends a JPEG copy
+   a quarter the size (Decision 90). Only where a picture goes on screen:
+   the data keeps AniList's link. A PC or tablet (no artw cookie, Decision
+   86) and a hub that can't make copies keep AniList's own. */
+const AL_PNG = /^https:\/\/s4\.anilist\.co\/file\/anilistcdn\/(media\/anime\/(?:cover\/(?:medium|large|extraLarge)|banner)\/[\w-]+\.png)$/;
+let artPhone = null; // index.html set the cookie before this script ran; read on first use
+const pic = (u) => {
+  artPhone ??= typeof document !== "undefined" && /(?:^|;\s*)artw=\d/.test(document.cookie);
+  const m = artPhone && S.data?.alpic && typeof u === "string" && AL_PNG.exec(u);
+  return m ? "/alpic/" + m[1] : u;
+};
+const cssUrl = (u) => `url("${String(pic(u)).replace(/[\s"'()\\]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))}")`;
 const bgStyle = (url, hue) => `--h:${hue};` + (url ? `background-image:${cssUrl(url)}` : "");
 /* Posters shown before are drawn ready (TODO 61): their fade-in plays once,
    not again on every page that shows them. */
 const imgSeen = new Set();
 const poster = (title, url, o = {}) => {
+  url = pic(url);
   const seen = !!url && imgSeen.has(url);
   return `<div class="poster${url ? " hasimg" : ""}${seen ? " ready" : ""}${o.c ? " " + o.c : ""}${o.wait ? " wait" : ""}" style="--h:${hueOf(title)}">${url ? `<img loading="lazy"${seen ? ' class="ready"' : ' decoding="async"'} alt="" src="${esc(url)}">` : ""}<span>${esc(title)}</span></div>`;
 };
@@ -373,14 +386,22 @@ const showById = (id) => allShows().find((x) => x.id === id) || null;
 const isStream = (s) => s?.kind === "stream";
 const streamEp = (ep) => ep.id.startsWith("stream:");
 
+/* Asked ~180 times per Home page, and each ask walked every episode of
+   every show (a tenth of a phone's tab switch). One walk per library load
+   now: the hub's answer replaces S.data whole, shows and episodes are never
+   added or dropped in place. */
+let epIdx = null;
 function findEpContext(id) {
-  for (const s of allShows()) {
-    for (const sea of s.seasons) {
-      const ep = sea.episodes.find((e) => e.id === id);
-      if (ep) return { s, sea, ep };
-    }
+  const d = S.data;
+  if (!d) return null;
+  const n = d.shows.length + (d.streams?.length || 0);
+  if (!epIdx || epIdx.d !== d || epIdx.shows !== d.shows || epIdx.streams !== d.streams || epIdx.n !== n) {
+    const at = new Map();
+    for (const s of allShows()) for (const sea of s.seasons) for (const ep of sea.episodes) if (!at.has(ep.id)) at.set(ep.id, { s, sea, ep });
+    epIdx = { d, shows: d.shows, streams: d.streams, n, at };
   }
-  return null;
+  const c = epIdx.at.get(id);
+  return c ? { s: c.s, sea: c.sea, ep: c.ep } : null;
 }
 
 /* Taken off Continue watching (Decision 81): only until something of the
@@ -821,14 +842,22 @@ function fixTab(m) {
 function libList(m) {
   const f = S.lib;
   return libCards(m.entries.filter((e) => (f.tab === "ALL" || e.status === f.tab)
-    && (srcLocked() || f.src === "all" || e.capability === f.src)
-    && (f.fmt === "all" || e.format === f.fmt)
-    && (f.air === "all" || e.airing === f.air)
+    && (srcLocked() || fhas("src", e.capability))
+    && fhas("fmt", e.format)
+    && fhas("air", e.airing)
     && inRange(f.year, e.year)
     && (!Array.isArray(f.score) || (e.score > 0 && inRange(f.score, e.score)))
     && (!Array.isArray(f.average) || (e.average > 0 && inRange(f.average, e.average)))
     && hasGenres(e, f.genres))).sort(libSort(f.sort, f.rev));
 }
+/* Source, format and airing take several picks (Elias, 2026-11-12, Decision 13):
+   a show passes when it matches any of them. "all" = nothing picked; a saved
+   single pick (a string, from before) still reads as one. */
+const FMULTI = new Set(["src", "fmt", "air"]);
+const fpicked = (k) => { const v = S.lib[k]; return v === "all" || v == null ? [] : Array.isArray(v) ? v : [v]; };
+const fhas = (k, x) => { const p = fpicked(k); return !p.length || p.includes(x); };
+/* The chip's value: the picks by name, or how many once that gets long. */
+const fval = (k, opts) => { const p = fpicked(k); return !p.length ? opts[0][1] : p.length > 2 ? `${p.length} picked` : p.map((v) => (opts.find(([o]) => o === v) || [v, v])[1]).join(", "); };
 /* Genre filter (Decisions 13/28): an entry must carry every picked genre. */
 const hasGenres = (e, picked) => !picked?.length || picked.every((g) => (e.genres || []).includes(g));
 /* The tray: genres in the open tab, most cards first (one per franchise). */
@@ -878,7 +907,7 @@ function plArt(it) {
 const plPos = (i, k, n) => { const r = (i - k + n) % n; return r < 3 ? String(r) : "hide"; };
 function plStack(p) {
   const shows = p.items.slice(0, PL_STACK_MAX), n = shows.length;
-  if (!n) return `<div class="plstack empty n0"><div class="plcard" data-pos="0"><span class="plnone2">${plIcon(p) || `<span class="plico">${ico("list")}</span>`}<small>No shows yet</small></span></div></div>`;
+  if (!n) return `<div class="plstack empty n0"><div class="plcard" data-pos="0"><span class="plnone2">${plIcon(p) || `<span class="plico">${ico("list")}</span>`}</span></div></div>`;
   const k = Math.min((S.plFlip ||= {})[p.id] || 0, n - 1);
   const card = (it, i) => {
     const art = plArt(it);
@@ -892,7 +921,7 @@ function plBox(p, i, act = "plgo") {
     ${plStack(p)}
     <div class="plcap"><h3>${plIcon(p) || (p.color ? '<i class="pldot"></i>' : "")}<span class="pln">${esc(p.name)}</span>${p.pinned && act === "plgo" ? `<span class="plpin" title="Pinned to Home">${ico("pin")}</span>` : ""}<span class="plgo">${ico("chevr")}</span></h3><div class="m">${facts}</div></div></div>`;
 }
-const plNewBox = () => `<button class="plbox plnewbox" data-a="plnew"><span class="plstack"><span class="plnew">${ico("plus")}<span>New playlist</span></span></span><span class="plcap"><h3><span class="pln">&nbsp;</span></h3></span></button>`;
+const plNewBox = () => `<button class="plbox plnewbox" data-a="plnew"><span class="plstack"><span class="plnew"><span class="plplus">${ico("plus")}</span><span>New playlist</span></span></span><span class="plcap"><h3><span class="pln">&nbsp;</span></h3></span></button>`;
 /* "Add a show" inside a playlist: your library's shows by name, minus the ones already on it. */
 function plAddCands(q, p) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -933,13 +962,15 @@ function plItemCard(it, i, all, next = -1, view = "list") {
   const st = plState(it), pct = st.tot ? Math.min(100, Math.round((100 * st.done) / st.tot)) : 0;
   const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
   const art = st.entry?.poster || st.show?.poster || it.poster;
-  const ctl = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>
-    <div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const more = `<button class="plmore" data-a="plrow" data-v="${esc(it.ref)}" aria-label="More for ${esc(it.title)}" title="More">${ico("dots")}</button>`;
+  const arrows = `<div class="plctl"><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="-1" aria-label="Earlier in the playlist" title="Earlier" ${i ? "" : "disabled"}>${ico(view === "posters" ? "chevl" : "up")}</button><button class="arr plarr" data-a="plmove" data-v="${esc(it.ref)}" data-d="1" aria-label="Later in the playlist" title="Later" ${i < all.length - 1 ? "" : "disabled"}>${ico(view === "posters" ? "chevr" : "down")}</button></div>`;
+  const ctl = more + arrows;
+  /* Posters: ⋯ follows the facts line's text, so it never floats on its own (Elias, 2026-11-12). */
   /* Posters (mockup B, Elias 2026-11-11: each playlist picks): a big outlined
      place number behind each poster, like a top-10 row. */
   if (view === "posters") return `<div class="plit plpost${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plpc" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plbig${i >= 9 ? " two" : ""}" aria-hidden="true">${i + 1}</span><span class="plpi">${poster(it.title, art)}${st.tot ? `<i class="plbar"><i style="width:${pct}%"></i></i>` : ""}</span></button>
-    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small></div>${ctl}</div>`;
+    <div class="plpcap"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b><span class="plpf"><small>${esc([prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · "))}</small>${more}</span></div>${arrows}</div>`;
   return `<div class="plit plrow${i === next ? " cur" : ""}${st.fin ? " fin" : ""}" data-ref="${esc(it.ref)}" data-poster="${esc(art || "")}" data-color="${esc(st.entry?.color || "")}" style="--i:${Math.min(i, 24)}">
     <button class="plr" data-a="plopen" data-v="${esc(it.ref)}" title="Open ${esc(it.title)}"><span class="plno">${i + 1}</span><span class="plth">${poster(it.title, art)}</span>
     <span class="plt"><b>${st.entry?.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(st.entry?.title || st.show?.title || it.title)}</b>${st.more ? `<small>${esc(st.more)}</small>` : ""}</span>
@@ -1023,7 +1054,7 @@ function plFindRow(x, i, p) {
   const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
   const sub = [st.status ? statusLabel(st.status) : "", prog].filter(Boolean).join(" · ") || x.sub;
   return `<button class="plfr${added ? " added" : ""}${i === 0 && (S.plq || "").trim() ? " sel" : ""}" data-a="plfadd" data-v="${esc(x.ref)}" data-t="${esc(x.title)}" data-p="${esc(x.poster || "")}" aria-pressed="${added}"><span class="plth">${poster(x.title, x.poster)}</span>
-    <span class="plt"><b>${esc(x.title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="plfa" title="${added ? "Added · click to take it off" : "Add"}">${ico(added ? "check" : "plus")}<i>${added ? "Added" : "Add"}</i></span></button>`;
+    <span class="plt"><b>${esc(x.title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="plfa" title="${added ? "Added · click to take it off" : "Add"}">${added ? dotTxt("Added") : "Add<b>›</b>"}</span></button>`;
 }
 function plFindList(p) {
   const q = S.plq || "", groups = plFindGroups(q, p);
@@ -1031,10 +1062,9 @@ function plFindList(p) {
   let i = 0;
   return groups.map((g) => `${g.cap ? `<div class="plfcap">${g.cap}</div>` : ""}${g.rows.map((x) => plFindRow(x, i++, p)).join("")}`).join("");
 }
-const plFindHTML = (p) => `<div class="plfind" style="--plc:${esc(plColor(p))}"><h2 id="dt">Add shows</h2><p class="sub">To ${plIcon(p)}<b>${esc(p.name)}</b>. Each one goes to the end.</p>
+const plFindHTML = (p) => dlHead("Add shows", `to ${esc(p.name)}`, null, "", p.color) + `<div class="dlb plfind" style="--plc:${esc(plColor(p))}">
   <label class="plfq">${ico("search")}<input id="plq" type="search" autocomplete="off" spellcheck="false" placeholder="Search your library" aria-label="Find a show for this playlist" value="${esc(S.plq || "")}"></label>
-  <div class="plres" id="plres">${plFindList(p)}</div>
-  <div class="actions"><span class="note2"></span><button class="btn" data-a="close">Done</button></div></div>`;
+  <div class="plres" id="plres">${plFindList(p)}</div></div>` + dlFoot("", `<button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 const PlFindDlg = () => { const p = plCurrent(); return p ? plFindHTML(p) : ""; };
 const plTip = (coarse) => (coarse ? "open it and use Add to playlist in its ⋯ menu" : "right-click its poster, or use ⋯ on its page");
 const plHolds = (p, ref) => p.items.some((x) => x.ref === ref);
@@ -1232,7 +1262,7 @@ async function plDragEnd(keep) {
 function plMenu(item, x, y) {
   S.plItem = item; S.plMq = ""; S.plJust = null;
   const m = $("#cm");
-  m.innerHTML = `<div class="plmh">${item.poster ? `<img src="${esc(item.poster)}" alt="">` : `<span class="plmph">${ico("list")}</span>`}<div><small>Add to playlist</small><b>${esc(item.title)}</b></div></div>
+  m.innerHTML = `<div class="plmh">${item.poster ? `<img src="${esc(pic(item.poster))}" alt="">` : `<span class="plmph">${ico("list")}</span>`}<div><small>Add to playlist</small><b>${esc(item.title)}</b></div></div>
   <label class="plmq">${ico("search")}<input id="plmq" type="text" autocomplete="off" spellcheck="false" maxlength="60" placeholder="${(S.data.playlists || []).length ? "Find or make a playlist" : "Name a new playlist"}" aria-label="Find or make a playlist"></label>
   <div class="plml" id="plml" role="menu"></div><div class="plmf" id="plmf"></div>`;
   plMenuPaint();
@@ -1277,8 +1307,10 @@ function plLayoutMenu(x, y) {
 function plRowMenu(ref, x, y) {
   const p = plCurrent(), it = p?.items.find((q) => q.ref === ref);
   if (!it) return;
-  const st = plState(it), t = st.show && !st.fin ? pickTarget(st.show) : null, m = $("#cm");
-  const play = t && t.kind !== "rewatch" ? cmRow("play", t.ep.id, "play", `${resumable(t.ep) ? "Resume" : "Play"} ${esc(epCode(t.sea, t.ep))}`) : "";
+  /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
+  const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
+  const again = st.fin || t?.kind === "rewatch";
+  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`) : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
   m.innerHTML = `<div class="cap">${esc(it.title)}</div>${play}${cmRow("plopen", ref, "arrowr", "Open show")}${cmRow("pladd", ref, "list", "Add to another playlist", "", "", `data-r="${esc(ref)}" data-t="${esc(it.title)}" data-p="${esc(it.poster || "")}"`)}${move}<div class="sep"></div>${cmRow("plremove", ref, "close", "Remove from this playlist", "", "", 'data-danger="1"')}`;
@@ -1311,14 +1343,18 @@ async function contHide(id, hide) {
 const PL_COLORS = [...ACCENTS, "#e5737a", "#7fd1c7"];
 /* New playlist / Edit: name, then the looks Elias picked (icon, description, colour). */
 function PlNameDlg() {
-  const m = S.modal;
-  return `<h2 id="dt">${m.id ? "Edit playlist" : "New playlist"}</h2>${m.item ? `<p class="sub">${esc(m.item.title)} goes on it first.</p>` : ""}
-  <div class="plform"><label class="plf"><span>Name</span><input id="plname" maxlength="60" placeholder="Name" value="${esc(m.name || "")}"></label>
-  <label class="plf"><span>Description <small>optional</small></span><input id="plnote" maxlength="140" placeholder="What's on it, or when to watch it" value="${esc(m.note || "")}"></label>
-  <div class="plf"><span>Icon <small>optional</small></span><div class="plicons" role="group" aria-label="Icon"${m.color ? ` style="--plk:${esc(m.color)}"` : ""}>${plIconPick(m.icon)}</div></div>
-  <div class="plf"><span>Colour</span><div class="plcols"><button class="sw none${m.color ? "" : " on"}" data-a="plcol" data-v="" aria-label="No colour" aria-pressed="${!m.color}">${ico("close")}</button>${PL_COLORS.map((c) => `<button class="sw${m.color === c ? " on" : ""}" style="--c:${c}" data-a="plcol" data-v="${c}" aria-label="Colour ${c}" aria-pressed="${m.color === c}"></button>`).join("")}</div></div></div>
-  <div class="msg">${esc(m.err || "")}</div>
-  <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="plsave" ${m.busy ? "disabled" : ""}>${m.id ? "Save" : "Create"}</button></div>`;
+  const m = S.modal, k = m.color ? ` style="--plk:${esc(m.color)}"` : "";
+  /* One line that is the playlist: its icon in its colour, then the name you type. The glow
+     takes the colour too; picking one fades everything over (plcol, @property --plk). */
+  return dlHead(m.id ? "Edit playlist" : "New playlist", m.item ? `${esc(m.item.title)} goes on it first` : "", null, "", m.color)
+    + dlBody(`<div class="pnw"${k}>
+    <div class="pnh"><span class="pnt" aria-hidden="true">${m.icon && LUCIDE[m.icon] ? lu(m.icon) : ico("list")}</span>
+      <div class="pnf"><input id="plname" maxlength="60" placeholder="Name" aria-label="Name" value="${esc(m.name || "")}">
+      <input id="plnote" class="pnd" maxlength="140" placeholder="Description (optional)" aria-label="Description" value="${esc(m.note || "")}"></div></div>
+    <h3 class="pncap">Colour</h3><div class="plcols" role="group" aria-label="Colour"><button class="sw none${m.color ? "" : " on"}" data-a="plcol" data-v="" aria-label="No colour" aria-pressed="${!m.color}">${ico("close")}</button>${PL_COLORS.map((c) => `<button class="sw${m.color === c ? " on" : ""}" style="--c:${c}" data-a="plcol" data-v="${c}" aria-label="Colour ${c}" aria-pressed="${m.color === c}"></button>`).join("")}</div>
+    <h3 class="pncap">Icon</h3><div class="plicons" role="group" aria-label="Icon">${plIconPick(m.icon)}</div>
+    <div class="msg">${esc(m.err || "")}</div></div>`)
+    + dlFoot("", escBtn() + `<button class="btn pri" data-a="plsave" ${m.busy ? "disabled" : ""}>${m.id ? "Save" : "Create"}${kb("↵")}</button>`);
 }
 /* The icon picker: each group under its name; No icon (plus an old icon the playlist has) leads the first. */
 function plIconPick(cur) {
@@ -1408,7 +1444,7 @@ function MatchDlg() {
   const head = m.busy && !best ? `<div class="mqw"><span class="cap">${esc(s.title)}</span><h2 id="dt">Searching AniList…</h2><div class="found"><i class="spin"></i>looking for the right show</div></div>`
     : best ? `<div class="mqw"><span class="cap">is this</span><h2 id="dt"${candLabel(best).length > 28 ? ' class="long"' : ""}>${esc(candLabel(best))}?</h2>
       <div class="mcmp"><span>your folder</span><span>AniList</span><b>${esc(folderFacts(s).join(" · ") || "no files")}</b><b>${am}</b></div></div>`
-    : `<div class="mqw"><span class="cap">no match found</span><h2 id="dt">${esc(s.title)}</h2><p class="sub">AniList has nothing under that name. Try another name below, paste an anilist.co link, or keep it on this PC only.</p></div>`;
+    : `<div class="mqw"><span class="cap">no match found</span><h2 id="dt">${esc(s.title)}</h2></div>`;
   /* Numbered by place in the row: key 1 picks the first one shown. */
   const others = c.map((x, i) => [x, i]).filter(([, i]) => i !== m.pick).map(([x, i], k) => `<button class="moth" data-a="pick" data-s="${esc(s.id)}" data-v="${i}">${poster(candLabel(x), x.coverImage?.extraLarge || null)}<b>${esc(candLabel(x))}</b><small>${candFits(x, n)}</small><kbd class="kb">${k + 1}</kbd></button>`).join("");
   return `<div class="mdh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}
@@ -1567,11 +1603,14 @@ function fdrop(k, label, inner, val, set = Array.isArray(S.lib[k]), locked = fal
 /* Side list: a pick-one filter opens in place as a list of its options, one per row (no pills, Elias) (Elias: "make the
    upper three expand downwards like the bottom three, I don't like the popup"). */
 function fchoice(k, label, opts, locked) {
+  const multi = FMULTI.has(k) && !locked, p = fpicked(k);
   const cur = locked ? opts[1] : opts.find(([v]) => v === S.lib[k]) || opts[0];
-  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => {
-    const on = v === cur[0];
+  const isOn = (v) => multi ? (v === "all" ? !p.length : p.includes(v)) : v === cur[0];
+  /* no "any" row where several can be ticked: nothing ticked is any (Elias) */
+  return fdrop(k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${(multi ? opts.filter(([v]) => v !== "all") : opts).map(([v, l]) => {
+    const on = isOn(v);
     return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="fpick" data-k="${k}" data-v="${esc(v)}"><span>${esc(l)}</span>${ico("check")}</button>`;
-  }).join("")}</div>`, cur[1], !locked && cur[0] !== "all", locked);
+  }).join("")}</div>`, multi ? fval(k, opts) : cur[1], multi ? p.length > 0 : !locked && cur[0] !== "all", locked);
 }
 function fdropClose(except) {
   for (const d of $$(".fdrop.open")) if (d !== except) { d.classList.toggle("open", false); d.querySelector(".fdb")?.setAttribute("aria-expanded", "false"); }
@@ -1644,7 +1683,7 @@ function Lib() {
     /* Phones (TODO 177): the sheet lists the filters as rows, like the PC's side
        list; sort sits on the line above the grid. */
     const ph = isPhone(), GROUP = [["all", "each show"], ["fr", "franchises"]];
-    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl((t) => t, true)}${fchoice("group", "show", GROUP)}</div>
+    const filters = (m.cold || isUn) ? "" : ph ? `<div class="filters"><div class="lflt">${filterCtl()}${fchoice("group", "show", GROUP)}</div>
       <div class="fsfoot">${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Done</button></div></div>` : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
@@ -1667,9 +1706,9 @@ const FOPTS = () => ({
   src: [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]],
   fmt: [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]],
   air: [["all", "any"], ...Object.entries(AIR)] });
-const filterCtl = (cap = (t) => t, rail = false) => { const o = FOPTS(), pick = rail ? fchoice : fsel; return `${pick("src", cap("source"), o.src, srcLocked())}
-      ${pick("fmt", cap("format"), o.fmt)}
-      ${pick("air", cap("airing"), o.air)}
+const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}
+      ${fchoice("fmt", cap("format"), o.fmt)}
+      ${fchoice("air", cap("airing"), o.air)}
       ${fdrop("year", cap("year"), frng("year", "year", ...yearBounds(), 1, String))}
       ${fdrop("score", cap("my score"), frng("score", "my score", 0, 10, 0.5, (x) => String(x)))}
       ${fdrop("average", cap("average"), frng("average", "average", 0, 100, 5, (x) => String(x)))}`; };
@@ -1697,7 +1736,7 @@ function libRail(m, sum, loading) {
     ${lists.length ? head(aniMode() ? acct() + " lists" : "Lists") + lists.map(it).join("") : ""}
     ${loading ? head(acct() + " lists") + `<div class="lghost" style="--i:${n++}" aria-hidden="true">${[58, 76, 88, 70].map((w) => `<i><b style="width:${w}px"></b><u></u></i>`).join("")}</div><div class="lload" style="--i:${n++}">${listLoad()}</div>` : ""}
     ${pl.length ? head("Yours") + pl.map(it).join("") + railPlRows(S.lib.tab === "PLAYLISTS", cur, () => n++) : ""}
-    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1), true)}${gen}</div>` : ""}
+    ${!m.cold && lists.some((t) => t.k === S.lib.tab) ? head("Filter") + `<div class="lflt" style="--i:${n++}">${filterCtl((t) => t[0].toUpperCase() + t.slice(1))}${gen}</div>` : ""}
     ${head("On this PC")}${pc.map(it).join("")}<button class="lrescan" style="--i:${n++}" data-a="rescan" title="Look for new files and fetch missing metadata">${ico("refresh")}Rescan</button></aside>`;
 }
 /* Your playlists, under Playlists while its tab is open (Elias, 2026-11-12:
@@ -1765,19 +1804,20 @@ function gtrayFit() {
   const t = $(".gtray"), b = $(".gmore");
   if (t && b) b.hidden = !S.genOpen && t.scrollHeight <= t.clientHeight + 2;
 }
-function paintWall(fade) {
-  const w = $("#wall");
+const wallCards = (m) => m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
+function paintWall(fade, w = $("#wall"), still) {
   if (!w || plDrag?.on) return;
   const m = libModel();
-  const cards = m.cold ? S.data.shows.map(showCard) : S.lib.tab === "PLAYLISTS" ? plWall() : S.lib.tab === "UNTRACKED" ? m.untracked.map(showCard) : libList(m).map(entryCard);
+  const cards = wallCards(m);
   let html = cards.join("");
   const empty = S.lib.tab === "PLAYLISTS" ? "" /* the open playlist's banner says it's empty and has the Add button */ : `<div class="emptyx" style="grid-column:1/-1"><div class="eico">${ico("search")}</div><b>${m.entries.length || S.data.shows.length ? "Nothing matches these filters." : "No shows found."}</b>${m.entries.length || S.data.shows.length ? "" : S.settings?.android ? "<span>Shows you watch show up here. Search to find one.</span>" : "<span>Check your library folder, then rescan.</span>"}</div>`;
-  const lc = $(".lmain .filters .lh .n"); // the heading counts what the filters leave
+  const lc = (w.closest(".tpeek") || document).querySelector(".lmain .filters .lh .n"); // the heading counts what the filters leave
   if (lc) lc.textContent = cards.length;
   const fx = fade && !reduceMotion();
   const plc = S.lib.tab === "PLAYLISTS" && !m.cold ? plCurrent() : null;
   w.className = "wall" + (S.lib.tab === "PLAYLISTS" && !m.cold ? (plc ? (plc.view === "posters" ? " plposters" : " plrows") + (plc.dim ? " pldim" : "") : " plgrid") : "") + (fx ? " fade" : "");
   if (plc) w.style.setProperty("--plc", plColor(plc)); else w.style.removeProperty("--plc"); // the rows take the playlist's colour
+  if (still) { w.innerHTML = cards.slice(0, 24).join("") || empty; return; } // the pager's copy: what's in sight
   clearTimeout(paintWall.more);
   /* A fresh wall shows its first screenful at once and the rest in batches
      over the next frames — building all ~300 cards in one go froze the page
@@ -1885,14 +1925,15 @@ const slst = (mid) => (S.slink[mid] ||= { q: "", res: null, pick: 0, busy: "", e
 const normT = (t) => String(t || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "");
 function SrcDlg() {
   const { mid, title } = S.modal, st = slst(mid), res = st.res || [], cur = res[st.pick];
-  return `<h2 id="dt">Wrong episodes?</h2>
-  <p class="sub">Pick the search result that is “${esc(title)}”. Your choice is kept.</p>
-  <div class="row" style="margin-top:14px"><input id="slq" aria-label="Search" placeholder="Search for the show" value="${esc(st.q)}"><button class="btn" data-a="slsearch">${ico("search")}Search</button></div>
-  ${st.busy ? `<div class="found"><i class="spin"></i>${esc(st.busy)}</div>` : ""}
-  ${res.length ? `<div class="slres" style="margin-top:12px">${res.map((r, i) => `<button class="mi${i === st.pick ? " on" : ""}" data-a="slpick" data-v="${i}">${ico(i === st.pick ? "checkc" : "tv")}<span><b>${esc(r.title || st.q)}</b>${r.title ? "" : "<small>The only result for this search</small>"}</span></button>`).join("")}</div>`
-    : st.res && !st.busy ? '<p class="sub" style="margin-top:12px">Nothing found — try another spelling.</p>' : ""}
-  <div class="msg">${esc(st.err)}</div>
-  <div class="actions"><button class="btn" data-a="close">Cancel</button>${cur ? `<button class="btn pri" data-a="sllink" ${st.busy ? "disabled" : ""}>Use this one</button>` : "<span></span>"}</div>`;
+  const e = S.data?.spine?.entries?.find((x) => x.id === mid), sh = e?.local_show_id ? showById(e.local_show_id) : null;
+  const rows = res.map((r, i) => srow(esc(r.title || st.q), r.title ? (normT(r.title) === normT(title) ? "same name as this show" : "") : "The only result for this search",
+    pkdo(i === st.pick ? dotTxt("Picked") : `<button class="btn" data-a="slpick" data-v="${i}">Pick</button>`), i === st.pick ? "on" : "")).join("");
+  return dlHead("Wrong episodes?", esc(title), e?.banner || sh?.banner || e?.poster || null)
+    + dlBody(`<div class="path dlq"><input id="slq" aria-label="Search" placeholder="Search for the show" value="${esc(st.q)}"><button class="btn" data-a="slsearch">Search</button></div>
+    ${st.busy ? `<p class="sub">${dotTxt(esc(st.busy), "live")}</p>` : ""}
+    ${res.length ? rows : st.res && !st.busy ? '<p class="sub">Nothing found. Try another spelling.</p>' : ""}
+    <div class="msg">${esc(st.err)}</div>`)
+    + dlFoot("", escBtn() + (cur ? `<button class="btn pri" data-a="sllink" ${st.busy ? "disabled" : ""}>Use this one${kb("↵")}</button>` : ""));
 }
 async function slSearch(mid, text, titles) {
   const st = slst(mid);
@@ -2302,10 +2343,10 @@ function frMore(x0, y0) {
 function PinDlg() {
   const m = S.modal, p = S.fr?.page, opts = [...(p?.entries || []).map((x) => [String(x.id), x.label, [x.format_label, x.year].filter(Boolean).join(" · ")]),
     ["none", "None of these", "Keep the files as other files"], ["auto", "Decide automatically", "The hub matches the folder by itself"]];
-  return `<h2 id="dt">Which season is this?</h2><p class="sub">${esc(m.label)}</p>
-  <div class="slres" style="margin-top:12px">${opts.map(([v, l, s]) => `<button class="mi${m.pick === v ? " on" : ""}" data-a="pinpick" data-v="${esc(v)}">${ico(m.pick === v ? "checkc" : "tv")}<span><b>${esc(l)}</b>${s ? `<small>${esc(s)}</small>` : ""}</span></button>`).join("")}</div>
-  <div class="msg">${esc(m.err || "")}</div>
-  <div class="actions"><button class="btn" data-a="close">Cancel</button><button class="btn pri" data-a="pinsave" ${m.pick && !m.busy ? "" : "disabled"}>Save</button></div>`;
+  return dlHead("Which season is this?", esc(m.label), p?.banner || null)
+    + dlBody(opts.map(([v, l, d]) => srow(esc(l), esc(d), pkdo(m.pick === v ? dotTxt("Picked") : `<button class="btn" data-a="pinpick" data-v="${esc(v)}">Pick</button>`), m.pick === v ? "on" : "")).join("")
+      + `<div class="msg">${esc(m.err || "")}</div>`)
+    + dlFoot("", escBtn() + `<button class="btn pri" data-a="pinsave" ${m.pick && !m.busy ? "" : "disabled"}>Save${kb("↵")}</button>`);
 }
 /* The episode menu (right-click or ⋯, Decision 38): play / resume at the
    saved time / from the start / the other language · watched · reset ·
@@ -2560,11 +2601,11 @@ function EntryDlg() {
   const on = svcPick(), sw = bothAccts() ? `<div class="seg edsvc" role="radiogroup" aria-label="Edit your entry on">${Object.entries(SVC_NAME).map(([v, l]) =>
     `<button role="radio" class="${v === on ? "on" : ""}" aria-checked="${v === on}" data-a="esvc" data-v="${v}">${l}</button>`).join("")}</div>` : "";
   return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${sw}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
-    <div class="edt"><span class="cap">your entry</span><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
+    <div class="edt"><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
   <div class="edb"><div id="entrybox"><p class="note">Loading…</p></div></div>
-  <div class="actions"><span class="mono note2" id="edfoot">${edFoot(on)}</span><button class="btn pri" data-a="close">Done${kb("Esc")}</button></div>`;
+  <div class="actions"><span class="note2" id="edfoot">${edFoot(on)}</span><button class="btn" data-a="close">Done${kb("Esc")}</button></div>`;
 }
-const edFoot = (v) => `saves as you go · if ${SVC_NAME[v] || acct()} is offline, it waits and retries`;
+const edFoot = (v) => `Saves as you go, and retries if ${SVC_NAME[v] || acct()} is offline.`;
 /* The panel never sits on "Loading…" for a page it has shown before
    (TODO 61): the last answer per entry draws at once, the fresh one
    replaces it when it differs. A "stale" answer (the hub's stored read
@@ -2762,7 +2803,7 @@ function loadJournal() {
     const more = r.state === "loading" || r.syncing || r.complete === false;
     if (more && jrTries++ < 40) setTimeout(() => { if (S.view === "history" || S.view === "stats") loadJournal(); }, 3000);
     else jrTries = 0;
-    if (S.view === "history" || S.view === "stats") render(true);
+    if (S.view === "history" || S.view === "stats") render(true); else pagerStale();
   }, () => { jrBusy = false; }); // only the request: a drawing error should show, not hang on "Reading…"
 }
 function jEvents() {
@@ -2987,7 +3028,7 @@ function loadAlData() {
   if (!aniMode() || S.alData || loadAlData.busy) return;
   loadAlData.busy = true;
   api("/api/anilist").then((res) => {
-    if (res && res.user) { S.alData = res; if (S.view === "stats" || S.view === "history") render(true); }
+    if (res && res.user) { S.alData = res; if (S.view === "stats" || S.view === "history") render(true); else pagerStale(); }
   }).catch(() => {}).finally(() => { loadAlData.busy = false; });
 }
 
@@ -3218,20 +3259,20 @@ function fontRows(s) {
 const famKey = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 function FontDlg() {
   const m = S.modal;
-  return `<h2 id="dt">Add a font</h2><p class="sub">The fonts on this PC. Click one to add it.</p>
-  <label class="fq">${ico("search")}<input id="fontq" type="search" placeholder="Find a font" autocomplete="off" value="${esc(m.q || "")}"></label>
-  <div class="flist" id="fontlist">${fontListRows()}</div>
-  <div class="actions"><label class="btn fimp">${ico("download")}From a file…<input type="file" data-a="fontfile" accept=".ttf,.otf,.woff,.woff2" hidden></label><span class="note2"></span><button class="btn" data-a="close">Done</button></div>`;
+  return dlHead("Add a font") + dlBody(`<label class="path dlq fq">${ico("search")}<input id="fontq" type="search" placeholder="Find a font" aria-label="Find a font" autocomplete="off" value="${esc(m.q || "")}"></label>
+  <div class="flist" id="fontlist">${fontListRows()}</div>`)
+    + dlFoot("", `<label class="btn fimp">${ico("download")}From a file…<input type="file" data-a="fontfile" accept=".ttf,.otf,.woff,.woff2" hidden></label><button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 }
+/* Each font as a Settings row in its own face: the name, a line, then Add › or ● Added. */
 function fontListRows() {
   const m = S.modal;
-  if (!m.list) return `<div class="dim">${m.err ? esc(m.err) : "Looking for fonts…"}</div>`;
+  if (!m.list) return `<div class="dim">${m.err ? esc(m.err) : dotTxt("Looking for fonts…", "live")}</div>`;
   const q = famKey(m.q), have = new Set(fontList().map((f) => famKey(f.name)));
   const rows = m.list.filter((f) => !q || famKey(f.family).includes(q));
   if (!rows.length) return `<div class="dim">No font called “${esc(m.q)}”.</div>`;
   return rows.map((f) => {
     const on = have.has(famKey(f.family)), busy = m.busy === f.family;
-    return `<button class="frow${on ? " on" : ""}" data-a="fontadd" data-v="${esc(f.family)}" ${on || busy ? "disabled" : ""}><span class="fn" style="font-family:&quot;${esc(f.family)}&quot;, var(--ui)">${esc(f.family)}</span><small>${busy ? "adding…" : on ? `${ico("check")}added` : f.styles > 1 ? `${f.styles} styles` : ""}</small></button>`;
+    return `<button class="frow${on ? " on" : ""}" data-a="fontadd" data-v="${esc(f.family)}" ${on || busy ? "disabled" : ""}><span class="fn" style="font-family:&quot;${esc(f.family)}&quot;, var(--ui)">${esc(f.family)}</span><i class="fline" aria-hidden="true"></i><small>${busy ? dotTxt("adding…", "live") : on ? dotTxt("Added") : `${f.styles > 1 ? `<em>${f.styles} styles</em>` : ""}<b>Add</b>`}</small></button>`;
   }).join("");
 }
 async function fontPickOpen() {
@@ -3863,6 +3904,20 @@ function nextChip(now) {
   const v = S.data?.vpn, vpn = !v?.known ? "" : v.active ? " · vpn" : " · no vpn";
   return `<span class="st nx${v?.known && !v.active ? " warn" : ""}" title="The next episode plays online through ani-cli">next: online${vpn}</span>`;
 }
+/* Pop-ups (TODO 226) are built from Settings' parts (Decision 73): a head with
+   the show's art or a soft glow, the big title and a mono note, rows with a
+   line and a value, states as a dot and a word, and a bar of quiet buttons
+   with ›, the one that matters most in the accent. */
+const dlHead = (title, sum = "", art = null, extra = "", glow = null) => `<div class="dlh${art ? " art" : ""}"${art ? ` style="--art:${esc(cssUrl(art))}"` : glow ? ` style="--glow:${esc(glow)}"` : ""}>${extra}<div class="dlt"><h2 id="dt"${title.replace(/<[^>]+>/g, "").length > 20 ? ' class="long"' : ""}>${title}</h2>${sum ? `<span class="dls">${sum}</span>` : ""}</div></div>`;
+const dlBody = (html, cls = "") => `<div class="dlb set2${cls ? " " + cls : ""}"><div class="settings"><div class="group">${html}</div></div></div>`;
+const dlFoot = (note, btns, cls = "") => `<div class="actions${cls ? " " + cls : ""}"><span class="note2">${note}</span>${btns}</div>`;
+/* "● Found", "● watching for one…": a state as a dot and a word, like Settings. */
+const dotTxt = (t, c = "ok") => `<span class="chip${c === "live" || c === "warn" ? " warn" : ""}"><i class="dot ${c}"></i>${t}</span>`;
+/* Where a pop-up's choice lives in Settings: closes the pop-up and lights the row. */
+const setLink = (tab, row, label) => `<button class="lnk" data-a="setgo" data-t="${tab}" data-v="${esc(row)}">${label} settings ›</button>`;
+const whoTxt = (u) => `<span class="who"><i class="avatar">${esc((u || "?")[0].toUpperCase())}</i>${esc(u || "")}</span>`;
+/* The pop-ups drawn this way (paintModal gives them the .dl2 frame). */
+const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done"]);
 /* skp: the play would also use AniSkip (Decision 39), so the dialog asks
    that too; go(true/false) carries the answer. */
 function vpnGate(go, skp = false) {
@@ -3876,34 +3931,33 @@ function vpnGate(go, skp = false) {
 const ipLine = (online, skp) => `Without a VPN, ${online && skp ? "the streaming site and AniSkip see" : online ? "the streaming site sees" : "AniSkip sees"} your IP address.`;
 /* Use AniSkip / Without AniSkip in place of one Continue button. */
 const skpBtns = (yes, no, key = "") => `<button class="btn" data-a="${no}">Without AniSkip</button><button class="btn pri" data-a="${yes}">Use AniSkip${key}</button>`;
+const escBtn = (a = "close", l = "Cancel") => `<button class="btn" data-a="${a}">${l}${kb("Esc")}</button>`;
 const aniskipAsk = () => S.settings?.aniskip === true && S.settings?.aniskip_vpn_warn !== false && !!S.data?.vpn?.known && !vpnOn();
 /* Once, before the very first play: the two things Enter does in mpv. */
 function TipDlg() {
-  return `<h2 id="dt">While you watch</h2>
-  <p class="sub">Press Enter in mpv:</p>
-  <div class="ptip"><div><kbd class="kb">↵</kbd><span><b>In an opening or ending</b>Skips it. A button shows up in the corner too.</span></div>
-  <div><kbd class="kb">↵</kbd><span><b>Anywhere else</b>Finishes the episode, marks it watched and plays the next one.</span></div></div>
-  <div class="actions"><span class="note2 mono">change this in Settings → Skipping</span><button class="btn pri" data-a="tipgo">Got it, play</button></div>`;
+  return dlHead("Enter in mpv") + dlBody(`
+    ${srow("In an opening or ending", "Skips it.", pkdo(kb("↵")))}
+    ${srow("Anywhere else", "Marks it watched and plays the next episode.", pkdo(kb("↵")))}`)
+    + dlFoot(setLink("skipping", "Skip openings", "Skipping"), `<button class="btn pri" data-a="tipgo">Got it, play${kb("↵")}</button>`);
 }
 function UpDlg() {
-  return `<h2 id="dt">Tell you about new versions?</h2>
-  <p class="sub">Once a day, AnimeHub can ask GitHub for new releases. GitHub sees your IP address, nothing about your library.</p>
-  <div class="actions three"><span class="note2 mono">change this in Settings → System</span><button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button></div>`;
+  return dlHead("New versions?") + dlBody(`<p class="sub">Once a day, AnimeHub can ask GitHub. GitHub sees your IP address.</p>`)
+    + dlFoot("", '<button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button>', "three");
 }
 function SkpDlg() {
-  return `<h2 id="dt">No VPN detected</h2>
-  <p class="sub">${ipLine(false, true)}</p>${vpnWait()}
-  <div class="actions three"><span class="note2 mono">switch this off in Settings → Skipping</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skpBtns("skpgo", "skpno")}</div>`;
+  return dlHead("No VPN on") + dlBody(vpnRow(S.data?.vpn, ipLine(false, true)))
+    + dlFoot(setLink("privacy", "AniSkip", "Privacy & VPN"), escBtn() + skpBtns("skpgo", "skpno"), "three");
 }
 /* A shield with a line through it: no VPN (the "More episodes are out" tile, TODO 183). */
 const SHIELD_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.7 14a7 7 0 0 0 .3-2V6l-8-3-3.2 1.2"/><path d="M4.7 4.7 4 5v6c0 6 8 10 8 10a20 20 0 0 0 5.4-4.6"/><path d="m2 2 20 20"/></svg>';
 const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/><path d="M12 8v4M12 15.5v.01"/></svg>';
-const vpnWait = () => `<div class="warn2"><span class="wi">${SHIELD}</span><div><b>No VPN is on</b><span>Turn it on and this starts by itself.</span><div class="watching"><i class="spin"></i>watching for a VPN…</div></div></div>`;
+/* The VPN as a Settings row: amber while the hub waits for one, green once it's up. */
+const vpnRow = (v = S.data?.vpn, who = "") => v?.active ? srow("VPN", v.iface ? `Through ${esc(v.iface)}.` : "", pkdo(dotTxt("On")))
+  : srow("VPN", `${who ? who + " " : ""}Turn one on and this starts by itself.`, pkdo(dotTxt("Off", "live")));
 function VpnDlg() {
   const skp = S.modal.skp;
-  return `<h2 id="dt">No VPN detected</h2>
-  <p class="sub">${ipLine(true, skp)}</p>${vpnWait()}
-  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">switch this off in Settings → Online episodes${skp ? " / Skipping" : ""}</span><button class="btn" data-a="close">Cancel<kbd class="kb">esc</kbd></button>${skp ? skpBtns("vpngo", "vpnno") : '<button class="btn pri" data-a="vpngo">Continue anyway</button>'}</div>`;
+  return dlHead("No VPN on") + dlBody(vpnRow(S.data?.vpn, ipLine(true, skp)))
+    + dlFoot(setLink("privacy", "Online episodes and downloads", "Privacy & VPN"), escBtn() + (skp ? skpBtns("vpngo", "vpnno") : `<button class="btn pri" data-a="vpngo">Continue anyway${kb("↵")}</button>`), skp ? "three" : "");
 }
 /* Next-episode prompt (TODO 10): the last file finished and the next
    episode is online only — autoplay waits for Continue / Stop here. */
@@ -3913,10 +3967,9 @@ function maybeNextPrompt(p) {
   lastNextPrompt = p.id;
   openModal({ t: "nxt", p });
 }
-function nxVpn() {
+function nxVpn(who = "") {
   const v = S.data?.vpn;
-  if (!v?.known) return `<span class="dim mono">vpn status unknown</span>`;
-  return v.active ? `<span class="okv mono">vpn on · ${esc(v.iface)}</span>` : vpnWait();
+  return v?.known ? vpnRow(v, who) : srow("VPN", "The hub can't tell whether one is on.", pkdo(dotTxt("unknown", "")));
 }
 function NextDlg() {
   const p = S.modal.p, c = p.id && findEpContext(p.id), art = c ? (safeThumb(c.sea, c.ep) || c.s.banner || c.s.poster) : null, v = S.data?.vpn;
@@ -3925,11 +3978,11 @@ function NextDlg() {
   const ask = p.kind === "aniskip", online = String(p.id).startsWith("stream:"), noVpn = v?.known && !v.active, skp = noVpn && (ask || aniskipAsk());
   const label = p.label || (c ? epCode(c.sea, c.ep) : "Next episode"), show = p.show || c?.s?.title;
   const go = skp ? skpBtns("nxgo", "nxno", '<kbd class="kb">↵</kbd>') : `<button class="btn pri" data-a="nxgo">${noVpn ? "Stream anyway" : "Continue"}<kbd class="kb">↵</kbd></button>`;
-  return `<div class="nx2">${art ? `<span class="nxa" style="background-image:${esc(cssUrl(art))}"><span class="lab">${esc(label)}${online ? " · online" : ""}</span></span>` : ""}<div>
-    <h2 id="dt">${esc(label)}${show ? ` <small>${esc(show)}</small>` : ""}</h2>
-    <p class="sub">${online ? "Not on your disk, so it streams online. " : ""}${noVpn ? ipLine(online, skp) : ""}</p>
-    <div id="nx-vpn">${nxVpn()}</div></div></div>
-  <div class="actions${skp ? " three" : ""}"><span class="note2 mono">${noVpn ? "starts by itself when a VPN comes on" : ""}</span><button class="btn" data-a="nxstop">Stop here<kbd class="kb">esc</kbd></button>${go}</div>`;
+
+  /* The show is the big title, the episode the note beside it (an episode code alone looked empty). */
+  return dlHead(esc(show || label), [show ? label : "", online ? "online" : "on disk"].filter(Boolean).map(esc).join(" · "), art, '<span class="dlcap">up next</span>')
+    + dlBody(`<div id="nx-vpn">${nxVpn(noVpn ? ipLine(online, skp) : "")}</div>`)
+    + dlFoot("", escBtn("nxstop", "Stop here") + go, skp ? "three" : "");
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
@@ -4199,7 +4252,7 @@ function deckFill(src, i, items) {
       if (!u) continue;
       delete p.dataset.art;
       const im = new Image();
-      im.src = u;
+      im.src = pic(u);
       im.decode().catch(() => {}).finally(() => p.style.setProperty("--art", cssUrl(u)));
     }
   };
@@ -4315,7 +4368,8 @@ function loadSched() {
   api("/api/schedule").then((r) => {
     S.schedBusy = false; S.sched = { at: r.state === "loading" ? 0 : Date.now(), state: r.state, items: r.items || [] };
     if (S.view === "week") render(true);
-    else if (S.view === "home" && !isPhone() && !isTabletP()) { const el = $("#app .hsec.tw"); if (el) el.outerHTML = weekHTML(airingList()); }
+    else pagerStale(); // the tab pager's copy of the Calendar
+    if (S.view === "home" && !isPhone() && !isTabletP()) { const el = $("#app .hsec.tw"); if (el) el.outerHTML = weekHTML(airingList()); }
     if (r.state === "loading") setTimeout(() => S.view === "week" && loadSched(), 2500);
   }).catch(() => { S.schedBusy = false; });
 }
@@ -4492,8 +4546,10 @@ function paintSide() {
    the whole page's styles, ~300 ms of a phone's Library switch (TODO 213). */
 const PAGE_MARKS = [["pg-fr", ".frpage"], ["pg-sfr", ".sp2.frpage"], ["pg-uph", ".home2.has-uph"],
   ["pg-back", ".sp2 .backbtn:not([data-a=rmtclose]), .set2 .sback"]];
-function pageMarks() {
-  for (const [cls, sel] of PAGE_MARKS) document.body.classList.toggle(cls, !!document.querySelector(sel));
+function pageMarks(app = $("#app")) {
+  for (const [cls, sel] of PAGE_MARKS) document.body.classList.toggle(cls, !!app.querySelector(sel));
+  cvRestSoon(); // a page can hide the art (pg-sfr, pg-uph)
+  cvLook(); // and a show page on a phone blurs it more (pg-sfr)
 }
 function paintPortals() {
   pageMarks();
@@ -4683,7 +4739,7 @@ function paintRemote() {
     const paused = !!l.paused, busy = now.loading ? "disabled" : "", epNo = ctx ? "E" + String(ctx.ep.number).padStart(2, "0") : now.label;
     const pp = (c) => `<button class="btn pri ic ${c}" data-a="rmt" data-v="toggle" aria-label="${paused ? "Play" : "Pause"}" ${busy}>${ico(paused ? "play" : "pause")}</button>`;
     const skip = (c) => `<button class="btn ${c}" data-a="rmt" data-v="skip" hidden>${ico("next")}<span>Skip opening</span></button>`;
-    const thumb = s?.poster ? `<img alt="" src="${esc(s.poster)}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
+    const thumb = s?.poster ? `<img alt="" src="${esc(pic(s.poster))}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
     const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
     const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
     /* The remote (TODO 177, Elias picked B): the show's art fills the top, big −10 · Play · +10
@@ -4798,37 +4854,41 @@ function AniDlg() {
   const a0 = S.ani || {}, a = { ...(a0.accounts?.anilist || (a0.service === "anilist" ? a0 : {})), client_id_configured: a0.client_id_configured };
   const mal = !a.user && a0.service === "mal";
   const exp = a.expires_at ? new Date(a.expires_at * 1000).toLocaleDateString() : null;
-  return `<h2 id="dt">AniList account</h2>
-  <p class="sub">${a.connected ? `Connected as <b>${esc(a.user)}</b>${exp ? ` · token expires ${exp}` : ""}${a0.service === "anilist" ? "" : ". Paused: MyAnimeList is in use."}` : a.expired ? "The saved token has expired — reconnect below." : mal ? "MyAnimeList is in use. Connecting AniList puts AniList in use; MyAnimeList stays logged in." : `Not connected. Everything runs on what you watch on this ${S.settings?.android ? "phone" : "PC"}.`}</p>
-  ${a.connected ? '<div class="bulk"><button class="btn" data-a="aniout" data-v="anilist">Disconnect</button></div>' : ""}
-  ${!a.connected && a.client_id_configured ? '<div class="bulk"><button class="btn pri" data-a="anioauth">Connect via AniList</button></div>' : ""}
-  ${!a.connected && location.port !== "8787" && !S.settings?.android ? `<p class="hint-line">The hub runs on port ${esc(location.port || "80")}, but the bundled AniList client redirects to port 8787 — one-click connect needs the hub on its default port, or your own client registered for this port (add <code>anilist_client_id</code> to the config file).</p>` : ""}
-  ${!a.connected ? `<p class="hint-line">The browser flow opens anilist.co for one Authorize click. Prefer a token? AniList → Settings → Apps → Create New Token, then paste it below.</p>
-    <div class="row" style="margin-top:12px"><input id="tok" type="text" placeholder="…or paste an AniList token" autocomplete="off" spellcheck="false"><button class="btn" data-a="anitoken">Use token</button></div>` : ""}
-  <div class="msg" id="animsg"></div>
-  <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
+  const state = a.connected ? `${a0.service === "anilist" ? "In use." : "Paused: MyAnimeList is in use."}${exp ? ` Token runs until ${exp}.` : ""}`
+    : a.expired ? "The saved token has expired. Reconnect below." : mal ? "MyAnimeList is in use. Connecting AniList puts AniList in use; MyAnimeList stays logged in." : `Not connected. Everything runs on what you watch on this ${S.settings?.android ? "phone" : "PC"}.`;
+  const port = !a.connected && location.port !== "8787" && !S.settings?.android;
+  return dlHead("AniList")
+    + dlBody(`${srow("Account", state, pkdo(a.connected ? whoTxt(a.user) + '<button class="btn" data-a="aniout" data-v="anilist">Disconnect</button>' : a.client_id_configured ? '<button class="btn pri" data-a="anioauth">Connect via AniList</button>' : dotTxt("Not connected", "")))}
+    ${port ? `<p class="sub">The hub runs on port ${esc(location.port || "80")}, but the bundled AniList client redirects to port 8787. One-click connect needs the hub on its default port, or your own client registered for this port (add <code>anilist_client_id</code> to the config file).</p>` : ""}
+    ${!a.connected ? `${srow("Or use a token", "Make one on anilist.co: Settings → Apps → Create New Token.", "")}
+    <div class="path dlq"><input id="tok" type="text" placeholder="Paste an AniList token" aria-label="AniList token" autocomplete="off" spellcheck="false"><button class="btn" data-a="anitoken">Use token</button></div>` : ""}
+    <div class="msg" id="animsg"></div>`)
+    + dlFoot(setLink("anilist", "AniList", "Account"), `<button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 }
 /* MyAnimeList as the account (Decision 75). Show info stays AniList's. MAL
    sends the browser back to port 8787 only: on another port, the address it
    lands on is pasted here. */
 function MalDlg() {
   const a = S.ani || {}, m = a.mal || {}, me = a.accounts?.mal || {}, in_use = a.service === "mal", on = !!me.connected, n = in_use ? S.alData?.unmatched?.length || 0 : 0;
-  return `<h2 id="dt">MyAnimeList account</h2>
-  <p class="sub">${on ? `Connected as <b>${esc(me.user)}</b>. ${in_use ? "Your MyAnimeList lists are the sections of your library; show info still comes from AniList." : "Paused: AniList is in use. Switch Lists from in Settings → Account to use it."}`
-    : me.user ? "The login has run out — reconnect below." : a.service === "anilist" ? "AniList is in use. Connecting MyAnimeList puts it in use; AniList stays logged in." : "Use your MyAnimeList lists, progress and scores. Show info still comes from AniList."}</p>
-  ${on ? `<p class="hint-line">MyAnimeList doesn't let apps change favourites, so the heart is hidden while it's in use.${n ? ` ${n} of your MyAnimeList entr${n === 1 ? "y has" : "ies have"} no AniList match and don't show in the library.` : ""}</p>
-    <div class="bulk"><button class="btn" data-a="aniout" data-v="mal">Disconnect</button></div>` : ""}
-  ${!on && m.client_id_configured ? '<div class="bulk"><button class="btn pri" data-a="maloauth">Connect via MyAnimeList</button></div>' : ""}
-  ${!on && !m.client_id_configured ? '<p class="hint-line">This copy of Anime Hub has no MyAnimeList app id. Add <code>mal_client_id</code> to the config file.</p>' : ""}
-  ${!on && m.client_id_configured ? `<p class="hint-line">${location.port !== "8787" ? `MyAnimeList sends you back to port 8787, and this hub runs on port ${esc(location.port || "80")}. After you approve, copy the address you land on and paste it here.` : "Opens myanimelist.net for one Allow click. If the page you land on says so, paste its address here."}</p>
-    <div class="row" style="margin-top:12px"><input id="malurl" type="text" placeholder="…paste the address MyAnimeList sent you to" autocomplete="off" spellcheck="false"><button class="btn" data-a="malpaste">Connect</button></div>` : ""}
-  <div class="msg" id="animsg"></div>
-  <div class="actions"><span></span><button class="btn" data-a="close">Close</button></div>`;
+  const state = on ? (in_use ? "In use." : "Paused: AniList is in use.")
+    : me.user ? "The login has run out. Reconnect." : a.service === "anilist" ? "Connecting puts it in use. AniList stays logged in." : "Your lists, progress and scores.";
+  return dlHead("MyAnimeList")
+    + dlBody(`<p class="sub">Show info still comes from AniList.</p>
+    ${srow("Account", state, pkdo(on ? whoTxt(me.user) + '<button class="btn" data-a="aniout" data-v="mal">Disconnect</button>' : m.client_id_configured ? '<button class="btn pri" data-a="maloauth">Connect via MyAnimeList</button>' : dotTxt("No app id", "")))}
+    ${on && n ? srow("Not in the library", `${n} entr${n === 1 ? "y has" : "ies have"} no AniList match.`, "") : ""}
+    ${!on && !m.client_id_configured ? '<p class="sub">This copy of Anime Hub has no MyAnimeList app id. Add <code>mal_client_id</code> to the config file.</p>' : ""}
+    ${!on && m.client_id_configured ? `${srow("After you approve", location.port !== "8787" ? `Paste the address MyAnimeList sends you to (port 8787; this hub runs on ${esc(location.port || "80")}).` : "If the page you land on asks, paste its address here.", "")}
+    <div class="path dlq"><input id="malurl" type="text" placeholder="Paste the address MyAnimeList sent you to" aria-label="MyAnimeList address" autocomplete="off" spellcheck="false"><button class="btn" data-a="malpaste">Connect</button></div>` : ""}
+    <div class="msg" id="animsg"></div>`)
+    + dlFoot(setLink("anilist", "MyAnimeList", "Account"), `<button class="btn" data-a="close">Done${kb("Esc")}</button>`);
 }
 /* The tour's last page (mockup): what the hub found — ✓ found, ! needed, – optional. */
 const MPV_BTN = '<button class="btn sm" data-a="ext" data-v="https://mpv.io/installation/">Get mpv</button>';
 const UPSCAYL_BTN = '<button class="btn sm" data-a="ext" data-v="https://upscayl.org/download">Get Upscayl</button>';
-const tourRow = (st, k, v, more = "") => `<div class="${st}"><span class="okc">${st === "ok" ? ico("check") : st === "bad" ? "!" : "–"}</span><b>${k}</b><span class="v">${esc(v)}</span>${more}</div>`;
+/* What the tour found, as a Settings row (TODO 226): the thing, what was found, and a state on the right —
+   ● Found, ● the problem in amber, or Optional — with the button that fixes it. */
+const TOUR_ST = { ok: ["Found", "ok"], bad: ["Needed", "warn"], opt: ["Optional", ""] };
+const tourRow = (st, k, v, more = "", word = "") => srow(k, esc(st === "ok" ? v.replace(/ found$/, "") : v), pkdo(more + dotTxt(word || TOUR_ST[st][0], TOUR_ST[st][1])), st === "bad" ? "bad" : "");
 /* The ani-cli button (Decision 47): the official script, only when clicked. */
 const aniWord = (s) => (s.stream?.own && !s.stream?.outdated ? "Check for updates" : s.stream?.own ? "Update ani-cli" : "Get ani-cli");
 const aniBtn = (s) => (s.stream?.can_get ? `<button class="btn sm" data-a="aniget" ${S.aniGet ? "disabled" : ""}>${S.aniGet ? "Getting it…" : aniWord(s)}</button>` : "");
@@ -4851,33 +4911,37 @@ const toolsShown = (ti) => ti.can && (ti.groups?.length || ["working", "failed"]
 function toolsBox(s, inTour) {
   const ti = s.tools_install || {}, j = ti.job || {}, busy = j.state === "working", failed = j.state === "failed";
   if (!toolsShown(ti)) return "";
-  const mark = (st) => st === "ok" ? ico("check") : st === "working" ? '<i class="spin"></i>' : st === "failed" ? "!" : "–";
+  const word = { ok: ["Done", "ok"], working: ["installing…", "live"], failed: ["Failed", "warn"] };
   const picked = toolsPicked(ti);
   const rows = busy || failed
-    ? (j.steps || []).map((x) => `<div class="${x.state === "ok" ? "ok" : x.state === "failed" ? "bad" : "opt"}"><span class="okc">${mark(x.state)}</span><b>${esc(x.name)}</b><span class="v">${x.state === "working" ? "installing…" : x.state === "ok" ? "done" : x.state === "failed" ? "failed" : ""}</span></div>`).join("")
-    : ti.groups.map((g) => { const on = picked.includes(g.id);
-      return `<div class="${on ? "ok" : "opt"}"><b>${esc(g.name)}</b><span class="v">${esc(TOOL_HINT[g.id] || "")}</span><button class="switch" role="switch" aria-checked="${on}" aria-label="Install ${esc(g.name)}" data-a="toolpick" data-v="${g.id}"></button></div>`; }).join("");
+    ? (j.steps || []).map((x) => srow(esc(x.name), "", pkdo(word[x.state] ? dotTxt(...word[x.state]) : ""))).join("")
+    : ti.groups.map((g) => srow(esc(g.name), esc(TOOL_HINT[g.id] || ""), pick(`Install ${g.name}`, "toolpick", g.id, [["on", "Install"], ["off", "Skip"]], picked.includes(g.id) ? "on" : "off"))).join("");
   const foot = busy ? "Installing… you can keep going." : failed ? j.error || "Something didn't install." : "No admin rights needed. The rest can come later.";
   const btn = busy || inTour ? "" : toolsBtn(ti, "btn pri sm");
-  return `<div class="tinst"><div class="sum2 tpick">${rows}</div><div class="tfoot"><p class="${failed ? "swarn" : ""}">${esc(foot)}</p>${btn}</div></div>`;
+  return `<div class="tinst">${rows}<div class="tfoot"><p class="${failed ? "swarn" : ""}">${esc(foot)}</p>${btn}</div></div>`;
 }
 function tourTools(s) {
   const st = s.stream || {}, ani = s.tools?.["ani-cli"], up = s.tools?.upscayl, need = st.needs?.length ? `${ani && !st.outdated ? "." : ""} It also needs ${st.needs.join(", ")}.` : "";
+  const aniSt = ani && !st.outdated && !st.needs?.length ? "ok" : st.outdated || (ani && st.needs?.length) ? "bad" : "opt";
   return [
-    tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN),
-    tourRow(ani && !st.outdated && !st.needs?.length ? "ok" : st.outdated || (ani && st.needs?.length) ? "bad" : "opt", "Online episodes", aniLine(s) + need, ani && !st.outdated ? (st.needs?.includes("curl-impersonate") ? IMP_BTN : "") : aniBtn(s)),
-    tourRow(up ? "ok" : "opt", "Sharper banners", up ? "Upscayl found" : "Optional: install Upscayl for sharper show banners.", up ? tgl("upscale_banners", "Sharper banners", s.upscale_banners) : UPSCAYL_BTN),
+    tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN, s.tools?.mpv ? "" : "Not found"),
+    tourRow(aniSt, "Online episodes", aniLine(s) + need, ani && !st.outdated ? (st.needs?.includes("curl-impersonate") ? IMP_BTN : "") : aniBtn(s), st.outdated ? "Too old" : ""),
+    up ? srow("Sharper banners", "Upscayl found. Redraws new banners sharper.", onoff("upscale_banners", "Sharper banners", s.upscale_banners))
+      : tourRow("opt", "Sharper banners", "Optional: install Upscayl for sharper show banners.", UPSCAYL_BTN),
   ].join("");
 }
 function tourFound(s, a, n, ok) {
-  const row = tourRow;
+  const row = tourRow, T = S.tour || {};
   return [
-    row(ok ? "ok" : "bad", "Library", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : s.library_root ? `${s.library_root} · can't be read` : "no folder chosen yet"),
-    row(s.tools?.mpv ? "ok" : "bad", "Player", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "mpv not found — install it to play files"),
+    row(ok ? "ok" : "bad", "Library", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : s.library_root ? `${s.library_root} · can't be read` : "no folder chosen yet", "", ok ? "" : "Not set"),
+    row(s.tools?.mpv ? "ok" : "bad", "Player", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "mpv not found — install it to play files", "", s.tools?.mpv ? "" : "Not found"),
     row(s.tools?.["ani-cli"] ? "ok" : "opt", "Online episodes", s.tools?.["ani-cli"] ? aniLine(s) : "not set up, optional"),
-    row(a.connected ? "ok" : "opt", acct(), a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected"),
+    tourAcct(a, T),
   ].join("");
 }
+/* The account row: who's connected, or Connect (in the accent when page 3 picked it). */
+const tourAcct = (a, T) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
+  : srow(acct(), "Not connected yet.", pkdo(`<button class="btn${T.choice === "connect" ? " pri" : ""}" data-a="tourconnect">Connect ${acct()}</button>`));
 /* The phone page needs the desktop app: without it the tour skips that page. */
 const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 6));
 /* A small drawing of each player look for the tour: the real layout over a neutral scene, no show's art. */
@@ -4904,20 +4968,20 @@ const PL_LOOKS = {
 const TOUR_OWN = { mpv_fullscreen: "own", mpv_smooth: "own" }, TOUR_HUB = { mpv_fullscreen: "on", mpv_smooth: "on" };
 function tourMpv(s) {
   const m = s.mpv || {}, own = m.fullscreen === "own" && m.smooth === "own";
-  const card = (v, on, title, line) => `<button class="choice ${on ? "on" : ""}" aria-pressed="${on}" data-a="tourmpv" data-v="${v}"><b>${title}</b><span>${line}</span></button>`;
-  return `<div class="choices">${card("hub", !own, "Anime Hub's settings", "Episodes start fullscreen, and the controls stay smooth while playing.")}${card("own", own, "My own settings", "mpv.conf decides. Good if you have tuned mpv yourself.")}</div>`;
+  return srow("Fullscreen and smooth controls", own ? "Your mpv.conf decides." : "Anime Hub turns both on.",
+    pick("Fullscreen and smooth controls", "tourmpv", null, [["hub", "Anime Hub"], ["own", "My mpv.conf"]], own ? "own" : "hub"));
 }
 function tourLooks(s) {
-  const m = s.mpv || {}, own = m.design === "own";
-  const card = (v, title, line) => `<button class="choice lkcard ${!own && (m.look || "soft") === v ? "on" : ""}" aria-pressed="${!own && (m.look || "soft") === v}" data-a="tourlook" data-v="${v}">${PL_LOOKS[v]()}<b>${title}</b><span>${line}</span></button>`;
-  return `<div class="choices lkpick">${card("soft", PLAYER_LOOKS.soft, "Controls float over the picture, with lively hover effects.")}${card("deck", PLAYER_LOOKS.deck, "One slim bar along the bottom, with the most room for the seek bar.")}
-    <button class="choice lkown ${own ? "on" : ""}" aria-pressed="${own}" data-a="tourlook" data-v="own"><b>Keep my own mpv look</b><span>For a skin you already use. Anime Hub adds no controls.</span></button></div>`;
+  const m = s.mpv || {}, look = m.design === "own" ? "own" : m.look || "soft";
+  return srow("Player layout", look === "own" ? "Your own skin. Anime Hub adds no controls." : PLAYER_LINES[look] || "",
+    pick("Player layout", "tourlook", null, [["soft", PLAYER_LOOKS.soft], ["deck", PLAYER_LOOKS.deck], ["own", "My own"]], look), "prev",
+    look === "own" ? "" : `<span class="choice pkprev" aria-hidden="true">${PL_LOOKS[look]()}</span>`);
 }
 /* The search page: only what search does today, in the words of its own sections. */
 function tourSearch() {
-  const row = (icon, title, line) => `<div>${ico(icon)}<span><b>${title}</b>${line}</span></div>`;
-  return `<h2 id="dt">What search can find</h2><p class="sub">${isPhone() ? "Tap the search button to open it." : 'Press <kbd class="kb">/</kbd> on any page to open it.'}</p>
-    <div class="ptip">${row("folder", "Shows in your library", "Type part of a name to open a show.")}${row("search", "Shows you don't have", "Finds anything on AniList. Needs an AniList account or ani-cli.")}${row("sliders", "Settings", "Type a setting's name. Switches can be flipped right in the results.")}${row("arrowr", "Commands", "Go to a page, rescan your library or show your downloads.")}</div>`;
+  return ["Search", "", (isPhone() ? "" : `<p class="sub">Press ${kb("/")} on any page.</p>`)
+    + srow("Your shows", "Type part of a name.", "") + srow("Any anime", "From AniList, with an account or ani-cli.", "")
+    + srow("Settings", "Flip a switch right in the results.", "") + srow("Commands", "Go to a page, rescan, open downloads.", "")];
 }
 /* The tour's pages. The Android app (Decision 88) has no
    library folder, mpv or phone remote: it sets up Termux instead. */
@@ -4926,27 +4990,25 @@ function tourBlocks() {
   if (s.android) return tourAndroid(T, s, a);
   const ok = s.library_root && s.scan?.state === "ok", eps = S.data.shows.reduce((x, y) => x + epTotal(y), 0);
   return tourPages([
-    `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">It plays the anime on this computer in mpv.</p>
-     <div class="ptip"><div>${ico("folder")}<span><b>Your library</b>Your files, matched to AniList with art and episode names.</span></div>
-     <div>${ico("download")}<span><b>Online episodes</b>Missing an episode? Watch or download it from the same page. Optional.</span></div>
-     <div>${ico("play")}<span><b>Playback</b>Resumes where you stopped, skips openings and plays the next episode.</span></div></div>`,
-    `<h2 id="dt">Where's your anime?</h2><p class="sub">Anime Hub plays what is in your library folder, in mpv.</p><div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}
-     <div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>`,
-    `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
-      <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
-      <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything runs on what you watch on this PC.</span></button></div>`,
-    `<h2 id="dt">A few tools</h2><p class="sub">Anime Hub uses these programs. Only mpv is required.</p>${toolsShown(s.tools_install || {}) ? toolsBox(s, true) : `<div class="sum2">${tourTools(s)}</div>`}`,
-    `<h2 id="dt">Pick your player</h2><p class="sub">How the controls look while you watch. You can switch any time in Settings.</p>${tourLooks(s)}`,
-    `<h2 id="dt">Your mpv settings</h2><p class="sub">Your own mpv.conf always loads. This decides whether Anime Hub adds its settings on top. You can change each one later in Settings.</p>${tourMpv(s)}`,
-    `<h2 id="dt">Use it from your phone?</h2><p class="sub">The phone remote needs the server running on this PC. Both are off unless you turn them on, and you can change them later in Settings.</p>${bgRows(s)}`,
+    ["Welcome to Anime Hub", "",
+      srow("Your library", "Your files, with art and episode names.", "") + srow("Online episodes", "Missing ones, streamed or downloaded. Optional.", "")
+      + srow("Playback", "Resumes, skips openings, plays the next one.", "")],
+    ["Where's your anime?", "", `${srow("Library folder", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.",
+        `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide")}${DirPick("tour")}`],
+    ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this PC.")}`],
+    ["A few tools", "", toolsShown(s.tools_install || {}) ? toolsBox(s, true) : tourTools(s)],
+    ["Pick your player", "", tourLooks(s)],
+    ["Your mpv settings", "", `<p class="sub">Your mpv.conf always loads.</p>${tourMpv(s)}`],
+    ["Use it from your phone?", "", `<p class="sub">The phone remote needs the server running on this PC.</p>${bgRows(s)}`],
     tourSearch(),
-    `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
-     <div class="sum2">${tourFound(s, a, n, ok)}</div>
-     ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
-     ${tourSwitches(s, a)}`,
+    ["You're set", "", `<div class="group"><h3>Found</h3>${tourFound(s, a, n, ok)}</div>${tourSwitches(s, a)}`],
   ], s);
 }
-const tourSwitches = (s, a) => `<div class="${a.connected ? "" : "off"}">${srow("Track episodes", "After you watch an episode, update your AniList progress.", tgl("auto_progress_sync", "Track episodes", s.auto_progress_sync))}${srow("Add shows automatically", "Watching a show that isn't on your lists adds it to Watching.", tgl("auto_add_watch", "Add shows automatically", s.auto_add_watch))}</div>`;
+/* Page 3: Connect or Skip, as Settings rows with Pick ›. Already connected: who. */
+const tourPickAcct = (T, a, skipLine) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
+  : [["connect", `Connect ${acct()}`, "Syncs progress and scores."], ["skip", "Skip for now", skipLine]]
+    .map(([v, l, d]) => srow(l, d, pkdo(T.choice === v ? dotTxt("Picked") : `<button class="btn" data-a="tourpick" data-v="${v}">Pick</button>`), T.choice === v ? "on" : "")).join("");
+const tourSwitches = (s, a) => `<div class="group"><h3>While you watch</h3>${srow("Send watched episodes", "Sends your highest watched episode to AniList.", onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, !a.connected))}${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, !a.connected))}</div>`;
 /* Termux commands (Decision 88), the same words the hub's errors use. */
 const TERMUX_INSTALL = "pkg upgrade -y && pkg install -y ani-cli";
 const TERMUX_ALLOW = "mkdir -p ~/.termux && echo allow-external-apps=true >> ~/.termux/termux.properties && termux-reload-settings";
@@ -4957,42 +5019,38 @@ const filesAsk = () => srow("Your anime files", "To play episodes saved on this 
 /* Back from Android's file-access screen: fresh settings, same page (the tour keeps its step). */
 window.hubFilesBack = () => loadSettings().then(() => { if (S.modal) paintModal(); else render(true); }).catch(() => {});
 function termuxBox(s) {
-  if (termuxReady(s)) return `<div class="found"><i class="dot ok"></i>ani-cli ${esc(s.stream?.version || "")} found in Termux. Online episodes are ready.</div>`;
+  if (termuxReady(s)) return srow("ani-cli", `${esc(s.stream?.version || "")} in Termux. Online episodes are ready.`, pkdo(dotTxt("Found")));
   const cmd = (t) => `<div class="tcmd"><code>${esc(t)}</code><button class="btn sm" data-a="copy" data-v="${esc(t)}">Copy</button></div>`;
   return `<ol class="tsteps">
     <li>Install <b>Termux</b> from <a href="https://f-droid.org/packages/com.termux/" target="_blank" rel="noopener">F-Droid</a>. The Play Store's version is too old.</li>
     <li>Open Termux and run:${cmd(TERMUX_INSTALL)}</li>
     <li>Then run this, so Anime Hub may use it:${cmd(TERMUX_ALLOW)}</li>
     <li>Come back here, tap Check again and allow Anime Hub when Android asks.</li></ol>
-    <div class="found"><i class="dot"></i><span>${esc(s.termux || "ani-cli not found in Termux yet.")}</span></div>
-    <div class="bulk"><button class="btn" data-a="termuxcheck" ${S.termuxBusy ? "disabled" : ""}>${S.termuxBusy ? "Checking…" : "Check again"}</button></div>`;
+    ${srow("ani-cli", esc(s.termux || "Not found in Termux yet."), pkdo(`<button class="btn" data-a="termuxcheck" ${S.termuxBusy ? "disabled" : ""}>${S.termuxBusy ? "Checking…" : "Check again"}</button>`))}`;
 }
 function tourAndroid(T, s, a) {
   const row = tourRow, n = S.data.shows.length, ok = s.library_root && s.scan?.state === "ok";
   return [
-    `<h2 id="dt">Welcome to Anime Hub</h2><p class="sub">Your anime on this phone, no PC needed.</p>
-     <div class="ptip"><div>${ico("download")}<span><b>Online episodes</b>Search any show and watch it. Set up once with the free Termux app.</span></div>
-     <div>${ico("play")}<span><b>Playback</b>Resumes where you stopped, skips openings and plays the next episode.</span></div>
-     <div>${ico("check")}<span><b>${acct()}</b>Your lists and progress, kept in sync. Optional.</span></div></div>`,
-    `<h2 id="dt">Connect AniList?</h2><p class="sub">Your AniList lists become the sections of your library. You can change this later in Settings.</p><div class="choices">
-      <button class="choice ${T.choice === "connect" ? "on" : ""}" data-a="tourpick" data-v="connect"><b>Connect AniList</b><span>Sync progress and scores with your account.</span></button>
-      <button class="choice ${T.choice === "skip" ? "on" : ""}" data-a="tourpick" data-v="skip"><b>Skip for now</b><span>Everything stays on this phone.</span></button></div>`,
-    `<h2 id="dt">Online episodes</h2><p class="sub">Anime Hub finds episodes with ani-cli, which runs in Termux. You can do this later in Settings.</p>${termuxBox(s)}`,
-    `<h2 id="dt">Anime files on this phone?</h2><p class="sub">Optional. Episodes you keep on this phone or an SD card play here too. You can do this later in Settings → Library.</p>
-     ${s.files_ok ? `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>${DirPick("tour")}<div class="found"><i class="dot ${ok ? "ok" : ""}"></i>${ok ? `Found ${n} show${n === 1 ? "" : "s"}` : s.library_root ? "There is a problem with this folder — try another one." : "Choose the folder that holds your anime."}</div>` : filesAsk()}`,
+    ["Welcome to Anime Hub", "",
+      srow("Online episodes", "Search any show and watch it. Needs the free Termux app.", "") + srow("Playback", "Resumes, skips openings, plays the next one.", "")
+      + srow(acct(), "Your lists and progress. Optional.", "")],
+    ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this phone.")}`],
+    ["Online episodes", "", `<p class="sub">ani-cli finds them. It runs in Termux.</p>${termuxBox(s)}`],
+    ["Files on this phone?", "", `<p class="sub">Optional. Episodes on this phone or an SD card.</p>
+     ${s.files_ok ? srow("Your files", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"}`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.", `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}`],
     tourSearch(),
-    `<h2 id="dt">You're set</h2><p class="sub">Here's what Anime Hub found.${a.connected ? " Two last switches — both can change later." : " Connect AniList below, or any time from Settings."}</p>
-     <div class="sum2">${row(termuxReady(s) ? "ok" : "opt", "Online episodes", termuxReady(s) ? aniLine(s) : "Termux not set up yet")}${row(ok ? "ok" : "opt", "Your files", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : "none chosen")}${row(a.connected ? "ok" : "opt", acct(), a.connected ? `connected${a.user ? " as " + a.user : ""}` : "not connected")}</div>
-     ${!a.connected ? '<button class="btn pri" data-a="tourconnect" style="margin-top:14px">Connect AniList</button>' : ""}
-     ${tourSwitches(s, a)}`,
+    ["You're set", "", `<div class="group"><h3>Found</h3>${row(termuxReady(s) ? "ok" : "opt", "Online episodes", termuxReady(s) ? aniLine(s) : "Termux not set up yet")}${row(ok ? "ok" : "opt", "Your files", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : "none chosen")}${tourAcct(a, T)}</div>
+     ${tourSwitches(s, a)}`],
   ];
 }
 function Tour() {
   const T = S.tour, s = S.settings || {}, b = tourBlocks();
-  const last = b.length - 1, ti = s.tools_install || {};
+  const last = b.length - 1, ti = s.tools_install || {}, [title, note, body] = b[T.step];
   const toolsHere = !s.android && T.step === 3 && toolsShown(ti) && ti.job?.state !== "working";
-  return `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>${b[T.step]}
-  <div class="actions">${T.step ? '<button class="btn" data-a="tourback">Back</button>' : '<button class="btn" data-a="tourskip">Skip</button>'}${toolsHere ? `<span class="aright"><button class="btn" data-a="tournext">Continue</button>${toolsBtn(ti, "btn pri")}</span>` : `<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}</button>`}</div>`;
+  const steps = `<div class="steps">${b.map((_, i) => `<i class="${i === T.step ? "on" : i < T.step ? "done" : ""}"></i>`).join("")}</div>`;
+  return dlHead(title, note, null, steps) + dlBody(body)
+    + dlFoot("", (T.step ? '<button class="btn" data-a="tourback">Back</button>' : `<button class="btn" data-a="tourskip">Skip${kb("Esc")}</button>`)
+      + (toolsHere ? `<button class="btn" data-a="tournext">Continue</button>${toolsBtn(ti, "btn pri")}` : `<button class="btn pri" data-a="tournext">${T.step === last ? "Open library" : "Continue"}${kb("↵")}</button>`));
 }
 /* The connect dialog (Decisions 14, 48, 75; polish TODO 191): rows like
    Settings — the show, a line of its episodes, the value on the right.
@@ -5068,14 +5126,14 @@ function Rec() {
   const note = eps ? `${pl(marks.length, "show")} · ${pl(eps, "episode")}` : n ? pl(n, "show") : `${pl(facts.length, "show")} sent`;
   const sub = eps ? `${A2} is ahead of this PC. Bright ticks get marked, faint ones are already watched here${gap ? ", outlined ones are neither on this PC nor online" : ""}.`
     : n ? `These shows have a different status or score on ${A2} and on this PC. Pick what to keep.` : `What you watched on this PC went to ${A2}.`;
-  const sw = n && eps ? `<div class="rcrow rcsw" style="--r:${r++}"><span class="rct"><b>Mark ${eps === 1 ? "it" : `these ${eps}`} watched here</b><small>Off leaves this PC as it is.</small></span><i class="rcl"></i><span class="rcv"><button class="switch" role="switch" aria-checked="${!!mark}" aria-label="Mark watched here" data-a="recmark" data-v="${mark ? 0 : 1}"></button></span></div>` : "";
+  const sw = n && eps ? `<div class="rcrow rcsw" style="--r:${r++}"><span class="rct"><b>Mark ${eps === 1 ? "it" : `these ${eps}`} watched here</b><small>Off leaves this PC as it is.</small></span><i class="rcl"></i>${pick("Mark watched here", "recmark", null, [["1", "On"], ["0", "Off"]], mark ? "1" : "0")}</div>` : "";
   const acts = n
-    ? `<span class="note2 mono">${[`keeps ${pl(n, "choice")}`, mark && eps ? `marks ${pl(eps, "episode")}` : ""].filter(Boolean).join(" · ")}</span><button class="btn" data-a="recclose">Skip</button><button class="btn pri" data-a="recapply">Apply<kbd class="kb">↵</kbd></button>`
-    : eps ? `<span class="note2 mono">marks this pc only</span><button class="btn" data-a="recclose">Leave as is</button><button class="btn pri" data-a="recapply">Mark ${eps.toLocaleString("en")} watched<kbd class="kb">↵</kbd></button>`
-    : `<span class="note2"></span><button class="btn pri" data-a="recclose">Close<kbd class="kb">↵</kbd></button>`;
-  return `<h2 id="dt">${title}<small>${note}</small></h2><p class="sub">${sub}</p>
+    ? dlFoot("", escBtn("recclose", "Skip") + `<button class="btn pri" data-a="recapply">Apply${kb("↵")}</button>`)
+    : eps ? dlFoot("", escBtn("recclose", "Leave as is") + `<button class="btn pri" data-a="recapply">Mark ${eps.toLocaleString("en")} watched${kb("↵")}</button>`)
+    : dlFoot("", `<button class="btn pri" data-a="recclose">Close${kb("↵")}</button>`);
+  return `${dlHead(title, note)}<div class="dlb rcsub"><p class="sub">${sub}</p></div>
   <div class="rcbody${n && eps && !mark ? " nomark" : ""}">${markRows ? cap(`ahead on ${A2}`) + markRows + sw : ""}${confRows ? cap("different status or score", `<span class="rcalls">all: ${all("anilist", A2)}${all("local", "This PC")}</span>`) + confRows : ""}${factRows ? cap("sent from this pc") + factRows : ""}</div>
-  <div class="actions">${acts}</div>`;
+  ${acts}`;
 }
 /* You finished a show (Decision 25 → 38): poster, the big title, rate it
    (1–10 pills) with ♥ beside, and what comes next in its franchise. */
@@ -5083,15 +5141,13 @@ function Done() {
   const c = S.modal.c, e = S.data?.spine?.entries?.find((x) => x.id === c.media_id) || null;
   const p = frMemo.get(c.media_id), nx = p ? p.entries.filter((x) => x.group === "main").find((x, i, all) => all[i - 1]?.id === c.media_id) || p.entries.find((x) => x.group === "extra" && !S.data.spine?.entries?.some((y) => y.id === x.id)) : null;
   const nxOn = nx && S.data.spine?.entries?.find((y) => y.id === nx.id);
-  return `<div class="dn"><div class="dnp">${poster(c.title || "", e?.poster || null)}</div><div class="dnb">
-    <span class="cap">you finished</span><h2 id="dt">${esc(c.title || "a show")}</h2>
-    <div class="facts">${[e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on " + acct() : "saved on this PC"].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
-    <span class="cap" style="margin-top:22px">how was it?</span>
-    <div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : favPill(false, 'id="dn-fav" data-a="dnfav"')}</div><div id="dn-fine" hidden>${scoreSlider("dnfine", 0)}</div>
+  const facts = [e?.episodes ? `${e.episodes} of ${e.episodes}` : "", e?.format ? FMT[e.format] || e.format : "", S.ani?.connected ? "marked Completed on " + acct() : "saved on this PC"].filter(Boolean).map(esc).join(" · ");
+  /* The show's banner on top (its poster when it has none), the score as the main row, what comes next under it. */
+  return dlHead(esc(c.title || "a show"), facts, e?.banner || e?.poster || null, '<span class="dlcap">you finished</span>')
+    + dlBody(`${srow("How was it?", "", `<div class="scrow"><div class="score" id="dn-pills" role="radiogroup" aria-label="Score">${Array.from({ length: 10 }, (_, i) => `<button role="radio" aria-checked="false" data-a="dnscore" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>${isMal() ? "" : favPill(false, 'id="dn-fav" data-a="dnfav"')}</div>`, "wide")}<div id="dn-fine" hidden>${scoreSlider("dnfine", 0)}</div>
     <input type="hidden" id="dn-score" value=""><input type="hidden" id="dn-status" value="COMPLETED"><span id="dn-max" hidden></span>
-    ${nx ? `<div class="dnnext">${poster(nx.title || nx.label, nx.poster || null, { c: "t" })}<span class="tx"><b>${esc(nx.title || nx.label)}</b><small>${esc([nx.format_label, "next in this franchise", nxOn ? "on your list" : "not on your list"].filter(Boolean).join(" · "))}</small></span>${nxOn ? "" : `<button class="btn sm" data-a="dnplan" data-v="${nx.id}">+ Planning</button>`}</div>` : ""}
-  </div></div>
-  <div class="actions"><span class="note2 mono">the score saves when you close</span><button class="btn" data-a="dnskip">Skip</button><button class="btn pri" data-a="dnsave">Done<kbd class="kb">↵</kbd></button></div>`;
+    ${nx ? `<div class="group"><h3>Next in this franchise</h3>${srow(esc(nx.title || nx.label), esc(nx.format_label || ""), pkdo(nxOn ? dotTxt("On your list") : `<button class="btn" data-a="dnplan" data-v="${nx.id}">Add to Planning</button>`))}</div>` : ""}`)
+    + dlFoot("", `<button class="btn" data-a="dnskip">Skip${kb("Esc")}</button><button class="btn pri" data-a="dnsave">Done${kb("↵")}</button>`);
 }
 /* The overlay is built once per dialog; later paints (tour steps, option picks) swap only the dialog body
    so the backdrop and entrance don't replay. A tour paint with no new page (a switch, a card) updates in
@@ -5125,7 +5181,7 @@ function paintModal(focus) {
       }
     }
   } else {
-    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon" : m.t === "entry" || m.t === "match" || m.t === "recap" || m.t === "plfd" ? m.t : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon dl2" : m.t === "recap" || m.t === "plfd" ? m.t + " dl2" : m.t === "entry" || m.t === "match" ? m.t : DL2.has(m.t) ? "dl2" : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
   }
   if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
   else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
@@ -5300,28 +5356,35 @@ function glide(box) {
   set(to); glideMem[key] = to;
 }
 /* Edge fades + arrow state for horizontally scrolling strips. */
-function strips() {
-  $$("#app .strip").forEach((st) => {
+function strips(root = $("#app")) {
+  /* Every strip is measured first, then every strip is marked. A mark
+     written between two measurements made the browser lay the page out
+     again for each strip (Home: 8 strips, a third of a tab switch). Each
+     `read` measures and hands back the marking. */
+  const marks = [];
+  root.querySelectorAll(".strip").forEach((st) => {
     const arrows = st.previousElementSibling ? st.previousElementSibling.querySelectorAll(".arr") : [];
-    const upd = () => {
+    const read = () => {
       const max = st.scrollWidth - st.clientWidth, x = st.scrollLeft;
-      st.classList.toggle("ml", x > 4); st.classList.toggle("mr", x < max - 4);
-      if (arrows[0]) { arrows[0].hidden = arrows[1].hidden = max <= 4; arrows[0].disabled = x <= 4; arrows[1].disabled = x >= max - 4; }
+      return () => {
+        st.classList.toggle("ml", x > 4); st.classList.toggle("mr", x < max - 4);
+        if (arrows[0]) { arrows[0].hidden = arrows[1].hidden = max <= 4; arrows[0].disabled = x <= 4; arrows[1].disabled = x >= max - 4; }
+      };
     };
     if (!st._strip) {
-      st._strip = true; st.addEventListener("scroll", upd, { passive: true });
+      st._strip = true; st.addEventListener("scroll", () => read()(), { passive: true });
       const on = st.matches(".frorder") && st.querySelector(".on"); // the watch order opens at this entry
       const x = on ? on.getBoundingClientRect().left - st.getBoundingClientRect().left - 80 : 0;
       if (x > 0) st.scrollLeft = x;
     }
-    upd();
+    marks.push(read());
   });
   /* The show page's season tabs: one row that scrolls sideways (fades at
      the cut edge, the wheel scrolls it, the picked tab starts in view). */
-  $$("#app .sp2 .rels").forEach((r) => {
-    const upd = () => { const max = r.scrollWidth - r.clientWidth; r.classList.toggle("ml", r.scrollLeft > 4); r.classList.toggle("mr", r.scrollLeft < max - 4); };
+  root.querySelectorAll(".sp2 .rels").forEach((r) => {
+    const read = () => { const max = r.scrollWidth - r.clientWidth, x = r.scrollLeft; return () => { r.classList.toggle("ml", x > 4); r.classList.toggle("mr", x < max - 4); }; };
     if (!r._rels) {
-      r._rels = true; r.addEventListener("scroll", upd, { passive: true });
+      r._rels = true; r.addEventListener("scroll", () => read()(), { passive: true });
       r.addEventListener("wheel", (e) => {
         if (e.ctrlKey || r.scrollWidth <= r.clientWidth + 4 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
         e.preventDefault(); r.scrollLeft += e.deltaY;
@@ -5329,8 +5392,9 @@ function strips() {
       const on = r.querySelector("button.on");
       if (on && on.offsetLeft + on.offsetWidth > r.clientWidth) r.scrollLeft = on.offsetLeft - 40;
     }
-    upd();
+    marks.push(read());
   });
+  for (const mark of marks) mark();
 }
 /* The accent follows the show on screen (Decision 38): a hue sampled from its
    art, at a fixed light, soft saturation so every show reads well on dark.
@@ -5383,10 +5447,85 @@ function swapLayer(cls, url) {
   if (canvasNow[cls] === url) return;
   canvasNow[cls] = url;
   const [a, b] = $$("#canvas ." + cls), on = a.classList.contains("out") ? b : a, off = on === a ? b : a;
-  if (url) { off.style.backgroundImage = cssUrl(url); off.classList.remove("out"); }
+  if (url) { off.style.backgroundImage = cssUrl(url); off.classList.remove("out", "rest"); cvPicture(off, url); }
   on.classList.add("out");
+  cvRestSoon();
+}
+/* Touch screens: the blurred art is drawn once per picture into a small canvas
+   in its layer (CSS #canvas.cvc, TODO 224); the screen only scales and fades it.
+   The CSS holds the look (--cvf, the same filter the layer had) and the blur's
+   reach (--cvp, the edge kept around the picture). The picture fills the inner
+   box as background-size:cover / center did, and the blur spreads into the edge. */
+const cvc = { on: false, f: "", p: 0, mark: "" };
+function cvPicture(el, url) {
+  if (!cvc.on || el._cvu === url) return cvDraw(el);
+  el._cvu = url;
+  const c = el.firstElementChild;
+  if (c) { c._key = ""; c.width = c.width; } // the old picture must not fade in while the new one loads
+  cvDraw(el);
+}
+function cvDraw(el) {
+  const c = el.firstElementChild, url = el._cvu;
+  if (!cvc.on || !c || !url || !c._w || !cvc.f) return;
+  const key = `${url}|${cvc.f}|${cvc.p}|${c._w}x${c._h}`;
+  if (c._key === key) return;
+  c._key = key;
+  const img = new Image();
+  img.src = pic(url);
+  img.decode().then(() => {
+    if (c._key !== key) return;
+    const w = c._w, h = c._h, p = cvc.p, bw = w - 2 * p, bh = h - 2 * p, iw = img.naturalWidth, ih = img.naturalHeight;
+    if (!iw || !ih || bw <= 0 || bh <= 0) return;
+    const s = Math.max(bw / iw, bh / ih), sw = bw / s, sh = bh / s;
+    c.width = Math.round(w); c.height = Math.round(h);
+    const x = c.getContext("2d");
+    x.filter = cvc.f;
+    x.imageSmoothingQuality = "high";
+    x.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, p, p, bw, bh);
+  }).catch(() => {});
+}
+/* The look changes with Art (Full / Soft), a show page on a phone (pg-sfr) and
+   the width; the CSS is read only then, a frame later, never while a page builds. */
+function cvLook() {
+  if (!cvc.on) return;
+  const mark = `${document.documentElement.dataset.art}|${document.body.classList.contains("pg-sfr")}|${mq("(max-width:700px)")}`;
+  if (mark === cvc.mark) return;
+  cvc.mark = mark;
+  requestAnimationFrame(() => {
+    const st = getComputedStyle($("#canvas"));
+    cvc.f = st.getPropertyValue("--cvf").trim();
+    cvc.p = parseFloat(st.getPropertyValue("--cvp")) || 0;
+    $$("#canvas .cv-blur").forEach(cvDraw);
+  });
+}
+if (mq("(pointer:coarse)") && typeof ResizeObserver === "function") {
+  cvc.on = true;
+  $("#canvas").classList.add("cvc");
+  const ro = new ResizeObserver((es) => {
+    for (const e of es) { e.target._w = e.contentRect.width; e.target._h = e.contentRect.height; }
+    cvLook();
+    $$("#canvas .cv-blur").forEach(cvDraw);
+  });
+  for (const el of $$("#canvas .cv-blur")) { const c = document.createElement("canvas"); el.append(c); ro.observe(c); }
+}
+/* The sharp art drifts for good, and it kept drifting while faded out: on
+   every page the screen was asked for a new frame 60 times a second with
+   nothing to show (a phone never came to rest). A layer nobody can see now
+   holds still ("rest"); it moves again the moment it starts to fade in. */
+const cvRest = () => $$("#canvas .cv-art").forEach((el) => {
+  if (el.getAnimations().some((a) => a.transitionProperty === "opacity")) return; // mid-fade: its end comes back here
+  el.classList.toggle("rest", getComputedStyle(el).opacity === "0");
+});
+function cvRestSoon() { clearTimeout(cvRestSoon.t); cvRestSoon.t = setTimeout(cvRest, 1400); }
+{
+  const cv = $("#canvas");
+  cv.addEventListener("transitionrun", (e) => { if (e.propertyName === "opacity") e.target.classList.remove("rest"); });
+  for (const ev of ["transitionend", "transitioncancel"]) cv.addEventListener(ev, (e) => { if (e.propertyName === "opacity") cvRestSoon(); });
+  addEventListener("resize", cvRestSoon);
+  cvRestSoon();
 }
 function paintCanvas() {
+  cvLook();
   const art = canvasArt(), mode = lookGet("art");
   document.documentElement.classList.add("amb-now"); // page changes step the accent too: the CSS fade restyled everything each frame
   swapLayer("cv-blur", mode === "off" ? null : art?.blur);
@@ -5400,9 +5539,13 @@ function paintCanvas() {
    5 steps over 0.4 s, still a fade, a fraction of the work. */
 let ambStep = 0;
 function ambFade(to) {
-  const root = document.documentElement, from = getComputedStyle(root).getPropertyValue("--amb").trim();
+  const root = document.documentElement;
   clearInterval(ambStep);
-  if (!to || !from || reduceMotion() || mq("(pointer:coarse)")) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
+  /* Where the colour only steps once (touch screens, reduced motion) the
+     colour now on screen isn't needed, and asking for it made the browser
+     style the whole new page on the spot. */
+  const from = !to || reduceMotion() || mq("(pointer:coarse)") ? "" : getComputedStyle(root).getPropertyValue("--amb").trim();
+  if (!from) return to ? root.style.setProperty("--amb", to) : root.style.removeProperty("--amb");
   let k = 0;
   ambStep = setInterval(() => {
     k++;
@@ -5425,18 +5568,24 @@ function barTint(c) {
 }
 function accentFrom(url, color) {
   const root = document.documentElement;
+  const own = url;
+  url = pic(url); // a phone samples the copy it already has, not a second download from AniList
   ambWant = url || null;
   const set = (c) => { barTint(c); if (root.classList.contains("amb-now")) return ambFade(c); clearInterval(ambStep); c ? root.style.setProperty("--amb", c) : root.style.removeProperty("--amb"); };
   if (color) return set(hexAccent(color));
   if (!url) return set(null);
   if (url in ambMemo) return set(ambMemo[url]);
-  const img = new Image();
   /* AniList's CDN allows CORS; without it the canvas can't read the colour. Its own
      URL key, so the copy the page already loaded (no CORS) isn't reused. */
-  const remote = /^https?:/.test(url);
-  if (remote) img.crossOrigin = "anonymous";
-  img.onload = () => { let c = null; try { c = sampleColor(img); } catch {} ambMemo[url] = c; if (ambWant === url) set(c); };
-  img.src = remote ? url + (url.includes("?") ? "&" : "?") + "cors=1" : url;
+  const read = (src, cors, unreadable) => {
+    const img = new Image();
+    if (cors) img.crossOrigin = "anonymous";
+    img.onload = () => { let c = null; try { c = sampleColor(img); } catch { if (unreadable) return unreadable(); } ambMemo[url] = c; if (ambWant === url) set(c); };
+    img.src = src;
+  };
+  const direct = (u) => read(u + (u.includes("?") ? "&" : "?") + "cors=1", true);
+  /* A copy the PC passed on to AniList (a see-through cover) can't be read: AniList's own then, as before. */
+  if (/^https?:/.test(url)) direct(url); else read(url, false, url !== own ? () => direct(own) : null);
 }
 const ambient = paintCanvas;
 const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Calendar" };
@@ -5448,7 +5597,7 @@ const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "J
    their scroll. Runtime state the HTML doesn't carry survives: the image
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
-const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "setin"];
+const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "setin"];
 const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
@@ -5526,7 +5675,13 @@ function render(inPlace = false) {
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
   const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
-  if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !reduceMotion()); app.innerHTML = html; }
+  if (morph) morphHTML(app, html); else { app.classList.toggle("nav-in", fresh && !S.navQuiet && !reduceMotion()); app.innerHTML = html; }
+  S.navQuiet = false;
+  /* What restyles the whole page (the accent on <html>, the page marks on
+     <body>) goes on before anything below measures the new page: after it,
+     every tab switch that changed the accent styled the page twice (a third
+     of a phone's switch to the Journal or the Calendar). */
+  ambient(); pageMarks();
   /* The entrance is over after ~2.5 s: drop its class, or every element a later
      in-place update swaps in rose again (the side list's rows flickered, Elias). */
   if (fresh) { clearTimeout(render.navInT); render.navInT = setTimeout(() => app.classList.remove("nav-in"), 2500); }
@@ -5536,7 +5691,7 @@ function render(inPlace = false) {
   if (S.view === "library") { paintWall(!!S.fadeNext); S.fadeNext = false; startMetaWatch(); }
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
-  strips(); ambient(); artDim();
+  strips(); artDim();
   setEnter();
   if (S.view === "settings" && S.setFlash) { const t = S.setFlash; S.setFlash = null; const r = $$("#app .srow").find((x) => x.querySelector("b")?.textContent.startsWith(t)); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }
   /* The strip opens on the next episode, with the one before it in view — whole tiles, never a cut one. */
@@ -5552,6 +5707,7 @@ function render(inPlace = false) {
   if (S.view === "stats" || S.view === "history") loadAlData();
   applyFocus();
   paintPortals();
+  pagerStale();
 }
 /* Background refreshes must not clobber a field the user is typing in. */
 function softRender() {
@@ -5585,16 +5741,27 @@ function tabSlide(from, to) {
   app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add(cls);
 }
 const tabScroll = {};
-function nav(view, fn) {
+/* quiet: the tab pager already showed the page sliding in, so it is drawn
+   with no entrance at all (no fade, no slide, nothing rising). */
+/* A tab a swipe brought in was already on screen as its copy: it stays as it
+   is, so its entrance animations (bars growing, numbers rising, the segment
+   pill gliding in) jump to their end instead of playing again. Endless ones
+   (loading shimmer) keep going. */
+function calmIn(el) {
+  for (const a of el?.getAnimations?.({ subtree: true }) || []) if (a.effect?.getComputedTiming().endTime !== Infinity) a.finish();
+}
+function nav(view, fn, quiet) {
   const from = S.view;
   if (TAB_AT[from] != null) tabScroll[from] = scrollY;
-  dip(() => {
+  const go = () => {
     const prev = S.view;
-    S.navIn = true; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
-    if (view === "library") S.fadeNext = true;
+    S.navIn = true; S.navQuiet = !!quiet; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
+    if (view === "library" && !quiet) S.fadeNext = true;
     if (fn) fn(prev);
     render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); dockY = scrollY; pushNav();
-  });
+  };
+  if (quiet) { go(); return calmIn($("#app")); }
+  dip(go);
   tabSlide(from, view);
 }
 function openShow(id) {
@@ -5627,7 +5794,12 @@ function offlineNote(on, msg) {
    304 (TODO 61) and the copy in hand stays. */
 let libTag = null;
 async function libFetch() {
-  const res = await fetch("/api/library", { cache: "no-store", headers: libTag && S.data ? { "If-None-Match": libTag } : {} });
+  /* The first one was already asked for by index.html, before this script
+     had loaded. It and any other fetch with no copy in hand go through the
+     browser's cache: unchanged since the last visit is a 304 there too. */
+  const early = window.libEarly;
+  window.libEarly = null;
+  const res = (early && await early.catch(() => null)) || await fetch("/api/library", libTag && S.data ? { cache: "no-store", headers: { "If-None-Match": libTag } } : {});
   if (res.status === 304 && S.data) return S.data;
   let d;
   try { d = await res.json(); } catch { throw new Error(`HTTP ${res.status} from /api/library`); }
@@ -5794,7 +5966,7 @@ async function pollNow() {
     if (now.vpn && S.data) {
       const vpnMoved = JSON.stringify(now.vpn) !== JSON.stringify(S.data.vpn);
       S.data.vpn = now.vpn; // the VPN chip follows the connection, not only reloads
-      if (vpnMoved && S.modal?.t === "nxt") { const el = $("#nx-vpn"); if (el) el.innerHTML = nxVpn(); }
+      if (vpnMoved && S.modal?.t === "nxt") paintModal(); // the row and the buttons follow the VPN
       /* "Turn it on and this starts by itself": a VPN coming up continues what waited for it. */
       if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();
       else if (vpnMoved && now.vpn.active && S.modal?.t === "vpn") A.vpngo();
@@ -5897,9 +6069,8 @@ const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::
 const playWhere = () => { if (S.settings?.android) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app has no PC (Decision 88)
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
 function WhereDlg() {
-  return `<h2 id="dt">Play where?</h2>
-  <p class="sub">Episodes can play on this phone, online ones too (they come through the PC). Change it any time in Settings → Player.</p>
-  <div class="actions"><button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button></div>`;
+  return dlHead("Play where?") + dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`)
+    + dlFoot(setLink("player", "", "Player"), '<button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button>');
 }
 /* Remember the season before (TODO 133, Decision 85): Play on the first
    episode of a new season asks first when you finished the season before a
@@ -5928,13 +6099,13 @@ function RecapDlg() {
     s: [c.format === "MOVIE" ? "Recap movie" : `Recap · ${esc(c.format_label)}`, c.episodes === 1 && c.duration ? `${c.duration} min` : c.episodes > 1 ? `${c.episodes} episodes` : "", c.watched ? '<span class="seen">you watched it</span>' : ""].filter(Boolean).join(" · ") });
   const main = (x?.characters || []).filter((c) => c.role === "MAIN").slice(0, 5), side = (x?.characters || []).filter((c) => c.role !== "MAIN").slice(0, 8 - main.length);
   const face = (c, big) => `<span class="f${big ? "" : " s"}" title="${esc(c.name)}"><i${c.image ? ` style="background-image:url('${esc(c.image)}')"` : ""}></i><small>${esc(c.name.split(" ")[0])}</small></span>`;
-  const who = main.length || side.length ? `<h3>Characters from ${esc(p.label)}</h3><div class="rcpw">${main.map((c) => face(c, true)).join("")}${side.length && main.length ? '<span class="gap"></span>' : ""}${side.map((c) => face(c)).join("")}</div>` : "";
+  const who = main.length || side.length ? `<div class="group"><h3>Characters from ${esc(p.label)}</h3><div class="rcpw">${main.map((c) => face(c, true)).join("")}${side.length && main.length ? '<span class="gap"></span>' : ""}${side.map((c) => face(c)).join("")}</div></div>` : "";
   const start = r.entry.label.length <= 14 ? `Start ${esc(r.entry.label)}` : "Start episode 1";
-  return `<div class="rcpart"${p.banner || p.poster ? ` style="background-image:url('${esc(p.banner || p.poster)}')"` : ""}></div><div class="rcpin">
-  <h2 id="dt"${p.label.length > 16 ? ' class="long"' : ""}>Remember ${esc(p.label)}?</h2>
-  <p class="lead">You finished ${esc(p.label)} on <b>${day}</b>, ${agoText(p.months)}${score}.</p>
-  ${rows.length ? `<h3>Watch first?</h3>${rows.map(row).join("")}` : ""}${who}
-  <div class="rcpf"><button class="quiet" data-a="recapoff">Don’t show this again</button><button class="btn pri" data-a="recapgo">${ico("play")}<span>${start}</span></button></div></div>`;
+  /* The pop-up frame (TODO 226): the season's art behind the question, Settings' headings, a quiet footer. */
+  return dlHead(`Remember ${esc(p.label)}?`, "", p.banner || p.poster)
+    + dlBody(`<p class="sub">You finished ${esc(p.label)} on <b>${day}</b>, ${agoText(p.months)}${score}.</p>
+    ${rows.length ? `<div class="group"><h3>Watch first?</h3>${rows.map(row).join("")}</div>` : ""}${who}`, "rcpb")
+    + dlFoot(`<button class="lnk" data-a="recapoff">Don’t show this again</button>`, escBtn() + `<button class="btn pri" data-a="recapgo">${start}${kb("↵")}</button>`);
 }
 const ppVideo = () => $("#pp video");
 /* The player opens at the tap (a tap lets it play with sound and go full
@@ -6494,12 +6665,23 @@ const A = {
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
   fpick: (v, t) => {
-    const k = t.dataset.k, d = t.closest(".fdrop");
-    S.lib[k] = v; saveLib();
-    if (k === "group" || isPhone()) { S.fadeNext = true; return render(); } // phones: the sheet and the Filter count follow
+    const k = t.dataset.k, d = t.closest(".fdrop"), multi = FMULTI.has(k);
+    if (multi) { const p = fpicked(k), next = v === "all" ? [] : p.includes(v) ? p.filter((x) => x !== v) : [...p, v]; S.lib[k] = next.length ? next : "all"; }
+    else S.lib[k] = v;
+    saveLib();
+    if (k === "group" || isPhone()) { // phones: the sheet and the Filter count follow
+      const sc = $(".fsheet .filters")?.scrollTop;
+      S.fadeNext = true; render();
+      /* several can be picked: the list stays open for the next one */
+      const nd = multi && $(`.fsheet .fdrop[data-k="${k}"]`);
+      if (nd) { nd.querySelector(".fpanel").style.animation = "none"; nd.classList.add("open"); nd.querySelector(".fdb").setAttribute("aria-expanded", "true"); }
+      const f = $(".fsheet .filters"); if (f && sc) f.scrollTop = sc;
+      return;
+    }
     paintWall(true); syncFilters();
-    for (const b of d.querySelectorAll(".fopt")) { const on = b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
-    d.classList.toggle("set", v !== "all"); d.querySelector(".fdb b").textContent = t.querySelector("span").textContent;
+    const opts = FOPTS()[k];
+    for (const b of d.querySelectorAll(".fopt")) { const bv = b.dataset.v, on = multi ? (bv === "all" ? S.lib[k] === "all" : fpicked(k).includes(bv)) : b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+    d.classList.toggle("set", S.lib[k] !== "all"); d.querySelector(".fdb b").textContent = multi ? fval(k, opts) : t.querySelector("span").textContent;
   },
   fdrop: (v, t) => { const d = t.closest(".fdrop"), open = !d.classList.contains("open"); fdropClose(d); d.classList.toggle("open", open); t.setAttribute("aria-expanded", open); if (open) d.querySelector(".fpanel input, .fpanel .fopt.on")?.focus({ preventScroll: true }); },
   totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
@@ -6909,7 +7091,7 @@ const A = {
   /* settings + account */
   adv: (v, t) => { if (!S.settings) return; const on = t.getAttribute("aria-checked") !== "true"; t.setAttribute("aria-checked", String(on)); setToggle(v, on); }, // the switch knows its state: some live under s.mpv
   srsw: async (v, t, e) => { e?.stopPropagation(); if (!S.settings) return; t.setAttribute("aria-checked", String(!S.settings[v])); await setToggle(v, !S.settings[v]); paintNav(); q.focus(); },
-  setgo: (v, t) => { const tab = t.dataset.t; setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
+  setgo: (v, t) => { const tab = t.dataset.t; if (S.modal) closeModal(); setClear(); clearSearch(); q.blur(); S.setTab = tab; S.setOpen = true; S.setFlash = v; if (S.view === "settings") render(); else nav("settings"); },
   sropen: () => openSearch(),
   srclose: () => { ovClosed("sr"); clearSearch(); paintNav(); q.blur(); },
   srshow: (v) => {
@@ -7093,8 +7275,10 @@ const A = {
     if (S.view === "settings") render(true);
     toast("AnimeHub didn't come back. Open it again by hand.", "err");
   },
-  toolpick: (v) => {
-    const skip = S.toolSkip = { ...(S.toolSkip || {}) }, off = skip[v] !== true;
+  toolpick: (v, t) => {
+    /* ‹ Install / Skip › sends the group in data-k and the choice as v (TODO 226). */
+    const k = t?.dataset?.k, want = v; if (k) v = k;
+    const skip = S.toolSkip = { ...(S.toolSkip || {}) }, off = k ? want === "off" : skip[v] !== true;
     skip[v] = off;
     if (v === "online" && off) skip.download = true; // downloads run through ani-cli
     if (v === "download" && !off) skip.online = false;
@@ -7147,7 +7331,7 @@ const A = {
   tourconnect: () => { api("/api/settings", { tour_done: true }).catch(() => {}); if (S.settings) S.settings.tour_done = true; closeModal(); openModal({ t: "ani" }); },
   recset: (v, t) => { S.rec.pick[t.dataset.k || t.dataset.m] = v; paintModal(); },
   recall: (v) => { for (const k of Object.keys(S.rec.pick)) S.rec.pick[k] = v; paintModal(); },
-  recmark: (v) => { S.rec.mark = v === "1"; paintModal(); },
+  recmark: (v) => { S.rec.mark = v === "1"; paintModal(); }, // ‹ On / Off › (TODO 226; was a switch)
   recclose: () => recDone(),
   /* Settings → Account → Compare (TODO 191): the connect check on demand. */
   reccheck: (v, t) => {
@@ -7192,7 +7376,7 @@ const A = {
       const card = t.closest(".rec"); card?.classList.add("gone"); setTimeout(() => { refreshData(); if (S.view === "home") render(); }, reduceMotion() ? 0 : 320);
     }).catch(() => { t.disabled = false; t.classList.remove("busy"); toast("Could not add it — try again"); });
   },
-  dnplan: (v, t) => { t.disabled = true; entrySave(+v, { status: "PLANNING" }).then((r) => { t.textContent = r && !r.error ? "✓ On Planning" : "Could not add"; refreshData(); }).catch(() => { t.textContent = "Could not add"; }); },
+  dnplan: (v, t) => { t.disabled = true; const say = (ok) => { t.outerHTML = ok ? dotTxt("On Planning") : dotTxt("Could not add", "warn"); }; entrySave(+v, { status: "PLANNING" }).then((r) => { say(r && !r.error); refreshData(); }).catch(() => say(false)); },
   dnfav: (v, t) => { const on = !t.classList.contains("on"); favSet(t, on); t.classList.remove("pop1"); void t.offsetWidth; t.classList.add("pop1"); if (on) burstAt(t); },
   dnskip: () => { const c = S.modal.c; api("/api/completion-seen", { media_id: c.media_id, count: c.count }).catch(() => {}); closeModal(); },
   dnsave: (v, t) => {
@@ -7308,13 +7492,20 @@ const A = {
     const g = $(".plicons"), o = g?.querySelector(".pic.on"); // its icon can be far down the list
     if (o) g.scrollTop = o.getBoundingClientRect().top - g.getBoundingClientRect().top - 40;
   },
-  plicon: (v) => { plDlgRead(); S.modal.icon = v; const y = $(".plicons")?.scrollTop || 0; paintModal(); const g = $(".plicons"); if (g) g.scrollTop = y; }, // the list is long: stay where the click was
+  plicon: (v) => { // in place too: the preview shows the icon, the list keeps its scroll
+    S.modal.icon = v || "";
+    const pv = $("#modal .pnt");
+    if (!pv) { plDlgRead(); return paintModal(); }
+    pv.innerHTML = v && LUCIDE[v] ? lu(v) : ico("list");
+    if (!reduceMotion()) pv.animate([{ transform: "scale(.8)" }, { transform: "scale(1)" }], { duration: 260, easing: "cubic-bezier(.3,1.45,.5,1)" });
+    for (const b of $$("#modal .plicons .pic")) { const on = b.dataset.v === (v || ""); b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+  }, // the list is long: stay where the click was
   plfocus: () => { if (!plCurrent()) return; S.plq = ""; S.plJust2 = null; openModal({ t: "plfd" }); },
-  plcol: (v) => { // in place, so the icons fade to the colour and the list keeps its scroll
+  plcol: (v) => { // in place, so the preview, the icons and the glow fade to the colour and the list keeps its scroll
     S.modal.color = v || null;
-    const g = $(".plicons");
-    if (!g) return paintModal();
-    if (v) g.style.setProperty("--plk", v); else g.style.removeProperty("--plk");
+    const w = $("#modal .pnw");
+    if (!w) return paintModal();
+    for (const [el, k] of [[w, "--plk"], [$("#modal .dlh"), "--glow"]]) if (el) { if (v) el.style.setProperty(k, v); else el.style.removeProperty(k); }
     for (const b of document.querySelectorAll(".plcols .sw")) { const on = b.dataset.v === (v || ""); b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
   },
   plsave: async () => {
@@ -7528,6 +7719,7 @@ function applyLook() {
   a === "follow" ? d.style.removeProperty("--fixed") : d.style.setProperty("--fixed", a);
   $('link[rel="icon"]')?.setAttribute("href", accentIcon(a));
   applyFonts();
+  cvRestSoon();
 }
 function applyFonts() {
   const d = document.documentElement, t = fontGet("text"), h = fontGet("title");
@@ -7581,10 +7773,21 @@ if (SHELL) {
   addEventListener("drop", (e) => e.preventDefault());
 }
 /* Images fade in once decoded; a 404 keeps the title placeholder. */
-document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); imgSeen.add(t.getAttribute("src")); } }, true);
+document.addEventListener("load", (e) => { const t = e.target; if (t.tagName === "IMG") { t.classList.add("ready"); t.parentElement?.classList.add("ready"); imgSeen.add(t.getAttribute("src")); if (t.parentElement?.classList.contains("poster")) { shimIO?.unobserve(t.parentElement); t.parentElement.classList.remove("shoff"); } } }, true);
+/* A poster shimmers until its picture is in, and a picture off the screen
+   isn't fetched at all, so those posters shimmered for good: the page was
+   redrawn 60 times a second with nothing moving in sight (Home, a quarter
+   of a phone's CPU). The shimmer now holds still ("shoff") while its poster
+   is off the screen and runs again just before it comes into view. */
+const shimIO = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((en) => {
+  const el = en.target;
+  if (!el.isConnected || el.classList.contains("ready")) { shimIO.unobserve(el); el.classList.remove("shoff"); return; }
+  el.classList.toggle("shoff", !en.isIntersecting);
+}), { rootMargin: "120px" }) : null;
+document.addEventListener("animationstart", (e) => { if (shimIO && e.animationName === "shimmer" && e.target.classList?.contains("poster")) shimIO.observe(e.target); }, true);
 // Back on the window (e.g. after toggling the VPN elsewhere): refresh now.
 addEventListener("focus", () => pollSoon(0));
-addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) { t.parentElement.classList.remove("hasimg"); t.remove(); } }, true);
+addEventListener("error", (e) => { const t = e.target; if (t.tagName === "IMG" && t.parentElement?.classList.contains("poster")) { shimIO?.unobserve(t.parentElement); t.parentElement.classList.remove("hasimg", "shoff"); t.remove(); } }, true);
 $("#brand").addEventListener("click", () => nav("home"));
 /* ripple on primary controls */
 document.addEventListener("pointerdown", (e) => {
@@ -7675,6 +7878,7 @@ function paintPtitle(t) {
 /* keyboard: / search · Esc back · j/k/h/l or arrows move focus · Enter opens */
 const focusables = () => $$("#app .hc, #app .twb, #app .twr, #app .rc, #app .rcv, #app .card, #app .ep, #app .ev").filter((el) => el.offsetParent);
 function applyFocus() {
+  if (fIdx < 0) return; // nothing picked with the keys: no need to measure every card on the page (it runs after each draw)
   const els = focusables();
   if (fIdx >= 0 && els[fIdx]) { els.forEach((e, i) => e.classList.toggle("focused", i === fIdx)); els[fIdx].scrollIntoView({ block: "nearest" }); } else fIdx = -1;
 }
@@ -7844,9 +8048,202 @@ function swSet(fn) { swWrite = fn; if (!swFrame) swFrame = requestAnimationFrame
 function swBegin(el) { document.body.classList.add("swiping"); el.style.willChange = "transform"; }
 function swEnd(el) { document.body.classList.remove("swiping"); if (el) el.style.willChange = ""; }
 const TAB_NAME = { home: "Home", library: "Library", history: "Journal", week: "Calendar" };
+/* ---------- the tab pager (Elias, 2026-11-12: the sideways swipe between
+   Home · Library · Journal · Calendar "is laggy and slow and doesn't look
+   good") ----------
+   Like a native pager: the tab you swipe toward is drawn beside this one (a
+   .peek, a still copy) and both follow the finger one to one, as does the
+   dock's highlight. Letting go carries on at the finger's speed; then the tab
+   is built for real where the copy was, with no entrance, so nothing on screen
+   changes. Before, the page trailed the finger at half speed with nothing
+   beside it, faded out, and the new one was only built after that and slid
+   in: ~0.5 s and a stall.
+   Building a copy costs a whole page build (Home ~100 ms on a slow phone), so
+   the two neighbours are built ahead, one per idle moment after a tab has
+   settled, parked in place too faint to see (opacity .004), laid out, drawn and ready; a swipe
+   only shows and moves one (1-3 ms; parked off the screen they were never drawn
+   and came in as holes on the phone; hiding them with visibility or content-visibility
+   cost 20-30 ms to show again, every element restyled). Any render makes them
+   stale; a stale one is built again at the swipe's start. */
+const PAGER = ["home", "library", "history", "week"];
+const pagerAt = () => PAGER.indexOf(S.view === "stats" ? "history" : S.view);
+const pagerNext = (dir) => PAGER[pagerAt() - dir] || null; // dir -1: finger moves left, the tab to the right
+const peeks = {};
+let pagerBusy = false, pagerGen = 0, peekIO = null;
+/* What a copy shows: its page, and for the Library the wall's first screenful. */
+function peekHTML(to) {
+  const was = S.view;
+  S.view = to;
+  try { return { home: Home, library: Lib, history: Hist, week: Week }[to]() + (to === "library" ? wallCards(libModel()).slice(0, 24).join("") : ""); } finally { S.view = was; }
+}
+/* The copy of a tab, up to date: rebuilt only when what it shows changed. */
+function peekFresh(to) {
+  let el = peeks[to];
+  if (el?._gen === pagerGen) return el;
+  const sig = peekHTML(to), app = $("#app");
+  if (!el) { el = peeks[to] = document.createElement("div"); el.className = "tpeek"; el.setAttribute("aria-hidden", "true"); el.inert = true; app.after(el); }
+  /* The page starts at the body's content top (not #app's: a first margin
+     collapses through #app, and the copy's box keeps it inside). */
+  const bs = getComputedStyle(document.body), top = document.body.getBoundingClientRect().top + scrollY + parseFloat(bs.paddingTop);
+  if (el._sig !== sig) {
+    const was = S.view;
+    S.view = to;
+    try { el.innerHTML = `<div class="pkpg">${{ home: Home, library: Lib, history: Hist, week: Week }[to]()}</div>`; } finally { S.view = was; }
+    if (to === "history") loadAlData(); // render() asks for it on the Journal; it lands in pagerStale
+    const w = el.firstChild.querySelector("#wall");
+    if (w) paintWall(false, w, true);
+    peekIO ||= "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) { peekIO.unobserve(en.target); applyBg(en.target); } }), { rootMargin: "300px 100%" }) : null;
+    for (const b of el.querySelectorAll("[data-bg]")) (bgSeen.has(b.dataset.bg) || !peekIO ? applyBg(b) : peekIO.observe(b));
+    el.querySelectorAll("[data-glide]").forEach(glide);
+    strips(el.firstChild);
+    el._sig = sig;
+  }
+  /* Where nav() will scroll the tab to, held to what the page can scroll. */
+  const pg = el.firstChild, sy = Math.max(0, Math.min(tabScroll[to] || 0, top + pg.offsetHeight + parseFloat(bs.paddingBottom) - innerHeight));
+  pg.style.top = Math.round(top - sy) + "px";
+  el._sy = sy;
+  /* Its first screenful's posters load now, not mid-swipe, and the tab that
+     lands then finds them in the browser's memory and shows them at once,
+     no shimmer and no fade. */
+  const o = el.getBoundingClientRect();
+  for (const i of el.querySelectorAll('img[loading="lazy"]')) {
+    const r = i.getBoundingClientRect();
+    if (r.bottom > o.top - 200 && r.top < o.top + innerHeight + 200 && r.right > o.left && r.left < o.left + innerWidth * 1.5) i.loading = "eager";
+  }
+  el._gen = pagerGen;
+  return el;
+}
+function peekHide(el) { if (el) el.style.transform = el.style.transition = el.style.opacity = ""; }
+function peekDrop(keep = []) {
+  for (const k in peeks) if (!keep.includes(k)) { peeks[k].remove(); delete peeks[k]; }
+  if (!Object.keys(peeks).length) { peekIO?.disconnect(); peekIO = null; }
+}
+/* After a render the copies may be stale: they are checked (and rebuilt if
+   needed) once the page has settled, one per idle moment, never while the
+   app is hidden or a layer covers it. Copies of tabs that aren't beside this
+   one go. */
+const idle = window.requestIdleCallback || ((f) => setTimeout(f, 50));
+const pagerOn = () => isPhone() && mq("(pointer:coarse)") && pagerAt() >= 0;
+function pagerStale() {
+  pagerGen++;
+  clearTimeout(pagerStale.t);
+  const held = pull?.side && pull.kind === "tab";
+  if (held || pagerBusy) return; // the swipe's end renders again
+  const near = pagerOn() ? [pagerNext(-1), pagerNext(1)].filter(Boolean) : [];
+  peekDrop(near);
+  if (!near.length) return;
+  const gen = pagerGen;
+  const step = () => idle(() => {
+    if (gen !== pagerGen) return;
+    if (document.hidden || pull?.side || pagerBusy || S.menu || S.modal || /\b(rmt-open|deck-open)\b/.test(document.body.className)) { pagerStale.t = setTimeout(step, 1000); return; }
+    const to = near.find((v) => peeks[v]?._gen !== gen);
+    if (!to) return;
+    peekFresh(to);
+    pagerStale.t = setTimeout(step, 60);
+  }, { timeout: 2500 });
+  pagerStale.t = setTimeout(step, 700); // after the page's own settling (the Library wall fills at 380 ms)
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && pagerOn()) pagerStale(); });
+/* The dock's highlight between the tab you're on and the one you swipe to. */
+function pagerInd(p, k) {
+  const ind = $("#tabbar .ind"), a = p.indFrom, b = p.indTo;
+  if (!ind || !a) return;
+  const to = b || a, x = a.x + (to.x - a.x) * k, w = a.w + (to.w - a.w) * k;
+  ind.style.transform = `translateX(${x.toFixed(1)}px)`; ind.style.width = w.toFixed(1) + "px";
+}
+const indOf = (v) => { const b = $(`#tabbar .tb button[data-v="${v === "stats" ? "history" : v}"]`); return b && { x: b.offsetLeft, w: b.offsetWidth }; };
+function pagerLock(p) {
+  const app = $("#app"), ind = $("#tabbar .ind");
+  app.style.transition = "none"; swBegin(app);
+  if (ind) ind.style.transition = "none";
+  p.indFrom = indOf(S.view); p.peekFor = undefined; p.v = [];
+}
+function pagerMove(p, x) {
+  const W = innerWidth, d = x - p.x0, now = performance.now();
+  p.v.push([now, x]); while (p.v.length > 2 && now - p.v[0][0] > 90) p.v.shift();
+  const dir = d < 0 ? -1 : d > 0 ? 1 : p.dir || (x < p.x ? -1 : 1);
+  p.dir = dir; p.lx = x;
+  const to = pagerNext(dir);
+  if (to !== p.peekFor) { peekHide(peeks[p.peekFor]); p.peekFor = to; p.indTo = to && indOf(to); p.pk = to && peekFresh(to); }
+  /* Nothing that way (first/last tab): a give that tightens the further you pull. */
+  const tx = to ? d : (d * 0.3) / (1 + Math.abs(d) / W * 2), k = to ? Math.min(Math.abs(d) / W, 1) : 0;
+  p.d = tx;
+  swSet(() => {
+    $("#app").style.transform = `translate3d(${tx.toFixed(1)}px,0,0)`;
+    const pk = p.pk;
+    if (pk) { pk.style.transform = `translate3d(${(tx - dir * W).toFixed(1)}px,0,0)`; pk.style.opacity = "1"; }
+    pagerInd(p, k);
+  });
+}
+function pagerEnd(p, cancel) {
+  const W = innerWidth, app = $("#app"), pk = p.pk, ind = $("#tabbar .ind"), d = p.d || 0, dir = p.dir || 1, to = p.peekFor;
+  const s = p.v || [], a = s[0], b = s[s.length - 1], v = a && b && b[0] > a[0] && performance.now() - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0; // px/ms, last ~90 ms
+  const fling = Math.abs(v) > 0.3;
+  const go = !cancel && !!to && (fling ? Math.sign(v) === dir : Math.abs(d) > W * 0.35);
+  const end = go ? dir * W : 0, rem = Math.abs(end - d);
+  /* Carry on at the finger's speed (the curve starts ~3.5× its average speed), never longer than a calm settle. */
+  const dur = Math.round(Math.max(120, Math.min(140 + rem * 0.45, fling && Math.sign(v) === Math.sign(end - d) ? (3.5 * rem) / Math.abs(v) : 1e9, 330)));
+  const ease = `transform ${dur}ms cubic-bezier(.22,.8,.3,1)`;
+  pagerBusy = true;
+  app.style.transition = ease; app.style.transform = `translate3d(${end}px,0,0)`;
+  if (pk) { pk.style.transition = ease; pk.style.transform = `translate3d(${end - dir * W}px,0,0)`; }
+  if (ind && p.indFrom) { ind.style.transition = `${ease}, width ${dur}ms cubic-bezier(.22,.8,.3,1)`; pagerInd(p, go ? 1 : 0); }
+  /* The backdrop and colour of the new tab fade in with the slide, not after
+     it, and so do its marks on <body>: Home's art hides the backdrop
+     (pg-uph), the top bar darkens once scrolled (sc). Flipped only after the
+     landing, they faded for 0.3 s over the tab that had just landed, and on
+     Home the bright backdrop showed through first (Elias, 2026-11-13: "home
+     has a bad flicker where a lot gets white"). */
+  if (go) {
+    const was = S.view, b = document.body, sy = pk?._sy || 0;
+    S.view = to;
+    try { ambient(); } finally { S.view = was; }
+    if (pk) pageMarks(pk.firstChild);
+    b.classList.toggle("sc", sy > 8); b.classList.toggle("sc2", sy > 84);
+  }
+  setTimeout(() => {
+    if (ind) ind.style.transition = "";
+    if (!go) { // back where it was: #app is still drawn, the copy goes
+      swEnd(app);
+      app.style.transition = "none"; app.style.transform = ""; getComputedStyle(app).transform; app.style.transition = "";
+      peekHide(pk);
+      pagerBusy = false;
+      return pagerStale();
+    }
+    /* The tab is built in #app in its place but unseen, under the copy, and
+       the copy goes only once the phone has drawn it: right after a swipe
+       Chrome puts layers on screen before it has drawn them, and the new tab
+       flashed up half empty (no text, no posters) for a frame or two (Elias,
+       2026-11-13: "a big refresh flicker every time you switch tabs"). Showing
+       it then is only an opacity change, nothing to draw. It waits too faint to
+       see, not at 0: Chrome doesn't draw a layer at 0, and the Library's pills
+       came up blurred, then sharp (Elias: "the pills in library are
+       flickering"). A touch or a scroll shows it at once, so the page under
+       the finger is the real one. */
+    app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = ".004"; app.style.transform = "";
+    nav(to, null, true);
+    const y0 = scrollY;
+    let shown = false;
+    const show = () => {
+      if (shown) return;
+      shown = true;
+      removeEventListener("touchstart", show, true); removeEventListener("scroll", moved);
+      swEnd(app); // the dock's glass comes back with it
+      app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";
+      peekHide(pk);
+      pagerBusy = false;
+      pagerStale(); // the copies for where you are now
+    };
+    addEventListener("touchstart", show, { capture: true, passive: true });
+    const moved = () => Math.abs(scrollY - y0) > 2 && show(); // not the landing's own scroll to where the tab was
+    requestAnimationFrame(() => { addEventListener("scroll", moved, { passive: true }); requestAnimationFrame(() => setTimeout(show, PAGER_DRAW)); });
+  }, dur + 10);
+}
+/* How long a landed tab waits under its copy after two frames, for the phone to draw it. */
+const PAGER_DRAW = 140;
 document.addEventListener("touchstart", (e) => {
   pull = null;
-  if (e.touches.length !== 1 || !mq("(pointer:coarse)")) return;
+  if (e.touches.length !== 1 || !mq("(pointer:coarse)") || pagerBusy) return;
   const t = e.target, L = PULL.find((p) => t.closest?.(p.sel) && (!p.when || p.when()));
   /* Sideways swipes leave real sideways scrollers alone: the show page's
      episode row and Home's rails scroll (TODO 177); only an unmatched
@@ -7893,10 +8290,14 @@ document.addEventListener("touchmove", (e) => {
       if (p.ptrOK && dy > 10 && dy > Math.abs(dx) && scrollY <= 0) { p.kind = "ptr"; p.y0 = y; e.preventDefault(); return; }
       if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pull = null; return; }
       if (p.jp && Math.abs(dx) > 12 && (S.jTab === "stats") === dx > 0) { pull = null; return; } // the Journal's tabs take it
-      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) { p.side = true; p.x0 = x; $("#app").style.transition = "none"; if (p.kind === "back") $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
-      else return;
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        p.side = true; p.x0 = x;
+        if (p.kind === "tab") pagerLock(p);
+        else { $("#app").style.transition = "none"; $("#app").style.transformOrigin = `50% ${Math.round(scrollY + innerHeight / 2)}px`; swBegin($("#app")); }
+      } else return;
     }
     e.preventDefault();
+    if (p.kind === "tab") { pagerMove(p, x); return; }
     const d = x - p.x0, tg = sideTarget(p, d), lim = innerWidth * 0.3;
     p.lx = x; p.ly = y; p.tg = tg;
     /* Nothing that way (first/last tab): only a little give. */
@@ -7935,12 +8336,13 @@ document.addEventListener("touchmove", (e) => {
   if (p.dy > 120 && !p.armed) { p.armed = true; buzz(); } else if (p.dy <= 120) p.armed = false;
 }, { passive: false });
 const unstyle = (...els) => { for (const el of els) if (el) { el.style.transform = el.style.opacity = el.style.transition = el.style.borderRadius = el.style.transformOrigin = ""; } };
-document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
+document.addEventListener("touchcancel", () => { if (pull?.kind === "ptr" && !ptrBusy) ptrHide(); cancelAnimationFrame(swFrame); swFrame = 0; if (pull?.side && pull.kind === "tab") { pagerEnd(pull, true); pull = null; return; } swEnd(pull?.side ? $("#app") : pull?.el); if (pull?.side) { unstyle($("#app"), $("#portal")); hintHide(); } if (pull?.live) { unstyle(pull.el, pull.L.fade?.(pull.el)); document.body.classList.remove("peek"); } pull = null; });
 document.addEventListener("touchend", () => {
   const p = pull;
   pull = null;
   if (!p) return;
   cancelAnimationFrame(swFrame); swFrame = 0; swWrite = null;
+  if (p.kind === "tab" && p.side) return pagerEnd(p);
   if (p.side || p.live) swEnd(p.side ? $("#app") : p.el);
   if (p.kind === "ptr") { if ((p.dist || 0) >= 70) ptrRun(); else ptrHide(); return; }
   if (p.kind === "tab" || p.kind === "back") {
