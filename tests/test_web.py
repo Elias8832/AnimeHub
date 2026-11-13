@@ -224,6 +224,11 @@ class JournalKeys(unittest.TestCase):
         self.assertRegex(APP, r"const dayKey = \(d\) =>")
         self.assertIn("dates.map(dayKey)", APP)
 
+    def test_format_name_helper_exists(self):
+        # An "unused code" cleanup took this away while a dozen views still called it:
+        # Settings and other pages threw "fmtName is not defined" and some tabs stayed shut.
+        self.assertRegex(APP, r"const fmtName = \(f\) =>")
+
 
 class WeekSection(unittest.TestCase):
     def test_calendar_context_only_states_facts(self):
