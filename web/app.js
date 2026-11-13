@@ -8146,9 +8146,12 @@ function pagerEnd(p, cancel) {
        Chrome puts layers on screen before it has drawn them, and the new tab
        flashed up half empty (no text, no posters) for a frame or two (Elias,
        2026-11-13: "a big refresh flicker every time you switch tabs"). Showing
-       it then is only an opacity change, nothing to draw. A touch or a scroll
-       shows it at once, so the page under the finger is the real one. */
-    app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = "0"; app.style.transform = "";
+       it then is only an opacity change, nothing to draw. It waits too faint to
+       see, not at 0: Chrome doesn't draw a layer at 0, and the Library's pills
+       came up blurred, then sharp (Elias: "the pills in library are
+       flickering"). A touch or a scroll shows it at once, so the page under
+       the finger is the real one. */
+    app.style.transition = "none"; app.style.willChange = "transform, opacity"; app.style.opacity = ".004"; app.style.transform = "";
     nav(to, null, true);
     const y0 = scrollY;
     let shown = false;

@@ -507,7 +507,7 @@ class TabPager(unittest.TestCase):
         # right after a swipe Chrome shows layers it hasn't drawn: the new tab
         # is built unseen under the copy, and shown only after it is drawn
         end = self.body("pagerEnd")
-        self.assertIn('app.style.opacity = "0"; app.style.transform = "";\n    nav(to, null, true);', end)
+        self.assertIn('app.style.opacity = ".004"; app.style.transform = "";\n    nav(to, null, true);', end)  # drawn while it waits (at 0 Chrome skips it)
         self.assertIn("requestAnimationFrame(() => setTimeout(show, PAGER_DRAW))", end)
         self.assertIn('addEventListener("touchstart", show, { capture: true, passive: true });', end)  # a touch shows it at once
         self.assertIn('app.style.opacity = ""; getComputedStyle(app).opacity; app.style.transition = "";', end)  # no fade
