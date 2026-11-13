@@ -900,7 +900,7 @@ function plBox(p, i, act = "plgo") {
     ${plStack(p)}
     <div class="plcap"><h3>${plIcon(p) || (p.color ? '<i class="pldot"></i>' : "")}<span class="pln">${esc(p.name)}</span>${p.pinned && act === "plgo" ? `<span class="plpin" title="Pinned to Home">${ico("pin")}</span>` : ""}<span class="plgo">${ico("chevr")}</span></h3><div class="m">${facts}</div></div></div>`;
 }
-const plNewBox = () => `<button class="plbox plnewbox" data-a="plnew"><span class="plstack"><span class="plnew">${ico("plus")}<span>New playlist</span></span></span><span class="plcap"><h3><span class="pln">&nbsp;</span></h3></span></button>`;
+const plNewBox = () => `<button class="plbox plnewbox" data-a="plnew"><span class="plstack"><span class="plnew"><span class="plplus">${ico("plus")}</span><span>New playlist</span></span></span><span class="plcap"><h3><span class="pln">&nbsp;</span></h3></span></button>`;
 /* "Add a show" inside a playlist: your library's shows by name, minus the ones already on it. */
 function plAddCands(q, p) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
