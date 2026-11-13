@@ -2327,15 +2327,6 @@ body.deck-open:not(.peek) #canvas,body.deck-open:not(.peek) #app,body.deck-open:
 /* settings as a list (phones) */
 .slsearch{display:flex;align-items:center;gap:10px;width:100%;height:44px;padding:0 16px;border:0;border-radius:999px;background:var(--glass);box-shadow:var(--edge);color:var(--mute);font:400 12px var(--mono);margin-bottom:14px}
 .slsearch .ico{width:16px;height:16px;color:var(--accent)}
-.slhead{margin:18px 0 8px;padding:0 6px;font:500 11px var(--mono);color:var(--mute)}
-.slist{border-radius:20px;overflow:hidden;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px)}
-.sli{display:flex;align-items:center;gap:14px;width:100%;padding:13px 14px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;color:var(--ink)}
-.sli:last-child{border-bottom:0}
-.sli .sic{width:34px;height:34px;flex:none;border-radius:11px;display:grid;place-items:center;background:rgba(255,255,255,.07);color:var(--accent)}
-.sli .sic .ico{width:18px;height:18px}
-.sli>span{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
-.sli b{font-weight:600}.sli small{font:400 11px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sli>.ico{color:var(--mute);width:18px;height:18px}
 /* tablet portrait: two columns on Home */
 .hpair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px}
 /* tablet landscape: your lists beside the show page */
@@ -2657,10 +2648,10 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   kbd.kb,.btn .kb,.mi .kb,.dialog .kb{display:none!important}
   html{-webkit-tap-highlight-color:transparent}
   img,.poster,.epimg,.dart{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
-  #tabbar,#nav,.rbar,.pbar,.chip,.btn,.seg,.prow,.sli{-webkit-user-select:none;user-select:none}
-  .btn,.chip,.seg button,.prow,.sli,.srrow,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.hc,.gb{transition:transform .16s var(--ease),opacity .16s,background .2s}
+  #tabbar,#nav,.rbar,.pbar,.chip,.btn,.seg,.prow,.stile{-webkit-user-select:none;user-select:none}
+  .btn,.chip,.seg button,.prow,.stile,.srrow,.rc,.rec .rcv,.lib2 .card,.ep,.mi,#tabbar .sq,.rbar,.hc,.gb{transition:transform .16s var(--ease),opacity .16s,background .2s}
   .btn:active:not(:disabled),.chip:active,.seg button:active,#tabbar .sq:active{transform:scale(.95)}
-  .prow:active,.sli:active,.srrow:active,.mi:active{background:var(--pick)}
+  .prow:active,.srrow:active,.mi:active{background:var(--pick)}
   .lib2 .card:active,.rc:active,.rec .rcv:active,.ep:active,.hc:active{transform:scale(.97);opacity:.85}
 }
 @media (max-width:700px){
@@ -2689,11 +2680,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
   .overlay .dialog>.grabber{margin:0 auto 14px}
   .overlay.leave .dialog{animation:sheetOut .2s var(--ease) both}
   .overlay[data-t=tour] .dialog{padding-top:24px}
-  /* settings sections: one title, switches on the right, nothing cut off */
-  .set2:not(.phone) .sum{display:none}
-  .set2 .settings:is([data-sec=appearance],[data-sec=library],[data-sec=online],[data-sec=anilist],[data-sec=phone])>.group:first-child>h3{display:none}
-  .set2 .srow:has(>.ctl>.switch:only-child){flex-direction:row;align-items:center;gap:16px}
-  .set2 .srow:has(>.ctl>.switch:only-child) .ctl{width:auto;flex:none}
+  /* settings: a folder field wraps */
   .set2 .path{flex-wrap:wrap;gap:8px}
   .set2 .path>*{max-width:100%}
   /* journal: card heads wrap cleanly, crowded chart labels thin out */
@@ -3443,20 +3430,6 @@ body.pp-open #modal{z-index:70}
   .jr2.phone .jpane>*{margin:0!important}
   .jr2.phone .jpane .jpair{display:flex;flex-direction:column;gap:12px}
   .jr2.phone .tl .tlg .dh:first-child{margin-top:0}
-  /* Settings pages: small labels over grouped cards, a choice beside its name when it fits (Elias picked B) */
-  .set2:not(.phone) .settings:not([data-sec=find])>.group{position:relative;margin:34px 0 0;padding:2px 16px;border-radius:20px;backdrop-filter:none}
-  .set2:not(.phone) .settings:not([data-sec=find])>.group:first-child{margin-top:44px}
-  .set2:not(.phone) .settings:not([data-sec=find])>.group>h3{position:absolute;left:6px;right:6px;top:-24px;margin:0;font:400 12px var(--mono);text-transform:none;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .set2 .settings:is([data-sec=appearance],[data-sec=library],[data-sec=online],[data-sec=anilist],[data-sec=phone])>.group:first-child{margin-top:18px} /* their first label would repeat the title: hidden above */
-  .set2:not(.phone) .group>.sub{margin:12px 0 2px!important;font-size:13px;color:var(--mute)}
-  .set2:not(.phone) .srow{flex-direction:row!important;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:14px 0;margin:0}
-  .set2:not(.phone) .srow>div:first-child{display:contents}
-  .set2:not(.phone) .srow>div:first-child>b{flex:1 0 auto;max-width:100%;font:500 15px/1.3 var(--ui)}
-  .set2:not(.phone) .srow>div:first-child>p{order:3;flex-basis:100%;margin:2px 0 0;font-size:13px;line-height:1.4;max-width:none}
-  .set2:not(.phone) .srow>.ctl{flex:0 1 auto;width:auto!important;max-width:100%}
-  .set2:not(.phone) .srow>.ctl:has(.lkcard,.fontpick,.path,.looks,textarea){flex-basis:100%;justify-content:flex-start}
-  .set2:not(.phone) .srow .seg{max-width:100%;overflow-x:auto;scrollbar-width:none}
-  .set2:not(.phone) .srow .seg button{height:30px;padding:0 11px;font-size:12.5px;flex:none}
 }
 @media (max-width:700px),(pointer:coarse){
   /* Search (TODO 177, Elias picked B): the field is a pill made like the dock, with a magnifier and a round close button */
@@ -3685,6 +3658,115 @@ body.pp-open #modal{z-index:70}
   #pal .pal2.up .plist{-webkit-mask:linear-gradient(180deg,#000 calc(100% - 84px - env(safe-area-inset-bottom)),transparent calc(100% - 64px - env(safe-area-inset-bottom)));mask:linear-gradient(180deg,#000 calc(100% - 84px - env(safe-area-inset-bottom)),transparent calc(100% - 64px - env(safe-area-inset-bottom)))}
   #pal .pal2.up.scoped .plist{-webkit-mask:linear-gradient(180deg,#000 calc(100% - 130px - env(safe-area-inset-bottom)),transparent calc(100% - 108px - env(safe-area-inset-bottom)));mask:linear-gradient(180deg,#000 calc(100% - 130px - env(safe-area-inset-bottom)),transparent calc(100% - 108px - env(safe-area-inset-bottom)))}
 }
+
+/* ───────── Settings on a phone (Decision 94, Elias picked mockup C) ─────────
+   The show you're watching behind the title; sections as tiles with what's set
+   now; each section's rows in cards: a switch for On/Off, buttons for two or
+   three choices, the value with a sheet of choices for the rest. */
+@media (max-width:700px){
+  .set2:is(.phone,.pset){position:relative;isolation:isolate;padding-bottom:130px}
+  .set2:where(.phone,.pset) .shero{position:absolute;z-index:-1;left:0;right:0;top:-80px;height:380px;background:hsl(220 20% 18%) center 22%/cover;pointer-events:none}
+  .set2:where(.phone,.pset) .shero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,17,20,.45) 0,rgba(16,17,20,0) 26%,rgba(16,17,20,.55) 62%,var(--bg) 100%)}
+  .set2:where(.phone,.pset) .shero.none{background:radial-gradient(420px 260px at 70% 0,color-mix(in srgb,var(--accent) 30%,transparent),transparent 75%)}
+  .set2.pset .shero{height:250px}
+  .set2.pset .shero::after{background:linear-gradient(180deg,rgba(16,17,20,.45) 0,rgba(16,17,20,0) 24%,rgba(16,17,20,.7) 60%,var(--bg) 92%)}
+  .set2.phone>.hello{margin:150px 0 16px}
+  .set2:where(.phone,.pset) .hd{text-shadow:0 2px 24px rgba(0,0,0,.45)}
+  .set2.phone .slsearch{height:48px;margin:0 0 14px;background:rgba(30,31,36,.82);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);-webkit-backdrop-filter:none;backdrop-filter:none;font:400 15px var(--ui)}
+  .set2.phone .slsearch input{font:400 16px var(--ui)!important}
+  /* the tiles */
+  .stiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .stile{display:flex;flex-direction:column;align-items:flex-start;min-width:0;min-height:104px;padding:14px 14px 13px;border:0;border-radius:22px;background:rgba(30,31,36,.82);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);text-align:left;color:var(--ink);animation:rise .36s var(--ease) both;animation-delay:calc(var(--i)*24ms)}
+  .stile .ico{width:22px;height:22px;color:var(--accent)}
+  .stile b{margin-top:18px;font:600 16px/1.2 var(--ui)}
+  .stile small{max-width:100%;margin-top:3px;font:400 11px/1.35 var(--mono);color:var(--mute);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+  .stile.warn small{color:var(--warn)}
+  .stile:active{transform:scale(.97);background:rgba(40,41,47,.9)}
+  /* a section: title over the art, back button on it */
+  .set2.pset .sback{position:relative;z-index:2}
+  .set2.pset .setmain>.hello{margin:72px 0 6px}
+  .set2.pset .sum{display:none}
+  .set2.pset .settings{animation:rise .32s var(--ease) both}
+  .set2.pset .group,.set2.phone .settings .group{margin:0;padding:0;border:0;background:none;box-shadow:none}
+  .set2:where(.phone,.pset) .settings>.group>h3,.set2:where(.phone,.pset) .settings .group>h3{position:static;margin:26px 8px 8px;font:500 11.5px var(--mono);letter-spacing:.04em;text-transform:none;color:rgba(255,255,255,.62)}
+  .set2:where(.phone,.pset) .settings .group>h3 small{display:block;margin-bottom:2px;color:var(--accent-hi)}
+  .set2:where(.phone,.pset) .settings>.group:first-child>h3{margin-top:18px;display:block}
+  .set2:where(.phone,.pset) .settings .group>.sub{margin:-2px 8px 10px!important;font-size:13px;line-height:1.4;color:var(--mute)}
+  /* rows: a card per run of rows */
+  .set2:where(.phone,.pset) .settings .srow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:14px;align-items:center;min-height:58px;margin:0;padding:12px 16px;background:rgba(30,31,36,.82);border:0;border-radius:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+  .set2:where(.phone,.pset) .settings .srow:not(.srow+.srow){border-top-left-radius:22px;border-top-right-radius:22px}
+  .set2:where(.phone,.pset) .settings .srow:not(:has(+.srow)){border-bottom-left-radius:22px;border-bottom-right-radius:22px}
+  .set2:where(.phone,.pset) .settings .srow+.srow{margin-top:1px}
+  .set2:where(.phone,.pset) .settings .srow>div:first-child{display:block;min-width:0}
+  .set2:where(.phone,.pset) .settings .srow>div:first-child>b{display:block;font:500 16px/1.3 var(--ui);color:var(--ink)}
+  .set2:where(.phone,.pset) .settings .srow>div:first-child>p{margin:2px 0 0;max-width:none;font-size:12.5px;line-height:1.4;color:#a3a3a8}
+  .set2:where(.phone,.pset) .settings .srow>.sline{display:none}
+  .set2:where(.phone,.pset) .settings .srow>.ctl{grid-column:2;grid-row:1;width:auto;min-height:0;margin:0;justify-content:flex-end;align-self:center;flex-wrap:nowrap;gap:8px}
+  .set2:where(.phone,.pset) .settings .srow.wide>.ctl,.set2:where(.phone,.pset) .settings .srow>.ctl:has(.path,.fontpick,.lkcard,.looks,textarea,.pairbox){grid-column:1/-1;grid-row:2;justify-content:flex-start;margin-top:10px;flex-wrap:wrap}
+  .set2:where(.phone,.pset) .settings .srow:has(>.ctl:empty){grid-template-columns:minmax(0,1fr)}
+  .set2:where(.phone,.pset) .settings .srow>.ctl:has(>.pkseg){grid-column:1/-1;grid-row:2;margin-top:10px;justify-content:stretch} /* buttons go under the name, full width */
+  .set2:where(.phone,.pset) .settings .srow>.ctl>.pkseg{flex:1}.set2:where(.phone,.pset) .pkseg button{flex:1}
+  .set2:where(.phone,.pset) .settings .srow.prev>.pkprev{grid-column:1/-1;grid-row:3;margin:12px 0 4px;max-width:260px}
+  .set2:where(.phone,.pset) .settings .srow.flash{animation:rowflash 1.8s ease}
+  .set2:where(.phone,.pset) .settings .srow:has(.pksw,.pklist):active{background:rgba(40,41,47,.92)}
+  .set2:where(.phone,.pset) .settings .srow code{font-size:11.5px}
+  .set2:where(.phone,.pset) .settings>.group .dirpick{margin:10px 0}
+  /* the three controls */
+  .set2:where(.phone,.pset) .pk{width:auto;min-width:0;display:inline-flex;align-items:center}
+  .set2:where(.phone,.pset) .pk.off{opacity:.4}
+  .set2:where(.phone,.pset) .pksw .switch{width:52px;height:32px;border-radius:16px}
+  .set2:where(.phone,.pset) .pksw .switch:after{top:4px;left:4px;width:22px;height:22px}
+  .set2:where(.phone,.pset) .pksw .switch[aria-checked=true]:after{transform:translateX(20px)}
+  .set2:where(.phone,.pset) .pksw .switch:active:not(:disabled):after{width:26px}.set2:where(.phone,.pset) .pksw .switch[aria-checked=true]:active:not(:disabled):after{transform:translateX(16px)}
+  .set2:where(.phone,.pset) .pkseg{gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.07)}
+  .set2:where(.phone,.pset) .pkseg button{height:32px;padding:0 13px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink-2);white-space:nowrap;transition:background .2s,color .2s}
+  .set2:where(.phone,.pset) .pkseg button.on{background:var(--ink);color:#111;pointer-events:none}
+  .set2:where(.phone,.pset) .pkseg button:active:not(.on){background:rgba(255,255,255,.1)}
+  .set2:where(.phone,.pset) .pklist{max-width:52vw;gap:2px}
+  .set2:where(.phone,.pset) .pklist .pka{display:none}
+  .set2:where(.phone,.pset) .pklist .pkm{min-width:0;display:flex;align-items:center}
+  .set2:where(.phone,.pset) .pklist select.pkv{pointer-events:none;height:32px;padding:0;text-align:right;text-align-last:right;font:500 15px var(--ui)!important;color:var(--ink-2);text-overflow:ellipsis;background-image:none}
+  .set2:where(.phone,.pset) .pklist::after{content:"";flex:none;width:7px;height:7px;margin:0 4px 0 6px;border:solid var(--mute);border-width:2px 2px 0 0;transform:rotate(45deg)}
+  .set2:where(.phone,.pset) .pklist .pkdot{margin-right:8px}
+  .set2:where(.phone,.pset) .pkdo{min-width:0;justify-content:flex-end}
+  .set2:where(.phone,.pset) .settings .btn{height:36px;padding:0 4px;font-size:15px}
+  /* the sheet of choices */
+  #ddm.sheet{left:8px!important;right:8px;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom))!important;min-width:0!important;max-height:72vh!important;padding:10px 0 12px;border-radius:28px;background:rgba(26,27,31,.98);box-shadow:0 0 0 100vmax rgba(0,0,0,.55),0 -20px 60px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.1);transform-origin:bottom center!important}
+  #ddm.sheet.open{animation:sheetIn .3s var(--ease) both}
+  #ddm.sheet.out{animation:sheetOut .2s cubic-bezier(.4,0,1,1) both;pointer-events:none}
+  #ddm.sheet .grabber{display:block;flex:none;width:40px;height:4px;margin:0 auto 12px;border-radius:9px;background:rgba(255,255,255,.25)}
+  #ddm.sheet .ddhd{flex:none;margin:0;padding:0 24px 8px;font:700 30px/1 var(--display);text-transform:uppercase;color:var(--ink)}
+  #ddm.sheet button{height:54px;padding:0 24px;border-radius:0;justify-content:flex-start;font:500 17px var(--ui);color:var(--ink-2)}
+  #ddm.sheet button.on{color:var(--accent-hi);background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 16%,transparent),transparent)}
+  #ddm.sheet button .ico{position:static;margin-left:auto;width:20px;height:20px}
+  #ddm.sheet.ttl button span{font-size:21px}
+  /* the pairing form of the Android app's PC sync, inside its card */
+  .set2:where(.phone,.pset) .settings .peerform{width:100%;margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+  .set2:where(.phone,.pset) .settings .peerform #peeraddr{grid-column:1/-1}
+  .set2:where(.phone,.pset) .settings .peerform input{width:100%;max-width:none;min-width:0;height:46px;padding:0 14px;border:0;border-radius:14px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+  .set2:where(.phone,.pset) .settings .peerform .btn{height:46px;padding:0 22px;border-radius:14px}
+  /* Opening Settings (Decision 94). Touch screens drop the page entrances
+     (Decision 44); these few stay: one art layer, the title, the find box and
+     eight tiles, each only fading and moving. A section pushes in from the
+     right; Back brings the list in from the left (#app.setback). */
+  #app.nav-in .set2.phone .shero{animation:heroIn .7s var(--ease) backwards!important}
+  #app.nav-in .set2.phone>.hello{animation:setIn .42s .04s var(--ease) backwards!important}
+  #app.nav-in .set2.phone>.slsearch{animation:setIn .42s .08s var(--ease) backwards!important}
+  #app.nav-in .set2.phone .stile{--ds:.94;animation:setIn .42s var(--ease) backwards!important;animation-delay:calc(var(--i)*32ms + .12s)!important}
+  #app.nav-in .set2.pset .shero{animation:heroPush .6s var(--ease) backwards!important}
+  #app.nav-in .set2.pset :is(.sback,.setmain>.hello){--dx:36px;--dy:0px;animation:setIn .34s var(--ease) backwards!important}
+  #app.nav-in .set2.pset .settings{--dx:56px;--dy:0px;animation:setIn .4s .04s var(--ease) backwards!important}
+  #app.setback .set2.phone :is(.shero,.hello,.slsearch,.stile){--dx:-36px;--dy:0px;--ds:1}
+  #app.setback.nav-in .set2.phone .shero{animation:heroBack .48s cubic-bezier(.3,.7,.3,1) backwards!important} /* the banner opens back up: it drops down to its full height and settles */
+  #app.setback.nav-in .set2.phone :is(.hello,.slsearch){animation-delay:0s!important}
+  #app.setback.nav-in .set2.phone .stile{animation-delay:calc(var(--i)*14ms + .03s)!important}
+}
+@keyframes sheetIn{from{transform:translateY(100%)}}
+@keyframes sheetOut{to{transform:translateY(100%);box-shadow:0 0 0 100vmax transparent}}
+@keyframes setIn{from{opacity:0;transform:translate(var(--dx,0px),var(--dy,16px)) scale(var(--ds,1))}}
+@keyframes heroIn{from{opacity:0;transform:scale(1.12)}}
+@keyframes heroPush{from{transform:scale(1.1)}}
+@keyframes heroBack{from{transform:translateY(-24px) scale(1.04)}}
 
 /* ───────── Pop-ups built from Settings' parts (TODO 226) ─────────
    A head with the show's art (or a soft glow), the title big with a mono note

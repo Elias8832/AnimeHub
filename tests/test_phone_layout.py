@@ -406,8 +406,9 @@ class PhoneRound3(unittest.TestCase):
         self.assertIn(".jr2.phone:not(.jmove) .jpane:not(.on){height:0;overflow:hidden}", CSS)
 
     def test_settings_rows_put_the_choice_beside_the_name(self):
-        self.assertIn(".set2:not(.phone) .srow>div:first-child{display:contents}", CSS)
-        self.assertIn(".set2:not(.phone) .srow{flex-direction:row!important;flex-wrap:wrap;", CSS)
+        # Decision 94 replaced round 3's rows: a switch or a value beside the name, buttons under it
+        self.assertIn(".set2:where(.phone,.pset) .settings .srow{display:grid;grid-template-columns:minmax(0,1fr) auto;", CSS)
+        self.assertIn(".set2:where(.phone,.pset) .settings .srow>.ctl:has(>.pkseg){grid-column:1/-1;grid-row:2;", CSS)
 
 
 
@@ -544,6 +545,56 @@ class TabPager(unittest.TestCase):
         self.assertIn("app.querySelector(sel)", self.body("pageMarks"))
         self.assertIn("#app .lib2 .filters,.tpeek .lib2 .filters{display:none}", CSS)
         self.assertIn('if (still) { w.innerHTML = cards.slice(0, 24).join("") || empty; return; }', APP)
+
+
+class PhoneSettingsC(unittest.TestCase):
+    """Decision 94 (TODO 237): Elias picked mockup C for Settings on a phone."""
+
+    def test_list_is_tiles_over_the_show(self):
+        self.assertIn("function setHero()", APP)
+        self.assertIn('<div class="stiles">', APP)
+        self.assertIn('class="stile${warn(k) ? " warn" : ""}"', APP)  # no VPN reads in amber
+        self.assertNotIn("setHeads", APP)  # no group headings, as on the PC (Decision 73)
+        self.assertIn(".stiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))", CSS)
+
+    def test_sections_get_the_art_and_cards(self):
+        self.assertIn('<div class="set2${isPhone() ? " pset" : ""}">${isPhone() ? `${setHero()}', APP)
+        self.assertIn(".set2:where(.phone,.pset) .settings .srow:not(.srow+.srow){border-top-left-radius:22px", CSS)
+
+    def test_only_settings_on_a_phone_get_the_touch_controls(self):
+        self.assertIn("pickTouch = isPhone();\n  try { return settPage(); } finally { pickTouch = false; }", APP)
+
+    def test_keys_stay_on_the_pc(self):
+        self.assertIn("m.keys && !pickTouch ? hkGroup(m)", APP)
+
+    def test_a_list_opens_as_a_sheet_and_the_closing_tap_is_eaten(self):
+        self.assertIn('const sheet = !!sel.closest(".pklist");', APP)
+        self.assertIn('ovOpen("dd", () => ddClose(false))', APP)  # Android's back closes it
+        self.assertIn("if (ddEat && Date.now() - ddEat < 700", APP)
+        self.assertIn('e.target.closest?.(".set2 .srow:has(.pksw,.pklist)")', APP)  # the whole row is the target
+        self.assertIn("#ddm.sheet{left:8px!important;", CSS)
+
+    def test_settings_open_with_a_short_entrance_on_touch(self):
+        # touch drops page entrances (#app.nav-in * is none!important, Decision 44); these beat it
+        self.assertIn("#app.nav-in .set2.phone .stile{--ds:.94;animation:setIn", CSS)
+        self.assertIn("#app.nav-in .set2.pset .settings{--dx:56px;--dy:0px;animation:setIn", CSS)
+        self.assertIn("@keyframes setIn{from{opacity:0;transform:translate(var(--dx,0px),var(--dy,16px)) scale(var(--ds,1))}}", CSS)
+        self.assertIn('app.classList.add("setback")', APP)  # Back: the list comes from the left
+        self.assertIn("#app.setback .set2.phone :is(.shero,.hello,.slsearch,.stile){--dx:-36px", CSS)
+        self.assertIn("#app.setback.nav-in .set2.phone .shero{animation:heroBack", CSS)  # the banner moves on the way out too
+
+    def test_the_sheet_slides_away(self):
+        self.assertIn('m.classList.add("out");', APP)
+        self.assertIn("#ddm.sheet.out{animation:sheetOut", CSS)
+        self.assertIn('clearTimeout(ddClose.t); m.classList.remove("out"); // a sheet still sliding away', APP)
+
+    def test_cards_stay_out_of_the_pop_ups(self):
+        # master's pop-ups put Settings rows in .dlb.set2 (TODO 226); the phone cards are for the Settings pages only
+        a = CSS.index("Settings on a phone (Decision 94"); b = CSS.index("@keyframes sheetIn", a)
+        self.assertNotIn(".set2 ", CSS[a:b])
+
+    def test_pairing_form_sits_in_its_card(self):
+        self.assertIn('srow("2. Here", "Type the address and code it shows.", `<div class="row peerform">', APP)
 
 
 class BackPager(unittest.TestCase):

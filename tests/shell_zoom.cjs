@@ -61,7 +61,7 @@ test("clicking a filter's label doesn't shut the list its press opened", () => {
   /* Elias: going from one filter to another showed the second for a split
      second, then both were gone. The close belongs to the press. */
   assert.ok(!/if \(ddSel && !e\.target\.closest\?\.\("select"\)\) ddClose\(false\)/.test(source));
-  assert.match(source, /if \(ddSel && !e\.target\.closest\?\.\("#ddm"\)\) ddClose\(false\); return;/);
+  assert.match(source, /if \(ddSel && !e\.target\.closest\?\.\("#ddm"\)\) \{[^}]*ddClose\(false\); \} return;/);
 });
 
 test("shell mode suppresses browser zoom but never drives the setting", () => {
