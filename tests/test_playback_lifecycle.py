@@ -596,7 +596,8 @@ class QuietFailureTests(LifecycleBase):
             player.watch_process(proc, "ep1", sock)
         with player._active_lock:
             self.assertNotIn("ep1", player._active)
-        self.assertFalse(sock.exists())
+        if not system.WINDOWS:  # Windows talks over a named pipe: nothing to delete
+            self.assertFalse(sock.exists())
         proc.wait.assert_called_with()  # it waited for the player to end first
 
     def test_autoplay_that_cannot_start_says_why(self):
