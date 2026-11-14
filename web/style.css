@@ -131,14 +131,13 @@ body.sc #nav{background:rgba(13,14,17,.72);backdrop-filter:blur(22px) saturate(1
 #links{display:flex;gap:2px;position:relative}
 .link{position:relative;z-index:1;height:36px;padding:0 14px;border-radius:999px;display:inline-flex;align-items:center;gap:8px;color:rgba(243,243,241,.7);font-weight:600;font-size:14.5px}
 .link:hover{color:var(--ink)}.link.on{color:var(--ink)}
-.link kbd,.kb{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:6px;font:500 11px/1 var(--mono);background:rgba(255,255,255,.08);color:rgba(243,243,241,.6)}
+.kb{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:6px;font:500 11px/1 var(--mono);background:rgba(255,255,255,.08);color:rgba(243,243,241,.6)}
 .glide{position:absolute;left:0;top:0;width:var(--gw,0);height:var(--gh,0);transform:translate(var(--gx,0),var(--gy,0));transition:transform .45s var(--ease),width .45s var(--ease),height .45s var(--ease);pointer-events:none;z-index:0}
 #links .glide{background:var(--pick);border-radius:999px}
 .search{position:relative;display:flex;align-items:center;gap:10px;width:300px;height:40px;flex-shrink:0;padding:0 9px 0 15px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px);font:400 13px var(--mono);color:rgba(243,243,241,.5);text-align:left;transition:background .2s,color .2s}
 .search:hover{background:var(--glass-h);color:var(--ink-2)}
 .search .sp{color:var(--accent);font:500 16px var(--mono);margin-top:-2px}
 .search .ph{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.search kbd{display:grid;place-items:center;min-width:20px;height:20px;border-radius:6px;font:500 11px var(--mono);color:rgba(243,243,241,.6);background:rgba(255,255,255,.1)}
 body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette opens centred: the bar's search stays, marked open */
 .setb{margin-left:8px;width:40px;height:40px;border-radius:999px;display:grid;place-items:center;color:rgba(243,243,241,.8);background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px)}
 .setb:hover,.setb.on{background:var(--glass-h);color:var(--ink)}.setb.on{background:var(--pick)}
@@ -698,7 +697,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .aerrbox b{display:block;font:600 15px var(--ui);color:var(--ink)}
 .aerrbox .cd{display:block;margin-top:3px;font:400 12px var(--mono);color:var(--mute);font-variant-numeric:tabular-nums}
 .aerrbox .btn{margin-left:auto}
-span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden}span.tline i{display:block;height:100%;border-radius:3px;background:var(--accent);animation:growx .6s .15s var(--ease) both;transform-origin:left}
+span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden}span.tline:before{content:none} /* not the Journal's .tline timeline (its padding pushed the fill 28 px in) */span.tline i{display:block;height:100%;border-radius:3px;background:var(--accent);animation:growx .6s .15s var(--ease) both;transform-origin:left}
 .ahead{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin-top:12px;font:400 12px var(--mono);color:var(--mute)}
 .ahead .lnk{display:inline-flex;align-items:center;gap:2px;padding:0;font:500 12px var(--mono);color:var(--accent)}
 .ahead .lnk .ico{width:13px;height:13px;transition:transform .2s var(--ease)}.ahead .lnk:hover .ico{transform:translateX(2px)}
@@ -1074,13 +1073,9 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .twc{padding:26px 30px;min-width:0}
 .twb .eye{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font:500 12px var(--mono);color:var(--ink-2)}
 .twb .eye>span+span::before{content:"";display:inline-block;width:3px;height:3px;border-radius:50%;background:var(--mute);margin-right:12px;vertical-align:middle}
-.twb .eye .twnew{color:var(--accent-hi);font-weight:600}
-.twb .eye .twnew::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:8px;vertical-align:middle;box-shadow:0 0 10px var(--accent);animation:twpulse 2.4s ease-in-out infinite}
-@keyframes twpulse{50%{opacity:.35}}
 .twb h3{font:700 clamp(34px,3.6vw,48px)/.95 var(--display);text-transform:uppercase;margin:10px 0 6px;text-wrap:balance;max-width:640px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .twb:has(.twcd) .twc{padding-top:96px}
 .twb .sub{font:600 16px var(--ui);color:var(--ink)}
-.twb .cta{margin-top:18px}.twb .cta .btn{height:44px}
 .twcd{position:absolute;top:22px;right:26px;text-align:right;text-shadow:0 2px 14px rgba(0,0,0,.7)}
 .twcd b{display:block;font:700 40px/1 var(--display);letter-spacing:.01em}
 .twcd small{display:block;margin-top:4px;font:500 11px var(--mono);color:var(--ink-2)}
@@ -1097,7 +1092,7 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .twl.few .twb.side+.twb.side,.twl.few .twb.side:has(+.twb.side){min-height:108px}
 .twl.few .twb.side:has(+.twb.side) .twc,.twl.few .twb.side+.twb.side .twc{padding:18px 24px}
 .twl.few .twb.side:has(+.twb.side) :is(.sub,.cta),.twl.few .twb.side+.twb.side :is(.sub,.cta){display:none}
-.twl.few .twb.side:has(+.twb.side) h3,.twl.few .twb.side+.twb.side h3{font-size:24px;-webkit-line-clamp:1}
+.twl.few .twb.side:has(+.twb.side) h3,.twl.few .twb.side+.twb.side h3{font-size:28px;-webkit-line-clamp:1}
 .twl.few .twb.side:has(+.twb.side) .twcd,.twl.few .twb.side+.twb.side .twcd{top:16px;right:20px}.twl.few .twb.side:has(+.twb.side) .twcd b,.twl.few .twb.side+.twb.side .twcd b{font-size:28px}
 /* ready to start */
 .rdy{display:flex;gap:18px;flex-wrap:wrap}
@@ -1125,6 +1120,107 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .rec .rcv{transition:transform .3s var(--ease),opacity .3s}
 @media (hover:none){.rec .radd{opacity:1;transform:translate(-50%,-6px)}}
 .home2 .emptyx{margin-top:20px}
+
+/* ───────── Home on the PC (TODO 236, Elias 2026-11-14) ─────────
+   Every row sits on one grid (10 columns on a 2048 px window; 4 to 16 as the
+   window narrows or widens, so a poster stays ~160–200 px) and shows
+   whole cards only, so edges line up down the page: an episode is 2 columns, a
+   poster or half a playlist row 1, This week 6 + 4. One type ramp (84 · 38 ·
+   28 · 20 · 15 · 13 · 12), 64 px between sections, 24 px between cards. A dark
+   page; each picture glows onto it. The portrait tablet and the phone keep
+   their own Home (no .wide). */
+:root:not([data-art=soft]) body.pg-home #canvas .cv-blur{filter:blur(110px) saturate(1.1) brightness(.18)}
+@media (pointer:fine){#canvas .cv-blur{transition:opacity 1.1s ease,filter .5s ease}}
+.home2.wide{container-type:inline-size;padding:30px 44px 110px}
+/* --cols: the grid; --lead: This week's next show (the rest beside it); --pl: playlists in a row */
+.home2.wide>*{--cols:4;--lead:4;--pl:2;--col:calc((100cqw - (var(--cols) - 1) * 24px) / var(--cols))}
+@container (width >= 1000px){.home2.wide>*{--cols:6;--pl:3}}
+@container (width >= 1300px){.home2.wide>*{--cols:8;--lead:5;--pl:4}}
+@container (width >= 1700px){.home2.wide>*{--cols:10;--lead:6;--pl:5}}
+@container (width >= 2200px){.home2.wide>*{--cols:12;--lead:7;--pl:6}}
+@container (width >= 2700px){.home2.wide>*{--cols:14;--lead:8;--pl:7}}
+@container (width >= 3200px){.home2.wide>*{--cols:16;--lead:10;--pl:8}}
+/* sections: 64 px from the last thing you see to the next heading, 18 px from a heading to its cards */
+.home2.wide>.hsec{margin-top:64px}
+.home2.wide .hsec .sh{position:relative;z-index:1;height:28px;margin-bottom:16px} /* above the row's glow room, so its arrows stay clickable */
+.home2.wide .hsec .sh h2{font-size:20px;font-weight:650;letter-spacing:-.015em}
+.home2.wide .hsec .sh .mut{display:none}
+.home2.wide .hsec .link-btn{font:500 13px var(--ui);color:var(--ink-2)}
+.home2.wide .hsec .arr{width:40px;height:40px;transition:opacity .2s var(--ease),background .15s}
+.home2.wide .hsec .arr:disabled{opacity:0;pointer-events:none}
+/* rows: room around the cards for their glow (it was cut off at the top, Elias 2026-11-14); the side gutters fade out, so a card never shows as a sliver */
+.home2.wide .hstrip{gap:24px;padding:60px 44px 48px;margin:-60px -44px -48px;scroll-padding-left:44px;-webkit-mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 calc(100% - 44px),transparent calc(100% - 20px));mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 calc(100% - 44px),transparent calc(100% - 20px))}
+.home2.wide .eye{font:600 13px var(--ui);letter-spacing:0}
+.home2.wide .btn:active,.home2.wide .twb:active,.home2.wide .hc:active .epa,.home2.wide .rec:active .rcv{transform:scale(.97)}
+/* the banner: its art glows around it; this episode's progress bar */
+/* its height follows the width, so the banner keeps the art's own wide shape on every screen (400 px on 2048), never so tall that a short screen loses the row below */
+.home2.wide .upn{min-height:clamp(320px,min(20.4cqw,100vh - 380px),560px);border-radius:24px;overflow:visible;box-shadow:none;background:none}
+.home2.wide .upn::before{content:"";position:absolute;inset:0 -1% -9%;z-index:-2;border-radius:inherit;background:var(--art) center 30%/cover;filter:blur(80px) saturate(1.6);opacity:.5;transition:opacity .35s var(--ease)}
+.home2.wide .upn:hover::before{opacity:.62}
+.home2.wide .upn:hover .upa{scale:1}
+.home2.wide .upn .upa{background:radial-gradient(ellipse 42% 75% at 14% 66%,rgba(10,11,14,.6),transparent 70%),linear-gradient(90deg,rgba(10,11,14,.82),rgba(10,11,14,.42) 30%,transparent 55%),linear-gradient(0deg,rgba(10,11,14,.5),transparent 38%),var(--art) center 30%/cover}
+.home2.wide .upn .upc{padding:40px 48px}
+.home2.wide .upn h1{font-size:84px;max-width:46cqw} /* a long title wraps on the shaded side instead of running over the picture */
+.home2.wide .upn.tl2 h1{font-size:68px}
+.home2.wide .upn.tl3 h1{font-size:58px}
+.home2.wide .upn .sub{font-size:20px;color:var(--ink)}
+.home2.wide .upn .facts{font:500 15px var(--ui);color:rgba(243,243,241,.85)}
+.home2.wide .upn .hbar{width:300px;height:4px;border-radius:2px;margin-top:16px;overflow:hidden;background:rgba(255,255,255,.2)}
+.home2.wide .upn .hbar i{display:block;height:100%;border-radius:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.home2.wide .upn .cta{margin-top:22px}
+.home2.wide .upn .btn.big{height:48px;font-size:15px;padding:0 22px}
+/* Continue watching: 2 columns a card; it lifts and its art glows underneath */
+.home2.wide .hc{position:relative;isolation:isolate;width:calc(var(--col) * 2 + 24px);transition:transform .25s var(--ease)}
+.home2.wide .hc::before{content:"";position:absolute;left:1%;top:14px;width:98%;aspect-ratio:16/9;z-index:-1;border-radius:18px;background:var(--art) center/cover;filter:blur(32px) saturate(1.4);opacity:0;transition:opacity .25s var(--ease)}
+.home2.wide .hc:hover::before,.home2.wide .hc:focus-visible::before{opacity:.5} /* half: .95 lit bright art up like a lamp (Elias 2026-11-14) */
+.home2.wide .hc:hover{transform:translateY(-4px)}
+.home2.wide .hc .epa{border-radius:18px;box-shadow:0 18px 30px -18px rgba(0,0,0,.85),var(--edge)}
+.home2.wide .hc.now .epimg{border-radius:18px}
+.home2.wide .hc .epimg{transition:transform .45s cubic-bezier(.2,.8,.2,1)}
+.home2.wide .hc:hover .epimg{transform:scale(1.04)}
+.home2.wide .hc .eplay{background:rgba(255,255,255,.92);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.home2.wide .hc .eprog i{box-shadow:0 0 8px var(--accent)}
+.home2.wide .hc .enum{font:600 12px var(--ui)}
+.home2.wide .hc .newtag{position:absolute;left:10px;top:9px;z-index:3;padding:3px 9px;border-radius:999px;font:700 12px var(--ui);color:#111;background:var(--accent-hi)}
+.home2.wide .hc h3{font:600 15px var(--ui);margin-top:14px}
+.home2.wide .hc small{font:500 12px var(--ui);color:var(--mute)}
+/* This week: ordinary cards next to the banner, the next one --lead columns wide (6 of 10) */
+.home2.wide .twg{gap:24px}
+.home2.wide .twg:not(.solo){grid-template-columns:calc(var(--col) * var(--lead) + (var(--lead) - 1) * 24px) minmax(0,1fr)}
+@container (width < 1000px){.home2.wide .twg:not(.solo){grid-template-columns:minmax(0,1fr)}}
+.home2.wide .twb{min-height:184px;border-radius:20px;overflow:visible;box-shadow:none;background:none}
+.home2.wide .twb::before{content:"";position:absolute;inset:10% 6% -8%;z-index:-2;border-radius:inherit;background:var(--art) center 30%/cover;filter:blur(60px) saturate(1.9);opacity:.32;transition:opacity .35s var(--ease)}
+.home2.wide .twb:hover::before{opacity:.5}
+.home2.wide .twb:hover .twa{scale:1}
+.home2.wide .twb .twa{background:linear-gradient(90deg,rgba(10,11,14,.86),rgba(10,11,14,.45) 45%,rgba(10,11,14,.05)),linear-gradient(0deg,rgba(10,11,14,.5),transparent 55%),var(--art) center 30%/cover}
+.home2.wide .twb .twc{padding:70px 26px 22px}
+.home2.wide .twl.few .twb.side:has(+.twb.side) .twc,.home2.wide .twl.few .twb.side+.twb.side .twc{padding-right:132px} /* two short cards: the title stops before the countdown */
+.home2.wide .twb h3{font-size:28px}
+.home2.wide .twb .sub{font-size:15px}
+.home2.wide .twcd{top:18px;right:22px;z-index:1}
+.home2.wide .twcd::before{content:"";position:absolute;inset:-60px -60px -50px -120px;z-index:-1;background:radial-gradient(closest-side,rgba(10,11,14,.6),transparent);pointer-events:none} /* the countdown stays readable on bright art */
+.home2.wide .twcd b{font-size:28px;font-variant-numeric:tabular-nums}
+.home2.wide .twcd small{font:500 13px var(--ui);color:var(--ink)}
+/* playlists: 2 columns each */
+.home2.wide .plhomegrid{gap:26px 24px;grid-template-columns:repeat(var(--pl),minmax(0,1fr))}
+.home2.wide .plhome .plbox{max-width:none}
+.home2.wide .plhome :not(.plstack,.plstack *){font-family:var(--ui);letter-spacing:0}
+.home2.wide .plbox .plstack{transition:transform .2s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 18px 30px color-mix(in srgb,var(--plc,#000) 30%,transparent))}
+.home2.wide .plcard,.home2.wide .plstack::before,.home2.wide .plstack::after{border-radius:18px}
+.home2.wide .plcap h3{font:600 15px var(--ui)}
+.home2.wide .plcap .m{font:500 12px var(--ui);color:var(--mute)}
+/* Recommended: a poster is 1 column; it lifts and glows */
+.home2.wide .rec{width:var(--col);isolation:isolate}
+.home2.wide .rec::before{content:"";position:absolute;left:10%;top:16px;width:80%;aspect-ratio:2/3;z-index:-1;border-radius:18px;background:var(--art) center/cover;filter:blur(24px) saturate(1.4);opacity:0;transition:opacity .25s var(--ease)}
+.home2.wide .rec:hover::before{opacity:.5}
+.home2.wide .rec:hover .rcv{transform:translateY(-4px)}
+.home2.wide .rec .rcv,.home2.wide .rec .rcv .poster{border-radius:18px}
+.home2.wide .rec .rcv .poster{width:100%;box-shadow:0 16px 30px -16px rgba(0,0,0,.8),var(--edge)}
+.home2.wide .rec .radd{top:calc(var(--col) * 1.5 - 64px)}
+.home2.wide .rec .tg{font:600 12px var(--ui)}
+.home2.wide .rec b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;text-wrap:pretty;font:600 15px/1.3 var(--ui)}
+.home2.wide .rec small{display:block;white-space:nowrap;text-overflow:ellipsis;font:500 12px var(--ui);color:var(--mute);opacity:0;transition:opacity .15s ease-out}
+.home2.wide .rec:hover small{opacity:1}
 
 /* ───────── Library (Decision 38, TODO 60 step 4) ───────── */
 .lib2{padding:8px 44px 110px}
@@ -1943,8 +2039,8 @@ body.srch #pal{display:grid}
   #nav{padding:0 14px;gap:2px}
   .search{display:flex!important}
   .brand span{display:none}.brand{margin-right:4px}
-  .link{padding:0 10px;font-size:14px}.link kbd{display:none}
-  .search{width:40px;padding:0;justify-content:center}.search .ph,.search kbd{display:none}
+  .link{padding:0 10px;font-size:14px}
+  .search{width:40px;padding:0;justify-content:center}.search .ph{display:none}
   #pal{padding:12px 12px 0}#pal .pbox{width:100%;height:calc(100vh - 90px)}
   #pal .pin{height:54px;padding:0 14px 0 18px}#pal .pin input{font-size:16px}
   .pal2 .pfoot span:not(:last-child){display:none}
@@ -2136,7 +2232,7 @@ body.srch #pal{display:grid}
 /* ───────── Top bar styles (Settings → Appearance → Top bar; Elias, 2026-10-24) ─────────
    One markup, five dresses: classic (the default above), tabs, line, capsule, island. */
 .tools{display:flex;align-items:center}
-.search .si,.search .sl,.search .car,.setb .sl,.setb .sk,.tools .tvs{display:none}
+.search .si,.search .sl,.search .car,.setb .sl,.tools .tvs{display:none}
 .search .si,.setb .ico{width:17px;height:17px;flex:none}
 @media (min-width:701px){
   /* tabs: they look like Home / Library / Journal */
@@ -2144,18 +2240,16 @@ body.srch #pal{display:grid}
   :root[data-bar=tabs] .search:hover,:root[data-bar=tabs] .setb:hover{background:rgba(255,255,255,.06);color:var(--ink)}
   :root[data-bar=tabs] .setb.on{background:var(--pick);color:var(--ink)}
   :root[data-bar=tabs] .search .sp,:root[data-bar=tabs] .search .ph{display:none}
-  :root[data-bar=tabs] .search .si,:root[data-bar=tabs] .search .sl,:root[data-bar=tabs] .setb .sl,:root[data-bar=tabs] .setb .sk{display:inline-flex}
+  :root[data-bar=tabs] .search .si,:root[data-bar=tabs] .search .sl,:root[data-bar=tabs] .setb .sl{display:inline-flex}
   :root[data-bar=tabs] .search .si,:root[data-bar=tabs] .setb .ico{color:rgba(243,243,241,.5);transition:color .2s,transform .5s var(--ease)}
   :root[data-bar=tabs] .search:hover .si,:root[data-bar=tabs] .setb:hover .ico{color:var(--accent)}
   :root[data-bar=tabs] .tools .tvs{display:block;width:1px;height:20px;background:rgba(255,255,255,.14);margin:0 8px}
-  :root[data-bar=tabs] .setb kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:6px;font:500 11px/1 var(--mono);background:rgba(255,255,255,.08);color:rgba(243,243,241,.6)}
 
   /* line: a prompt on a thin line, no box */
   :root[data-bar=line] .search{width:320px;height:36px;padding:0 4px;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;border-bottom:1px solid rgba(255,255,255,.18);font:400 14px var(--ui);color:rgba(243,243,241,.55);transition:border-color .25s,color .25s}
   :root[data-bar=line] .search:hover{background:none;border-color:var(--accent);color:var(--ink-2)}
   :root[data-bar=line] .search .car{display:block;width:8px;height:16px;background:var(--accent);opacity:0}
   :root[data-bar=line] .search:hover .car{opacity:1;animation:caret 1.1s steps(1) infinite}
-  :root[data-bar=line] .search kbd{background:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
   :root[data-bar=line] .setb{margin-left:14px;width:36px;height:36px;background:none;box-shadow:none;backdrop-filter:none}
   :root[data-bar=line] .setb:hover,:root[data-bar=line] .setb.on{background:var(--pick)}
 
@@ -2352,16 +2446,14 @@ body.has-side #app{padding-left:340px}
   /* One glass dock (phone polish, TODO 177, Elias picked mockup A): the tabs and
      search share one centred pill; the bars above it (remote, Play, the Library's)
      are pills of their own; while you scroll down it drops its labels. */
-  body{--dock:62px;--dockbg:rgba(28,29,34,.6)}
-  body.tb-min{--dock:46px}
+  body{--dock:56px;--dockbg:rgba(28,29,34,.6)} /* icons only (TODO 236): was 62 with the names under them */
   #tabbar{display:flex;position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:31}
   #tabbar .tb{background:var(--dockbg);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6);box-shadow:0 14px 38px -10px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.1)}
   #tabbar .tb{position:relative;flex:1;display:flex;align-items:center;gap:2px;padding:5px;border-radius:31px;transition:border-radius .3s var(--ease)}
   #tabbar .tb .ind{position:absolute;left:0;top:5px;height:calc(var(--dock) - 10px);border-radius:999px;background:rgba(255,255,255,.16);transition:transform .42s cubic-bezier(.3,1.3,.5,1),width .42s cubic-bezier(.3,1.3,.5,1),height .3s var(--ease),opacity .2s;pointer-events:none}
   #tabbar .tb button{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:calc(var(--dock) - 10px);border:0;border-radius:999px;background:none;color:var(--ink-2);font:600 11px var(--ui);transition:height .3s var(--ease),color .25s}
   #tabbar .tb button span{display:block;max-height:15px;line-height:15px;overflow:hidden;transition:opacity .2s,max-height .3s var(--ease)}
-  body.tb-min #tabbar .tb button span{opacity:0;max-height:0}
-  #tabbar .tb button .ico{width:21px;height:21px}
+  #tabbar .tb button .ico{width:23px;height:23px}
   #tabbar .tb button.on{color:var(--ink)}
   #tabbar .tb button .ico{transition:transform .3s var(--spring),color .25s}
   #tabbar .tb button.on .ico{transform:translateY(-1px) scale(1.08)}
@@ -2767,10 +2859,9 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
    was hidden there entirely — a round search button instead. */
 @media (min-width:701px) and (max-width:1000px){
   #nav .search{display:flex;width:40px;padding:0;justify-content:center}
-  #nav .search .ph,#nav .search kbd,#nav .search .sp,#nav .search .car{display:none}
+  #nav .search .ph,#nav .search .sp,#nav .search .car{display:none}
   #nav .search .si{display:block;color:var(--ink-2)}
 }
-@media (pointer:coarse){.link kbd{display:none}}
 @media (max-width:700px){#cm.closing{animation:sheetOut .19s var(--ease) both}}
 /* round 8: the match card on phones — the best guess right under the
    folder's name, then the other guesses and the search */
@@ -3188,14 +3279,9 @@ body.pp-open #modal{z-index:70}
   .lib2 .lph .n{flex:none;padding-bottom:5px;font:500 14px var(--mono);color:var(--ink-2)}
   .lib2 .lph .lswipe{flex:none;align-self:center;display:inline-flex;align-items:center;gap:6px;height:36px;margin-left:auto;padding:0 13px 0 11px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink);background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
   .lib2 .lph .lswipe .ico{width:15px;height:15px}
-  /* posters: four across, nothing but the art (and progress) */
-  .lib2 .wall.lv-posters{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:4px}
-  .lib2 .wall.lv-posters .card h3,.lib2 .wall.lv-posters .card .m{display:none}
-  .lib2 .wall.lv-posters .card .pw,.lib2 .wall.lv-posters .card .pw .poster{border-radius:12px}
-  .lib2 .wall.lv-posters .card .pw{box-shadow:0 8px 20px -8px rgba(0,0,0,.6),var(--edge);contain-intrinsic-size:auto 126px}
-  .lib2 .wall.lv-posters .card .prog{left:6px;right:6px;bottom:6px;height:3px}
-  .lib2 .wall .card .pkb{display:none}
-  .lib2 .wall.lv-posters .card .pkb{display:inline-grid;position:absolute;z-index:2;right:5px;top:5px;min-width:22px;height:20px;padding:0 5px;border-radius:7px;background:rgba(10,11,13,.78);color:var(--ink);font-size:10.5px}
+  /* posters: three across with the title and one fact under each, as before TODO 239 (Elias 2026-11-14: "could we get that back") */
+  .lib2 .wall.lv-posters{margin-top:4px}
+  .lib2 .wall.lv-posters .card .pw{contain-intrinsic-size:auto 167px}
   /* rows: poster, title, one fact */
   .lib2 .wall.lv-rows{display:flex;flex-direction:column;align-items:stretch;gap:0;margin-top:2px}
   .lib2 .wall.lv-rows .card{width:100%;display:grid;grid-template-columns:56px minmax(0,1fr);grid-template-rows:1fr auto auto 1fr;column-gap:14px;align-items:center;padding:6px 0}
@@ -3449,7 +3535,7 @@ body.pp-open #modal{z-index:70}
   /* The top corners: bare icons with a soft shadow, no circle (TODO 177, Elias picked B) */
   #nav .setb,:root[data-bar] #nav .setb{width:44px;height:44px;margin:0 -10px 0 0;padding:0;gap:0;border-radius:50%;background:none!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;color:#fff}
   #nav .setb .ico,:root[data-bar] #nav .setb .ico{width:24px;height:24px;color:#fff;stroke-width:2.1;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 10px rgba(0,0,0,.35))}
-  #nav .setb .sl,#nav .setb .sk,#nav .setb kbd{display:none!important}
+  #nav .setb .sl{display:none!important}
   #nav .setb.on .ico{color:var(--accent)}
   #nav .setb:active{background:rgba(255,255,255,.08)!important}
   .sp2 .backbtn:not([data-a=rmtclose]),.set2 .sback{width:44px;height:44px;margin-left:-10px!important;background:none!important;box-shadow:none!important;color:#fff}
@@ -4027,3 +4113,121 @@ body.pp-open #modal{z-index:70}
 .dl2 .pnw .msg{margin:8px 0 0}
 @media (pointer:coarse),(max-width:700px){.dl2 .pnh{grid-template-columns:64px minmax(0,1fr);gap:14px}.dl2 .pnt{width:64px;height:64px;border-radius:18px}.dl2 .pnt .ico{width:28px;height:28px}.dl2 #plname{font-size:21px}.dl2 .pnw .plcols{gap:9px}.dl2 .pnw .plcols .sw{width:30px;height:30px}}
 
+
+/* ───────── The cleanup on the other pages (TODO 236, Elias 2026-11-14) ─────────
+   Home's type ramp and rhythm (Decision 96) on the PC's other pages: page titles
+   56 (they were 56, 64 and 72), big numbers and the day heading 38, section and
+   card headings 20, text and titles 15, secondary text 13, small text 12 (mono
+   11–13, nothing under 11). 24 px between cards and panels. Fonts and layouts
+   stay; the phone keeps its sizes. */
+@media (min-width:701px){
+  .lnav .hd,.jr2 .hd,.set2 .hd,.airhead .hd{font-size:clamp(44px,4.4vw,56px)}
+  .jband .v,.airside h2{font-size:38px}
+  .jband .v small{font-size:20px}
+  .lh{font-size:20px}
+  .jcard .sh b,.sp2 .eps-head h2,.sp2 .about h2,.sp2 .hsec .sh h2{font-size:20px;font-weight:650;letter-spacing:-.015em}
+  .lnav>button,.lib2 .lflt .fl,.lflt .fdb,.lib2 .card h3,.plcap h3,.lsubpl,
+  .jr2 .tabs button,.tl .ev b,.gen .r,.airx b,.airtabs button,.set2 .srow>div:first-child>b,
+  .sp2 .desc,.sp2 .backbtn,.sp2 .gb,.sp2 .et b,.sp2 .about dl,.sp2 .ot b,.sp2 .eps-head .ctl .seg button{font-size:15px}
+  .plintro span,.airside .sub,.airnav button,.set2 .group>.sub,.set2 .srow>div:first-child>p,.sp2 .meta{font-size:13px}
+  .lnav .sum,.lib2 .resume-tag,.airtags u,.sp2 .et small,.sp2 .meta .fmt{font-size:12px}
+  .lnav h4,.air1w u,.jbars span,.tl .ev .badge,.tops .cv span,.heat .h,.jcard .legend,.jbars.full.vals em{font-size:11px}
+  /* rhythm: the page starts 34 px under the top bar like Home; cards and panels 24 apart; show page sections 64 */
+  .jr2 .hello{margin:22px 0 24px}
+  .jband{margin-top:0}
+  .jcols{gap:24px;margin-top:24px}
+  .jside{gap:24px}
+  .setg{margin-top:22px}
+  .airp2{padding-top:22px}
+  .lib2 .wall{column-gap:24px}
+  .sp2 .hsec.cast{margin-top:64px}
+  /* very wide screens: the Journal stops at 2200 px and sits centred, like the Calendar at 1800 */
+  .jr2{max-width:2200px;margin-inline:auto}
+}
+/* Settings centres from 2400 px wide (ultrawide, 4K at 100 %): its list and rows fill 1248 px,
+   so it sat in the left third. Under 2400 it stays left, as it was. */
+@media (min-width:2400px){
+  .set2{max-width:1248px;margin-inline:auto}
+}
+/* ───────── One look for the shared pieces (TODO 236, Elias 2026-11-14: "inconsistent ui, for example the progress bar") ─────────
+   Home's episode tiles and posters are the model for the Library and the show page on the PC. Progress is one 4 px bar
+   along the picture's bottom edge (the corners trim it) with a soft glow. Pictures have 18 px corners; on hover they
+   lift 4 px, zoom 1.04 and glow with their own art at half strength. Play buttons are one size. The phone keeps its own. */
+@media (min-width:701px){
+  /* progress = the Library's floating rounded bar inside the picture (Elias: the edge bar "looks worse"); the number pill sits above it */
+  .home2.wide .hc .eprog,.sp2 .eprog{left:10px;right:10px;bottom:10px;height:4px;border-radius:4px;background:rgba(0,0,0,.45);overflow:hidden}
+  .home2.wide .hc .eprog i,.sp2 .eprog:not(.dl) i{border-radius:4px;background:var(--accent)}
+  .home2.wide .hc .epa:has(.eprog) .enum,.sp2 .epa:has(.eprog) .enum{bottom:20px}
+  /* Library posters keep their floating rounded bar (Elias: the edge bar "looks worse than before") */
+  .home2.wide .rec:hover .poster img.ready,.lib2 .card:hover .poster img.ready{transform:scale(1.04)}
+  /* the show page's episode row = Home's: 24 apart, room above and below for the glow (the header stays clickable on top) */
+  .sp2 .eps-head{position:relative;z-index:2}
+  .sp2 .eps.strip{gap:24px;padding:60px 44px 48px;margin:-52px -44px -34px;scroll-padding-left:44px}
+  .sp2 .ep{width:clamp(232px,calc((100vw - 88px - 4 * 24px) / 4.6),360px);isolation:isolate}
+  /* the row now reaches into the page's side margins: hide tiles there like Home does, keep the "more this way" fades */
+  .sp2 .eps.strip{-webkit-mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 calc(100% - 44px),transparent calc(100% - 20px));mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 calc(100% - 44px),transparent calc(100% - 20px))}
+  .sp2 .eps.strip.mr{-webkit-mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 85%,transparent calc(100% - 40px));mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 85%,transparent calc(100% - 40px))}
+  .sp2 .eps.strip.ml.mr{-webkit-mask:linear-gradient(90deg,transparent 44px,#000 calc(44px + 6%),#000 85%,transparent calc(100% - 40px));mask:linear-gradient(90deg,transparent 44px,#000 calc(44px + 6%),#000 85%,transparent calc(100% - 40px))}
+  .sp2 .eps.strip.ml:not(.mr){-webkit-mask:linear-gradient(90deg,transparent 44px,#000 calc(44px + 6%),#000 calc(100% - 44px),transparent calc(100% - 20px));mask:linear-gradient(90deg,transparent 44px,#000 calc(44px + 6%),#000 calc(100% - 44px),transparent calc(100% - 20px))}
+  .sp2 .ep:hover{transform:translateY(-4px)}
+  .sp2 .ep:hover .epimg{transform:scale(1.04)}
+  .sp2 .epa,.sp2 .ep.resume .epa .epimg{border-radius:18px}
+  .sp2 .ep.resume:not(:focus-visible,.focused) .epa{outline:0} /* no ring on the episode you're on, like Home (Elias); its caption and bar say it. Keyboard focus keeps its ring */
+  .sp2 .epa{box-shadow:0 18px 30px -18px rgba(0,0,0,.85),var(--edge)}
+  .sp2 .eplay{width:46px;height:46px;margin:-23px 0 0 -23px;background:rgba(255,255,255,.92);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  /* the header's season bar = Home's banner bar: 4 px, rounded, accent with a glow (was 12 grey ticks) */
+  .sp2 .tbar span.tline{height:4px;border-radius:2px;overflow:visible;background:rgba(255,255,255,.2)}
+  .sp2 .tbar span.tline i{border-radius:2px;box-shadow:0 0 12px var(--accent)}
+  /* the glow; only once the picture has loaded, so it never fetches art the row hasn't shown yet */
+  .sp2 .ep::before{content:"";display:block;position:absolute;left:1%;top:14px;width:98%;aspect-ratio:16/9;z-index:-1;border-radius:18px;filter:blur(32px) saturate(1.4);opacity:0;transition:opacity .25s var(--ease);pointer-events:none}
+  .sp2 .ep:has(.epimg[style*="url("])::before{background:var(--art) center/cover}
+  .sp2 .ep:not(.off):hover::before,.sp2 .ep:not(.off):focus-visible::before{opacity:.5}
+  /* Library posters = Home's */
+  .lib2 .card{isolation:isolate}
+  .lib2 .card:hover .pw{transform:translateY(-4px)}
+  .lib2 .card::before{content:"";position:absolute;left:10%;top:16px;width:80%;aspect-ratio:2/3;z-index:-1;border-radius:18px;filter:blur(24px) saturate(1.4);opacity:0;transition:opacity .25s var(--ease);pointer-events:none}
+  .lib2 .card:has(img.ready)::before{background:var(--art) center/cover}
+  .lib2 .card:hover::before,.lib2 .card:focus-visible::before{opacity:.5}
+}
+/* ───────── One progress bar on pictures, phone and PC (TODO 236, Elias 2026-11-14) ─────────
+   Easy to read: a dark track, a fill that brightens toward its end with a clear glow, and a bright dot where you
+   stopped ("barely see that they are glowing… hard to read how far"). Where it sits is per device below / above. */
+.home2.wide .hc .eprog,.sp2 .eprog,.lib2 .card .prog,.cc-art .ccbar{overflow:visible;background:rgba(0,0,0,.6);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.home2.wide .hc .eprog i,.sp2 .eprog:not(.dl) i,.lib2 .card .prog i,.cc-art .ccbar i{position:relative;min-width:4px;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--accent-hi));box-shadow:0 0 10px color-mix(in srgb,var(--accent) 85%,transparent),0 0 2px var(--accent-hi)}
+.home2.wide .hc .eprog i::after,.sp2 .eprog:not(.dl) i::after,.lib2 .card .prog i::after,.cc-art .ccbar i::after{content:"";position:absolute;right:-4px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:color-mix(in srgb,var(--accent-hi) 45%,#fff);box-shadow:0 0 10px 2px var(--accent)}
+@media (max-width:700px){
+  /* Home's Continue watching tile: the bar floats inside the still, the number above it */
+  .cc-art .ccbar{position:absolute;left:10px;right:10px;bottom:10px;z-index:3;height:4px;border-radius:4px}
+  .cc-art .ccbar i{position:relative;left:auto;bottom:auto;display:block;height:100%}
+  .cc-art:has(.ccbar) em{bottom:20px}
+  .cc-art:has(.ccbar) .cc-go{bottom:22px} /* the play button sits above the bar, not on it (Elias: "clipping") */
+  /* show page episodes: the same floating bar (was a strip along the edge), and no ring on the one you're on */
+  .sp2 .eps.strip .ep .eprog,.sp2 .eps.strip .ep.resume .eprog,.sp2 .eps.strip .ep.sel .eprog{left:8px;right:8px;bottom:8px;height:4px;border-radius:4px;background:rgba(0,0,0,.6)}
+  .sp2 .eps.strip .ep .eprog i{height:100%;margin-top:0}
+  .sp2 .eps.strip .ep .epa:has(.eprog) .enum{bottom:18px}
+  .sp2 .ep.resume:not(.sel) .epa:after{content:none}
+  /* the show page's season bar = the PC's plain bar; Home's hero = the PC banner's episode bar */
+  .sp2 .tbar span.tline{height:4px;border-radius:2px;overflow:visible;background:rgba(255,255,255,.2)}
+  .sp2 .tbar span.tline i{border-radius:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+  .uph .hbar{height:4px;border-radius:2px;margin-top:14px;background:rgba(255,255,255,.2)}
+  .uph .hbar i{display:block;height:100%;border-radius:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+  /* Library's small posters: a smaller dot */
+}
+/* Settings → Appearance → Glow (TODO 236, Elias: "a setting to turn off that glow because I'm still not sure about it").
+   Pictures only: the progress bars lose their glow (the end dot stays, it says where you stopped). Progress bars only:
+   the pictures lose theirs. Off: both. */
+:root:is([data-glow=pictures],[data-glow=off]) :is(.home2.wide .hc .eprog i,.sp2 .eprog:not(.dl) i,.lib2 .card .prog i,.cc-art .ccbar i,.home2.wide .upn .hbar i,.uph .hbar i,.sp2 .tbar span.tline i){box-shadow:none}
+:root:is([data-glow=pictures],[data-glow=off]) :is(.home2.wide .hc .eprog i,.sp2 .eprog:not(.dl) i,.lib2 .card .prog i,.cc-art .ccbar i)::after{box-shadow:none}
+:root:is([data-glow=bars],[data-glow=off]) :is(.home2.wide .upn,.home2.wide .hc,.home2.wide .twb,.home2.wide .rec,.sp2 .ep)::before,:root:is([data-glow=bars],[data-glow=off]) .lib2 .card::before{display:none}
+
+
+/* ───────── The phone's Home: small labels in the text font, like the PC's Home (TODO 236, Elias 2026-11-14) ─────────
+   The typewriter font stays for the playlist stack's "1 / 4", as on the PC. */
+.home2.phone :is(.uph .eye,.cc-art em,.ccard small,.pt small,.prow .cdn,.sh .link-btn,.plcap .m,.rec small,.rec .tg){font-family:var(--ui);letter-spacing:0}
+.home2.phone .uph .eye{font-size:12.5px;font-weight:600}
+.home2.phone .cc-art em{font-size:12px;font-weight:600}
+.home2.phone :is(.ccard small,.pt small,.plcap .m,.rec small){font-size:12px;font-weight:500}
+.home2.phone .prow .cdn{font-size:12px;font-weight:600}
+.home2.phone .sh .link-btn{font-size:13px}
+.home2.phone .rec .tg{font-size:11px;font-weight:600}
+.cc-art .newtag{position:absolute;left:9px;top:9px;z-index:2;padding:2px 8px;border-radius:999px;font:700 11px/1.4 var(--ui);color:#111;background:var(--accent-hi)}

@@ -135,7 +135,10 @@ class Frontend(unittest.TestCase):
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
         self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["tabs", "classic", "line", "capsule", "island"],
-                                                    "fan": ["cascade", "fan", "wide", "peek"]})  # Playlist stacks (Decision 64)
+                                                    "fan": ["cascade", "fan", "wide", "peek"], "glow": ["on", "pictures", "bars", "off"]})  # Playlist stacks (Decision 64); Glow (TODO 236)
+        self.assertEqual(run_js("return lookGet('glow');"), "on")
+        self.assertIn('d.dataset.glow=g("glow")||"on";', HTML)
+        self.assertIn(':root:is([data-glow=bars],[data-glow=off]) .lib2 .card::before', CSS)
         self.assertEqual(run_js("return lookGet('fan');"), "cascade")  # Cascade is the default (Elias, 2026-11-13)
         self.assertEqual(run_js("return lookGet('fan');", {"fan": "peek"}), "peek")
         for fan in ("fan", "wide", "cascade", "peek"):
@@ -186,12 +189,13 @@ class Frontend(unittest.TestCase):
             self.assertTrue((WEB / "fonts" / lic).is_file(), lic)
 
     def test_shell(self):
-        # The art canvas, the top bar (tabs with number keys + settings icon) and the status line.
+        # The art canvas, the top bar (tabs, number keys, settings icon) and the status line.
         for el in ('id="canvas"', 'class="cv-blur"', 'class="cv-art"', 'id="status"', 'id="nr"', 'id="setb"'):
             self.assertIn(el, HTML)
         self.assertEqual(run_js("return 1;"), 1)
         self.assertIn("const TABS = [", APP)
-        self.assertIn("<kbd>${i + 1}</kbd>", APP)
+        self.assertNotIn("<kbd>${i + 1}</kbd>", APP)  # no key hints in the top bar (TODO 236)
+        self.assertIn("const tab = TABS[+e.key - 1];", APP)  # 1–4 still switch tabs
         self.assertIn('if (e.key === ",") { e.preventDefault(); A.go("settings"); return; }', APP)
         self.assertIn("function paintCanvas(art = canvasArt())", APP)
         self.assertIn('swapLayer("cv-art", mode === "full" ? art?.sharp : null);', APP)
@@ -972,9 +976,9 @@ class ShowPageRedo(unittest.TestCase):
         self.assertIn('scoreSlider("dnfine", 0)', APP)  # and the "you finished" dialog
         self.assertNotIn("unless a .5 is set", APP)  # a .5 no longer swaps the pills for a number field
 
-    def stats(self, f, fe):
+    def stats(self, f, fe, tablet=True):
         pre = ("const frEntry = () => (" + json.dumps(fe) + "); const showById = () => null; const epTotal = () => 0; const epWatched = () => 0;"
-               "function aheadLine() { return ''; }")
+               f"function aheadLine() {{ return ''; }} const isPhone = () => false; const isTabletP = () => {str(tablet).lower()};")
         return self.run_fn("entryStats", "entryStats(" + json.dumps(f) + ", false)", pre)
 
     def test_your_list_line_and_bar(self):
@@ -983,8 +987,11 @@ class ShowPageRedo(unittest.TestCase):
         self.assertIn('<button class="mline" data-a="edit"', out)
         self.assertIn("<b>watching</b>", out)
         self.assertIn("since 2026-10-11", out)
-        self.assertEqual(out.count('class="s"'), 5)  # Home's ticks up to 40 episodes
+        self.assertEqual(out.count('class="s"'), 5)  # portrait tablets: Home's ticks up to 40 episodes
         self.assertIn("5/12", out)
+        pc = self.stats({"status": "CURRENT", "progress": 5, "media": {"episodes": 12}}, fe, tablet=False)
+        self.assertIn('<span class="tline"><i style="width:41.7%">', pc)  # PC and phones: one plain bar like Home's banner (TODO 236)
+        self.assertIn("5/12", pc)
         long = self.stats({"status": "CURRENT", "progress": 20, "media": {"episodes": 148}}, {"episodes": 148, "slots": []})
         self.assertIn('class="tline"', long)
         movie = self.stats({"status": "PLANNING", "progress": 0, "media": {"episodes": 1}}, {"episodes": 1, "slots": []})
