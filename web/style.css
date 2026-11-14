@@ -658,6 +658,11 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font-size:13px;word-
 .sp2 .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font:500 13.5px var(--ui);color:var(--ink-2);margin:0}
 .sp2 .meta .fmt{height:20px;padding:0 6px;border-radius:5px;border:1px solid rgba(255,255,255,.34);font:650 10.5px var(--ui);letter-spacing:.05em;text-transform:uppercase;display:inline-flex;align-items:center;color:var(--ink)}
 .sp2 .meta .sep{opacity:.5}
+/* the facts: a dot before each, the first .9em hidden so no line starts or ends with one (TODO 240) */
+.sp2 .meta .topfacts{min-width:0;overflow:hidden}.sp2 .meta .topfacts .dw{display:block;margin-left:-.9em}
+.sp2 .meta .topfacts .dw>span{white-space:nowrap}.sp2 .meta .topfacts .dw>span:before{content:"·";display:inline-block;width:.9em;text-align:center}
+.sp2 .meta .scr{display:none} /* phones only (TODO 240): the PC has the AniList link */
+.sp2 .meta .epsh{display:none}
 .sp2 .meta .alk{color:var(--accent);font-weight:650;text-decoration:none;transition:color .45s}.sp2 .meta .alk:hover{text-decoration:underline;text-underline-offset:3px}
 .sp2 .meta .live-t:empty{display:none}.sp2 .meta .live-t{color:var(--ink);font:500 12px var(--mono)}
 .sp2 .meta .playing{display:inline-flex;align-items:center;gap:7px;background:none;border:0;padding:0;backdrop-filter:none;font:500 12px var(--mono);color:var(--ink)}
@@ -845,7 +850,16 @@ span.tline{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);
 .sp2 .about dt{font:400 12px var(--mono);color:var(--mute);padding-top:2px}
 .sp2 .about #aboutlive{display:contents}
 .sp2 .about #aboutx{display:contents}
-.sp2 .about dd.tags{line-height:1.7}.sp2 .about dd.tags .tg{white-space:nowrap}.sp2 .about dd.tags .tg:not(:last-child):after{content:"·";color:var(--mute);margin:0 3px 0 7px}
+/* A dot between words, never at a line's end or start (TODO 240): each word
+   carries the dot before it, and its inner box (.dw) reaches 1.4em past the
+   list's left edge, which hides that part: a dot that wraps to the start of a
+   line is out of sight. Phones right-align genres: the dot comes after each
+   word and the box reaches past the right edge instead. */
+.sp2 .about dd.tags,.sp2 .about dd.gen{overflow:hidden}
+.sp2 .about dd .dw{display:block;margin-left:-1.4em}
+.sp2 .about dd .dw>span{white-space:nowrap}
+.sp2 .about dd .dw>span:before{content:"·";display:inline-block;width:1.4em;text-align:center;color:var(--mute)}
+.sp2 .about dd.tags{line-height:1.7}
 .sp2 .about dd.tags .tspl{color:var(--ink-2)}
 .sp2 .about .tspb{font:inherit;color:var(--mute);text-decoration:underline dotted;text-underline-offset:3px;padding:0;background:none;border:0;cursor:pointer}.sp2 .about .tspb:hover{color:var(--ink)}
 /* Characters (TODO 172, round 5): the watch order's tiles (.ot in a
@@ -3318,6 +3332,10 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .hero h1,.sp2.frpage .hero h1.mid,.sp2.frpage .hero h1.long{grid-column:2;grid-row:1;align-self:end;margin:0 0 6px!important;font-size:32px!important;line-height:.95;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
   .sp2.frpage .hero h1.long{font-size:27px!important}
   .sp2.frpage .hero .meta{grid-column:2;grid-row:2;align-self:start;flex-wrap:wrap;gap:4px 6px;font-size:11.5px;line-height:1.4}
+  .sp2.frpage .hero .meta{align-items:baseline}
+  .sp2.frpage .hero .meta .topfacts{flex:1 1 0} /* beside the badge, wrapping inside, never pushed under it */
+  .sp2.frpage .hero .meta .live-t,.sp2.frpage .hero .meta .playing{flex-basis:100%;margin:8px 0 0} /* "E6 airs in…" on its own line, a little apart (Elias) */
+  .sp2.frpage .hero .meta .epsh{display:inline}.sp2.frpage .hero .meta .epln{display:none}.sp2.frpage .hero .meta .scr{display:inline}.sp2.frpage .hero .meta .scr b{color:var(--accent);font-weight:700}
   .sp2.frpage .hero .desc{grid-column:1/-1;margin:16px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink-2);-webkit-line-clamp:3;cursor:pointer}
   .sp2.frpage .hero .desc.open{-webkit-line-clamp:unset;display:block}
   .sp2.frpage .hero .stats2{grid-column:1/-1}
@@ -3336,7 +3354,6 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .mline{display:none}
   .sp2.frpage .mline.aerr{display:flex;margin:14px 0 0;padding:0} /* the one time the line has news: why your list is missing */
   .sp2.frpage .hsec .arr{display:none}
-  .sp2.frpage .about dd.tags .tg:not(:last-child):after{display:none}
   /* episodes: a sideways row of stills, like the PC's strip */
   .sp2.frpage .eps.strip{flex-direction:row;gap:10px;overflow-x:auto;overflow-y:hidden;margin:0 -16px;padding:2px 16px 6px;scroll-padding:0 16px;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-mask:none;mask:none}
   .sp2.frpage .eps.strip::-webkit-scrollbar{display:none}
@@ -3348,15 +3365,22 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .eps.strip .ep .epa{width:100%}
   .sp2.frpage .eps.strip .ep .et{margin:8px 0 0}
   body.has-pbar .sp2.frpage{padding-bottom:200px}
-  /* About: the summary is at the top already; the facts read as chips */
+  /* About (TODO 240): the summary, year, episodes and length are at the top
+     already; the rest is a list, one fact a row (name left, value right), the
+     tags as words under it */
   .sp2.frpage .about{display:block;margin-top:30px}
   .sp2.frpage .about p{display:none}
-  .sp2.frpage .about dl{display:flex;flex-wrap:wrap;gap:6px;margin:0}
-  .sp2.frpage .about dl>span{display:contents}
-  .sp2.frpage .about dt{display:none}
-  .sp2.frpage .about dd{margin:0;padding:6px 11px;border-radius:999px;background:rgba(255,255,255,.07);font:600 12.5px var(--ui);color:var(--ink-2)}
-  .sp2.frpage .about dd.tags{display:contents}
-  .sp2.frpage .about dd.tags .tg{padding:6px 11px;border-radius:999px;background:rgba(255,255,255,.04);font:500 12.5px var(--ui);color:var(--mute)}
+  .sp2.frpage .about dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0;margin:0;padding:0;font-size:14px;line-height:1.45}
+  .sp2.frpage .about dt,.sp2.frpage .about dd{margin:0;padding:12px 0;border-bottom:1px solid var(--line)}
+  .sp2.frpage .about dt{font:400 14px/1.45 var(--ui);color:var(--mute)}
+  .sp2.frpage .about dt::first-letter{text-transform:uppercase}
+  .sp2.frpage .about dd{padding-left:16px;text-align:right;font-weight:600;color:var(--ink)}
+  .sp2.frpage .about .top{display:none}
+  .sp2.frpage .about dt.tgk{order:10;grid-column:1/-1;border:0;padding:18px 0 6px}
+  .sp2.frpage .about dd.tags{order:11;grid-column:1/-1;border:0;padding:0;text-align:left;font-weight:500;color:var(--ink-2);line-height:1.7}
+  .sp2.frpage .about dd.gen .dw{margin:0 -1.4em 0 0}
+  .sp2.frpage .about dd.gen .dw>span:before{content:none}
+  .sp2.frpage .about dd.gen .dw>span:after{content:"·";display:inline-block;width:1.4em;text-align:center;color:var(--mute)}
   /* characters: round faces */
   .sp2.frpage .castrow .ot,.sp2.frpage .castrow .ot.big{width:84px;text-align:center}
   .sp2.frpage .castrow .ot .poster{width:84px!important;height:84px;aspect-ratio:1;border-radius:50%;object-fit:cover}
@@ -3373,7 +3397,7 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .eps-head .ctl{margin-left:auto}
   /* tags: the first few, the rest behind "more" */
   .sp2.frpage .about:not(.tagsopen) dd.tags .tg:nth-child(n+7){display:none}
-  .sp2.frpage .about .tgmore{padding:6px 11px;border-radius:999px;background:none;box-shadow:inset 0 0 0 1px var(--line);font:600 12.5px var(--ui);color:var(--ink-2)}
+  .sp2.frpage .about .tgmore{padding:6px 0;background:none;border:0;font:600 14px var(--ui);color:var(--ink)}
 }
 @media (max-width:700px){
   /* the show page's art goes soft behind the poster header, so the title and summary read on bright art (Show C) */
@@ -3417,7 +3441,7 @@ body.pp-open #modal{z-index:70}
 }
 .about dd.tgm{display:none}
 @media (max-width:700px){
-  .sp2.frpage .about dd.tgm{display:block;padding:0;background:none}
+  .sp2.frpage .about dd.tgm{display:block;order:12;grid-column:1/-1;padding:0;border:0;text-align:left;background:none}
   .sp2.frpage .about dd.tgm[hidden]{display:none}
 }
 @media (max-width:700px){
