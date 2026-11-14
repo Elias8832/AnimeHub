@@ -142,14 +142,17 @@ def _track(s, manual=False, only=None):
         if remote is not None:
             if not track or not mapping.unit_fits(u, remote.get("episodes")) or highest <= (remote.get("progress") or 0):
                 continue
-            if sync.outbox_pending_for(aid):
+            # Starting a show that sits on Planning moves it to Watching,
+            # the way AniList's own site does (the API keeps the status).
+            start = remote.get("status") == "PLANNING"
+            if sync.outbox_pending_for(aid) and not start:
                 # Offline E5 then E6: fold the newer count into the queued
                 # progress-only row; behind the user's own edit it queues
                 # as its own row instead of being dropped.
                 if sync.outbox_queue_progress(aid, highest):
                     patches[aid] = {"progress": highest}
                 continue
-            patches[aid] = {"progress": highest}
+            patches[aid] = {"status": "CURRENT", "progress": highest} if start else {"progress": highest}
             sync.outbox_enqueue(aid, patch=patches[aid])
             continue
         # Unlisted: consent-gated auto-add, and only an entry the user
