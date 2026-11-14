@@ -5205,6 +5205,8 @@ function AniDlg() {
 /* MyAnimeList as the account (Decision 75). Show info stays AniList's. MAL
    sends the browser back to port 8787 only: on another port, the address it
    lands on is pasted here. */
+/* MAL's API terms (§4(f)) want the privacy rules shown before someone signs in (TODO 29). */
+const MAL_PRIVACY = '<button class="lnk" data-a="ext" data-v="https://github.com/Elias8832/AnimeHub#privacy">Privacy ›</button>';
 function MalDlg() {
   const a = S.ani || {}, m = a.mal || {}, me = a.accounts?.mal || {}, in_use = a.service === "mal", on = !!me.connected, n = in_use ? S.alData?.unmatched?.length || 0 : 0;
   const state = on ? (in_use ? "In use." : "Paused: AniList is in use.")
@@ -5212,6 +5214,7 @@ function MalDlg() {
   return dlHead("MyAnimeList")
     + dlBody(`<p class="sub">Show info still comes from AniList.</p>
     ${srow("Account", state, pkdo(on ? whoTxt(me.user) + '<button class="btn" data-a="aniout" data-v="mal">Disconnect</button>' : m.client_id_configured ? '<button class="btn pri" data-a="maloauth">Connect via MyAnimeList</button>' : dotTxt("No app id", "")))}
+    ${!on && m.client_id_configured ? `<p class="sub">Your login and list stay on your devices. ${MAL_PRIVACY}</p>` : ""}
     ${on && n ? srow("Not in the library", `${n} entr${n === 1 ? "y has" : "ies have"} no AniList match.`, "") : ""}
     ${!on && !m.client_id_configured ? '<p class="sub">This copy of Anime Hub has no MyAnimeList app id. Add <code>mal_client_id</code> to the config file.</p>' : ""}
     ${!on && m.client_id_configured ? `${srow("After you approve", location.port !== "8787" ? `Paste the address MyAnimeList sends you to (port 8787; this hub runs on ${esc(location.port || "80")}).` : "If the page you land on asks, paste its address here.", "")}
