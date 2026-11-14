@@ -123,7 +123,9 @@ class Pieces(Downloads):
         self.assertEqual(Path(queued["dest"]), other)
         self.assertEqual(sorted(os.listdir(other)), ["Test Show Episode 1.mp4", "Test Show Episode 1.vtt",
                                                      "Test Show Episode 11.mp4.part", "Test Show Episode 11.mp4.ytdl"])
-        self.assertFalse(settings.get_setting(downloader.RUNNING_KEY))
+        # The job reads "done" a moment before the worker clears its note.
+        self.assertTrue(wait_for(lambda: not settings.get_setting(downloader.RUNNING_KEY), 5),
+                        settings.get_setting(downloader.RUNNING_KEY))
 
 
 class CutOff(Downloads):

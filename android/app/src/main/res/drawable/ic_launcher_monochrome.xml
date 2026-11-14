@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from web/icon.svg: the adaptive launcher icon's layer (108dp canvas). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.27" android:scaleY="0.27" android:translateX="19.440" android:translateY="19.710">
+        <group><clip-path android:pathData="M0,0 H256 V58 H0 Z" />
+            <path android:pathData="M88,40 H168 A16,16 0 0 1 184,56 V84 A16,16 0 0 1 168,100 H88 A16,16 0 0 1 72,84 V56 A16,16 0 0 1 88,40 Z" android:fillColor="#FFFFFF" android:fillAlpha="0.4" /></group>
+        <group><clip-path android:pathData="M0,0 H256 V82 H0 Z" />
+            <path android:pathData="M74,62 H182 A16,16 0 0 1 198,78 V106 A16,16 0 0 1 182,122 H74 A16,16 0 0 1 58,106 V78 A16,16 0 0 1 74,62 Z" android:fillColor="#FFFFFF" android:fillAlpha="0.7" /></group>
+        <path android:pathData="M62,90 H194 A18,18 0 0 1 212,108 V196 A18,18 0 0 1 194,214 H62 A18,18 0 0 1 44,196 V108 A18,18 0 0 1 62,90 Z M106,124 V180 L158,152 Z" android:fillColor="#FFFFFF" android:fillType="evenOdd" />
+    </group>
+</vector>

@@ -96,6 +96,10 @@ class Verify(unittest.TestCase):
         self.flush([{"id": 5114, "progress": 8}]).assert_not_called()
         self.assertEqual(sync.outbox_count(), 0)
 
+    def test_planning_moves_to_watching(self):
+        self.flush([{"id": 5114, "status": "PLANNING", "progress": 0}]).assert_called_once_with(
+            5114, {"status": "CURRENT", "progress": 5})
+
     def test_unlisted_needs_auto_add(self):
         self.flush([]).assert_not_called()
         self.flush([], add=True).assert_called_once_with(5114, {"status": "CURRENT", "progress": 5})
@@ -121,6 +125,33 @@ class Verify(unittest.TestCase):
         with database.db() as c:
             payload = c.execute("SELECT payload FROM outbox").fetchone()[0]
         self.assertIn('"verify": {"add"', payload)
+
+
+class StartedFromPlanning(unittest.TestCase):
+    """Watching the first episode of a show on Planning moves it to
+    Watching (AniList's API keeps the status when only progress is sent)."""
+
+    def setUp(self):
+        Retries.setUp(self)
+        with database.db() as c:
+            c.execute("DELETE FROM outbox")
+
+    def track(self, status, progress_=0):
+        show = {"seasons": [{"releases": [{"id": 5114, "first_ep": 1, "last_ep": None, "offset": 0, "total": 12}],
+                             "episodes": [{"id": "a", "number": 1, "watched": 1}, {"id": "b", "number": 2, "watched": 0}]}]}
+        cache = {"entries": [{"id": 5114, "status": status, "progress": progress_, "episodes": 12}]}
+        with mock.patch.object(anilist, "anilist_connected", return_value=True), \
+                mock.patch.object(anilist, "anilist_cache_read", return_value=cache):
+            return progress.anilist_track_show(show, manual=True)
+
+    def test_planning_becomes_current(self):
+        self.assertEqual(self.track("PLANNING"), {"status": "CURRENT", "progress": 1})
+
+    def test_other_lists_keep_their_status(self):
+        for status in ("CURRENT", "PAUSED", "DROPPED"):
+            with database.db() as c:
+                c.execute("DELETE FROM outbox")
+            self.assertEqual(self.track(status), {"progress": 1})
 
 
 class Deferred(unittest.TestCase):
