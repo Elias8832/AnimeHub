@@ -1621,6 +1621,7 @@ function scanNote() {
 }
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
+const clearFilters = () => { for (const k of ["fmt", "air", "year", "score", "average"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; };
 const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score", "average"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
 const revBtn = () => `<button type="button" class="btn ic srev${S.lib.rev ? " on" : ""}" data-a="srev" aria-pressed="${!!S.lib.rev}" aria-label="Reverse order" title="Reverse order">${ico("sort")}</button>`;
 const fsel = (k, label, opts, locked) => {
@@ -4432,21 +4433,36 @@ function contStill({ s, t }) {
   return `<div class="ccard" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"><em>${esc(epCode(sea, ep))}</em>${pct ? `<i class="ccbar"><i style="width:${pct}%"></i></i>` : ""}<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></span>
     <b>${esc(s.title)}</b><small>${t.kind === "resume" ? esc(fmtLeft(ep.duration, ep.position)) + " left" : esc(epCode(sea, ep)) + " next"}</small></div>`;
 }
+/* New episodes on the phone, like the PC (TODO 236, Elias 2026-11-15: "make it
+   show for the phone, idk if i like it, will have to see"): first in Continue
+   watching with "2 new"; Play plays the first one you're missing. It goes once
+   you've caught up (AniList's progress reaches what's aired). */
+function newStill({ e, behind }) {
+  const n = (e.progress || 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
+  const art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster;
+  return `<div class="ccard ccnew" data-a="${s ? "open" : "entry"}" data-v="${esc(s ? s.id : e.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(e.title)}`}"><span class="newtag">${behind} new</span><em>E${n}</em>${ep ? `<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="Play ${esc(e.title)} episode ${n}">${ico("play")}</button>` : ""}</span>
+    <b>${esc(e.title)}</b><small>E${n} next</small></div>`;
+}
 function HomePhone() {
   const d = S.data, up = nextUpInfo(), L = keepWatching(up && up.s.id), airing = airingList(), now = Date.now();
-  const soon = airing.filter((e) => airAt(e, now) > now - 3600e3).slice(0, 3);
+  const out = newEps(up?.s.id, now), outIds = new Set(out.flatMap((x) => [x.e.local_show_id, x.e.stream_show_id]));
+  // This week only counts down: an episode that's out sits in Continue watching instead
+  const soon = airing.filter((e) => airAt(e, now) > now - 3600e3 && !out.some((x) => x.e.id === e.id && airAt(e, now) <= now)).slice(0, 3);
   const touched = new Set((d.history || []).map((e) => e.show_id));
   const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
   const sum = [L.length + (up ? 1 : 0) ? `<span><b>${L.length + (up ? 1 : 0)}</b> in progress</span>` : "", airing.length ? `<span><b>${airing.length}</b> airing</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
   let body = up ? upHero(up) : "";
-  if (L.length) body += `<section class="psec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span></div><div class="crail">${L.map(contStill).join("")}</div></section>`;
+  // no count beside the title: the cards show how many (TODO 236, like the PC)
+  if (airing.length && (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out, as on the PC
+  const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(x.s.id)).map(contStill)];
+  if (tiles.length) body += `<section class="psec"><div class="sh"><h2>Continue watching</h2></div><div class="crail">${tiles.join("")}</div></section>`;
   if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
   const recs = recsFor();
   body += plHomeHTML(); // pinned playlists (Decision 64)
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="fill"></span><button class="btn sm disc" data-a="deck" data-v="recs">${ico("up")}Discover</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
     `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
-  if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : S.settings?.android ? "Search for a show to start watching." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
+  if (!up && !tiles.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : S.settings?.android ? "Search for a show to start watching." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
   return `<div class="home2 phone${up ? " has-uph" : ""}">${up ? "" : `<div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>`}${body}</div>`;
 }
 /* Tablet portrait: what you're watching and the week side by side. */
@@ -7009,7 +7025,7 @@ function matchAdvance(done) {
 /* ---------- actions ---------- */
 const A = {
   strip: (v, t) => { const st = t.closest("section")?.querySelector(".strip") || $("#app .strip"); st && st.scrollBy({ left: +t.dataset.d * st.clientWidth * 0.8, behavior: reduceMotion() ? "auto" : "smooth" }); },
-  fclear: () => { for (const k of ["fmt", "air", "year", "score", "average"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); if ($(".fsheet .filters")) return fltRepaint(); S.fadeNext = true; render(); },
+  fclear: () => { clearFilters(); saveLib(); if ($(".fsheet .filters")) return fltRepaint(); S.fadeNext = true; render(); },
   airgo: (v) => {
     const c = S.airCal;
     if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
@@ -7058,10 +7074,11 @@ const A = {
     }
     if (v === "settings") { S.setOpen = false; setClear(); }
     const same = v === S.view || (v === "history" && S.view === "stats");
-    /* Library again, while on it: back to All shows (and to the top), on
-       phones too, like the PC (Elias, TODO 236). */
-    if (v === "library" && same && S.lib.tab !== "ALL") {
-      S.lib.tab = "ALL"; saveLib(); S.fadeNext = true; render();
+    /* Library again, while on it: back to All shows with no filters (and to
+       the top), on the phone and the PC alike (Elias, TODO 236). Sort,
+       grouping and grid/rows stay: they're how you look, not what. */
+    if (v === "library" && same && (S.lib.tab !== "ALL" || filtersActive())) {
+      S.lib.tab = "ALL"; clearFilters(); saveLib(); S.fadeNext = true; render();
       scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
       return;
     }

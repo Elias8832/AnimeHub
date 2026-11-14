@@ -4199,6 +4199,7 @@ body.pp-open #modal{z-index:70}
   .cc-art .ccbar{position:absolute;left:10px;right:10px;bottom:10px;z-index:3;height:4px;border-radius:4px}
   .cc-art .ccbar i{position:relative;left:auto;bottom:auto;display:block;height:100%}
   .cc-art:has(.ccbar) em{bottom:20px}
+  .cc-art:has(.ccbar) .cc-go{bottom:22px} /* the play button sits above the bar, not on it (Elias: "clipping") */
   /* show page episodes: the same floating bar (was a strip along the edge), and no ring on the one you're on */
   .sp2 .eps.strip .ep .eprog,.sp2 .eps.strip .ep.resume .eprog,.sp2 .eps.strip .ep.sel .eprog{left:8px;right:8px;bottom:8px;height:4px;border-radius:4px;background:rgba(0,0,0,.6)}
   .sp2 .eps.strip .ep .eprog i{height:100%;margin-top:0}
@@ -4218,3 +4219,14 @@ body.pp-open #modal{z-index:70}
 :root:is([data-glow=pictures],[data-glow=off]) :is(.home2.wide .hc .eprog i,.sp2 .eprog:not(.dl) i,.lib2 .card .prog i,.cc-art .ccbar i)::after{box-shadow:none}
 :root:is([data-glow=bars],[data-glow=off]) :is(.home2.wide .upn,.home2.wide .hc,.home2.wide .twb,.home2.wide .rec,.sp2 .ep)::before,:root:is([data-glow=bars],[data-glow=off]) .lib2 .card::before{display:none}
 
+
+/* ───────── The phone's Home: small labels in the text font, like the PC's Home (TODO 236, Elias 2026-11-14) ─────────
+   The typewriter font stays for the playlist stack's "1 / 4", as on the PC. */
+.home2.phone :is(.uph .eye,.cc-art em,.ccard small,.pt small,.prow .cdn,.sh .link-btn,.plcap .m,.rec small,.rec .tg){font-family:var(--ui);letter-spacing:0}
+.home2.phone .uph .eye{font-size:12.5px;font-weight:600}
+.home2.phone .cc-art em{font-size:12px;font-weight:600}
+.home2.phone :is(.ccard small,.pt small,.plcap .m,.rec small){font-size:12px;font-weight:500}
+.home2.phone .prow .cdn{font-size:12px;font-weight:600}
+.home2.phone .sh .link-btn{font-size:13px}
+.home2.phone .rec .tg{font-size:11px;font-weight:600}
+.cc-art .newtag{position:absolute;left:9px;top:9px;z-index:2;padding:2px 8px;border-radius:999px;font:700 11px/1.4 var(--ui);color:#111;background:var(--accent-hi)}
