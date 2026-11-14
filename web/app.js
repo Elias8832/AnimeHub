@@ -2589,7 +2589,7 @@ function cmShow(m, x, y) {
   const w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.max(8, Math.min(x / z, innerWidth / z - w - 8)) + "px";
   m.style.top = Math.max(8, Math.min(y / z, innerHeight / z - h - 8)) + "px";
-  m.querySelector(".mi")?.classList.add("sel");
+  if (ddPtr !== "touch") m.querySelector(".mi")?.classList.add("sel"); // a finger gets no picked row: it lit a row the thumb wasn't on
 }
 /* A phone with a set Play button: every menu that starts an episode also
    offers the other place (Elias, 2026-11-10; Decision 71). "" elsewhere. */
@@ -8074,7 +8074,22 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); m.style.display = "none"; }
   else { const k = e.key.toUpperCase(), r = rows.find((x) => x.querySelector("kbd")?.textContent === k); if (r) pick(r); }
 }, true);
-document.addEventListener("pointerover", (e) => { const r = e.target.closest?.("#cm .mi"); if (r) $$("#cm .mi").forEach((x) => x.classList.toggle("sel", x === r)); }, { passive: true });
+/* A finger's tap lights its row at once and keeps it lit while the sheet slides away
+   (:active came late on phones and the menu was often gone before it showed). */
+document.addEventListener("pointerdown", (e) => {
+  const r = e.pointerType === "touch" && e.target.closest?.("#cm .mi:not(:disabled)");
+  if (!r) return;
+  clearTimeout(cmPress.t); $$("#cm .mi.press").forEach((x) => x.classList.remove("press"));
+  r.classList.add("press"); cmPress.at = { el: r, x: e.clientX, y: e.clientY };
+}, { capture: true, passive: true });
+function cmPress(on) { const a = cmPress.at; if (!a) return; cmPress.at = null; if (on) cmPress.t = setTimeout(() => a.el.classList.remove("press"), 260); else a.el.classList.remove("press"); }
+document.addEventListener("pointermove", (e) => { const a = cmPress.at; if (a && Math.hypot(e.clientX - a.x, e.clientY - a.y) > 10) cmPress(false); }, { passive: true }); // a drag, not a tap
+document.addEventListener("pointerup", () => cmPress(true), { passive: true });
+document.addEventListener("pointercancel", () => cmPress(false), { passive: true });
+/* Only a mouse moves the picked row: a finger dragging over the sheet lit up every row it crossed. */
+document.addEventListener("pointerover", (e) => { const r = e.pointerType !== "touch" && e.target.closest?.("#cm .mi"); if (r) $$("#cm .mi").forEach((x) => x.classList.toggle("sel", x === r)); }, { passive: true });
+/* While the phone sheet is open the page under it stays still (it scrolled with every drag on the menu). */
+new MutationObserver(() => document.body.classList.toggle("cm-open", isPhone() && $("#cm").style.display === "block")).observe($("#cm"), { attributes: true, attributeFilter: ["style"] });
 document.addEventListener("contextmenu", (e) => {
   const ep = e.target.closest(".ep[data-a=playep]");
   if (ep) { e.preventDefault(); openCm(ep.dataset.v, e.clientX, e.clientY); return; }

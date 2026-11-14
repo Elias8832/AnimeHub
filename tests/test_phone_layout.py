@@ -186,6 +186,19 @@ class ShowPagePhone(unittest.TestCase):
         self.assertNotIn(".frpage .cta .grp .gb:not([data-a=frmore])", APP)  # no longer copied into ⋯
         self.assertIn("#cm{z-index:48;left:0!important;right:0;top:auto!important;bottom:0;", CSS)
 
+    def test_menu_sheet_holds_the_page_and_ignores_finger_hover(self):
+        """Elias, 2026-11-14: with the ⋯ sheet open the show page still scrolled
+        under it, and rows lit up wherever a finger dragged."""
+        self.assertIn('body.classList.toggle("cm-open", isPhone() && $("#cm").style.display === "block")', APP)
+        self.assertIn("body.cm-open{overflow:hidden}", CSS)
+        self.assertIn('e.pointerType !== "touch" && e.target.closest?.("#cm .mi")', APP)
+        self.assertIn('if (ddPtr !== "touch") m.querySelector(".mi")?.classList.add("sel")', APP)
+        self.assertNotIn("#cm .mi:hover:not(:disabled),", CSS)  # :hover only under (hover:hover)
+        self.assertIn("@media (hover:hover){#cm .mi:hover:not(:disabled){background:var(--pick)}}", CSS)
+        # a tap lights its row at once (:active came late or not at all before the sheet closed)
+        self.assertIn('e.pointerType === "touch" && e.target.closest?.("#cm .mi:not(:disabled)")', APP)
+        self.assertIn("#cm .mi.press{background:var(--pick);outline:0;transition:none}", CSS)
+
     def test_show_c_poster_header(self):
         self.assertIn("const framed = isPhone() ||", APP)
         self.assertIn(".sp2.frpage .hero .hl2{display:contents}", CSS)
