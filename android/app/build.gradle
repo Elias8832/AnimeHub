@@ -62,9 +62,11 @@ chaquopy {
 
 def copyHub = tasks.register("copyHub", Sync) {
     from(repo) {
-        include "hub.py", "animehub/**", "web/**", "mpv/**"
+        include "hub.py", "animehub/**", "web/**", "mpv/**", "LICENSE"
         exclude "**/__pycache__/**"  // animehub/build.json comes along when CI stamped the build (Decision 76)
     }
+    // The APK also carries Python and Chaquopy, whose licences must travel with them.
+    from("$repo/android/licenses") { into "licenses" }
     into layout.buildDirectory.dir("hub-assets/hub")
 }
 def copyIcon = tasks.register("copyIcon", Copy) {
