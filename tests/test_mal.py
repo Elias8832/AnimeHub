@@ -671,5 +671,19 @@ class Routes(Base):
             self.assertIn(path, remote.BLOCKED)
 
 
+
+class PrivacyBeforeSignIn(unittest.TestCase):
+    """MAL's API terms (§4(f)): the privacy rules are shown before someone signs in."""
+
+    def test_the_mal_dialog_links_the_privacy_section_before_connecting(self):
+        js = (Path(__file__).resolve().parent.parent / "web" / "app.js").read_text(encoding="utf-8")
+        dlg = js[js.index("function MalDlg()"):]
+        dlg = dlg[:dlg.index("\n}\n")]
+        self.assertIn("${!on && m.client_id_configured ? `<p class=\"sub\">Your login and list stay on your devices. ${MAL_PRIVACY}", dlg)
+        self.assertIn('data-v="https://github.com/Elias8832/AnimeHub#privacy">Privacy', js)
+        readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+        self.assertIn("\n## Privacy\n", readme)
+
+
 if __name__ == "__main__":
     unittest.main()
