@@ -2164,9 +2164,11 @@ function Fran() {
   /* The top line (Decision 67): format as a small badge, then plain facts.
      A movie states its length, not "1 episodes" (one count reads "1 episode"). */
   const count = movie ? (e.duration ? `${e.duration} min` : "") : e.episodes ? `${e.episodes} episode${e.episodes === 1 ? "" : "s"}` : e.aired ? `${e.aired} so far` : "";
-  const facts = [p.title && p.title !== e.title ? p.title : "", e.year, count, !movie && e.duration ? `${e.duration} min` : "",
-    MEDIA_STATUS[e.status] && e.status !== "FINISHED" ? MEDIA_STATUS[e.status].toLowerCase() : ""].filter(Boolean);
+  /* "airing" is left out while "E6 airs in…" shows: it says so already (TODO 240, Elias) */
   const airing = e.next_airing?.at ? `E${e.next_airing.episode} airs ${frWhen(e.next_airing.at)}` : "";
+  /* the franchise name is left out when the title starts with it ("Blue Box" above "Blue Box Season 2", TODO 240) */
+  const facts = [p.title && !(e.title || "").toLowerCase().startsWith(p.title.toLowerCase()) ? p.title : "", e.year, count, !movie && e.duration ? `${e.duration} min` : "",
+    MEDIA_STATUS[e.status] && e.status !== "FINISHED" && !(e.status === "RELEASING" && airing) ? MEDIA_STATUS[e.status].toLowerCase() : ""].filter(Boolean);
   const upcoming = e.status === "NOT_YET_RELEASED", starts = upcoming ? startLabel(e) : "";
   const nowId = S.data.now?.episode_id;
   const playing = nowId && e.slots.some((x) => slotIds(x).includes(nowId)) ? `<span class="playing"><i class="led"></i>${S.data.now.loading ? "loading" : "playing"} · ${esc(S.data.now.label)}</span>` : "";
@@ -2208,7 +2210,7 @@ function Fran() {
   return `<div class="sp2 frpage">${backBtn()}
   <div class="fold">
   <div class="hero${framed ? " framed" : ""}"><div class="hl2">
-    <div class="meta">${e.format_label ? `<span class="fmt">${esc(e.format_label)}</span>` : ""}<span>${esc(facts.join(" · "))}</span>${e.id ? `<span class="sep">·</span><a class="alk" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}" title="Open on AniList">AniList${e.score ? " " + e.score : ""}</a>` : ""}<span class="live-t" id="airline">${esc(airing)}</span>${playing}</div>
+    <div class="meta">${e.format_label ? `<span class="fmt">${esc(e.format_label)}</span>` : ""}${factLine(facts, e, count)}${e.id ? `<span class="sep">·</span><a class="alk" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}" title="Open on AniList">AniList${e.score ? " " + e.score : ""}</a>` : ""}<span class="live-t" id="airline">${esc(airing)}</span>${playing}</div>
     <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
     ${e.overview ? `<p class="desc" data-a="descx">${esc(e.overview)}</p>` : ""}
     <div class="stats2" id="entrystats"></div>
@@ -2223,9 +2225,21 @@ function Fran() {
   ${frAbout(e)}
   </div>`;
 }
+/* The top line's facts, a dot before each (CSS; never at a line's end or
+   start, TODO 240). Phones also say AniList's score right after the year
+   (Elias: in the same line, with its dots); the PC says it in the AniList
+   link at the end, so .scr is hidden there. */
+function factLine(facts, e, count) {
+  /* phones say "12 eps": "12 episodes" pushed the line onto two (TODO 240, Elias) */
+  const parts = facts.map((x) => { const m = x === count && /^(\d+) episodes$/.exec(x);
+    return m ? `<span>${m[1]}<span class="epln"> episodes</span><span class="epsh"> eps</span></span>` : `<span>${esc(x)}</span>`; });
+  if (e.score) { const y = facts.indexOf(e.year); parts.splice(y >= 0 ? y + 1 : Math.min(1, parts.length), 0, `<span class="scr"><b>${e.score}%</b></span>`); }
+  return `<span class="topfacts"><span class="dw">${parts.join(ZW)}</span></span>`;
+}
 /* About (Decision 67): the whole summary and the plain facts, at the end of
    the page. Studio and AniList's counts come with the live entry read
-   (entryDraw fills #aboutlive). */
+   (entryDraw fills #aboutlive). Phones (TODO 240) list them one a row; format,
+   year and score are left out there (class "top"): the top line says them. */
 function frAbout(e) {
   const rows = [["format", [e.format_label, e.episodes ? `${e.episodes} episode${e.episodes === 1 ? "" : "s"}` : "", e.duration ? `${e.duration} min${e.episodes > 1 ? " each" : ""}` : ""].filter(Boolean).join(" · ")],
     ["year", e.year ? String(e.year) : ""], ["status", MEDIA_STATUS[e.status] || ""], ["score", e.score ? `${e.score}% on AniList` : ""]].filter(([, v]) => v);
@@ -2235,22 +2249,25 @@ function frAbout(e) {
   const x = aboutMemo[e.id];
   if (!e.overview && !rows.length && !x) return "";
   return `<section class="about"><div><div class="sh"><h2>About</h2></div>${e.overview ? `<p>${esc(e.overview)}</p>` : ""}</div>
-    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}<span id="aboutx">${aboutRows(e.id)}</span><span id="aboutlive"></span></dl></section>
+    <dl>${rows.map(([k, v]) => { const c = k === "format" || k === "year" || k === "score" ? ' class="top"' : ""; return `<dt${c}>${k}</dt><dd${c}>${esc(v)}</dd>`; }).join("")}<span id="aboutx">${aboutRows(e.id)}</span><span id="aboutlive"></span></dl></section>
   <section class="hsec cast" id="cast">${castHTML(e)}</section>`;
 }
 /* About extras (TODO 172): genres, tags and characters from AniList's
    public data (GET /api/about), fetched once the page is up, kept per entry.
    Spoiler tags hide behind a click while Hide spoilers is on (Decision 57). */
 const aboutMemo = {}, aboutAsked = {};
+/* Word lists (genres, tags) are joined by a zero-width space: a line may break
+   there, and the dot between two words is drawn by CSS (TODO 240). */
+const ZW = "\u200b";
 function aboutRows(mid) {
   const x = aboutMemo[mid];
   if (!x) return "";
   const hide = !!S.data?.hide_spoilers && !S.tagsOpen?.[mid];
   const shown = x.tags.filter((t) => !hide || !t.spoiler), held = x.tags.length - shown.length;
-  const tags = shown.map((t) => `<span class="tg${t.spoiler ? " tspl" : ""}"${t.spoiler ? ' title="Spoiler tag"' : ""}>${esc(t.name)}</span>`).join(" ")
-    + (held ? ` <span class="tg"><button class="tspb" data-a="tagspoil" data-v="${mid}">${held} spoiler tag${held === 1 ? "" : "s"}</button></span>` : "");
+  const tags = shown.map((t) => `<span class="tg${t.spoiler ? " tspl" : ""}"${t.spoiler ? ' title="Spoiler tag"' : ""}>${esc(t.name)}</span>`).join(ZW)
+    + (held ? `${ZW}<span class="tg"><button class="tspb" data-a="tagspoil" data-v="${mid}">${held} spoiler tag${held === 1 ? "" : "s"}</button></span>` : "");
   const more = shown.length > 6 ? `<dd class="tgm"><button class="tgmore" data-a="tagsmore">+${shown.length - 6} more</button></dd>` : ""; // phones show six (TODO 177)
-  return (x.genres.length ? `<dt>genres</dt><dd>${esc(x.genres.join(" · "))}</dd>` : "") + (x.tags.length ? `<dt>tags</dt><dd class="tags">${tags}</dd>${more}` : "");
+  return (x.genres.length ? `<dt>genres</dt><dd class="gen"><span class="dw">${x.genres.map((g) => `<span>${esc(g)}</span>`).join(ZW)}</span></dd>` : "") + (x.tags.length ? `<dt class="tgk">tags</dt><dd class="tags"><span class="dw">${tags}</span></dd>${more}` : "");
 }
 /* Characters (TODO 172, round 5): the watch order's own tiles (Elias) —
    the same poster, name and small grey line, main characters big and
@@ -2430,7 +2447,7 @@ function Det() {
   const facts = [s.path_label || s.path || s.title, `${epTotal(s)} episodes`, matched ? "AniList unreachable — showing the folder" : s.kept_local ? "on this PC only" : "not matched yet"];
   return `<div class="sp2">${backBtn()}
   <div class="hero${s.poster ? " framed" : " bare"}"><div class="hl2">
-    <div class="meta"><span>${esc(facts.join(" · "))}</span>${playing}</div>
+    <div class="meta">${factLine(facts, e)}${playing}</div>
     <h1 class="${s.title.length > 26 ? "long" : s.title.length > 14 ? "mid" : ""}">${esc(s.title)}</h1>
     <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${sea && sea.episodes.length ? `<button class="gb" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}<span>${seaAll ? "Unwatch season" : "Mark season watched"}</span></button>` : ""}${s.seasons.length > 1 && flat.length ? `<button class="gb" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}<span>${showAll ? "Unwatch all" : "Mark all watched"}</span></button>` : ""}${flat.length ? `<button class="gb${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}<span>${S.sel?.show === s.id ? "Done" : "Select"}</span></button>` : ""}<i class="gsep"></i><button class="gb ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>${s.path && flat.length ? `<button class="gb ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</span></div>
   </div>${s.poster ? `<div class="hp">${poster(s.title, s.poster)}</div>` : ""}</div>
@@ -8551,9 +8568,11 @@ document.addEventListener("touchstart", (e) => {
   const t = e.target, L = PULL.find((p) => t.closest?.(p.sel) && (!p.when || p.when()));
   /* Sideways swipes leave real sideways scrollers alone: the show page's
      episode row and Home's rails scroll (TODO 177); only an unmatched
-     folder's episode list is still vertical on a phone. */
+     folder's episode list is still vertical on a phone. The row above the
+     episodes is not one: its empty space swipes back (Elias); its scrollers
+     (.rels, .seg) are listed themselves. */
   const x = e.touches[0].clientX, y = e.touches[0].clientY;
-  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srscope, .dgen, .gtray, .eps-head, .tabs, .tabs2, .rels, .looks, .rdy, .agenda, .crail")
+  const inApp = t.closest?.("#app") && !t.closest("input[type=range], .seg, .switch, .hstrip, .srposters, .srscope, .dgen, .gtray, .tabs, .rels, .looks, .rdy, .agenda, .crail")
     && !(t.closest(".strip") && !(isPhone() && t.closest(".eps") && !t.closest(".frpage")));
   if (L) {
     const el = t.closest(L.sel), sc = L.scroller(el);

@@ -297,6 +297,38 @@ class PhonePolish(unittest.TestCase):
         self.assertIn(".sp2.frpage .eps.strip .ep .dots{left:auto;right:-6px;top:calc(228px * 9 / 16 + 4px)", CSS)
         self.assertIn(".sp2.frpage .hero .grp [data-a=frmore]{display:none}", CSS)  # one ⋯ only: the dock's (Elias)
 
+    def test_row_above_the_episodes_swipes_back(self):
+        # TODO 240 (Elias): the empty space between "Season 1" and Sub/Dub swipes back;
+        # only the real sideways scrollers in that row keep the finger
+        line = next(l for l in APP.splitlines() if "const inApp = t.closest?." in l)
+        self.assertNotIn(".eps-head", line)
+        self.assertNotIn(".tabs2", line)
+        for sel in (".seg", ".rels", ".tabs", ".crail"):
+            self.assertIn(sel, line)
+
+    def test_about_is_a_list_not_chips(self):
+        # TODO 240 (Elias): the facts read as ~20 pills, two numbers without a name.
+        # Now one fact a row, name left, value right; format and year only at the top.
+        self.assertIn(".sp2.frpage .about dl{display:grid;grid-template-columns:auto minmax(0,1fr)", CSS)
+        self.assertIn(".sp2.frpage .about .top{display:none}", CSS)
+        self.assertIn(".sp2.frpage .about dt.tgk{order:10;", CSS)
+        self.assertNotIn("border-radius:999px;background:rgba(255,255,255,.07);font:600 12.5px var(--ui);color:var(--ink-2)}", CSS)
+        self.assertIn('k === "format" || k === "year" || k === "score" ? \' class="top"\' : ""', APP)
+        # the AniList score sits in the top line right after the year, with its dots (Elias)
+        self.assertIn("${factLine(facts, e, count)}", APP)
+        self.assertIn('<span class="epsh"> eps</span>', APP)  # "12 episodes" was too long on the phone (Elias)
+        self.assertIn(".sp2.frpage .hero .meta .epsh{display:inline}.sp2.frpage .hero .meta .epln{display:none}", CSS)
+        self.assertIn('!(e.title || "").toLowerCase().startsWith(p.title.toLowerCase())', APP)  # "Blue Box" above "Blue Box Season 2"
+        self.assertIn(".sp2.frpage .hero .meta .topfacts{flex:1 1 0}", CSS)
+        self.assertIn('e.status !== "FINISHED" && !(e.status === "RELEASING" && airing)', APP)  # "E6 airs in…" says it
+        self.assertIn(".sp2 .meta .scr{display:none}", CSS)
+        self.assertIn(".sp2.frpage .hero .meta .scr{display:inline}", CSS)
+        self.assertIn('<dt class="tgk">tags</dt><dd class="tags"><span class="dw">', APP)
+        # no dot at a line's end or start: words joined by a zero-width space, the dot drawn by CSS
+        self.assertIn('const ZW = "\\u200b";', APP)
+        self.assertIn(".sp2 .about dd .dw{display:block;margin-left:-1.4em}", CSS)
+        self.assertIn(".sp2.frpage .about dd.gen .dw{margin:0 -1.4em 0 0}", CSS)
+
     def test_top_corners_are_bare_icons(self):
         # Elias picked B: no circle, a white icon with a soft shadow; back is a chevron on phones
         self.assertIn("#nav .setb,:root[data-bar] #nav .setb{width:44px;height:44px;margin:0 -10px 0 0;padding:0;gap:0;border-radius:50%;background:none!important", CSS)
