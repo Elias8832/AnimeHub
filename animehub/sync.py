@@ -95,12 +95,15 @@ def outbox_fail(row_id, attempts, error, transient=False):
 
 def outbox_verify(payload, remote):
     """The patch to send for a verify row, given its entry on the live list
-    (None = not on the list), or None when there is nothing to send: AniList
-    already has this progress or more, or the entry is unlisted and auto-add
-    was off when the row was queued."""
+    (None = not on the list; one on Planning moves to Watching), or None
+    when there is nothing to send: AniList already has this progress or
+    more, or the entry is unlisted and auto-add was off when the row was
+    queued."""
     p = payload["patch"].get("progress")
     if remote is not None:
-        return None if (remote.get("progress") or 0) >= p else {"progress": p}
+        if (remote.get("progress") or 0) >= p:
+            return None
+        return {"status": "CURRENT", "progress": p} if remote.get("status") == "PLANNING" else {"progress": p}
     return {"status": "CURRENT", "progress": p} if payload["verify"].get("add") else None
 
 
