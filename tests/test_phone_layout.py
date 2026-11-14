@@ -31,7 +31,8 @@ class PhoneLayout(unittest.TestCase):
         """Phone pages branch off at the top; the PC builders keep running."""
         self.assertIn("function Home() {\n  if (isPhone()) return HomePhone();", APP)
         self.assertIn("if (isPhone() && !S.setOpen) return settingsList(tabs, s);", APP)
-        self.assertIn("if (isTabletP()) body += homePair(L, airing);", APP)
+        self.assertIn("const wide = !isTabletP()", APP)  # the portrait tablet keeps its pair; the PC Home is .wide (TODO 236)
+        self.assertIn("if (!wide) body += homePair(L, airing);", APP)
 
     def test_week_is_a_view(self):
         self.assertIn('week: Week }[S.view]()', APP)
@@ -250,11 +251,10 @@ class PhonePolish(unittest.TestCase):
         self.assertIn('<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">', APP)
         self.assertIn("#tabbar{display:flex;position:fixed;left:12px;right:12px", CSS)
 
-    def test_dock_shrinks_on_scroll_and_resets_on_navigation(self):
-        self.assertIn("function dockScroll()", APP)
-        self.assertIn("artDim(); dockScroll(); }", APP)
-        self.assertIn('document.body.classList.remove("tb-min");', APP)
-        self.assertIn("body.tb-min{--dock:46px}", CSS)
+    def test_dock_keeps_its_size(self):
+        # Elias, TODO 236: no shrinking while you scroll down
+        self.assertNotIn("dockScroll", APP)
+        self.assertNotIn("tb-min", CSS)
 
     def test_bars_above_the_dock_are_their_own_pills(self):
         # Elias, TODO 239: joined to the dock as one block they "looked bad"
@@ -312,7 +312,7 @@ class PhoneLibrary(unittest.TestCase):
     def test_posters_or_rows(self):
         self.assertIn('lview: (v) => { if (libView() === v) return; S.lib.view = v; saveLib();', APP)  # remembered
         self.assertIn('const lv = isPhone() && (m.cold || S.lib.tab !== "PLAYLISTS") ? " lv-" + libView() : "";', APP)
-        self.assertIn(".lib2 .wall.lv-posters .card h3,.lib2 .wall.lv-posters .card .m{display:none}", CSS)  # posters carry no text
+        self.assertNotIn(".lib2 .wall.lv-posters .card h3,.lib2 .wall.lv-posters .card .m{display:none}", CSS)  # posters keep their title again (Elias, TODO 236)
         self.assertIn(".lib2 .wall.lv-rows .card{width:100%;display:grid;grid-template-columns:56px minmax(0,1fr)", CSS)
 
     def test_sort_sheet_says_the_direction(self):
@@ -321,7 +321,7 @@ class PhoneLibrary(unittest.TestCase):
 
     def test_lists_sheet_and_tab_again(self):
         self.assertIn('const SIDE = { PLAYLISTS: "list", UNTRACKED: "folder", MATCH: "search" };', APP)
-        self.assertIn('if (v === "library" && same && S.lib.tab !== "ALL" && !isPhone()) {', APP)  # phones: only to the top
+        self.assertIn('if (v === "library" && same && S.lib.tab !== "ALL") {', APP)  # phones too, like the PC (TODO 236)
         self.assertIn("if (isPhone()) scrollTo(0, 0); // another list starts at its title", APP)
 
     def test_round_two_fixes(self):
