@@ -117,7 +117,12 @@ main{max-width:360px;width:100%}h1{font-size:26px;margin:0 0 6px}p{color:#a5a29c
 input{width:100%;box-sizing:border-box;font:600 30px/1 ui-monospace,monospace;letter-spacing:.35em;text-align:center;padding:14px;border-radius:14px;border:1px solid #3a3a40;background:#18191d;color:#fff}
 button{margin-top:14px;width:100%;padding:14px;border:0;border-radius:14px;background:#f2a46f;color:#111;font:700 17px H,system-ui,sans-serif}
 #m{min-height:24px;margin-top:14px;color:#f2a46f}
-</style></head><body><main><h1>Pair this phone</h1>
+a.b{display:block;text-align:center;text-decoration:none;padding:14px;border-radius:14px;background:#f2a46f;color:#111;font:700 17px H,system-ui,sans-serif}
+a.b,button.alt{display:flex;align-items:center;justify-content:center;gap:10px}a.b svg,button.alt svg{width:22px;height:22px;flex:none}a.b svg.droid{width:30px;height:19px;margin-top:-3px}
+button.alt{background:#24252a;color:#eceae6}.note{font-size:17px;margin:2px 0 0;color:#c9c6c0}.note a{color:#eceae6}
+</style></head><body>@BODY@</body></html>"""
+
+PAIR_FORM = """<main><h1>Pair this phone</h1>
 <p>On the PC, open Anime Hub → Settings → Phone remote and type the 6-digit code shown there.</p>
 <form id="f"><input id="c" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="Pairing code" autofocus>
 <button>Pair</button></form><div id="m">@MSG@</div></main>
@@ -132,7 +137,26 @@ document.getElementById("f").onsubmit = (ev) => {
     .then((j) => { if (j.ok) location.replace("/"); else m.textContent = j.error || "That didn't work."; })
     .catch(() => { m.textContent = "Can't reach the PC. Is Anime Hub still running?"; });
 };
-</script></body></html>"""
+</script>"""
+
+# The QR link on an Android phone: the app or this browser. The code stays
+# unused until one of them pairs with it.
+PAIR_CHOICE = """<main><h1>Pair this phone</h1>
+<p>Use Anime Hub in its Android app, or here in the browser as a remote.</p>
+<a class="b" href="@APP@"><svg class="droid" viewBox="1 4.5 22 14" aria-hidden="true"><path d="M2 18a10 10 0 0 1 20 0z" fill="currentColor"/><path d="M6.5 9.6 4.5 6M17.5 9.6l2-3.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="14" r="1.3" fill="#f2a46f"/><circle cx="16" cy="14" r="1.3" fill="#f2a46f"/></svg>Open in the app</a>
+<button id="w" class="alt"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>Use in this browser</button><div id="m"></div>
+<p class="note">There's also an <a href="@GET@">Android version</a> that plays episodes on the phone itself.</p></main>
+<script>
+"use strict";
+document.getElementById("w").onclick = () => {
+  const m = document.getElementById("m");
+  fetch("/api/remote/pair", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "@CODE@" }) })
+    .then((r) => r.json())
+    .then((j) => { if (j.ok) location.replace("/"); else m.textContent = j.error || "That didn't work."; })
+    .catch(() => { m.textContent = "Can't reach the PC. Is Anime Hub still running?"; });
+};
+</script>"""
 
 # The page's own scripts carry "?v=auto" in web/index.html; the hub swaps it
 # for a short code made from each file's content (Decision 72), so a changed
@@ -192,7 +216,8 @@ def _no_constant(name):
 
 
 # Changes the Android app hands to its PC soon after (Decision 91).
-SYNC_SOON = ("/api/watched", "/api/bulk-watched", "/api/entry-watched", "/api/playlists", "/api/entry", "/api/reset")
+SYNC_SOON = ("/api/watched", "/api/bulk-watched", "/api/entry-watched", "/api/playlists", "/api/entry", "/api/reset",
+             "/api/continue-hide")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -809,6 +834,11 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/sync/facts":
             # The Android app asks for this PC's watching (Decision 91).
             self.send_json(peersync.facts_payload())
+        elif route == "/api/sync/wait":
+            # Additive (Decision 99): held until this PC changes something the
+            # app should sync, or ~15 s pass. ?since=<mark from the last answer>.
+            since = (parse_qs(urlparse(self.path).query).get("since") or [""])[0]
+            self.send_json(peersync.wait_payload(since[:64]))
         elif route == "/api/peer":
             # Settings → PC in the Android app (Decision 91).
             self.send_json(peersync.status())
@@ -1060,22 +1090,28 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_json(peersync.apply_payload(body))
         elif route == "/api/peer":
-            # Settings → PC in the Android app: {op: "pair", address, code} / "now" / "forget".
+            # Settings → PC in the Android app: {op: "pair", address, code, take} / "now" / "forget".
+            # take (additive, Decision 98): the first sync "combine"s (the default) or uses the PC's ("pc").
             op = body.get("op")
             try:
                 if op == "pair":
-                    self.send_json(peersync.pair(body.get("address"), body.get("code")))
+                    self.send_json(peersync.pair(body.get("address"), body.get("code"), body.get("take") or "combine"))
                 elif op == "now":
                     peersync.sync_once()
                     self.send_json(peersync.status())
                 elif op == "soon":
+                    peersync.away(False)
                     peersync.soon(0)
                     self.send_json(peersync.status())
+                elif op == "away":
+                    # Additive (Decision 99): the page went to the back; stop waiting on the PC.
+                    peersync.away(True)
+                    self.send_json({"ok": True})
                 elif op == "forget":
                     peersync.forget()
                     self.send_json(peersync.status())
                 else:
-                    self._bad("'op' is one of: pair, now, soon, forget")
+                    self._bad("'op' is one of: pair, now, soon, away, forget")
             except peersync.SyncError as e:
                 self.send_json({**peersync.status(), "error": str(e)}, 400)
         elif route == "/api/remote":
@@ -1667,7 +1703,12 @@ class RemoteHandler(Handler):
         return False
 
     def pair_page(self, msg=""):
-        self.send_file_body(PAIR_PAGE.replace("@MSG@", msg).encode(), "text/html; charset=utf-8")
+        self.send_file_body(PAIR_PAGE.replace("@BODY@", PAIR_FORM.replace("@MSG@", msg)).encode(), "text/html; charset=utf-8")
+
+    def pair_choice(self, code):
+        body = (PAIR_CHOICE.replace("@APP@", html.escape(remote.app_link(self.headers.get("Host"), code)))
+                .replace("@GET@", html.escape(remote.APP_GET)).replace("@CODE@", code))
+        self.send_file_body(PAIR_PAGE.replace("@BODY@", body).encode(), "text/html; charset=utf-8")
 
     def paired(self, token, location=None):
         """Hand the phone its cookie: a redirect into the app (QR link) or
@@ -1687,6 +1728,12 @@ class RemoteHandler(Handler):
         url = urlparse(self.path)
         if url.path == "/pair":
             code = (parse_qs(url.query).get("c") or [""])[0]
+            if code and remote.app_choice(self.headers.get("User-Agent")):
+                if remote.peek(code):
+                    self.pair_choice(code.strip())
+                else:
+                    self.pair_page("This code has run out. Show a new one on the PC.")
+                return
             token = remote.pair(code, self.headers.get("User-Agent")) if code else None
             if token:
                 self.paired(token, "/")

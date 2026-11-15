@@ -58,7 +58,40 @@ public class MainActivity extends Activity {
         else web.loadData("<body style='background:#101114'></body>", "text/html", "utf-8");
         if (TermuxBridge.termuxInstalled() && !TermuxBridge.allowed())
             requestPermissions(new String[]{TermuxBridge.PERMISSION}, 1);
+        pairLink(getIntent());
         new Thread(this::startHub, "hub-start").start();
+    }
+
+    /**
+     * The PC's QR page, "Open in the app": animehub://pair?a=<address>&c=<code>.
+     * The page fills in Settings → PC sync with them; pairing waits for a tap
+     * on Pair, so a link from anywhere else can't pair this app on its own.
+     */
+    String[] pending;
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        pairLink(intent);
+    }
+
+    void pairLink(Intent intent) {
+        Uri u = intent == null ? null : intent.getData();
+        if (u == null || !"animehub".equals(u.getScheme()) || !"pair".equals(u.getHost())) return;
+        String a = u.getQueryParameter("a"), c = u.getQueryParameter("c");
+        if (a == null || c == null) return;
+        pending = new String[]{a, c};
+        String at = web.getUrl();
+        if (hub != null && at != null && at.startsWith(hub)) handOver();
+    }
+
+    /** Hand a pending pair link to the page, once its script is there. */
+    void handOver() {
+        if (pending == null) return;
+        String js = "(function t(n){if(window.hubPairLink)hubPairLink(" + org.json.JSONObject.quote(pending[0]) + ","
+                + org.json.JSONObject.quote(pending[1]) + ");else if(n<100)setTimeout(function(){t(n+1)},100)})(0)";
+        pending = null;
+        web.evaluateJavascript(js, null);
     }
 
     /** Termux allowed: read its ani-cli now and reload, so the page sees online episodes at once. */
@@ -90,6 +123,10 @@ public class MainActivity extends Activity {
     class Links extends WebViewClient {
         /** A sign-in is under way: AniList or MyAnimeList pages stay here until it comes back. */
         boolean signingIn;
+
+        @Override public void onPageFinished(WebView v, String url) {
+            if (hub != null && url != null && url.startsWith(hub)) handOver();
+        }
 
         @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
             Uri u = req.getUrl();

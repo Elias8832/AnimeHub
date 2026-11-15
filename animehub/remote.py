@@ -7,15 +7,21 @@ its SHA-256. The main server stays on 127.0.0.1 (Decision 36)."""
 import hashlib
 import ipaddress
 import os
+import re
 import secrets
 import socket
 import threading
 import time
+from urllib.parse import quote
 
 from . import database, qr, settings, system, util
 from .config import config
 
 COOKIE = "animehub_remote"
+# The Android app (Decision 88) and where to get it: the QR page's
+# "Open in the app" falls back there when the app isn't installed.
+APP_PACKAGE = "io.github.elias8832.animehub"
+APP_GET = "https://github.com/Elias8832/AnimeHub/releases"
 CODE_TTL = 600
 CODE_TRIES = 5
 SEEN_EVERY = 60
@@ -133,6 +139,20 @@ def code_info():
     return None
 
 
+def peek(code):
+    """Whether this is the live code, without using it up (the QR link on an
+    Android phone first asks: the app or this browser). A wrong one counts
+    as a try, as in pair."""
+    with _lock:
+        live = _code["code"] and time.time() < _code["until"] and _code["tries"] < CODE_TRIES
+        if not live:
+            return False
+        if not isinstance(code, str) or not secrets.compare_digest(code.strip(), _code["code"]):
+            _code["tries"] += 1
+            return False
+        return True
+
+
 def pair(code, name):
     """Trade a pairing code for a phone's token, or None. One use; a few
     wrong tries void the code (6 digits are guessable otherwise)."""
@@ -161,6 +181,24 @@ def device_name(ua):
         if key in ua:
             return label
     return "Phone"
+
+
+def app_link(host, code):
+    """The QR page's "Open in the app": Android's intent link, carrying the
+    address the phone reached this PC on and the code. No app installed:
+    the browser goes to APP_GET instead."""
+    host = (host or "").strip()
+    if not re.fullmatch(r"(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?", host):
+        host = ""  # odd: the app leaves the address for typing
+    return (f"intent://pair?a={quote(host, safe='')}&c={quote(code, safe='')}#Intent;scheme=animehub;"
+            f"package={APP_PACKAGE};S.browser_fallback_url={quote(APP_GET, safe='')};end")
+
+
+def app_choice(ua):
+    """An Android phone's browser (not the app itself): the QR link offers
+    the Anime Hub app before pairing the browser."""
+    ua = ua or ""
+    return "Android" in ua and "AnimeHub-App" not in ua
 
 
 def cookie_header(token):

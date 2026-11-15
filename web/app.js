@@ -3725,12 +3725,12 @@ function phoneGroup() {
     : !r.address ? srow("Pair a phone", "This PC isn't on a network right now.", "")
     : code ? `<div class="pairbox"><div class="qr" aria-label="QR code with the pairing link">${code.qr}</div><div class="pairtxt"><b>Scan this with the phone's camera</b>
         <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
-        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone. The Android app takes the same address and code in its Settings → PC sync.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
+        <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone. On Android it can open the Anime Hub app instead.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
     : srow("Pair a phone", "Shows a QR code to scan with the phone.", pkdo('<button class="btn pri" data-a="rmtcode">Pair a phone</button>'));
   const devs = r.devices.length ? r.devices.map((d) => srow(esc(d.name), `Paired ${esc(when(d.created))} · last used ${esc(when(d.last_seen))}`, pkdo(`<button class="btn" data-a="rmtdel" data-v="${d.id}">Remove</button>`))).join("")
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
-    ${srow("Phone remote", "Control playback from your phone. Same Wi-Fi, no app.", pick("Phone remote", "rmton", null, [["on", "On"], ["off", "Off"]], r.on ? "on" : "off"))}
+    ${srow("Phone remote", "Control playback from the phone's browser, or sync with the Anime Hub Android app.", pick("Phone remote", "rmton", null, [["on", "On"], ["off", "Off"]], r.on ? "on" : "off"))}
     ${pair}${r.on ? srow("Keep the PC playing", "Off: playing an episode on the phone stops mpv here. On: both play at once.", onoff("phone_play_both", "Keep the PC playing", S.settings?.phone_play_both)) : ""}${S.settings?.background_ok ? srow("When the window closes", "Keep running and Start at login are in System.", "") : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
 }
 /* Settings → PC sync in the Android app (Decision 91): pair once with the
@@ -3742,7 +3742,7 @@ function syncGroup() {
   if (!p) { api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Sync with your PC</h3><p class="sub">Loading…</p></div>'; }
   if (!p.paired) return `<div class="group"><h3>Sync with your PC</h3><p class="sub">Keeps what you watched and your playlists the same on both.</p>
     ${srow("1. On the PC", "Settings → Phone → Pair a phone.", "")}
-    ${srow("2. Here", "Type the address and code it shows.", `<div class="row peerform"><input id="peeraddr" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="192.168.1.20:8788" aria-label="The PC's address" value="${esc(S.peerAddr || "")}"><input id="peercode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Pairing code" value="${esc(S.peerCode || "")}"><button class="btn pri" data-a="peerpair"${S.peerBusy ? " disabled" : ""}>${S.peerBusy ? "Pairing…" : "Pair"}</button></div>`, "wide")}
+    ${srow("2. Here", "Scan its QR code with the camera and pick Open in the app, or type the address and code.", `<div class="row peerform"><input id="peeraddr" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="192.168.1.20:8788" aria-label="The PC's address" value="${esc(S.peerAddr || "")}"><input id="peercode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Pairing code" value="${esc(S.peerCode || "")}"><button class="btn pri" data-a="peerpair"${S.peerBusy ? " disabled" : ""}>${S.peerBusy ? "Pairing…" : "Pair"}</button></div>`, "wide")}
     ${p.error ? `<p class="note">${swarn(esc(p.error))}</p>` : ""}</div>`;
   const err = p.error && (!p.last_ok || (p.last_try || "") > p.last_ok) ? p.error : "";
   const last = p.last_ok ? `Last synced ${syncAgo(p.last_ok)}.` : "Not synced yet.";
@@ -3750,6 +3750,20 @@ function syncGroup() {
     ${srow(esc(p.pc || "Your PC"), "", pkdo('<button class="btn" data-a="peerforget">Unpair</button>'))}
     ${srow(`Sync${err ? swarn(p.vpn_blocked ? "VPN" : "Waiting") : ""}`, esc(err ? `${err} ${last}` : last), pkdo(`<button class="btn" data-a="peernow"${S.peerBusy || p.running ? " disabled" : ""}>${S.peerBusy || p.running ? "Syncing…" : "Sync now"}</button>`))}</div>`;
 }
+/* The PC's QR page, "Open in the app": the app hands over the address and
+   code; Pair stays a tap (a link from anywhere else can't pair on its own). */
+window.hubPairLink = (a, c) => {
+  S.peerAddr = String(a || ""); S.peerCode = String(c || "");
+  if (S.modal) closeModal();
+  setClear(); clearSearch();
+  S.setTab = "phone"; S.setOpen = true;
+  if (S.view === "settings") render(); else nav("settings");
+  api("/api/peer").then((x) => {
+    S.peer = x;
+    if (S.view === "settings") render(true);
+    toast(x.paired ? "Already paired with a PC. Unpair first to switch." : "Tap Pair to sync with this PC.");
+  }).catch(() => {});
+};
 async function peerDo(body, done) {
   S.peerBusy = true; render(true);
   try {
@@ -4171,7 +4185,7 @@ const dotTxt = (t, c = "ok") => `<span class="chip${c === "live" || c === "warn"
 const setLink = (tab, row, label) => `<button class="lnk" data-a="setgo" data-t="${tab}" data-v="${esc(row)}">${label} settings ›</button>`;
 const whoTxt = (u) => `<span class="who"><i class="avatar">${esc((u || "?")[0].toUpperCase())}</i>${esc(u || "")}</span>`;
 /* The pop-ups drawn this way (paintModal gives them the .dl2 frame). */
-const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done"]);
+const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done", "peer"]);
 /* skp: the play would also use AniSkip (Decision 39), so the dialog asks
    that too; go(true/false) carries the answer. */
 function vpnGate(go, skp = false) {
@@ -5530,7 +5544,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, where: WhereDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, where: WhereDlg, peer: PeerDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -6002,6 +6016,14 @@ function morphChildren(a, b) {
     const k = morphKey(nb);
     let m = k ? byKey.get(k) : cur && !morphKey(cur) ? cur : null;
     if (m && (used.has(m) || m.nodeName !== nb.nodeName)) m = null;
+    /* Nodes before it that are going away stay put until the end: moving
+       every later node in front of them made a snapping row (Home's
+       Continue watching) lose its place and jump to its end (Elias). */
+    if (m && m !== cur) {
+      let c = cur;
+      while (c && c !== m && (liveOnly(c) || used.has(c) || (morphKey(c) && !newKeys.has(morphKey(c))))) c = c.nextSibling;
+      if (c === m) cur = m;
+    }
     /* A control whose target changed (Play E3 → Rewatch) is the same node
        with new attributes, not a new one — a new one replays its entrance. */
     if (!m && k && cur && cur.nodeName === nb.nodeName && !newKeys.has(morphKey(cur))) m = cur;
@@ -6387,7 +6409,7 @@ async function pollNow() {
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.rmtOpen || S.data?.now || S.lists?.loading ? 1000 : S.artWorking ? 1500 : S.dl.some((j) => j.status === "running") ? 2000 : 4000); // while playing: Home follows mpv within a second
+  pollSoon(S.rmtOpen || S.data?.now || S.lists?.loading ? 1000 : S.artWorking ? 1500 : 2000); // while playing: Home follows mpv within a second; idle: a sync with the phone or PC shows within 2 s (Decision 99)
 }
 /* A banner was upscaled (or put back) under the same name: point every
    copy of its URL at the new ?v= stamp — the data the page draws from and
@@ -6446,6 +6468,16 @@ function accentHex(show) {
 const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && matchMedia("(hover:none)").matches);
 const playWhere = () => { if (S.settings?.android) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app has no PC (Decision 88)
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
+/* Pairing the app with a PC (Decision 98): what the first sync does. Two
+   choices like the Library's filter sheet (tap one, a tick), then Pair. */
+const PEER_TAKE = [["combine", "Combine both", "What you watched on either ends up on both."],
+  ["pc", "Use the PC's", "This phone's watching, playlists and list edits are replaced by the PC's."]];
+function PeerDlg() {
+  const on = S.modal.take || "combine";
+  return dlHead("Sync with the PC") + `<div class="dlb pkb"><div class="pkopts">${PEER_TAKE.map(([v, l, d]) =>
+    `<button class="pko${v === on ? " on" : ""}" aria-pressed="${v === on}" data-a="peerpick" data-v="${v}"><span><b>${l}</b><small>${d}</small></span>${ico("check")}</button>`).join("")}</div>
+    <div class="pkfoot"><button class="btn pri" data-a="peertake">Pair</button></div></div>`;
+}
 function WhereDlg() {
   return dlHead("Play where?") + dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`)
     + dlFoot(setLink("player", "", "Player"), '<button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button>');
@@ -6940,7 +6972,7 @@ function ppClose(fromBack, quiet) {
   if (!fromBack && typeof ovClosed === "function") ovClosed("pp");
   setTimeout(reload, 400);
 }
-document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); if (!document.hidden && S.settings?.android) api("/api/peer", { op: "soon" }).catch(() => {}); }); // back in the app: sync with the PC (Decision 91)
+document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); if (S.settings?.android) api("/api/peer", { op: document.hidden ? "away" : "soon" }).catch(() => {}); }); // back in the app: sync with the PC (Decision 91); away: stop waiting on it (Decision 99)
 /* where: "pc" or "phone" to skip the phone's "Play where?" (Decision 71). */
 async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   if (recapOn() && !S.recapPass?.has(id) && recapCandidate(id)) {
@@ -7539,7 +7571,9 @@ const A = {
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
-  peerpair: () => { S.peerAddr = $("#peeraddr")?.value || ""; S.peerCode = $("#peercode")?.value || ""; peerDo({ op: "pair", address: S.peerAddr, code: S.peerCode }, () => { S.peerCode = ""; return "Paired. Syncing with the PC…"; }).then(() => setTimeout(() => api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}), 4000)); },
+  peerpair: () => { S.peerAddr = $("#peeraddr")?.value || ""; S.peerCode = $("#peercode")?.value || ""; openModal({ t: "peer" }); },
+  peerpick: (v) => { S.modal.take = v; for (const b of document.querySelectorAll("#modal .pko")) { const on = b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); } }, // in place: the pop-up doesn't redraw
+  peertake: () => { const v = S.modal?.take || "combine"; closeModal(); peerDo({ op: "pair", address: S.peerAddr, code: S.peerCode, take: v }, () => { S.peerCode = ""; return "Paired. Syncing with the PC…"; }).then(() => setTimeout(() => api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}), 4000)); },
   peernow: () => peerDo({ op: "now" }, (r) => r.last && (r.last.pulled || r.last.pushed) ? "Synced with the PC" : "Already the same as the PC"),
   peerforget: () => peerDo({ op: "forget" }, () => "Unpaired. Remove it on the PC too: Settings → Phone."),
   rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },

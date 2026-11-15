@@ -3985,6 +3985,19 @@ body.pp-open #modal{z-index:70}
 .dl2 .steps{justify-content:flex-start;margin:0 0 18px}
 .dl2 .dlb{padding:22px 44px 24px}
 .dl2 .dlb .settings{animation:none}
+/* Pairing the app (Decision 98): choices like the Library's filter sheet, then one big button */
+.dl2 .pkopts{display:flex;flex-direction:column;gap:2px;margin:0 -14px}
+.dl2 .pko{display:flex;align-items:center;gap:12px;width:100%;min-height:68px;padding:10px 14px;border-radius:16px;text-align:left;color:var(--ink-2);transition:background .18s,color .18s,transform .14s var(--ease)}
+.dl2 .pko:active{transform:scale(.98)}
+.dl2 .pko span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.dl2 .pko b{font:500 17px var(--ui);color:inherit}
+.dl2 .pko small{font:400 14px/1.35 var(--ui);color:var(--mute)}
+.dl2 .pko .ico{flex:none;margin-left:auto;width:20px;height:20px;stroke-width:2.4;color:var(--accent-hi);opacity:0;transform:scale(.5);transition:opacity .15s,transform .25s var(--spring)}
+.dl2 .pko.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--ink)}
+.dl2 .pko.on b{font-weight:650}
+.dl2 .pko.on .ico{opacity:1;transform:none}
+.dl2 .pkfoot{display:flex;margin-top:18px}
+.dl2 .pkfoot .btn{flex:1;height:52px;justify-content:center;font-size:16px;background:var(--accent);color:#111}
 .dl2 .dlb .group{margin:0}
 .dl2 .dlb .group>.sub{margin:0 0 10px;font-size:14.5px;line-height:1.5;color:var(--ink-2);max-width:600px}
 .dl2 .dlb .group>.sub+.srow{margin-top:4px}

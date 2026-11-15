@@ -130,9 +130,11 @@ class Listener(unittest.TestCase):
             self.assertTrue(remote.start(server.RemoteHandler))
         self.port = remote._listener["server"].server_address[1]
 
-    def req(self, method, path, body=None, cookie=None, host="192.168.1.20:8788"):
+    def req(self, method, path, body=None, cookie=None, host="192.168.1.20:8788", ua=None):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         h = {"Host": host}
+        if ua:
+            h["User-Agent"] = ua
         if cookie:
             h["Cookie"] = cookie
         data = None
@@ -176,6 +178,47 @@ class Listener(unittest.TestCase):
         self.assertEqual(self.req("GET", "/api/remote", cookie=cookie)[0], 403)
         self.assertEqual(self.req("POST", "/api/remote", {"on": False}, cookie=cookie)[0], 403)
         self.assertEqual(self.req("POST", "/api/auth/logout", {}, cookie=cookie)[0], 403)
+
+    def test_android_qr_link_offers_the_app_first(self):
+        """One QR for both: an Android browser gets "Open in the app" or
+        "Use in this browser", and the code stays unused until one pairs."""
+        android = "Mozilla/5.0 (Linux; Android 15; SM-S921B) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"
+        code = remote.new_code()
+        st, h, body = self.req("GET", f"/pair?c={code}", ua=android)
+        self.assertEqual(st, 200)
+        self.assertNotIn("Set-Cookie", h)
+        page = body.decode()
+        self.assertIn("Open in the app", page)
+        self.assertIn("Use in this browser", page)
+        self.assertIn("Android version", page)
+        self.assertIn(f"intent://pair?a=192.168.1.20%3A8788&amp;c={code}#Intent;scheme=animehub;"
+                      f"package={remote.APP_PACKAGE};", page)
+        self.assertIsNotNone(remote.code_info())  # not used up
+        # The browser button pairs with the same code.
+        st, h, body = self.req("POST", "/api/remote/pair", {"code": code}, ua=android)
+        self.assertEqual((st, json.loads(body)), (200, {"ok": True}))
+        self.assertEqual(remote.devices()[-1]["name"], "Android phone")
+        # Used now: the link only says so.
+        st, _, body = self.req("GET", f"/pair?c={code}", ua=android)
+        self.assertIn(b"run out", body)
+
+    def test_android_link_wrong_codes_count(self):
+        code = remote.new_code()
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(remote.CODE_TRIES):
+            self.assertIn(b"run out", self.req("GET", f"/pair?c={wrong}", ua="Linux; Android 14")[2])
+        self.assertIsNone(remote.code_info())
+
+    def test_the_app_and_other_phones_pair_at_once(self):
+        for ua in ("AnimeHub-App/0.5 (sync) Android", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"):
+            code = remote.new_code()
+            st, h, _ = self.req("GET", f"/pair?c={code}", ua=ua)
+            self.assertEqual((st, h.get("Location")), (302, "/"), ua)
+
+    def test_app_link_keeps_the_host_clean(self):
+        link = remote.app_link('192.168.1.20:8788"><script>', "123456")
+        self.assertTrue(link.startswith("intent://pair?a=&c=123456#Intent;"))
+        self.assertTrue(remote.app_link("[fd00::5]:8789", "1").startswith("intent://pair?a=%5Bfd00%3A%3A5%5D%3A8789&"))
 
     def test_typed_code_pairs(self):
         code = remote.new_code()

@@ -41,13 +41,18 @@ EXTRA_REL = re.compile(r"^@(\d+)/(.*)$", re.S)
 
 def hide_continue(show_id, hide=True):
     """Take a show off Home's Continue watching until it plays again
-    (Decision 81), or put it back (Undo)."""
+    (Decision 81), or put it back (Undo). An Undo is remembered
+    (`sync_gone` "continue") so it reaches a paired device too (Decision 99)."""
+    now = util.utc_stamp()
     with database.db() as c:
         if hide:
             c.execute("INSERT INTO continue_hidden(show_id, at) VALUES(?,?)"
-                      " ON CONFLICT(show_id) DO UPDATE SET at=excluded.at", (show_id, util.utc_stamp()))
+                      " ON CONFLICT(show_id) DO UPDATE SET at=excluded.at", (show_id, now))
+            c.execute("DELETE FROM sync_gone WHERE kind='continue' AND key=?", (show_id,))
         else:
             c.execute("DELETE FROM continue_hidden WHERE show_id=?", (show_id,))
+            c.execute("INSERT INTO sync_gone(kind, key, ts) VALUES('continue', ?, ?)"
+                      " ON CONFLICT(kind, key) DO UPDATE SET ts=excluded.ts", (show_id, now))
     return {"ok": True}
 
 

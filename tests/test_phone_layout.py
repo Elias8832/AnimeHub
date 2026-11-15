@@ -726,7 +726,7 @@ class PhoneSettingsC(unittest.TestCase):
         self.assertNotIn(".set2 ", CSS[a:b])
 
     def test_pairing_form_sits_in_its_card(self):
-        self.assertIn('srow("2. Here", "Type the address and code it shows.", `<div class="row peerform">', APP)
+        self.assertIn('srow("2. Here", "Scan its QR code with the camera and pick Open in the app, or type the address and code.", `<div class="row peerform">', APP)
 
 
 class BackPager(unittest.TestCase):
