@@ -500,7 +500,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* Appearance (Decision 38): device preferences in localStorage, put on
    <html> by index.html before first paint. The accent follows the show on
    screen unless one colour is picked. */
-const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["cascade", "fan", "wide", "peek"], glow: ["on", "pictures", "bars", "off"] };
+const LOOKS = { motion: ["full", "calm", "off", "always"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["cascade", "fan", "wide", "peek"], glow: ["on", "pictures", "bars", "off"] };
 const ACCENTS = ["#f2a46f", "#b8d7c6", "#9ccbe8", "#e58ccf", "#e6c27c", "#c3a6f2"];
 /* The tab's icon wears the chosen accent (TODO 139, Decision 59); "follow" keeps the default. */
 const ACCENT_ICONS = { "#f2a46f": "orange", "#b8d7c6": "sage", "#9ccbe8": "blue", "#e58ccf": "pink", "#e6c27c": "gold", "#c3a6f2": "violet" };
@@ -568,7 +568,8 @@ function loadToast(now) {
   if (id && id !== loadShown) { loadShown = id; toast(`Loading ${now.show} · ${now.label}`, "busy"); }
   else if (!id && loadShown && !S.playBusy) { loadShown = null; toastDone(); }
 }
-const reduceMotion = () => document.documentElement.dataset.motion === "off" || matchMedia("(prefers-reduced-motion:reduce)").matches;
+/* "always" (Elias): moves even when the system asks for less motion (Windows: Animation effects off). */
+const reduceMotion = () => { const m = document.documentElement.dataset.motion; return m === "off" || (m !== "always" && matchMedia("(prefers-reduced-motion:reduce)").matches); };
 
 /* ---------- home ---------- */
 /* @home:start */
@@ -3353,7 +3354,7 @@ function setSections(s) {
       + srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]], "Background art"))
       + srow("Glow", "The light around pictures and progress bars.", lookSeg("glow", [["on", "On"], ["pictures", "Pictures only"], ["bars", "Progress bars only"], ["off", "Off"]], "Glow")) // TODO 236: Elias isn't sure about it yet
       + srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]], "Film grain"))
-      + srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]], "Motion"))),
+      + srow("Motion", motionLine(), lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"], ["always", "Always"]], "Motion"))),
     library: s.android && !s.files_ok ? g("Your files", filesAsk()) + g("Shows", srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture.", onoff("hide_spoilers", "Hide spoilers", s.hide_spoilers)) + plFanRow()) : g("Folders", srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`, "wide") + DirPick("settings") + (s.android ? "" : lengthRow(s)))
       + (s.library_root ? extraGroup(s) : "")
@@ -3583,6 +3584,13 @@ async function fontImport(file, input) {
   if (S.view === "settings") render(true);
 }
 /* A segmented control for one Appearance preference. */
+/* The Motion row says when the system holds animations back, and that Always doesn't care. */
+function motionLine() {
+  const os = /Windows/.test(navigator.userAgent) ? "Windows" : "Your system";
+  return matchMedia("(prefers-reduced-motion:reduce)").matches
+    ? `${os} has animations turned off, so Full and Calm stay still. Always moves anyway.`
+    : `Calm drops drifting and pulsing. Always moves even when ${os === "Windows" ? os : "the system"} turns animations off.`;
+}
 function lookSeg(k, opts, label) {
   const cur = k === "grain" ? (grainGet() ? "on" : "off") : lookGet(k);
   return pick(label || k, "look", k, opts, cur);
@@ -3726,8 +3734,8 @@ function skipGroup(s) {
    default; phones pair with the QR code (or the address and code). While a
    code is up, Settings re-reads it every few seconds to see the phone arrive. */
 /* The server without the window (Decision 51): desktop app only. */
-const bgRows = (s) => srow("Keep running after closing", "The phone remote still works after you close the window. A tray icon shows it's running, with Open and Quit.", onoff("keep_running", "Keep running after closing", s.keep_running))
-  + srow("Start at login", "The server starts when you log in, without a window, and stays on until you pick Quit in the tray.", onoff("start_at_login", "Start at login", s.start_at_login));
+const bgRows = (s) => srow("Keep running after closing", "Closing the window leaves the server on, so the phone remote keeps working. Open and Quit are in the tray.", onoff("keep_running", "Keep running after closing", s.keep_running))
+  + srow("Start at login", "The server starts when you log in, with no window. Quit it from the tray.", onoff("start_at_login", "Start at login", s.start_at_login));
 function phoneGroup() {
   const r = S.remote;
   if (!r) { api("/api/remote").then((x) => { S.remote = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Phone remote</h3><p class="sub">Loading…</p></div>'; }
@@ -3952,6 +3960,7 @@ async function dirSet(path) {
   toast("Library folder set — scanning…");
   await loadSettings();
   await refreshAndWatch();
+  await loadSettings(); // the scan's state: before the library was read it still said "unconfigured"
   if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
 }
 /* Extra library folders (Decision 42): added through the same browser, removed from their row. */
@@ -3974,6 +3983,7 @@ async function extraAdd(path) {
   toast("Folder added — scanning…");
   await loadSettings();
   await refreshAndWatch();
+  await loadSettings(); // as dirSet: the scan's state comes with the library read
   if (S.view === "settings") render(true);
 }
 async function extraRemove(id) {
@@ -4016,7 +4026,7 @@ const SETTINGS_INDEX = [
   ["Skip openings", "skipping", "skip opening op intro chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed outro chapter mpv"], ["Mark them on the seek bar", "skipping", "mpv timeline chapters marks opening ending seek bar", "mpv_marks"], ["Skip times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Load the next episode early", "online", "prepare next episode speed faster ready", "prepare_online"], ["ani-cli", "online", "ani-cli update version install streaming"],
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Text font", "appearance", "font fonts typeface text letters serif"], ["Title font", "appearance", "font fonts typeface title heading"], ["Your fonts", "appearance", "font fonts import add installed system pc upload ttf otf woff own remove"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
-  ["Top bar", "appearance", "top bar nav search settings button style island capsule tabs"], ["Background art", "appearance", "background art blur wallpaper image"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"],
+  ["Top bar", "appearance", "top bar nav search settings button style island capsule tabs"], ["Background art", "appearance", "background art blur wallpaper image"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce always windows effects"],
   ["Library folder", "library", "folder path library directory browse rescan scan"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Show episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"],
   ["Hide spoilers", "library", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Sharper banners", "library", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "library", "upscayl upscale banner natural digital art tta model"], ["Playlist stacks", "library", "playlist stack hover fan wide cascade peek open cards"],
   ["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"], ["Online episodes and downloads", "privacy", "vpn warn ask without streaming privacy", "vpn_warn"], ["AniSkip", "privacy", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Update checks", "privacy", "update updates vpn github ip only", "update_vpn_only"],
@@ -5324,7 +5334,9 @@ function tourTools(s) {
   return [
     tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN, s.tools?.mpv ? "" : "Not found"),
     tourRow(aniSt, "Online episodes", aniLine(s) + need, ani && !st.outdated ? (st.needs?.includes("curl-impersonate") ? IMP_BTN : "") : aniBtn(s), st.outdated ? "Too old" : ""),
-    up ? srow("Sharper banners", "Upscayl found. Redraws new banners sharper.", onoff("upscale_banners", "Sharper banners", s.upscale_banners))
+    up ? srow("Sharper banners", s.upscale_banners && s.upscale?.style === "digital" ? "Upscayl found. Digital art is crisper and takes about 3× longer."
+      : "Upscayl found. Redraws new banners sharper.",
+      pick("Sharper banners", "tourup", null, [["off", "Off"], ["natural", "Natural"], ["digital", "Digital art"]], s.upscale_banners ? s.upscale?.style || "natural" : "off"))
       : tourRow("opt", "Sharper banners", "Optional: install Upscayl for sharper show banners.", UPSCAYL_BTN),
   ].join("");
 }
@@ -5341,7 +5353,7 @@ function tourFound(s, a, n, ok) {
 const tourAcct = (a, T) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
   : srow(acct(), "Not connected yet.", pkdo(`<button class="btn${T.choice === "connect" ? " pri" : ""}" data-a="tourconnect">Connect ${acct()}</button>`));
 /* The phone page needs the desktop app: without it the tour skips that page. */
-const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 6));
+const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 5));
 /* A small drawing of each player look for the tour: the real layout over a neutral scene, no show's art. */
 const PL_ICONS = {
   subs: '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M6.5 10.500h5M6.500 14h2M13 14h4"/>',
@@ -5363,11 +5375,15 @@ const PL_LOOKS = {
   deck: () => `<div class="lkv deck"><span class="lkttl">Your show<small>Season 1 · E3</small></span>
     <div class="lkdock">${plIco("back")}<span class="lkplay">${plIco("play")}</span>${plIco("fwd")}<span class="lktime">10:40</span>${plBar}<span class="lktime">24:30</span>${plIco("vol")}<em></em>${plIco("subs")}${plIco("wave")}${plIco("tune")}${plIco("list")}${plIco("full")}</div></div>`,
 };
-const TOUR_OWN = { mpv_fullscreen: "own", mpv_smooth: "own" }, TOUR_HUB = { mpv_fullscreen: "on", mpv_smooth: "on" };
-function tourMpv(s) {
-  const m = s.mpv || {}, own = m.fullscreen === "own" && m.smooth === "own";
-  return srow("Fullscreen and smooth controls", own ? "Your mpv.conf decides." : "Anime Hub turns both on.",
-    pick("Fullscreen and smooth controls", "tourmpv", null, [["hub", "Anime Hub"], ["own", "My mpv.conf"]], own ? "own" : "hub"));
+/* The library folder in words. An empty folder is fine, not "a problem"
+   (Elias, v0.5 Windows pass): new shows turn up by themselves. */
+function folderLine(s, n, eps) {
+  const st = s.scan?.state, shows = `${n} show${n === 1 ? "" : "s"}`;
+  if (!s.library_root) return "Choose the folder that holds your anime.";
+  if (st === "missing") return dotTxt("Can't open this folder. Pick another one.", "warn");
+  if (st === "partial") return dotTxt(`Found ${shows}, but some folders in it can't be read.`, "warn");
+  if (st !== "ok") return "Looking in this folder…";
+  return n ? dotTxt(`Found ${shows}${eps == null ? "" : ` · ${eps} episodes`}`) : "No shows in it yet. New ones show up by themselves.";
 }
 function tourLooks(s) {
   const m = s.mpv || {}, look = m.design === "own" ? "own" : m.look || "soft";
@@ -5391,13 +5407,12 @@ function tourBlocks() {
     ["Welcome to Anime Hub", "",
       srow("Your library", "Your files, with art and episode names.", "") + srow("Online episodes", "Missing ones, streamed or downloaded. Optional.", "")
       + srow("Playback", "Resumes, skips openings, plays the next one.", "")],
-    ["Where's your anime?", "", `${srow("Library folder", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.",
+    ["Where's your anime?", "", `${srow("Library folder", folderLine(s, n, eps),
         `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide")}${DirPick("tour")}`],
     ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this PC.")}`],
     ["A few tools", "", toolsShown(s.tools_install || {}) ? toolsBox(s, true) : tourTools(s)],
     ["Pick your player", "", tourLooks(s)],
-    ["Your mpv settings", "", `<p class="sub">Your mpv.conf always loads.</p>${tourMpv(s)}`],
-    ["Use it from your phone?", "", `<p class="sub">The phone remote needs the server running on this PC.</p>${bgRows(s)}`],
+    ["Keep it running?", "", `<p class="sub">For the phone remote in a phone's browser. The Android app doesn't need it.</p>${bgRows(s)}`],
     tourSearch(),
     ["You're set", "", `<div class="group"><h3>Found</h3>${tourFound(s, a, n, ok)}</div>${tourSwitches(s, a)}`],
   ], s);
@@ -5435,7 +5450,7 @@ function tourAndroid(T, s, a) {
     ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this phone.")}`],
     ["Online episodes", "", `<p class="sub">ani-cli finds them. It runs in Termux.</p>${termuxBox(s)}`],
     ["Files on this phone?", "", `<p class="sub">Optional. Episodes on this phone or an SD card.</p>
-     ${s.files_ok ? srow("Your files", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"}`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.", `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}`],
+     ${s.files_ok ? srow("Your files", folderLine(s, n), `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}`],
     tourSearch(),
     ["You're set", "", `<div class="group"><h3>Found</h3>${row(termuxReady(s) ? "ok" : "opt", "Online episodes", termuxReady(s) ? aniLine(s) : "Termux not set up yet")}${row(ok ? "ok" : "opt", "Your files", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : "none chosen")}${tourAcct(a, T)}</div>
      ${tourSwitches(s, a)}`],
@@ -7088,7 +7103,7 @@ const A = {
     const days = [...document.querySelectorAll("#app .agday")], el = days.find((x) => x.id.slice(3) >= v);
     if (!el) return toast("Nothing airs from that day on");
     if (el.id.slice(3) !== v) toast("Nothing airs that day");
-    el.scrollIntoView({ behavior: mq("(prefers-reduced-motion:reduce)") ? "auto" : "smooth", block: "start" });
+    el.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" });
   },
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },
@@ -7771,7 +7786,12 @@ const A = {
     await loadSettings().catch(() => {});
     S.termuxBusy = false; S.modal ? paintModal() : render(true);
   },
-  tourmpv: (v) => { const x = v === "own" ? "own" : "on"; tourSave(v === "own" ? TOUR_OWN : TOUR_HUB, (m) => { m.fullscreen = x; m.smooth = x; }); },
+  tourup: (v) => {
+    api("/api/settings", v === "off" ? { upscale_banners: false } : { upscale_banners: true, upscale_style: v }).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; if (S.modal?.t === "tour") paintModal();
+    }).catch(() => toast("Could not save — is the hub running?"));
+  },
   tourlook: (v) => tourSave(v === "own" ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }, (m) => { m.design = v === "own" ? "own" : "on"; if (v !== "own") m.look = v; }),
   tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),

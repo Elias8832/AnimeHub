@@ -5,9 +5,10 @@ link is skipped quietly until its disk is back."""
 import os
 import threading
 import unittest
+from unittest import mock
 
 from tests import support
-from animehub import database, library
+from animehub import database, library, server, system
 from animehub.config import config, CONFIG, apply_config
 
 
@@ -53,6 +54,14 @@ class Links(unittest.TestCase):
             ("Frieren", ["Frieren/Season 1/Frieren - 01.mkv", "Frieren/Season 1/Frieren - 02.mkv"]),
             ("Local", ["Local/Local - 01.mkv"])])
         self.assertEqual(library.scan_state["state"], "ok")
+
+    def test_a_linked_show_opens_under_its_link(self):
+        self.files(self.disk / "Frieren", "Frieren - 01.mkv")
+        self.link(self.lib / "Frieren", self.disk / "Frieren")
+        show, = self.scan()
+        with mock.patch.object(system, "open_external") as opened:
+            server.open_show_folder(show["id"])
+        self.assertEqual(opened.call_args[0][0], self.lib / "Frieren")
 
     def test_a_linked_season_folder_joins_its_show(self):
         self.files(self.lib / "Show" / "Season 1", "Show - 01.mkv")

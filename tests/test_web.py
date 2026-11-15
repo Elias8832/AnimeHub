@@ -134,7 +134,7 @@ class Frontend(unittest.TestCase):
 
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
-        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["tabs", "classic", "line", "capsule", "island"],
+        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off", "always"], "art": ["full", "soft", "off"], "bar": ["tabs", "classic", "line", "capsule", "island"],
                                                     "fan": ["cascade", "fan", "wide", "peek"], "glow": ["on", "pictures", "bars", "off"]})  # Playlist stacks (Decision 64); Glow (TODO 236)
         self.assertEqual(run_js("return lookGet('glow');"), "on")
         self.assertIn('d.dataset.glow=g("glow")||"on";', HTML)
@@ -150,6 +150,7 @@ class Frontend(unittest.TestCase):
             self.assertIn(":root[data-bar=%s]" % bar, CSS)
         self.assertEqual(run_js("return lookGet('motion');", {"motion": "calm"}), "calm")
         self.assertEqual(run_js("return lookGet('motion');", {"motion": "nope"}), "full")
+        self.assertEqual(run_js("return lookGet('motion');", {"motion": "always"}), "always")
         self.assertEqual(run_js("return lookGet('art');"), "full")
         self.assertEqual(run_js("return accentGet();"), "follow")
         self.assertEqual(run_js("return accentGet();", {"accent": "#9ccbe8"}), "#9ccbe8")
@@ -477,6 +478,7 @@ class SettingsLayout(unittest.TestCase):
         self.assertTrue(used)
         self.assertEqual(used - tabs, set())
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_a_value_steps_both_ways_and_opens_a_list(self):
         # Decision 73: ‹ value › — the arrows wrap around, the middle is a <select> (the app's own list).
         code = APP[APP.index("function pick(label"):APP.index("const onoff = ")]
@@ -492,6 +494,7 @@ class SettingsLayout(unittest.TestCase):
         # the list hangs under the whole ‹ value ›
         self.assertIn('(sel.closest(".fl") || sel.closest(".pk") || sel).getBoundingClientRect()', APP)
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_folder_picker_finds_as_you_type(self):
         # Decision 73: the Settings picker narrows its folders as you type and says how many it shows.
         code = APP[APP.index("const dirName = "):APP.index("function dirRows(p)")]
@@ -524,6 +527,7 @@ class SettingsLayout(unittest.TestCase):
         # mpv_marks lives in s.mpv.marks, so !S.settings[key] could only ever turn it on.
         self.assertIn('const on = t.getAttribute("aria-checked") !== "true";', APP)
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_find_box(self):
         self.assertIn('id="setq"', APP)
         self.assertIn('if (e.key === "/" && !inInput && $("#setq"))', APP)
@@ -622,9 +626,52 @@ class Polish(unittest.TestCase):
         for look in settings.PLAYER_LOOKS:
             self.assertIn(f"  {look}: () => `<div class=\"lkv {look}\">", APP)
         self.assertIn('["Pick your player", "", tourLooks(s)]', APP)
-        self.assertIn("pages.filter((_, i) => i !== 6)", APP)
-        self.assertIn("${tourMpv(s)}", APP)
+        self.assertIn("pages.filter((_, i) => i !== 5)", APP)
         self.assertIn('{ mpv_design: "on", mpv_look: v }', APP)
+        # Elias (v0.5 Windows pass): no fullscreen/smooth page in the tour; Settings → mpv keeps both
+        self.assertNotIn("tourMpv(", APP)
+        self.assertNotIn('["Your mpv settings"', APP)
+
+    def test_motion_always_ignores_the_system(self):
+        """Elias (v0.5 Windows pass): Windows had Animation effects off, so
+        nothing moved. Motion "Always" moves anyway: every reduced-motion rule
+        and reduceMotion() leave it alone."""
+        import re
+        blocks = re.findall(r"@media \(prefers-reduced-motion:reduce\)\{(.*?)\}\}", CSS)
+        self.assertEqual(len(blocks), 6)
+        for block in blocks:
+            for rule in block.split("}"):
+                for sel in rule.split("{")[0].split(","):
+                    if sel.strip():
+                        self.assertTrue(sel.strip().startswith(":root:not([data-motion=always]) "), sel)
+        self.assertIn('return m === "off" || (m !== "always" && matchMedia("(prefers-reduced-motion:reduce)").matches);', APP)
+        self.assertEqual(APP.count("prefers-reduced-motion"), 2)  # reduceMotion() and the Motion row's words
+        self.assertIn('["off", "Off"], ["always", "Always"]], "Motion")', APP)
+
+    def test_tour_picks_the_banner_look(self):
+        """Elias: Sharper banners in the tour is Off, Natural or Digital art, one pick."""
+        fn = APP[APP.index("function tourTools("):APP.index("function tourFound(")]
+        self.assertIn('pick("Sharper banners", "tourup", null, [["off", "Off"], ["natural", "Natural"], ["digital", "Digital art"]]', fn)
+        self.assertIn('v === "off" ? { upscale_banners: false } : { upscale_banners: true, upscale_style: v }', APP)
+
+    def test_tour_folder_says_what_it_found(self):
+        """An empty folder isn't "a problem" (Elias, v0.5 Windows pass), and the
+        state is read again after the library was: right after a pick it
+        still said "unconfigured"."""
+        fn = APP[APP.index("function folderLine("):APP.index("function tourLooks(")]
+        self.assertIn('"No shows in it yet. New ones show up by themselves."', fn)
+        self.assertIn('if (st !== "ok") return "Looking in this folder…";', fn)
+        self.assertNotIn("There is a problem with this folder", APP)
+        self.assertIn('srow("Library folder", folderLine(s, n, eps),', APP)
+        self.assertIn('srow("Your files", folderLine(s, n),', APP)  # the Android tour
+        for name in ("async function dirSet(", "async function extraAdd("):
+            body = APP[APP.index(name):APP.index("\n}\n", APP.index(name))]
+            self.assertLess(body.index("await refreshAndWatch();"), body.rindex("await loadSettings();"))
+
+    def test_wide_settings_centring_leaves_dialogs_alone(self):
+        """From 2400 px the Settings page centres; a dialog's body is .set2 too
+        and shrank to its rows, centred (the tour on QHD at 100 %)."""
+        self.assertIn("@media (min-width:2400px){\n  .set2:not(.dlb){max-width:1248px;margin-inline:auto}\n}", CSS)
 
     def test_a_tour_setting_does_not_reload_the_dialog(self):
         """A switch or card updates in place; only a new page animates."""
@@ -648,7 +695,7 @@ class Polish(unittest.TestCase):
         fn = APP[APP.index("function tourAndroid("):APP.index("function Tour() {")]
         self.assertIn("${termuxBox(s)}", fn)
         self.assertIn("tourSearch(),", fn)
-        for pc_only in ("tourTools(", "tourLooks(", "tourMpv(", "bgRows("):
+        for pc_only in ("tourTools(", "tourLooks(", "bgRows("):
             self.assertNotIn(pc_only, fn)
         # own files: optional, and only after Android's file access
         self.assertIn('`<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}', fn)
@@ -669,7 +716,7 @@ class Polish(unittest.TestCase):
         """Its own page, before the last one, and the phone page keeps its slot."""
         self.assertIn("    tourSearch(),\n    [\"You're set\",", APP)
         pages = APP[APP.index("  return tourPages(["):APP.index("tourSearch(),\n")]
-        self.assertEqual(pages.count('\n    ["'), 7)  # TODO 226: a page is [title, note, body]
+        self.assertEqual(pages.count('\n    ["'), 6)  # TODO 226: a page is [title, note, body]
         self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`],"))
 
     def test_tour_lists_what_it_found(self):
