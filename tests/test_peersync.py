@@ -452,6 +452,54 @@ class RemoveFromHome(unittest.TestCase):
         self.assertIsNone(peersync.check_apply({"home_hidden": {"hidden": {"5": "x"}}}))
 
 
+class ANewPc(unittest.TestCase):
+    """TODO 248: a phone synced with a test copy, then paired with the real
+    PC. Its deletes and Remove from Home from before this pairing stay on the
+    phone; they never remove anything on the PC."""
+
+    def setUp(self):
+        fresh()
+        paired()  # paired 2026-11-12 10:00:00
+        with device(PC_DB):
+            self.pid = playlists.create("Interested", {"ref": "aid:1", "title": "Frieren"})
+        sync()
+        with device(APP_DB):  # what the old pairing left on the phone
+            playlists.delete(playlists.all_playlists()[0]["id"])
+            library.hide_continue("aid:5", True)
+            with database.db() as c:
+                c.execute("UPDATE sync_gone SET ts='2026-11-14 23:41:26'")
+                c.execute("UPDATE continue_hidden SET at='2026-11-14 23:39:37'")
+                c.execute("UPDATE sync_peer SET paired='2026-11-15 01:15:41', snapshot=NULL")
+
+    def hidden(self, path):
+        with device(path), database.db() as c:
+            return [r[0] for r in c.execute("SELECT show_id FROM continue_hidden")]
+
+    def test_old_marks_stay_on_the_phone(self):
+        for take in (None, "pc"):
+            with self.subTest(take=take):
+                with device(APP_DB), database.db() as c:
+                    c.execute("UPDATE sync_peer SET take=?, snapshot=NULL", (take,))
+                sync()
+                sync()  # the second, ordinary sync sends nothing old either
+                with device(PC_DB):
+                    self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Interested"])
+                with device(APP_DB):  # the PC's list comes back
+                    self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Interested"])
+                self.assertEqual(self.hidden(PC_DB), [])
+                self.assertEqual(self.hidden(APP_DB), ["aid:5"])
+
+    def test_marks_made_since_pairing_still_travel(self):
+        sync()
+        with device(APP_DB):
+            playlists.delete(playlists.all_playlists()[0]["id"])
+            library.hide_continue("aid:9", True)
+        sync()
+        with device(PC_DB):
+            self.assertEqual(playlists.all_playlists(), [])
+        self.assertEqual(self.hidden(PC_DB), ["aid:9"])
+
+
 class Watch(unittest.TestCase):
     """The app's wait on the PC (Decision 99): a new mark syncs at once."""
 

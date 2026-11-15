@@ -507,6 +507,18 @@ def take_theirs(mine, theirs):
     return out
 
 
+def since_pairing(lists, hidden, paired):
+    """This device's own facts with the marks it made before pairing with
+    this PC left out: deletes and Remove from Home / Undo made while synced
+    with another PC (a test copy, an old PC) stay on this device and never
+    remove anything on this one (TODO 248). Lists themselves still travel."""
+    if not paired:
+        return lists, hidden
+    lists = {"lists": lists["lists"], "gone": {u: ts for u, ts in lists["gone"].items() if ts >= paired}}
+    hidden = {k: {m: ts for m, ts in v.items() if ts >= paired} for k, v in hidden.items()}
+    return lists, hidden
+
+
 def take_their_playlists(mine, theirs):
     """(lists for me, gone for me) with "Use the PC's": the PC's lists as
     they are; this device's other lists go."""
@@ -735,10 +747,11 @@ def sync_once():
             every = bool(theirs.get("every_slot"))
             take_pc = base is None and p.get("take") == "pc"
             drop_cur = []
+            my_lists, my_hidden = since_pairing(playlist_facts(), hidden_facts(), p["paired"])
             if take_pc:  # the first sync, "Use the PC's": nothing goes to the PC
                 result = take_theirs(mine, theirs["episodes"])
                 to_them = {}
-                lists_me, gone_me = take_their_playlists(playlist_facts(), theirs["playlists"])
+                lists_me, gone_me = take_their_playlists(my_lists, theirs["playlists"])
                 lists_them, gone_them, renames = {}, {}, {}
                 own = curation_facts()
                 cur_me = {r: v for r, v in theirs["curation"].items() if own.get(r) != v}
@@ -747,12 +760,12 @@ def sync_once():
             else:
                 result = merge_episodes(mine, theirs["episodes"], base, every)
                 to_them = episode_writes(theirs["episodes"], every, base, result)
-                lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(playlist_facts(), theirs["playlists"])
+                lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(my_lists, theirs["playlists"])
                 cur_me, cur_them = merge_curation(curation_facts(), theirs["curation"])
             theirs_hid = theirs.get("home_hidden")
             if theirs_hid is not None and check_hidden(theirs_hid):
                 theirs_hid = None
-            hid_me, hid_them = merge_hidden(hidden_facts(), theirs_hid) if theirs_hid is not None else ({}, {})
+            hid_me, hid_them = merge_hidden(my_hidden, theirs_hid) if theirs_hid is not None else ({}, {})
             if take_pc or theirs_hid is None or not (hid_them["hidden"] or hid_them["shown"]):
                 hid_them = {}  # "Use the PC's" sends nothing; an older PC has no "Remove from Home"
             n_hid_me = len(hid_me.get("hidden", {})) + len(hid_me.get("shown", {}))
