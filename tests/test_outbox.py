@@ -550,7 +550,7 @@ class OutboxRouteTests(unittest.TestCase):
     def test_now_carries_the_next_prompt(self):
         """TODO 10: the online-only next episode waits in /api/now until
         dismissed."""
-        player._next_prompt.update(id="stream:1:2", label="Season 1 · E2", show="X", ts=time.time())
+        player._next_prompt.update(id="stream:1:2", label="Season 1 · E2", show="X", kind="online", ts=time.time())  # kind: test_skips may leave "aniskip"
         code, body = self.request("GET", "/api/now")
         self.assertEqual(body.get("next_prompt"), {"id": "stream:1:2", "label": "Season 1 · E2", "show": "X", "kind": "online"})
         self.request("POST", "/api/next-prompt/dismiss", {})
