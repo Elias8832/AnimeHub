@@ -625,9 +625,36 @@ class Polish(unittest.TestCase):
         for look in settings.PLAYER_LOOKS:
             self.assertIn(f"  {look}: () => `<div class=\"lkv {look}\">", APP)
         self.assertIn('["Pick your player", "", tourLooks(s)]', APP)
-        self.assertIn("pages.filter((_, i) => i !== 6)", APP)
-        self.assertIn("${tourMpv(s)}", APP)
+        self.assertIn("pages.filter((_, i) => i !== 5)", APP)
         self.assertIn('{ mpv_design: "on", mpv_look: v }', APP)
+        # Elias (v0.5 Windows pass): no fullscreen/smooth page in the tour; Settings → mpv keeps both
+        self.assertNotIn("tourMpv(", APP)
+        self.assertNotIn('["Your mpv settings"', APP)
+
+    def test_tour_picks_the_banner_look(self):
+        """Elias: Sharper banners in the tour is Off, Natural or Digital art, one pick."""
+        fn = APP[APP.index("function tourTools("):APP.index("function tourFound(")]
+        self.assertIn('pick("Sharper banners", "tourup", null, [["off", "Off"], ["natural", "Natural"], ["digital", "Digital art"]]', fn)
+        self.assertIn('v === "off" ? { upscale_banners: false } : { upscale_banners: true, upscale_style: v }', APP)
+
+    def test_tour_folder_says_what_it_found(self):
+        """An empty folder isn't "a problem" (Elias, v0.5 Windows pass), and the
+        state is read again after the library was: right after a pick it
+        still said "unconfigured"."""
+        fn = APP[APP.index("function folderLine("):APP.index("function tourLooks(")]
+        self.assertIn('"No shows in it yet. New ones show up by themselves."', fn)
+        self.assertIn('if (st !== "ok") return "Looking in this folder…";', fn)
+        self.assertNotIn("There is a problem with this folder", APP)
+        self.assertIn('srow("Library folder", folderLine(s, n, eps),', APP)
+        self.assertIn('srow("Your files", folderLine(s, n),', APP)  # the Android tour
+        for name in ("async function dirSet(", "async function extraAdd("):
+            body = APP[APP.index(name):APP.index("\n}\n", APP.index(name))]
+            self.assertLess(body.index("await refreshAndWatch();"), body.rindex("await loadSettings();"))
+
+    def test_wide_settings_centring_leaves_dialogs_alone(self):
+        """From 2400 px the Settings page centres; a dialog's body is .set2 too
+        and shrank to its rows, centred (the tour on QHD at 100 %)."""
+        self.assertIn("@media (min-width:2400px){\n  .set2:not(.dlb){max-width:1248px;margin-inline:auto}\n}", CSS)
 
     def test_a_tour_setting_does_not_reload_the_dialog(self):
         """A switch or card updates in place; only a new page animates."""
@@ -651,7 +678,7 @@ class Polish(unittest.TestCase):
         fn = APP[APP.index("function tourAndroid("):APP.index("function Tour() {")]
         self.assertIn("${termuxBox(s)}", fn)
         self.assertIn("tourSearch(),", fn)
-        for pc_only in ("tourTools(", "tourLooks(", "tourMpv(", "bgRows("):
+        for pc_only in ("tourTools(", "tourLooks(", "bgRows("):
             self.assertNotIn(pc_only, fn)
         # own files: optional, and only after Android's file access
         self.assertIn('`<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}', fn)
@@ -672,7 +699,7 @@ class Polish(unittest.TestCase):
         """Its own page, before the last one, and the phone page keeps its slot."""
         self.assertIn("    tourSearch(),\n    [\"You're set\",", APP)
         pages = APP[APP.index("  return tourPages(["):APP.index("tourSearch(),\n")]
-        self.assertEqual(pages.count('\n    ["'), 7)  # TODO 226: a page is [title, note, body]
+        self.assertEqual(pages.count('\n    ["'), 6)  # TODO 226: a page is [title, note, body]
         self.assertTrue(pages.rstrip().endswith("${bgRows(s)}`],"))
 
     def test_tour_lists_what_it_found(self):

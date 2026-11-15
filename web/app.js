@@ -3726,8 +3726,8 @@ function skipGroup(s) {
    default; phones pair with the QR code (or the address and code). While a
    code is up, Settings re-reads it every few seconds to see the phone arrive. */
 /* The server without the window (Decision 51): desktop app only. */
-const bgRows = (s) => srow("Keep running after closing", "The phone remote still works after you close the window. A tray icon shows it's running, with Open and Quit.", onoff("keep_running", "Keep running after closing", s.keep_running))
-  + srow("Start at login", "The server starts when you log in, without a window, and stays on until you pick Quit in the tray.", onoff("start_at_login", "Start at login", s.start_at_login));
+const bgRows = (s) => srow("Keep running after closing", "Closing the window leaves the server on, so the phone remote keeps working. Open and Quit are in the tray.", onoff("keep_running", "Keep running after closing", s.keep_running))
+  + srow("Start at login", "The server starts when you log in, with no window. Quit it from the tray.", onoff("start_at_login", "Start at login", s.start_at_login));
 function phoneGroup() {
   const r = S.remote;
   if (!r) { api("/api/remote").then((x) => { S.remote = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Phone remote</h3><p class="sub">Loading…</p></div>'; }
@@ -3952,6 +3952,7 @@ async function dirSet(path) {
   toast("Library folder set — scanning…");
   await loadSettings();
   await refreshAndWatch();
+  await loadSettings(); // the scan's state: before the library was read it still said "unconfigured"
   if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
 }
 /* Extra library folders (Decision 42): added through the same browser, removed from their row. */
@@ -3974,6 +3975,7 @@ async function extraAdd(path) {
   toast("Folder added — scanning…");
   await loadSettings();
   await refreshAndWatch();
+  await loadSettings(); // as dirSet: the scan's state comes with the library read
   if (S.view === "settings") render(true);
 }
 async function extraRemove(id) {
@@ -5324,7 +5326,9 @@ function tourTools(s) {
   return [
     tourRow(s.tools?.mpv ? "ok" : "bad", "mpv", s.tools?.mpv ? `mpv${s.mpv_version ? " " + s.mpv_version : ""} found` : "Required to play anything.", s.tools?.mpv ? "" : MPV_BTN, s.tools?.mpv ? "" : "Not found"),
     tourRow(aniSt, "Online episodes", aniLine(s) + need, ani && !st.outdated ? (st.needs?.includes("curl-impersonate") ? IMP_BTN : "") : aniBtn(s), st.outdated ? "Too old" : ""),
-    up ? srow("Sharper banners", "Upscayl found. Redraws new banners sharper.", onoff("upscale_banners", "Sharper banners", s.upscale_banners))
+    up ? srow("Sharper banners", s.upscale_banners && s.upscale?.style === "digital" ? "Upscayl found. Digital art is crisper and takes about 3× longer."
+      : "Upscayl found. Redraws new banners sharper.",
+      pick("Sharper banners", "tourup", null, [["off", "Off"], ["natural", "Natural"], ["digital", "Digital art"]], s.upscale_banners ? s.upscale?.style || "natural" : "off"))
       : tourRow("opt", "Sharper banners", "Optional: install Upscayl for sharper show banners.", UPSCAYL_BTN),
   ].join("");
 }
@@ -5341,7 +5345,7 @@ function tourFound(s, a, n, ok) {
 const tourAcct = (a, T) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
   : srow(acct(), "Not connected yet.", pkdo(`<button class="btn${T.choice === "connect" ? " pri" : ""}" data-a="tourconnect">Connect ${acct()}</button>`));
 /* The phone page needs the desktop app: without it the tour skips that page. */
-const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 6));
+const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 5));
 /* A small drawing of each player look for the tour: the real layout over a neutral scene, no show's art. */
 const PL_ICONS = {
   subs: '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M6.5 10.500h5M6.500 14h2M13 14h4"/>',
@@ -5363,11 +5367,15 @@ const PL_LOOKS = {
   deck: () => `<div class="lkv deck"><span class="lkttl">Your show<small>Season 1 · E3</small></span>
     <div class="lkdock">${plIco("back")}<span class="lkplay">${plIco("play")}</span>${plIco("fwd")}<span class="lktime">10:40</span>${plBar}<span class="lktime">24:30</span>${plIco("vol")}<em></em>${plIco("subs")}${plIco("wave")}${plIco("tune")}${plIco("list")}${plIco("full")}</div></div>`,
 };
-const TOUR_OWN = { mpv_fullscreen: "own", mpv_smooth: "own" }, TOUR_HUB = { mpv_fullscreen: "on", mpv_smooth: "on" };
-function tourMpv(s) {
-  const m = s.mpv || {}, own = m.fullscreen === "own" && m.smooth === "own";
-  return srow("Fullscreen and smooth controls", own ? "Your mpv.conf decides." : "Anime Hub turns both on.",
-    pick("Fullscreen and smooth controls", "tourmpv", null, [["hub", "Anime Hub"], ["own", "My mpv.conf"]], own ? "own" : "hub"));
+/* The library folder in words. An empty folder is fine, not "a problem"
+   (Elias, v0.5 Windows pass): new shows turn up by themselves. */
+function folderLine(s, n, eps) {
+  const st = s.scan?.state, shows = `${n} show${n === 1 ? "" : "s"}`;
+  if (!s.library_root) return "Choose the folder that holds your anime.";
+  if (st === "missing") return dotTxt("Can't open this folder. Pick another one.", "warn");
+  if (st === "partial") return dotTxt(`Found ${shows}, but some folders in it can't be read.`, "warn");
+  if (st !== "ok") return "Looking in this folder…";
+  return n ? dotTxt(`Found ${shows}${eps == null ? "" : ` · ${eps} episodes`}`) : "No shows in it yet. New ones show up by themselves.";
 }
 function tourLooks(s) {
   const m = s.mpv || {}, look = m.design === "own" ? "own" : m.look || "soft";
@@ -5391,13 +5399,12 @@ function tourBlocks() {
     ["Welcome to Anime Hub", "",
       srow("Your library", "Your files, with art and episode names.", "") + srow("Online episodes", "Missing ones, streamed or downloaded. Optional.", "")
       + srow("Playback", "Resumes, skips openings, plays the next one.", "")],
-    ["Where's your anime?", "", `${srow("Library folder", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"} · ${eps} episodes`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.",
+    ["Where's your anime?", "", `${srow("Library folder", folderLine(s, n, eps),
         `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide")}${DirPick("tour")}`],
     ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this PC.")}`],
     ["A few tools", "", toolsShown(s.tools_install || {}) ? toolsBox(s, true) : tourTools(s)],
     ["Pick your player", "", tourLooks(s)],
-    ["Your mpv settings", "", `<p class="sub">Your mpv.conf always loads.</p>${tourMpv(s)}`],
-    ["Use it from your phone?", "", `<p class="sub">The phone remote needs the server running on this PC.</p>${bgRows(s)}`],
+    ["Keep it running?", "", `<p class="sub">For the phone remote in a phone's browser. The Android app doesn't need it.</p>${bgRows(s)}`],
     tourSearch(),
     ["You're set", "", `<div class="group"><h3>Found</h3>${tourFound(s, a, n, ok)}</div>${tourSwitches(s, a)}`],
   ], s);
@@ -5435,7 +5442,7 @@ function tourAndroid(T, s, a) {
     ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this phone.")}`],
     ["Online episodes", "", `<p class="sub">ani-cli finds them. It runs in Termux.</p>${termuxBox(s)}`],
     ["Files on this phone?", "", `<p class="sub">Optional. Episodes on this phone or an SD card.</p>
-     ${s.files_ok ? srow("Your files", ok ? dotTxt(`Found ${n} show${n === 1 ? "" : "s"}`) : s.library_root ? dotTxt("There is a problem with this folder. Try another one.", "warn") : "Choose the folder that holds your anime.", `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}`],
+     ${s.files_ok ? srow("Your files", folderLine(s, n), `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}`],
     tourSearch(),
     ["You're set", "", `<div class="group"><h3>Found</h3>${row(termuxReady(s) ? "ok" : "opt", "Online episodes", termuxReady(s) ? aniLine(s) : "Termux not set up yet")}${row(ok ? "ok" : "opt", "Your files", ok ? `${s.library_root} · ${n} show${n === 1 ? "" : "s"}` : "none chosen")}${tourAcct(a, T)}</div>
      ${tourSwitches(s, a)}`],
@@ -7771,7 +7778,12 @@ const A = {
     await loadSettings().catch(() => {});
     S.termuxBusy = false; S.modal ? paintModal() : render(true);
   },
-  tourmpv: (v) => { const x = v === "own" ? "own" : "on"; tourSave(v === "own" ? TOUR_OWN : TOUR_HUB, (m) => { m.fullscreen = x; m.smooth = x; }); },
+  tourup: (v) => {
+    api("/api/settings", v === "off" ? { upscale_banners: false } : { upscale_banners: true, upscale_style: v }).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; if (S.modal?.t === "tour") paintModal();
+    }).catch(() => toast("Could not save — is the hub running?"));
+  },
   tourlook: (v) => tourSave(v === "own" ? { mpv_design: "own" } : { mpv_design: "on", mpv_look: v }, (m) => { m.design = v === "own" ? "own" : "on"; if (v !== "own") m.look = v; }),
   tourback: () => { S.tour.step--; paintModal(true); },
   tourskip: () => finishTour(true),

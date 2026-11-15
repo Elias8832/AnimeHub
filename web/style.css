@@ -4162,9 +4162,10 @@ body.pp-open #modal{z-index:70}
   .jr2{max-width:2200px;margin-inline:auto}
 }
 /* Settings centres from 2400 px wide (ultrawide, 4K at 100 %): its list and rows fill 1248 px,
-   so it sat in the left third. Under 2400 it stays left, as it was. */
+   so it sat in the left third. Under 2400 it stays left, as it was. Only the page: a dialog's
+   body is .set2 too, and shrank to its rows, centred (the tour's folder row, QHD at 100 %). */
 @media (min-width:2400px){
-  .set2{max-width:1248px;margin-inline:auto}
+  .set2:not(.dlb){max-width:1248px;margin-inline:auto}
 }
 /* ───────── One look for the shared pieces (TODO 236, Elias 2026-11-14: "inconsistent ui, for example the progress bar") ─────────
    Home's episode tiles and posters are the model for the Library and the show page on the PC. Progress is one 4 px bar
