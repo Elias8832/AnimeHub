@@ -500,7 +500,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* Appearance (Decision 38): device preferences in localStorage, put on
    <html> by index.html before first paint. The accent follows the show on
    screen unless one colour is picked. */
-const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["cascade", "fan", "wide", "peek"], glow: ["on", "pictures", "bars", "off"] };
+const LOOKS = { motion: ["full", "calm", "off", "always"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["cascade", "fan", "wide", "peek"], glow: ["on", "pictures", "bars", "off"] };
 const ACCENTS = ["#f2a46f", "#b8d7c6", "#9ccbe8", "#e58ccf", "#e6c27c", "#c3a6f2"];
 /* The tab's icon wears the chosen accent (TODO 139, Decision 59); "follow" keeps the default. */
 const ACCENT_ICONS = { "#f2a46f": "orange", "#b8d7c6": "sage", "#9ccbe8": "blue", "#e58ccf": "pink", "#e6c27c": "gold", "#c3a6f2": "violet" };
@@ -568,7 +568,8 @@ function loadToast(now) {
   if (id && id !== loadShown) { loadShown = id; toast(`Loading ${now.show} · ${now.label}`, "busy"); }
   else if (!id && loadShown && !S.playBusy) { loadShown = null; toastDone(); }
 }
-const reduceMotion = () => document.documentElement.dataset.motion === "off" || matchMedia("(prefers-reduced-motion:reduce)").matches;
+/* "always" (Elias): moves even when the system asks for less motion (Windows: Animation effects off). */
+const reduceMotion = () => { const m = document.documentElement.dataset.motion; return m === "off" || (m !== "always" && matchMedia("(prefers-reduced-motion:reduce)").matches); };
 
 /* ---------- home ---------- */
 /* @home:start */
@@ -3353,7 +3354,7 @@ function setSections(s) {
       + srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]], "Background art"))
       + srow("Glow", "The light around pictures and progress bars.", lookSeg("glow", [["on", "On"], ["pictures", "Pictures only"], ["bars", "Progress bars only"], ["off", "Off"]], "Glow")) // TODO 236: Elias isn't sure about it yet
       + srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]], "Film grain"))
-      + srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]], "Motion"))),
+      + srow("Motion", motionLine(), lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"], ["always", "Always"]], "Motion"))),
     library: s.android && !s.files_ok ? g("Your files", filesAsk()) + g("Shows", srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture.", onoff("hide_spoilers", "Hide spoilers", s.hide_spoilers)) + plFanRow()) : g("Folders", srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
       `<div class="path">${libPath("settings", s)}${dirBtn("settings")}<button class="btn" data-a="rescan">Rescan</button>${changed ? '<button class="btn pri" data-a="adopt">Connect folder</button>' : ""}</div>`, "wide") + DirPick("settings") + (s.android ? "" : lengthRow(s)))
       + (s.library_root ? extraGroup(s) : "")
@@ -3583,6 +3584,13 @@ async function fontImport(file, input) {
   if (S.view === "settings") render(true);
 }
 /* A segmented control for one Appearance preference. */
+/* The Motion row says when the system holds animations back, and that Always doesn't care. */
+function motionLine() {
+  const os = /Windows/.test(navigator.userAgent) ? "Windows" : "Your system";
+  return matchMedia("(prefers-reduced-motion:reduce)").matches
+    ? `${os} has animations turned off, so Full and Calm stay still. Always moves anyway.`
+    : `Calm drops drifting and pulsing. Always moves even when ${os === "Windows" ? os : "the system"} turns animations off.`;
+}
 function lookSeg(k, opts, label) {
   const cur = k === "grain" ? (grainGet() ? "on" : "off") : lookGet(k);
   return pick(label || k, "look", k, opts, cur);
@@ -4018,7 +4026,7 @@ const SETTINGS_INDEX = [
   ["Skip openings", "skipping", "skip opening op intro chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed outro chapter mpv"], ["Mark them on the seek bar", "skipping", "mpv timeline chapters marks opening ending seek bar", "mpv_marks"], ["Skip times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Load the next episode early", "online", "prepare next episode speed faster ready", "prepare_online"], ["ani-cli", "online", "ani-cli update version install streaming"],
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Text font", "appearance", "font fonts typeface text letters serif"], ["Title font", "appearance", "font fonts typeface title heading"], ["Your fonts", "appearance", "font fonts import add installed system pc upload ttf otf woff own remove"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
-  ["Top bar", "appearance", "top bar nav search settings button style island capsule tabs"], ["Background art", "appearance", "background art blur wallpaper image"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce"],
+  ["Top bar", "appearance", "top bar nav search settings button style island capsule tabs"], ["Background art", "appearance", "background art blur wallpaper image"], ["Film grain", "appearance", "grain noise texture"], ["Motion", "appearance", "motion animation animations calm reduce always windows effects"],
   ["Library folder", "library", "folder path library directory browse rescan scan"], ["Extra folders", "library", "extra second another folder drive library add"], ["Rescan", "library", "rescan scan refresh metadata"], ["Show episode lengths", "library", "episode length duration minutes runtime ffprobe measure", "measure_lengths"],
   ["Hide spoilers", "library", "spoiler spoilers hide blur unwatched episode title picture", "hide_spoilers"], ["Sharper banners", "library", "upscayl upscale banner sharper quality gpu", "upscale_banners"], ["Banner look", "library", "upscayl upscale banner natural digital art tta model"], ["Playlist stacks", "library", "playlist stack hover fan wide cascade peek open cards"],
   ["VPN in the status line", "privacy", "vpn status icon", "vpn_icon"], ["Online episodes and downloads", "privacy", "vpn warn ask without streaming privacy", "vpn_warn"], ["AniSkip", "privacy", "aniskip vpn warn ask privacy", "aniskip_vpn_warn"], ["Update checks", "privacy", "update updates vpn github ip only", "update_vpn_only"],
@@ -7095,7 +7103,7 @@ const A = {
     const days = [...document.querySelectorAll("#app .agday")], el = days.find((x) => x.id.slice(3) >= v);
     if (!el) return toast("Nothing airs from that day on");
     if (el.id.slice(3) !== v) toast("Nothing airs that day");
-    el.scrollIntoView({ behavior: mq("(prefers-reduced-motion:reduce)") ? "auto" : "smooth", block: "start" });
+    el.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" });
   },
   airmode: (v) => { S.airCal.mode = v; lsSet("airMode", v); render(true); },
   gmore: () => { S.genOpen = !S.genOpen; render(); },

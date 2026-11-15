@@ -134,7 +134,7 @@ class Frontend(unittest.TestCase):
 
     def test_appearance_prefs(self):
         # Decision 38 replaced the Decision 28 palettes with device preferences.
-        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off"], "art": ["full", "soft", "off"], "bar": ["tabs", "classic", "line", "capsule", "island"],
+        self.assertEqual(run_js("return LOOKS;"), {"motion": ["full", "calm", "off", "always"], "art": ["full", "soft", "off"], "bar": ["tabs", "classic", "line", "capsule", "island"],
                                                     "fan": ["cascade", "fan", "wide", "peek"], "glow": ["on", "pictures", "bars", "off"]})  # Playlist stacks (Decision 64); Glow (TODO 236)
         self.assertEqual(run_js("return lookGet('glow');"), "on")
         self.assertIn('d.dataset.glow=g("glow")||"on";', HTML)
@@ -150,6 +150,7 @@ class Frontend(unittest.TestCase):
             self.assertIn(":root[data-bar=%s]" % bar, CSS)
         self.assertEqual(run_js("return lookGet('motion');", {"motion": "calm"}), "calm")
         self.assertEqual(run_js("return lookGet('motion');", {"motion": "nope"}), "full")
+        self.assertEqual(run_js("return lookGet('motion');", {"motion": "always"}), "always")
         self.assertEqual(run_js("return lookGet('art');"), "full")
         self.assertEqual(run_js("return accentGet();"), "follow")
         self.assertEqual(run_js("return accentGet();", {"accent": "#9ccbe8"}), "#9ccbe8")
@@ -630,6 +631,22 @@ class Polish(unittest.TestCase):
         # Elias (v0.5 Windows pass): no fullscreen/smooth page in the tour; Settings → mpv keeps both
         self.assertNotIn("tourMpv(", APP)
         self.assertNotIn('["Your mpv settings"', APP)
+
+    def test_motion_always_ignores_the_system(self):
+        """Elias (v0.5 Windows pass): Windows had Animation effects off, so
+        nothing moved. Motion "Always" moves anyway: every reduced-motion rule
+        and reduceMotion() leave it alone."""
+        import re
+        blocks = re.findall(r"@media \(prefers-reduced-motion:reduce\)\{(.*?)\}\}", CSS)
+        self.assertEqual(len(blocks), 6)
+        for block in blocks:
+            for rule in block.split("}"):
+                for sel in rule.split("{")[0].split(","):
+                    if sel.strip():
+                        self.assertTrue(sel.strip().startswith(":root:not([data-motion=always]) "), sel)
+        self.assertIn('return m === "off" || (m !== "always" && matchMedia("(prefers-reduced-motion:reduce)").matches);', APP)
+        self.assertEqual(APP.count("prefers-reduced-motion"), 2)  # reduceMotion() and the Motion row's words
+        self.assertIn('["off", "Off"], ["always", "Always"]], "Motion")', APP)
 
     def test_tour_picks_the_banner_look(self):
         """Elias: Sharper banners in the tour is Off, Natural or Digital art, one pick."""
