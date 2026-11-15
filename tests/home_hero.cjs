@@ -27,10 +27,12 @@ function show(title, episodes, artwork = true) {
   };
 }
 
-function homepage(data) {
+function homepage(data, o = {}) {
   const context = vm.createContext({
     S: { data, view: "home", showId: null, seasonIdx: 0, showBack: "home", cat: null, q: "", menu: null },
-    aniMode: () => false, // spine mode; the airing panel is covered elsewhere
+    aniMode: () => !!o.ani, // spine mode unless a test needs AniList's airing list
+    inProg: (st) => ["CURRENT", "REPEATING", "PAUSED"].includes(st),
+    api: () => new Promise(() => {}), // Recommended's fetch never answers here
     isPhone: () => false, isTabletP: () => false, // the PC layout (phones: test_phone_layout.py)
     fmtIn: () => "soon", airsIn: () => 0,
     plHomeHTML: () => "", // pinned playlists: tests/playlists.cjs
@@ -129,19 +131,24 @@ test("the next airing shows even when it's past this week", () => {
   assert.match(html, /<h2>Coming up<\/h2>/);
 });
 
-test("This week leads with an episode that's out and unwatched, with Play", () => {
-  const now = Date.UTC(2026, 10, 8, 18);
+test("an episode that's out and unwatched sits first in Continue watching; This week only counts down (TODO 236)", () => {
+  const now = Date.now();
   const ep5 = { ...episode("bb5", null), number: 5 };
   const bb = { ...show("Blue Box Season 2", [ep5]), id: "bb" };
-  const app = homepage({ shows: [bb], continue: [], history: [] });
-  const e = { id: 7, title: "Blue Box Season 2", progress: 4, episodes: 12, local_show_id: "bb", next_episode: { number: 6, at: now / 1000 + 6 * 86400 } };
-  const html = app.weekHTML([e], now);
-  assert.match(html, /you're 1 behind/);
+  const older = episode("older", earlier);
+  const e = { id: 7, title: "Blue Box Season 2", airing: "RELEASING", status: "CURRENT", progress: 4, episodes: 12, local_show_id: "bb",
+    next_episode: { number: 6, at: Math.floor(now / 1000) + 6 * 86400 } };
+  const app = homepage({ shows: [show("Older", [older]), bb], continue: [older], history: [older], spine: { entries: [e] } }, { ani: true });
+  const html = app.Home();
+  assert.match(html, /<div class="strip hstrip"><div class="hc hcnew"[^>]*data-v="bb"/); // first in the row
+  assert.match(html, /<span class="newtag">1 new<\/span><span class="enum">E5<\/span>/);
   assert.match(html, /data-a="play" data-v="bb5"/); // Play plays the episode you're missing
-  assert.match(html, /Play episode 5/);
-  assert.match(html, /class="twg solo"/); // nothing else airing: the banner takes the row
-  assert.match(html, /data-cd="/); // the next one counts down
   assert.match(html, /\/img\/Blue%20Box%20Season%202\.banner\.jpg/); // the show page's saved banner, so Home and the show page match
+  const week = app.weekHTML([e], now);
+  assert.doesNotMatch(week, /behind|data-a="play"/);
+  assert.match(week, /next episode/);
+  assert.match(week, /class="twg solo"/); // nothing else airing: the banner takes the row
+  assert.match(week, /data-cd="/); // the next one counts down
 });
 
 test("This week: no Play when the missing episode isn't on disk or online yet", () => {
@@ -182,7 +189,7 @@ test("homepage renders the new hero, excludes its duplicate tile, and targets it
   const app = homepage({ shows: [show("Older", [older]), show("Recent", [preview])],
     continue: [older], history: [preview, older] });
   const html = app.Home();
-  assert.match(html, /^<div class="home2"><div class="hello">.*?<\/div><div class="upn"/s); // headline, then the up-next card
+  assert.match(html, /^<div class="home2 wide"><div class="upn"/); // the PC: no headline, the up-next card first (TODO 236)
   assert.match(html, /<h1>Recent<\/h1>/);
   assert.match(html, /\/img\/Recent\.banner\.jpg/);
   assert.doesNotMatch(html, /<h3>Recent<\/h3>/); // the up-next show is skipped in Continue watching
@@ -214,4 +221,27 @@ test("a show taken off Continue watching stays off until it plays again (Decisio
   assert.equal(app.nextUpInfo().s.title, "Older");
   recent.last_played = "2026-10-14 15:30:00"; // played again after it was taken off: back
   assert.equal(app.nextUpInfo().s.title, "Recent");
+});
+
+test("the PC's banner: this episode's progress once started, a nameless episode said once (TODO 236)", () => {
+  const started = episode("started", latest); // 120 s of 1440
+  let app = homepage({ shows: [show("Started", [started])], continue: [started], history: [started] });
+  let html = app.Home();
+  assert.match(html, /<div class="sub">Episode 1<\/div>/); // not "E1 · Episode 1"
+  assert.match(html, /<div class="hbar"><i style="width:8\.3%"><\/i><\/div>/);
+  assert.doesNotMatch(html, /class="tbar"|<kbd/); // no season ticks, no key hints
+  assert.match(app.heroHTML(app.nextUpInfo()), /<div class="sub">S1E1 · Episode 1<\/div>/); // the portrait tablet keeps its banner
+  const fresh = episode("fresh", latest, false, 0);
+  app = homepage({ shows: [show("Fresh", [fresh])], continue: [fresh], history: [fresh] });
+  assert.doesNotMatch(app.Home(), /class="hbar"/); // not started: nothing to show
+});
+
+test("Continue watching captions say only what's left and where (TODO 236)", () => {
+  const older = episode("older", earlier);
+  const recent = episode("recent", latest);
+  older.title = "A long episode name that was cut off";
+  const app = homepage({ shows: [show("Older", [older]), show("Recent", [recent])], continue: [older], history: [recent, older] });
+  const html = app.Home();
+  assert.match(html, /<h3>Older<\/h3><small>[^<·]+ left · disk<\/small>/);
+  assert.doesNotMatch(html, /A long episode name/);
 });

@@ -500,7 +500,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* Appearance (Decision 38): device preferences in localStorage, put on
    <html> by index.html before first paint. The accent follows the show on
    screen unless one colour is picked. */
-const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["cascade", "fan", "wide", "peek"] };
+const LOOKS = { motion: ["full", "calm", "off"], art: ["full", "soft", "off"], bar: ["tabs", "classic", "line", "capsule", "island"], fan: ["cascade", "fan", "wide", "peek"], glow: ["on", "pictures", "bars", "off"] };
 const ACCENTS = ["#f2a46f", "#b8d7c6", "#9ccbe8", "#e58ccf", "#e6c27c", "#c3a6f2"];
 /* The tab's icon wears the chosen accent (TODO 139, Decision 59); "follow" keeps the default. */
 const ACCENT_ICONS = { "#f2a46f": "orange", "#b8d7c6": "sage", "#9ccbe8": "blue", "#e58ccf": "pink", "#e6c27c": "gold", "#c3a6f2": "violet" };
@@ -600,21 +600,30 @@ function prepareHero(ep) {
   S.heroPrep = ep.id;
   api("/api/prepare", { id: ep.id }).catch(() => {});
 }
-function heroHTML(up) {
+/* `wide` = the PC's Home (TODO 236, Elias 2026-11-14): the title sized by its
+   length, a nameless episode said once ("Episode 1", not "E1 · Episode 1") and
+   this episode's own progress bar instead of the season's ticks, shown once
+   it's started. The art sits on the card as --art for its glow. No key hints. */
+function heroHTML(up, wide = false) {
   prepareHero(up.ep);
   const s = up.s, ep = up.ep, sea = up.sea, art = safeThumb(sea, ep) && !s.banner ? safeThumb(sea, ep) : s.banner || s.poster;
-  const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
-  const len = ep.duration || ep.length, left = pct >= 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
+  const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = pct >= 1 && !ep.watched;
+  const len = ep.duration || ep.length, left = started ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
   const src = streamEp(ep) ? "online" : "on disk";
-  const { seen, tot, html: bar } = seasonBar(s, sea);
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
-  return `<div class="upn" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}">${art ? `<i class="upa" style="--art:${esc(cssUrl(art))}"></i>` : ""}<div class="upc">
+  const code = epCode(sea, ep), name = epName(s, sea, ep);
+  const sub = name ? `${code} · ${name}` : wide && +(/^(?:S\d+)?E(\d+)$/.exec(code)?.[1]) === ep.number ? `Episode ${ep.number}` : `${code} · Episode ${ep.number}`;
+  let prog = "";
+  if (wide) prog = started ? `<div class="hbar"><i style="width:${pct.toFixed(1)}%"></i></div>` : "";
+  else { const { seen, tot, html: bar } = seasonBar(s, sea); if (tot > 1) prog = `<div class="tbar">${bar}<span>${seen}/${tot}</span></div>`; }
+  const size = wide && s.title.length > 24 ? " tl3" : wide && s.title.length > 12 ? " tl2" : "";
+  return `<div class="upn${size}" data-a="open" data-v="${esc(s.id)}" style="--h:${hueOf(s.title)}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}">${art ? '<i class="upa"></i>' : ""}<div class="upc">
     <div class="eye"><i class="mdot"></i>${esc(up.label.toLowerCase())}${sea?.label && s.seasons.length > 1 ? " · " + esc(sea.label.toLowerCase()) : ""}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h1>${esc(s.title)}</h1>
-    <div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}</div>
+    <div class="sub">${esc(sub)}</div>
     <div class="facts">${[left, src].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
-    ${tot > 1 ? `<div class="tbar">${bar}<span>${seen}/${tot}</span></div>` : ""}
-    <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span>${kbH("↵")}</button><button class="btn big" data-a="open" data-v="${esc(s.id)}">Open show${kbH("O")}</button></div>
+    ${prog}
+    <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span></button><button class="btn big" data-a="open" data-v="${esc(s.id)}">Open show</button></div>
   </div></div>`;
 }
 /* One tile per show you actually played, newest first, each pointing at the
@@ -633,21 +642,39 @@ function keepWatching(skipId) {
   }
   return out;
 }
+/* The caption is only what's left and where (TODO 236): the episode's name was cut off at this width. */
 function contCard({ s, t }, k) {
   const ep = t.ep, p = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
   const art = safeThumb(t.sea, ep) || s.banner || s.poster;
-  const meta = [epName(s, t.sea, ep), p > 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
-  return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0">
+  const meta = [p > 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
+  return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0">
     <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:${safeThumb(t.sea, ep) ? "50% 50%" : "50% 30%"}"></span>` : ""}
     <span class="enum">${esc(epCode(t.sea, ep))}</span>${p > 1 && !ep.watched ? `<i class="eprog"><i style="width:${p}%"></i></i>` : ""}
     <span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="${esc(KIND_WORD[t.kind])}">${ico("play")}</span></div>
     <h3>${esc(s.title)}</h3><small>${esc(meta)}</small></div>`;
 }
-/* This week (polish 2026-11-08, Elias picked B): the airing that matters most
-   as a wide banner (an episode out that you haven't seen, with Play, else the
-   next one with a live countdown), the rest as a day · time · title list.
-   Only what AniList states: air times from the schedule or the list's next
-   episode, "behind" from aired minus your progress. */
+/* Airing shows with episodes out that you haven't seen, newest first: they sit
+   first in Continue watching ("2 new"), so This week only counts down (TODO 236).
+   The show the hero features is left out. */
+function newEps(skipId, now) {
+  if (!aniMode()) return [];
+  return S.data.spine.entries.filter((e) => e.airing === "RELEASING" && inProg(e.status)).map((e) => airState(e, now))
+    .filter((x) => x.behind > 0 && ![x.e.local_show_id, x.e.stream_show_id].includes(skipId))
+    .sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
+}
+function newCard({ e, behind }, k) {
+  const n = (e.progress || 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
+  const art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster;
+  return `<div class="hc hcnew" style="--i:${k}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-a="${s ? "open" : "entry"}" data-v="${esc(s ? s.id : e.id)}" tabindex="0">
+    <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:50% 30%"></span>` : ""}
+    <span class="newtag">${behind} new</span><span class="enum">E${n}</span>${ep ? `<span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="Play">${ico("play")}</span>` : ""}</div>
+    <h3>${esc(e.title)}</h3><small>${ep ? (streamEp(ep) ? "online" : "disk") : ""}</small></div>`;
+}
+/* This week (polish 2026-11-08, Elias picked B): the next airing as a wide
+   banner with a live countdown, the rest beside it. Episodes already out sit in
+   Continue watching (newCard, TODO 236). Only what AniList states: air times
+   from the schedule or the list's next episode, "behind" from aired minus your
+   progress. */
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dayStart = (t) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
 function airDay(t, now) {
@@ -683,39 +710,23 @@ function airPlayEp(e, n) {
   return null;
 }
 const cdText = (t, now = Date.now(), pre = "") => (t - now > 0 ? pre + fmtIn((t - now) / 1000) : "out now");
-/* One airing show as a wide card with its art: what's out (with Play) or what's next, and a live countdown. */
-function twBanner(lead, now, k = 0) {
-  const e = lead.e, art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster, ofN = e.episodes ? ` of ${e.episodes}` : "";
-  let eye, sub, cta = "";
-  if (lead.behind) {
-    const n = e.progress + 1, ep = airPlayEp(e, n), fresh = lead.last.t && now - lead.last.t < 7 * 864e5;
-    eye = `<span class="twnew">${fresh ? "new episode" : "catch up"}</span>${lead.last.t ? `<span>${lead.behind > 1 ? `episode ${esc(lead.last.ep)} ` : ""}out ${esc(airDay(lead.last.t, now))} ${hhmm(lead.last.t)}</span>` : `<span>episode ${esc(lead.last.ep)} is out</span>`}<span>you're ${lead.behind} behind</span>`;
-    sub = `Episode ${n}${ofN}`;
-    cta = ep ? `<button class="btn pri" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>Play episode ${n}</span></button>` : ""; // nothing to play: the card itself opens the show (Elias)
-  } else {
-    eye = `<span>next episode</span>`;
-    sub = `Episode ${lead.next.ep}${ofN}`;
-  }
-  const cd = lead.next ? `<div class="twcd"><b data-cd="${lead.next.t}">${esc(cdText(lead.next.t, now))}</b><small>${lead.behind ? `episode ${esc(lead.next.ep)} · ` : ""}${esc(airDay(lead.next.t, now))} · ${hhmm(lead.next.t)}</small></div>` : "";
-  return `<div class="twb${k ? " side" : ""}" data-a="entry" data-v="${esc(e.id)}" style="--i:${k};--h:${hueOf(e.title)}">${art ? `<i class="twa" style="--art:${esc(cssUrl(art))}"></i>` : ""}${cd}
-    <div class="twc"><div class="eye">${eye}</div><h3>${esc(e.title)}</h3><div class="sub">${esc(sub)}</div>${cta ? `<div class="cta">${cta}</div>` : ""}</div></div>`;
+/* One airing show as a wide card with its art: the next episode and a live countdown. */
+function twBanner({ e, next }, now, k = 0) {
+  const art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster, ofN = e.episodes ? ` of ${e.episodes}` : "";
+  return `<div class="twb${k ? " side" : ""}" data-a="entry" data-v="${esc(e.id)}" style="--i:${k};--h:${hueOf(e.title)}${art ? `;--art:${esc(cssUrl(art))}` : ""}">${art ? '<i class="twa"></i>' : ""}<div class="twcd"><b data-cd="${next.t}">${esc(cdText(next.t, now))}</b><small>${esc(airDay(next.t, now))} · ${hhmm(next.t)}</small></div>
+    <div class="twc"><div class="eye"><span>next episode</span></div><h3>${esc(e.title)}</h3><div class="sub">Episode ${esc(next.ep)}${ofN}</div></div></div>`;
 }
 function weekHTML(list, now = Date.now()) {
-  const all = list.map((e) => airState(e, now)).filter((x) => x.behind || x.next);
+  const all = list.map((e) => airState(e, now)).filter((x) => x.next).sort((a, b) => a.next.t - b.next.t);
   if (!all.length) return "";
-  const out = all.filter((x) => x.behind).sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
-  const lead = out[0] || [...all].sort((a, b) => a.next.t - b.next.t)[0];
-  const rest = all.filter((x) => x !== lead).sort((a, b) => (a.next?.t ?? Infinity) - (b.next?.t ?? Infinity));
-  const soon = lead.behind || (lead.next && lead.next.t < now + 7 * 864e5);
-  const banner = twBanner(lead, now);
-  const MAX = 5, shown = rest.slice(0, MAX);
-  const row = (x, k) => { const t = x.next?.t, today = t && dayStart(t) === dayStart(now);
-    return `<button class="twr" style="--i:${k + 1}" data-a="entry" data-v="${esc(x.e.id)}"><span class="twd${today ? " is-today" : ""}">${t ? esc(airDay(t, now)) : "out"}</span>${poster(x.e.title, x.e.poster, { c: "twp" })}
-      <span class="twt"><b>${esc(x.e.title)}</b><small>${t ? `episode ${esc(x.next.ep)} · ${hhmm(t)}` : `episode ${esc(x.last.ep)}`}</small></span><span class="twin">${t ? `<span data-cd="${t}" data-pre="in ">${esc(cdText(t, now, "in "))}</span>` : ""}${x.behind ? `<em>${x.behind} behind</em>` : ""}</span></button>`; };
-  const more = rest.length - shown.length;
+  const [lead, ...rest] = all, soon = lead.next.t < now + 7 * 864e5;
+  const MAX = 5, shown = rest.slice(0, MAX), more = rest.length - shown.length;
+  const row = (x, k) => { const t = x.next.t, today = dayStart(t) === dayStart(now);
+    return `<button class="twr" style="--i:${k + 1}" data-a="entry" data-v="${esc(x.e.id)}"><span class="twd${today ? " is-today" : ""}">${esc(airDay(t, now))}</span>${poster(x.e.title, x.e.poster, { c: "twp" })}
+      <span class="twt"><b>${esc(x.e.title)}</b><small>episode ${esc(x.next.ep)} · ${hhmm(t)}</small></span><span class="twin"><span data-cd="${t}" data-pre="in ">${esc(cdText(t, now, "in "))}</span></span></button>`; };
   const side = !shown.length ? "" : shown.length <= 2 ? `<div class="twl few">${shown.map((x, k) => twBanner(x, now, k + 1)).join("")}</div>` : `<div class="twl">${shown.map(row).join("")}</div>`;
-  return `<section class="hsec tw"><div class="sh"><h2>${soon ? "This week" : "Coming up"}</h2><span class="mut">airing on Watching</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}${ico("arrowr")}</button></div>
-    <div class="twg${side ? "" : " solo"}">${banner}${side}</div></section>`;
+  return `<section class="hsec tw"><div class="sh"><h2>${soon ? "This week" : "Coming up"}</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">${more ? `${more} more in the Calendar` : "Calendar"}${ico("arrowr")}</button></div>
+    <div class="twg${side ? "" : " solo"}">${twBanner(lead, now)}${side}</div></section>`;
 }
 function Home() {
   if (isPhone()) return HomePhone();
@@ -725,19 +736,28 @@ function Home() {
   const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
   const airing = aniMode() ? d.spine.entries.filter((e) => e.airing === "RELEASING" && e.next_episode && inProg(e.status))
     .sort((a, b) => (airsIn(a.next_episode) ?? Infinity) - (airsIn(b.next_episode) ?? Infinity)) : [];
-  const next = airing[0], inprog = L.length + (up ? 1 : 0);
-  const sum = [inprog ? `<span><b>${inprog}</b> in progress</span>` : "", next ? `<span><button class="sumlink" data-a="entry" data-v="${esc(next.id)}">${esc(next.title)}</button> ${(airsIn(next.next_episode) ?? 0) > 0 ? "airs in " + esc(fmtIn(airsIn(next.next_episode))) : "is out"}</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+  // the PC (not the portrait tablet): no page heading, new episodes first in Continue watching (TODO 236)
+  const wide = !isTabletP(), mut = (t) => (wide ? "" : `<span class="mut">${t}</span>`);
+  let hello = "";
+  if (!wide) {
+    const next = airing[0], inprog = L.length + (up ? 1 : 0);
+    const sum = [inprog ? `<span><b>${inprog}</b> in progress</span>` : "", next ? `<span><button class="sumlink" data-a="entry" data-v="${esc(next.id)}">${esc(next.title)}</button> ${(airsIn(next.next_episode) ?? 0) > 0 ? "airs in " + esc(fmtIn(airsIn(next.next_episode))) : "is out"}</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
+    hello = `<div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>`;
+  }
+  const arrows = `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>`;
   let body = "";
-  if (isTabletP()) body += homePair(L, airing);
+  if (!wide) body += homePair(L, airing);
   else {
-    if (L.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip">${L.map(contCard).join("")}</div></section>`;
+    const out = newEps(up?.s.id, Date.now()), outIds = new Set(out.flatMap((x) => [x.e.local_show_id, x.e.stream_show_id]));
+    const tiles = [...out.map(newCard), ...L.filter((x) => !outIds.has(x.s.id)).map((x, k) => contCard(x, out.length + k))];
+    if (tiles.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="fill"></span>${arrows}</div><div class="strip hstrip">${tiles.join("")}</div></section>`;
     if (airing.length && typeof loadSched === "function" && (!S.sched || (S.sched.at && Date.now() - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out
     body += weekHTML(airing);
   }
   const recs = recsFor();
   body += plHomeHTML(); // pinned playlists (Decision 64)
-  if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="mut">from AniList, based on what you rated highly</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
-  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="mut">on disk, not started</span><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
+  if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2>${mut("from AniList, based on what you rated highly")}<span class="fill"></span>${arrows}</div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
+  else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2>${mut("on disk, not started")}<span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
     `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
   if (!up && !L.length) {
     body = `<div class="emptyx"><div class="eico">${ico("tv")}</div>${d.shows.length
@@ -745,7 +765,7 @@ function Home() {
       : d.stream_ready || S.settings?.android ? `<b>Nothing watched yet</b><span>Search for a show to start watching${S.settings?.android ? "." : " — or add your anime folder in Settings → Library."}</span>`
       : `<b>Your library is empty</b><span>Choose your anime folder in Settings → Library.</span>`}</div>` + body;
   }
-  return `<div class="home2"><div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>${up ? heroHTML(up) : ""}${body}</div>`;
+  return `<div class="home2${wide ? " wide" : ""}">${hello}${up ? heroHTML(up, wide) : ""}${body}</div>`;
 }
 /* TODO 65: AniList's recommendations of your best-rated shows, minus what's on
    your lists (the hub ranks them); a poster opens its page, + Planning adds it. */
@@ -758,7 +778,7 @@ function recsFor() {
 function recCard(r, k = 0) {
   const disk = (S.data.shows || []).some((s) => s.meta?.anilist_id === r.id);
   const facts = [fmtName(r.format), r.year].filter(Boolean).join(" · ");
-  return `<div class="rec" style="--i:${k}"><button class="rcv" data-a="recopen" data-v="${r.id}" aria-label="${esc(r.title)}"><span class="pw">${poster(r.title, r.poster)}</span>${disk ? '<span class="tg src">on disk</span>' : ""}</button>
+  return `<div class="rec" style="--i:${k}${r.poster ? `;--art:${esc(cssUrl(pic(r.poster)))}` : ""}"><button class="rcv" data-a="recopen" data-v="${r.id}" aria-label="${esc(r.title)}"><span class="pw">${poster(r.title, r.poster)}</span>${disk ? '<span class="tg src">on disk</span>' : ""}</button>
     <button class="radd" data-a="recadd" data-v="${r.id}" title="Add to Planning">${ico("plus")}Planning</button>
     <b>${esc(r.title)}</b><small>${r.because ? `because you liked <em>${esc(r.because.title)}</em>` : esc(facts)}</small></div>`;
 }
@@ -1395,19 +1415,18 @@ function entryCard(e, i) {
   const res = tg && tg.kind === "resume" && inProg(e.status) ? tg : null;
   const prog = e.progress || 0, pct = e.episodes ? Math.min(100, Math.round((100 * prog) / e.episodes)) : 0;
   /* The poster stays clean (Elias): the score is a key badge by the title, like the top bar's; phones keep only progress below it. */
-  /* Phones: on Planning, whether it's on disk (it can start at once); on All, which list it's on. */
-  const ph = isPhone(), disk = ph && e.status === "PLANNING" && (e.capability === "installed" || e.capability === "partial");
-  const facts = ph ? phoneFact(e) : e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
-  const pre = (ph && S.lib.tab === "ALL" ? esc(statusLabel(e.status)) + " · " : "") + (disk ? `<span class="dsk">${ico("disk")}${e.capability === "partial" ? "some on disk" : "on disk"}</span> · ` : "");
+  /* Phone rows: on Planning, whether it's on disk (it can start at once); on All, which list it's on. The phone's
+     poster grid says "3 / 13" under the title, as before TODO 239 (Elias: "just like how it was before"). */
+  const ph = isPhone(), rows = ph && libView() === "rows", disk = rows && e.status === "PLANNING" && (e.capability === "installed" || e.capability === "partial");
+  const facts = rows ? phoneFact(e) : e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
+  const pre = (rows && S.lib.tab === "ALL" ? esc(statusLabel(e.status)) + " · " : "") + (disk ? `<span class="dsk">${ico("disk")}${e.capability === "partial" ? "some on disk" : "on disk"}</span> · ` : "");
   const more = ph ? "" : [fmtName(e.format), e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
   /* Sorting or filtering by the average shows the average, or the order would look random. */
   const byAvg = S.lib.sort === "average" || Array.isArray(S.lib.average);
   const badge = byAvg ? (e.average ? `<span class="kb" title="AniList average">${e.average}</span>` : "")
     : e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : "";
-  /* Phone posters carry no text; sorted by a score, the number sits on the poster, or the order looks random. */
-  const onArt = ph && badge && (byAvg || S.lib.sort === "score") ? badge.replace('class="kb"', 'class="kb pkb"') : "";
-  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}"${ph ? ` aria-label="${esc(e.title)}"` : ""}>
-    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}${onArt}
+  return `<button class="card" style="--i:${Math.min(i, 24)}${e.poster ? `;--art:${esc(cssUrl(pic(e.poster)))}` : ""}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}"${ph ? ` aria-label="${esc(e.title)}"` : ""}>
+    <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}
     ${res ? `<span class="resume-tag">${ico("play")}${esc(epCode(res.sea, res.ep))}${res.ep.position ? " · " + fmtTime(res.ep.position) : ""}</span>` : ""}
     ${inProg(e.status) && pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
     <h3><span class="ttl">${e.favourite ? `<span class="fav" title="Favourite">${ico("heart")}</span>` : ""}${esc(e.title)}</span>${badge}</h3>
@@ -1415,7 +1434,7 @@ function entryCard(e, i) {
 }
 function showCard(s, i) {
   const total = epTotal(s), w = epWatched(s), pct = total ? Math.round((100 * w) / total) : 0;
-  return `<button class="card" style="--i:${Math.min(i, 24)}" data-a="open" data-v="${esc(s.id)}" data-poster="${esc(s.poster || "")}">
+  return `<button class="card" style="--i:${Math.min(i, 24)}${s.poster ? `;--art:${esc(cssUrl(pic(s.poster)))}` : ""}" data-a="open" data-v="${esc(s.id)}" data-poster="${esc(s.poster || "")}">
     <div class="pw">${poster(s.title, s.poster, { wait: S.data.meta_running && !s.poster })}
     ${pct ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}</div>
     <h3>${esc(s.title)}</h3><div class="m">${w} / ${total}${s.collection ? " · " + esc(s.collection) : ""}</div></button>`;
@@ -1602,6 +1621,7 @@ function scanNote() {
 }
 /* Local mode is disk-only (source filter locked) until ani-cli streams add "online" entries. */
 const srcLocked = () => localMode() && !S.data.spine.entries.some((e) => e.capability === "online");
+const clearFilters = () => { for (const k of ["fmt", "air", "year", "score", "average"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; };
 const filtersActive = () => ["fmt", "air"].some((k) => S.lib[k] !== "all") || S.lib.genres.length > 0 || ["year", "score", "average"].some((k) => Array.isArray(S.lib[k])) || (!srcLocked() && S.lib.src !== "all");
 const revBtn = () => `<button type="button" class="btn ic srev${S.lib.rev ? " on" : ""}" data-a="srev" aria-pressed="${!!S.lib.rev}" aria-label="Reverse order" title="Reverse order">${ico("sort")}</button>`;
 const fsel = (k, label, opts, locked) => {
@@ -2048,7 +2068,7 @@ function fileLangs(ep) {
    ✓, play on hover, the ⋯ menu — and the title + a mono fact line below. */
 const minsOf = (sec, fallbackMin) => (sec ? Math.round(sec / 60) : fallbackMin || 0);
 function tileHTML({ cls, a, v, i, art, pos, num, pct, dlPct, loading, watched, picking, picked, title, meta, menu }) {
-  return `<div class="${cls}" tabindex="0" data-a="${a}" data-v="${esc(v)}" style="--i:${Math.min(i, 16)}">
+  return `<div class="${cls}" tabindex="0" data-a="${a}" data-v="${esc(v)}" style="--i:${Math.min(i, 16)}${art ? `;--art:${esc(cssUrl(art))}` : ""}">
     <div class="epa"><span class="epimg" data-bg="${esc(art || "")}" data-bp="${pos}"></span>
     ${pct ? `<i class="eprog"><i style="width:${pct}%"></i></i>` : ""}${dlPct != null ? `<i class="eprog dl"><i style="width:${dlPct}%"></i></i>` : ""}
     <span class="eplay">${loading ? '<i class="spin"></i>' : ico("play")}</span><span class="enum">${esc(num)}</span>
@@ -2749,8 +2769,9 @@ function entryHTML(f, pending) {
   <div class="ef two"><div><span class="cap">started</span>${dateField("started_at", "Start date", f.started_at)}</div><div><span class="cap">finished</span>${dateField("completed_at", "Finish date", f.completed_at)}</div></div>`;
 }
 /* Your list on the page (Decision 67): one quiet line — status · score ·
-   since — that opens the editor, and Home's tick bar for the progress
-   (a plain bar past 40 episodes). Favourite and Edit sit in the actions. */
+   since — that opens the editor, and the progress bar Home uses there: on
+   phones and the PC one plain bar like the banner's (TODO 236), on portrait
+   tablets ticks up to 40 episodes. Favourite and Edit sit in the actions. */
 function entryStats(f, pending) {
   if (!f.status && !pending) return `<p class="mline"><span>not on your list yet</span><button class="add" data-a="eadd">${ico("plus")}add to planning</button></p>`;
   const max = f.score_max || 10, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
@@ -2758,7 +2779,7 @@ function entryStats(f, pending) {
   const got = Math.min(total || Infinity, f.local || f.progress == null ? (fe ? fe.slots.filter((x) => x.watched).length : show ? epWatched(show) : 0) : f.progress);
   const since = f.completed_at ? "until " + f.completed_at : f.started_at ? "since " + f.started_at : "";
   const where = pending ? '<span class="warn">waiting to sync</span>' : f.local ? "<span>on this PC</span>" : "";
-  const bar = !total ? "" : total <= 40 ? `<span class="ticks">${Array.from({ length: total }, (_, i) => `<i class="${i < got ? "s" : ""}" style="--i:${i}"></i>`).join("")}</span>`
+  const bar = !total ? "" : total <= 40 && isTabletP() ? `<span class="ticks">${Array.from({ length: total }, (_, i) => `<i class="${i < got ? "s" : ""}" style="--i:${i}"></i>`).join("")}</span>`
     : `<span class="tline"><i style="width:${(100 * got / total).toFixed(1)}%"></i></span>`;
   return `<button class="mline" data-a="edit" title="Edit entry"><b>${esc(statusLabel(f.status).toLowerCase())}</b><i class="sep"></i><span>your score ${f.score ? esc(f.score) : "–"}${max !== 10 ? " / " + max : ""}</span>${since ? `<i class="sep"></i><span>${esc(since)}</span>` : ""}${where ? `<i class="sep"></i>${where}` : ""}</button>
     ${total > 1 ? `<div class="tbar">${bar}<span>${got}/${total}</span></div>` : ""}${aheadLine(f, pending, fe)}`;
@@ -3320,6 +3341,7 @@ function setSections(s) {
       + fontRows(s) + srow("Zoom", "Makes everything bigger or smaller.", pick("Zoom", "zoompick", null, zooms, String(zoomGet()))))
       + g("Around the app", srow("Top bar", "How the tabs at the top look.", lookSeg("bar", [["tabs", "Tabs"], ["classic", "Classic"], ["line", "Line"], ["capsule", "Capsule"], ["island", "Island"]], "Top bar"))
       + srow("Background art", "Soft: only a dim haze of the show's colours.", lookSeg("art", [["full", "Full"], ["soft", "Soft"], ["off", "Off"]], "Background art"))
+      + srow("Glow", "The light around pictures and progress bars.", lookSeg("glow", [["on", "On"], ["pictures", "Pictures only"], ["bars", "Progress bars only"], ["off", "Off"]], "Glow")) // TODO 236: Elias isn't sure about it yet
       + srow("Film grain", "A light texture over the background.", lookSeg("grain", [["on", "On"], ["off", "Off"]], "Film grain"))
       + srow("Motion", "Calm drops drifting and pulsing.", lookSeg("motion", [["full", "Full"], ["calm", "Calm"], ["off", "Off"]], "Motion"))),
     library: s.android && !s.files_ok ? g("Your files", filesAsk()) + g("Shows", srow("Hide spoilers", "Unstarted episodes show no title and a blurred picture.", onoff("hide_spoilers", "Hide spoilers", s.hide_spoilers)) + plFanRow()) : g("Folders", srow("Library folder", `${esc(stateTxt[s.scan?.state] || "")} ${s.scan?.state === "unconfigured" ? "Choose the folder that holds your anime." : "Browse to pick another one."}${changed ? " The configured folder differs from the indexed one — connect it to pick your shows back up." : ""}`,
@@ -4315,7 +4337,7 @@ function paintNav() {
   paintTabbar(); paintSide(); paintTop();
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   const links = $("#links");
-  links.innerHTML = TABS.map(([k, n], i) => `<button class="link ${cur === k ? "on" : ""}" ${cur === k ? 'aria-current="page"' : ""} data-a="go" data-v="${k}">${n}<kbd>${i + 1}</kbd></button>`).join("");
+  links.innerHTML = TABS.map(([k, n]) => `<button class="link ${cur === k ? "on" : ""}" ${cur === k ? 'aria-current="page"' : ""} data-a="go" data-v="${k}">${n}</button>`).join(""); // no key hints in the top bar (TODO 236); 1–4 still work, "keys ?" lists them
   glide(links);
   $("#setb").classList.toggle("on", cur === "settings");
   const ph = alSearchable() ? "search library or AniList" : "search your library";
@@ -4372,8 +4394,9 @@ function paintTabbar() {
   if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
   const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
   /* Phone polish (TODO 177, Elias picked A): one glass dock, search inside the
-     pill so it sits centred; the bars above it are their own pills (TODO 239). */
-  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}">${ico(i)}<span>${l}</span></button>`).join("")}<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">${ico("search")}<span>Search</span></button></div>`;
+     pill so it sits centred; the bars above it are their own pills (TODO 239).
+     Icons only, no names (Elias, TODO 236). */
+  if (!el.firstChild) el.innerHTML = `<div class="tb" role="tablist"><i class="ind"></i>${PHONE_TABS.map(([k, l, i]) => `<button role="tab" data-a="go" data-v="${k}" aria-label="${l}">${ico(i)}</button>`).join("")}<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">${ico("search")}</button></div>`;
   /* The highlight glides to the open tab (One UI 9); none on Settings. */
   let on = null;
   for (const b of el.querySelectorAll(".tb button")) { const y = b.dataset.v === cur; b.classList.toggle("on", y); b.setAttribute("aria-selected", y); if (y) on = b; }
@@ -4381,16 +4404,6 @@ function paintTabbar() {
   const ind = el.querySelector(".ind");
   ind.style.opacity = on ? "1" : "0";
   if (on) { ind.style.width = on.offsetWidth + "px"; ind.style.transform = `translateX(${on.offsetLeft}px)`; }
-}
-/* The dock shrinks while you scroll down and comes back on the way up (iOS 26). */
-let dockY = 0;
-function dockScroll() {
-  if (!isPhone()) return;
-  const y = scrollY, d = y - dockY, b = document.body;
-  if (y < 80) b.classList.remove("tb-min");
-  else if (d > 6) b.classList.add("tb-min");
-  else if (d < -6) b.classList.remove("tb-min");
-  if (Math.abs(d) > 6 || y < 80) dockY = y;
 }
 /* The highlight follows the tab's new width once the dock has changed size. */
 document.getElementById("tabbar")?.addEventListener("transitionend", (e) => { if (e.target.matches?.("#tabbar .tb button") && e.propertyName === "height") paintTabbar(); });
@@ -4417,35 +4430,53 @@ function watchRow({ s, t }) {
    what else you're watching as a rail of episode stills. */
 function upHero(up) {
   const s = up.s, ep = up.ep, sea = up.sea, art = s.poster || safeThumb(sea, ep) || s.banner; // a tall hero: the poster fits it, a wide banner would show a sliver
-  const { seen, tot, html: bar } = seasonBar(s, sea);
+  const { seen, tot } = seasonBar(s, sea);
+  /* like the PC's banner (Decision 96): this episode's bar once it's started, nothing before (TODO 236) */
+  const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = pct >= 1 && !ep.watched;
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
+  const code = epCode(sea, ep), nm = epName(s, sea, ep); // a nameless episode said once: "Episode 1", not "E1 · Episode 1" (Decision 96)
   return `<div class="uph" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
     <div class="uph-in" data-a="open" data-v="${esc(s.id)}"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
-    <h2>${esc(s.title)}</h2><div class="sub">${esc(epCode(sea, ep))} · ${esc(epName(s, sea, ep) || "Episode " + ep.number)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
-    ${tot > 1 ? `<div class="tbar">${bar}</div>` : ""}
+    <h2>${esc(s.title)}</h2><div class="sub">${esc(nm ? `${code} · ${nm}` : +(/^(?:S\d+)?E(\d+)$/.exec(code)?.[1]) === ep.number ? `Episode ${ep.number}` : `${code} · Episode ${ep.number}`)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
+    ${started ? `<div class="hbar"><i style="width:${pct.toFixed(1)}%"></i></div>` : ""}
     <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div></div>`; // the whole card opens the show; Play plays (Elias)
 }
 function contStill({ s, t }) {
   const ep = t.ep, sea = t.sea, art = safeThumb(sea, ep) || s.banner || s.poster;
   const pct = t.kind === "resume" && ep.duration ? Math.min(100, Math.round((ep.position / ep.duration) * 100)) : 0;
-  return `<div class="ccard" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"><em>${esc(epCode(sea, ep))}</em>${pct ? `<i style="width:${pct}%"></i>` : ""}<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></span>
+  return `<div class="ccard" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"><em>${esc(epCode(sea, ep))}</em>${pct ? `<i class="ccbar"><i style="width:${pct}%"></i></i>` : ""}<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></span>
     <b>${esc(s.title)}</b><small>${t.kind === "resume" ? esc(fmtLeft(ep.duration, ep.position)) + " left" : esc(epCode(sea, ep)) + " next"}</small></div>`;
+}
+/* New episodes on the phone, like the PC (TODO 236, Elias 2026-11-15: "make it
+   show for the phone, idk if i like it, will have to see"): first in Continue
+   watching with "2 new"; Play plays the first one you're missing. It goes once
+   you've caught up (AniList's progress reaches what's aired). */
+function newStill({ e, behind }) {
+  const n = (e.progress || 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
+  const art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster;
+  return `<div class="ccard ccnew" data-a="${s ? "open" : "entry"}" data-v="${esc(s ? s.id : e.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(e.title)}`}"><span class="newtag">${behind} new</span><em>E${n}</em>${ep ? `<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="Play ${esc(e.title)} episode ${n}">${ico("play")}</button>` : ""}</span>
+    <b>${esc(e.title)}</b><small>E${n} next</small></div>`;
 }
 function HomePhone() {
   const d = S.data, up = nextUpInfo(), L = keepWatching(up && up.s.id), airing = airingList(), now = Date.now();
-  const soon = airing.filter((e) => airAt(e, now) > now - 3600e3).slice(0, 3);
+  const out = newEps(up?.s.id, now), outIds = new Set(out.flatMap((x) => [x.e.local_show_id, x.e.stream_show_id]));
+  // This week only counts down: an episode that's out sits in Continue watching instead
+  const soon = airing.filter((e) => airAt(e, now) > now - 3600e3 && !out.some((x) => x.e.id === e.id && airAt(e, now) <= now)).slice(0, 3);
   const touched = new Set((d.history || []).map((e) => e.show_id));
   const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
   const sum = [L.length + (up ? 1 : 0) ? `<span><b>${L.length + (up ? 1 : 0)}</b> in progress</span>` : "", airing.length ? `<span><b>${airing.length}</b> airing</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
   let body = up ? upHero(up) : "";
-  if (L.length) body += `<section class="psec"><div class="sh"><h2>Continue watching</h2><span class="mut">${L.length}</span></div><div class="crail">${L.map(contStill).join("")}</div></section>`;
+  // no count beside the title: the cards show how many (TODO 236, like the PC)
+  if (airing.length && (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out, as on the PC
+  const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(x.s.id)).map(contStill)];
+  if (tiles.length) body += `<section class="psec"><div class="sh"><h2>Continue watching</h2></div><div class="crail">${tiles.join("")}</div></section>`;
   if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
   const recs = recsFor();
   body += plHomeHTML(); // pinned playlists (Decision 64)
   if (recs.length) body += `<section class="hsec"><div class="sh"><h2>Recommended for you</h2><span class="fill"></span><button class="btn sm disc" data-a="deck" data-v="recs">${ico("up")}Discover</button></div><div class="strip hstrip recs">${recs.map(recCard).join("")}</div></section>`;
   else if (fresh.length) body += `<section class="hsec"><div class="sh"><h2>Ready to start</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="library">All shows${ico("arrowr")}</button></div><div class="rdy">${fresh.map((s, k) =>
     `<button class="rc" style="--i:${k}" data-a="open" data-v="${esc(s.id)}"><span class="pw">${poster(s.title, s.poster)}</span><b>${esc(s.title)}</b><small>${epTotal(s)} episode${epTotal(s) === 1 ? "" : "s"} · disk</small></button>`).join("")}</div></section>`;
-  if (!up && !L.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : S.settings?.android ? "Search for a show to start watching." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
+  if (!up && !tiles.length) body = `<div class="emptyx"><div class="eico">${ico("tv")}</div><b>Nothing watched yet</b><span>${d.shows.length ? "Your library is waiting." : S.settings?.android ? "Search for a show to start watching." : "Choose your anime folder in Settings → Library."}</span>${d.shows.length ? '<button class="btn pri" data-a="go" data-v="library">Browse library</button>' : ""}</div>` + body;
   return `<div class="home2 phone${up ? " has-uph" : ""}">${up ? "" : `<div class="hello"><h1 class="hd">${dayWord(new Date().getHours())}</h1>${sum ? `<div class="sum">${sum}</div>` : ""}</div>`}${body}</div>`;
 }
 /* Tablet portrait: what you're watching and the week side by side. */
@@ -4793,7 +4824,7 @@ function paintSide() {
 /* What the page shows, as classes on <body> for the CSS (pg-*). They were
    body:has(...) rules: every change anywhere on the page then re-checked
    the whole page's styles, ~300 ms of a phone's Library switch (TODO 213). */
-const PAGE_MARKS = [["pg-fr", ".frpage"], ["pg-sfr", ".sp2.frpage"], ["pg-uph", ".home2.has-uph"],
+const PAGE_MARKS = [["pg-fr", ".frpage"], ["pg-sfr", ".sp2.frpage"], ["pg-uph", ".home2.has-uph"], ["pg-home", ".home2.wide"],
   ["pg-back", ".sp2 .backbtn:not([data-a=rmtclose]), .set2 .sback"]];
 function pageMarks(app = $("#app")) {
   for (const [cls, sel] of PAGE_MARKS) document.body.classList.toggle(cls, !!app.querySelector(sel));
@@ -5219,6 +5250,8 @@ function AniDlg() {
 /* MyAnimeList as the account (Decision 75). Show info stays AniList's. MAL
    sends the browser back to port 8787 only: on another port, the address it
    lands on is pasted here. */
+/* MAL's API terms (§4(f)) want the privacy rules shown before someone signs in (TODO 29). */
+const MAL_PRIVACY = '<button class="lnk" data-a="ext" data-v="https://github.com/Elias8832/AnimeHub#privacy">Privacy ›</button>';
 function MalDlg() {
   const a = S.ani || {}, m = a.mal || {}, me = a.accounts?.mal || {}, in_use = a.service === "mal", on = !!me.connected, n = in_use ? S.alData?.unmatched?.length || 0 : 0;
   const state = on ? (in_use ? "In use." : "Paused: AniList is in use.")
@@ -5226,6 +5259,7 @@ function MalDlg() {
   return dlHead("MyAnimeList")
     + dlBody(`<p class="sub">Show info still comes from AniList.</p>
     ${srow("Account", state, pkdo(on ? whoTxt(me.user) + '<button class="btn" data-a="aniout" data-v="mal">Disconnect</button>' : m.client_id_configured ? '<button class="btn pri" data-a="maloauth">Connect via MyAnimeList</button>' : dotTxt("No app id", "")))}
+    ${!on && m.client_id_configured ? `<p class="sub">Your login and list stay on your devices. ${MAL_PRIVACY}</p>` : ""}
     ${on && n ? srow("Not in the library", `${n} entr${n === 1 ? "y has" : "ies have"} no AniList match.`, "") : ""}
     ${!on && !m.client_id_configured ? '<p class="sub">This copy of Anime Hub has no MyAnimeList app id. Add <code>mal_client_id</code> to the config file.</p>' : ""}
     ${!on && m.client_id_configured ? `${srow("After you approve", location.port !== "8787" ? `Paste the address MyAnimeList sends you to (port 8787; this hub runs on ${esc(location.port || "80")}).` : "If the page you land on asks, paste its address here.", "")}
@@ -6119,10 +6153,10 @@ function nav(view, fn, quiet) {
   const go = () => {
     const prev = S.view;
     backSave();
-    S.navIn = true; S.navQuiet = !!quiet; S.view = view; clearSearch(); fIdx = -1; document.body.classList.remove("tb-min");
+    S.navIn = true; S.navQuiet = !!quiet; S.view = view; clearSearch(); fIdx = -1;
     if (view === "library" && !quiet) S.fadeNext = true;
     if (fn) fn(prev);
-    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); dockY = scrollY; pushNav();
+    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); pushNav();
   };
   if (quiet) { go(); return calmIn($("#app")); }
   dip(go);
@@ -7026,7 +7060,7 @@ function matchAdvance(done) {
 /* ---------- actions ---------- */
 const A = {
   strip: (v, t) => { const st = t.closest("section")?.querySelector(".strip") || $("#app .strip"); st && st.scrollBy({ left: +t.dataset.d * st.clientWidth * 0.8, behavior: reduceMotion() ? "auto" : "smooth" }); },
-  fclear: () => { for (const k of ["fmt", "air", "year", "score", "average"]) S.lib[k] = "all"; S.lib.genres = []; if (!srcLocked()) S.lib.src = "all"; saveLib(); if ($(".fsheet .filters")) return fltRepaint(); S.fadeNext = true; render(); },
+  fclear: () => { clearFilters(); saveLib(); if ($(".fsheet .filters")) return fltRepaint(); S.fadeNext = true; render(); },
   airgo: (v) => {
     const c = S.airCal;
     if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
@@ -7075,10 +7109,11 @@ const A = {
     }
     if (v === "settings") { S.setOpen = false; setClear(); }
     const same = v === S.view || (v === "history" && S.view === "stats");
-    /* Library again, while on it: back to All shows (and to the top). Phones
-       pick the list in the bar, so there it only goes to the top (TODO 239). */
-    if (v === "library" && same && S.lib.tab !== "ALL" && !isPhone()) {
-      S.lib.tab = "ALL"; saveLib(); S.fadeNext = true; render();
+    /* Library again, while on it: back to All shows with no filters (and to
+       the top), on the phone and the PC alike (Elias, TODO 236). Sort,
+       grouping and grid/rows stay: they're how you look, not what. */
+    if (v === "library" && same && (S.lib.tab !== "ALL" || filtersActive())) {
+      S.lib.tab = "ALL"; clearFilters(); saveLib(); S.fadeNext = true; render();
       scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
       return;
     }
@@ -8160,7 +8195,7 @@ const SHELL = new URLSearchParams(location.search).has("shell");
 const zoomGet = () => { const v = lsGet("hubZoom", 100); return typeof v === "number" && v >= ZOOM_MIN && v <= ZOOM_MAX ? Math.round(v) : 100; };
 function applyLook() {
   const d = document.documentElement, a = accentGet();
-  d.dataset.motion = lookGet("motion"); d.dataset.art = lookGet("art"); d.dataset.bar = lookGet("bar"); d.dataset.plfan = lookGet("fan"); d.dataset.grain = grainGet() ? "on" : "off";
+  d.dataset.motion = lookGet("motion"); d.dataset.art = lookGet("art"); d.dataset.bar = lookGet("bar"); d.dataset.plfan = lookGet("fan"); d.dataset.glow = lookGet("glow"); d.dataset.grain = grainGet() ? "on" : "off";
   a === "follow" ? d.style.removeProperty("--fixed") : d.style.setProperty("--fixed", a);
   $('link[rel="icon"]')?.setAttribute("href", accentIcon(a));
   applyFonts();
@@ -8301,7 +8336,7 @@ function paintTop() {
   if (!el) { el = document.createElement("button"); el.id = "totop"; el.dataset.a = "totop"; el.setAttribute("aria-label", "Back to top"); el.innerHTML = ico("up"); document.body.append(el); }
   el.classList.toggle("on", S.view === "library" && scrollY > 500);
 }
-addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); dockScroll(); }, { passive: true });
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); }, { passive: true }); // the dock keeps its size while you scroll (Elias, TODO 236)
 /* The show page's art fades into the dark as you scroll (Decision 67): --sd
    on the wash layer alone, once per frame. */
 function artDim() {

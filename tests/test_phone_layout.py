@@ -31,7 +31,8 @@ class PhoneLayout(unittest.TestCase):
         """Phone pages branch off at the top; the PC builders keep running."""
         self.assertIn("function Home() {\n  if (isPhone()) return HomePhone();", APP)
         self.assertIn("if (isPhone() && !S.setOpen) return settingsList(tabs, s);", APP)
-        self.assertIn("if (isTabletP()) body += homePair(L, airing);", APP)
+        self.assertIn("const wide = !isTabletP()", APP)  # the portrait tablet keeps its pair; the PC Home is .wide (TODO 236)
+        self.assertIn("if (!wide) body += homePair(L, airing);", APP)
 
     def test_week_is_a_view(self):
         self.assertIn('week: Week }[S.view]()', APP)
@@ -263,11 +264,23 @@ class PhonePolish(unittest.TestCase):
         self.assertIn('<i class="tsep"></i><button class="sq" data-a="sropen" aria-label="Search">', APP)
         self.assertIn("#tabbar{display:flex;position:fixed;left:12px;right:12px", CSS)
 
-    def test_dock_shrinks_on_scroll_and_resets_on_navigation(self):
-        self.assertIn("function dockScroll()", APP)
-        self.assertIn("artDim(); dockScroll(); }", APP)
-        self.assertIn('document.body.classList.remove("tb-min");', APP)
-        self.assertIn("body.tb-min{--dock:46px}", CSS)
+    def test_home_labels_and_no_count(self):
+        # the phone's Home like the PC's: small labels in the text font, no count by "Continue watching" (TODO 236)
+        self.assertIn(".home2.phone :is(.uph .eye,.cc-art em,.ccard small,.pt small,.prow .cdn,.sh .link-btn,.plcap .m,.rec small,.rec .tg){font-family:var(--ui);letter-spacing:0}", CSS)
+        self.assertIn('<h2>Continue watching</h2></div><div class="crail">', APP)
+
+    def test_home_new_episodes_in_continue_watching(self):
+        # like the PC: episodes that are out sit first in Continue watching, This week only counts down (TODO 236)
+        self.assertIn("const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(x.s.id)).map(contStill)];", APP)
+        self.assertIn('<span class="newtag">${behind} new</span><em>E${n}</em>', APP)
+        self.assertIn("!out.some((x) => x.e.id === e.id && airAt(e, now) <= now)", APP)
+        self.assertIn(".cc-art .newtag{position:absolute", CSS)
+        self.assertIn(".cc-art:has(.ccbar) .cc-go{bottom:22px}", CSS)  # play sits above the bar (Elias: "clipping")
+
+    def test_dock_keeps_its_size(self):
+        # Elias, TODO 236: no shrinking while you scroll down
+        self.assertNotIn("dockScroll", APP)
+        self.assertNotIn("tb-min", CSS)
 
     def test_bars_above_the_dock_are_their_own_pills(self):
         # Elias, TODO 239: joined to the dock as one block they "looked bad"
@@ -325,7 +338,7 @@ class PhoneLibrary(unittest.TestCase):
     def test_posters_or_rows(self):
         self.assertIn('lview: (v) => { if (libView() === v) return; S.lib.view = v; saveLib();', APP)  # remembered
         self.assertIn('const lv = isPhone() && (m.cold || S.lib.tab !== "PLAYLISTS") ? " lv-" + libView() : "";', APP)
-        self.assertIn(".lib2 .wall.lv-posters .card h3,.lib2 .wall.lv-posters .card .m{display:none}", CSS)  # posters carry no text
+        self.assertNotIn(".lib2 .wall.lv-posters .card h3,.lib2 .wall.lv-posters .card .m{display:none}", CSS)  # posters keep their title again (Elias, TODO 236)
         self.assertIn(".lib2 .wall.lv-rows .card{width:100%;display:grid;grid-template-columns:56px minmax(0,1fr)", CSS)
 
     def test_sort_sheet_says_the_direction(self):
@@ -334,7 +347,9 @@ class PhoneLibrary(unittest.TestCase):
 
     def test_lists_sheet_and_tab_again(self):
         self.assertIn('const SIDE = { PLAYLISTS: "list", UNTRACKED: "folder", MATCH: "search" };', APP)
-        self.assertIn('if (v === "library" && same && S.lib.tab !== "ALL" && !isPhone()) {', APP)  # phones: only to the top
+        # phones too, like the PC, and the filters go too (Elias, TODO 236)
+        self.assertIn('if (v === "library" && same && (S.lib.tab !== "ALL" || filtersActive())) {', APP)
+        self.assertIn('S.lib.tab = "ALL"; clearFilters(); saveLib();', APP)
         self.assertIn("if (isPhone()) scrollTo(0, 0); // another list starts at its title", APP)
 
     def test_round_two_fixes(self):
@@ -364,7 +379,7 @@ class PhoneLibrary(unittest.TestCase):
         self.assertIn('<div class="uph-in" data-a="open" data-v="${esc(s.id)}">', APP)  # the text opens the show too (Elias)
         self.assertNotIn('aria-label="Open ${esc(s.title)}">${ico("chevr")}</button>', APP)  # no › beside Play
         self.assertIn("art = s.poster || safeThumb(sea, ep) || s.banner;", APP)  # a wide banner shows a sliver in a tall hero
-        self.assertIn('<div class="crail">${L.map(contStill).join("")}</div>', APP)
+        self.assertIn('<div class="crail">${tiles.join("")}</div>', APP)  # new episodes first, then contStill (TODO 236)
         self.assertIn(".home2.phone .rdy{flex-wrap:nowrap;overflow-x:auto", CSS)
         self.assertIn("function Home() {\n  if (isPhone()) return HomePhone();", APP)  # the PC Home is untouched
 
