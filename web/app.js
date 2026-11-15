@@ -5383,7 +5383,7 @@ function folderLine(s, n, eps) {
   if (st === "missing") return dotTxt("Can't open this folder. Pick another one.", "warn");
   if (st === "partial") return dotTxt(`Found ${shows}, but some folders in it can't be read.`, "warn");
   if (st !== "ok") return "Looking in this folder…";
-  return n ? dotTxt(`Found ${shows}${eps == null ? "" : ` · ${eps} episodes`}`) : "No shows in it yet. New ones show up by themselves.";
+  return n ? dotTxt(`Found ${shows}${eps == null ? "" : ` · ${eps} episode${eps === 1 ? "" : "s"}`}`) : "No shows in it yet. New ones show up by themselves.";
 }
 function tourLooks(s) {
   const m = s.mpv || {}, look = m.design === "own" ? "own" : m.look || "soft";

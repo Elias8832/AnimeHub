@@ -1,6 +1,6 @@
 # AnimeHub
 
-Your anime in one place. Your files and your AniList list on one page per show, played in mpv.
+Your anime in one place. Your files and your AniList list on one page per show, played in mpv, or in the Android app on your phone.
 
 ## Important!
 This app is early in development — expect bugs and breaking changes.
@@ -13,12 +13,18 @@ This app is early in development — expect bugs and breaking changes.
 - **Your files and online episodes in one list.** Missing an episode? Watch or download it from the same page. Auto-play carries on from a file to an online episode.
 - **Made for mpv.** Resume, skip openings and endings with Enter, marks on the timeline, next episode. Screenshots go to `Pictures/AnimeHub`. Your own `mpv.conf` still loads.
 - **AniList stays in sync.** Progress and scores go back to your list, even after being offline. Use MyAnimeList instead if that's where your list is.
+- **Playlists** for anything you like: a watch order, a weekend list, shows to show a friend.
 - **A calendar of what's airing**, and a Journal of what you watched.
-- **Your phone as a remote.** No app to install, and it has its own phone layout.
+- **An Android app.** Your files and online episodes on the phone, with its own phone layout. Pair it with your PC and watched episodes, stop points and playlists move between them, without any server or account.
+- **Your phone as a remote.** Pair any phone's browser with one QR code and control the PC from the couch.
 
 ![Show](docs/screenshots/show.png)
 
 ![Library](docs/screenshots/library.png)
+
+![Playlists](docs/screenshots/playlists.png)
+
+![The Android app](docs/screenshots/android.png)
 
 ## Install
 
@@ -48,6 +54,20 @@ An AniList account; ani-cli 5.1+ for online episodes (the app can fetch it, it n
 </details>
 
 <details>
+<summary>Android (new in v0.5)</summary>
+
+Android 8 or newer.
+
+1. Download `AnimeHub-android.apk` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases) and open it. Android asks to allow installing from your browser once.
+2. The first-run tour sets up the rest. For online episodes it needs [Termux from F-Droid](https://f-droid.org/packages/com.termux/) (the Play Store's version is too old), with ani-cli installed there; the tour has the commands with Copy buttons.
+3. For your own files, allow "All files access" when the app asks, then pick the folder.
+4. To sync with your PC: on the PC, turn on Settings → Phone → Phone remote; it shows a QR code. Scan it with the phone's camera and choose **Open in the app**.
+
+Downloads aren't in the Android app yet.
+
+</details>
+
+<details>
 <summary>Windows (experimental)</summary>
 
 New zips only come with bigger releases (v0.4, v0.5, …), so Windows can be a little behind. Python is inside the zip.
@@ -63,7 +83,7 @@ Won't start? Logs are in `%LOCALAPPDATA%\anime-hub-wrapper\`.
 <details>
 <summary>Updating</summary>
 
-Settings → System shows the new version: click **Install**, then **Restart now**. Your data is kept. It works for the AppImage, the Windows zip and a git copy. **From git** the copy must be on master with no changes of its own; if the window app changed, the app says to run `cargo build --release && ./install.sh` in `desktop/`. **Windows:** a version that needs a newer Python asks you to download the new zip and replace the whole folder.
+Settings → System shows the new version: click **Install**, then **Restart now**. Your data is kept. It works for the AppImage, the Windows zip, the Android app (Android asks you to confirm) and a git copy. **From git** the copy must be on master with no changes of its own; if the window app changed, the app says to run `cargo build --release && ./install.sh` in `desktop/`. **Windows:** a version that needs a newer Python asks you to download the new zip and replace the whole folder.
 
 </details>
 
@@ -88,8 +108,8 @@ Most of it is in Settings. The file is `~/.config/anime-hub/config.json` (Window
 | `anilist_client_id` | your own AniList app id, only if you change `port` |
 | `mal_client_id` | your own MyAnimeList app id |
 | `remote_port` | the phone remote's Wi-Fi port (default `port` + 1) |
-| `keep_running` | the desktop app's server stays on after you close the window (default off; Settings → Phone remote) |
-| `start_at_login` | the desktop app's server starts at login, without a window (default off; Settings → Phone remote) |
+| `keep_running` | the desktop app's server stays on after you close the window (default off; Settings → System) |
+| `start_at_login` | the desktop app's server starts at login, without a window (default off; Settings → System) |
 | `remote_hosts` | host names for reaching it through a proxy, e.g. `["pc.tailnet.ts.net"]` |
 
 Your data is all in `data_dir`. Deleting that folder is a full reset.
@@ -98,13 +118,14 @@ Your data is all in `data_dir`. Deleting that folder is a full reset.
 
 ## Privacy
 
-No tracking, no accounts, no ads. Your data stays on your PC.
+No tracking, no accounts, no ads. Your data stays on your devices.
 
 <details>
 <summary>What it talks to, and security</summary>
 
 - **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [MyAnimeList](https://myanimelist.net) (your list, only if you connect it), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (the list of all anime titles for typo-proof search: on your first AniList search, then every two weeks, 6 MB, or 62 MB on Windows; also when you get or update ani-cli, or when you check for new versions: on a click, or once a day if you say yes; you can limit this to when a VPN is on). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on. Before you click, it contacts the site only while a VPN is up (Warn without VPN off lifts that): to link a show, refresh its episode list, or get the next episode ready.
-- **Access:** the server only listens on your PC. The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or account.
+- **Phone sync:** the Android app talks straight to the PC you paired it with, over your own network. No server in between, nothing about it goes to AniList.
+- **Access:** the server only listens on your PC (in the Android app: only the app's own page can reach it). The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or account.
 - **Proxy:** through `remote_hosts` there's no password, so everyone on that network can use it.
 - **Logins:** AniList's token in `anilist_token.json`, MyAnimeList's in `mal_token.json`, readable only by your user.
 
@@ -134,6 +155,7 @@ GPL-3.0. See [LICENSE](LICENSE).
 - AniList data is kept on your PC only to show it, never as a backup. Free and non-commercial, following the [AniList API terms](https://docs.anilist.co/guide/terms-of-use).
 - Typo-proof search uses the [anime-offline-database](https://github.com/manami-project/anime-offline-database) by manami-project, under the [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) / [DbCL 1.0](https://opendatacommons.org/licenses/dbcl/1-0/). Only its titles and AniList links are kept.
 - Playback by [mpv](https://mpv.io).
+- The Android app runs the same Python code through [Chaquopy](https://chaquo.com/chaquopy/) (MIT) and starts ani-cli through [Termux](https://termux.dev). Python's and Chaquopy's licence texts ship inside the app.
 - Sharper banners by [Upscayl](https://upscayl.org), if you install it.
 - Playlist icons: [Lucide](https://lucide.dev), ISC licence (text in `web/icons/LICENSE-lucide.txt`).
 - Fonts: [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk), [Inter](https://github.com/rsms/inter) (its digits), [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Barlow Condensed](https://github.com/jpt/barlow), all under the SIL Open Font License 1.1 (licence texts in `web/fonts/`). `mpv/fonts/` holds the same fonts as plain TTF files for the player's controls.

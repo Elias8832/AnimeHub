@@ -661,6 +661,7 @@ class Polish(unittest.TestCase):
         fn = APP[APP.index("function folderLine("):APP.index("function tourLooks(")]
         self.assertIn('"No shows in it yet. New ones show up by themselves."', fn)
         self.assertIn('if (st !== "ok") return "Looking in this folder…";', fn)
+        self.assertIn('${eps} episode${eps === 1 ? "" : "s"}', fn)  # "1 episodes" (v0.5 cold run)
         self.assertNotIn("There is a problem with this folder", APP)
         self.assertIn('srow("Library folder", folderLine(s, n, eps),', APP)
         self.assertIn('srow("Your files", folderLine(s, n),', APP)  # the Android tour
