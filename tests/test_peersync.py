@@ -5,6 +5,8 @@ entries go to the newer side, and pairing runs through the phone remote's
 real listener."""
 import json
 import shutil
+import threading
+import time
 import unittest
 import urllib.request
 from contextlib import contextmanager
@@ -273,6 +275,64 @@ class Lists(unittest.TestCase):
             self.assertIsNone(c.execute("SELECT 1 FROM curation WHERE ref='sid:abc'").fetchone())
 
 
+class UseThePcs(unittest.TestCase):
+    """Pairing with "Use the PC's" (Decision 98): the first sync makes this
+    device look like the PC and sends the PC nothing; later syncs merge."""
+
+    def setUp(self):
+        fresh()
+        paired()
+        with device(APP_DB), database.db() as c:
+            c.execute("UPDATE sync_peer SET take='pc'")
+
+    def test_the_phone_gives_way_and_the_pc_is_untouched(self):
+        ep(PC_DB, "stream:5:1", 1, 0, 1420, "2026-11-10 20:00:00")
+        ep(PC_DB, "stream:5:2", 0, 300, 1420, "2026-11-09 20:00:00")
+        ep(APP_DB, "stream:5:2", 1, 0, 1420, "2026-11-12 20:00:00")   # further along here, still the PC's wins
+        ep(APP_DB, "stream:9:3", 0, 812, 1400, "2026-11-11 08:00:00")  # only here: cleared
+        with device(PC_DB):
+            playlists.create("Winter", {"ref": "aid:1", "title": "Frieren"})
+        with device(APP_DB):
+            playlists.create("Test list", {"ref": "aid:7", "title": "Test"})
+        for path, status in ((PC_DB, "COMPLETED"), (APP_DB, "CURRENT")):
+            with device(path), database.db() as c:
+                c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('aid:5', ?, '2026-11-01 10:00:00')", (status,))
+        with device(APP_DB), database.db() as c:
+            c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('aid:8', 'PLANNING', '2026-11-13 10:00:00')")
+        self.assertEqual(sync()["pushed"], 0)
+        self.assertEqual(row(APP_DB, "stream:5:1"), (True, 0, 1420, "2026-11-10 20:00:00"))
+        self.assertEqual(row(APP_DB, "stream:5:2"), (False, 300, 1420, "2026-11-09 20:00:00"))
+        self.assertEqual(row(APP_DB, "stream:9:3"), (False, 0, 1400, None))  # its length stays
+        self.assertIsNone(row(PC_DB, "stream:9:3"))
+        with device(APP_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Winter"])
+            with database.db() as c:
+                self.assertEqual(c.execute("SELECT ref, status FROM curation ORDER BY ref").fetchall(), [("aid:5", "COMPLETED")])
+            self.assertIsNone(peersync.peer()["take"])
+        with device(PC_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Winter"])
+            with database.db() as c:
+                self.assertEqual(c.execute("SELECT status FROM curation WHERE ref='aid:5'").fetchone()[0], "COMPLETED")
+        # From now on it merges both ways.
+        ep(APP_DB, "stream:5:3", 0, 90, 1420, "2026-11-14 20:00:00")
+        sync()
+        self.assertEqual(row(PC_DB, "stream:5:3"), (False, 90, 1420, "2026-11-14 20:00:00"))
+        with device(PC_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Winter"])  # the dropped list stays gone
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+
+    def test_combine_is_the_default(self):
+        ep(APP_DB, "stream:9:3", 1, 0, 1400, "2026-11-11 08:00:00")
+        with device(APP_DB), database.db() as c:
+            c.execute("UPDATE sync_peer SET take=NULL")
+        sync()
+        self.assertEqual(row(PC_DB, "stream:9:3"), (True, 0, 1400, "2026-11-11 08:00:00"))
+
+    def test_an_unknown_choice_is_refused(self):
+        with self.assertRaises(peersync.SyncError):
+            peersync.pair("192.168.2.31:8789", "123456", "phone")
+
+
 class HomeShowsWhatCameOver(unittest.TestCase):
     """An episode played on the other device, of a show this one has neither
     on disk nor linked online, is on Home and in History (Decision 91)."""
@@ -307,6 +367,132 @@ class HomeShowsWhatCameOver(unittest.TestCase):
             d = self.library()
         self.assertEqual(asked, [999])
         self.assertFalse(any(s["id"] == "aid:999" for s in d["streams"]))
+
+
+class RemoveFromHome(unittest.TestCase):
+    """"Remove from Home" travels by AniList id (Decision 99): an online show
+    is "aid:<id>" on both, a folder of files holds its entries."""
+
+    def setUp(self):
+        fresh()
+        paired()
+
+    def hidden(self, path):
+        with device(path), database.db() as c:
+            return dict(c.execute("SELECT show_id, at FROM continue_hidden").fetchall())
+
+    def hide(self, path, sid, hide=True):
+        with device(path):
+            library.hide_continue(sid, hide)
+
+    def test_a_removal_on_the_pc_reaches_the_phone_and_back(self):
+        self.hide(PC_DB, "aid:5")
+        sync()
+        self.assertEqual(self.hidden(APP_DB), self.hidden(PC_DB))
+        self.hide(APP_DB, "aid:9")
+        sync()
+        self.assertIn("aid:9", self.hidden(PC_DB))
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+
+    def test_an_undo_reaches_the_other_side(self):
+        self.hide(APP_DB, "aid:5")
+        sync()
+        self.hide(APP_DB, "aid:5", False)
+        sync()
+        self.assertNotIn("aid:5", self.hidden(PC_DB))
+        self.hide(PC_DB, "aid:5")  # removed again later: that wins
+        with device(PC_DB), database.db() as c:
+            c.execute("UPDATE continue_hidden SET at='2099-01-01 00:00:00'")
+        sync()
+        self.assertIn("aid:5", self.hidden(APP_DB))
+
+    def test_a_folder_on_the_pc_speaks_for_its_entries(self):
+        folders = lambda: {"folder-1": {5, 6}} if config.DB == PC_DB else {}
+        with patch.object(peersync, "_show_mids", folders):
+            self.hide(PC_DB, "folder-1")
+            sync()
+            self.assertEqual(set(self.hidden(APP_DB)), {"aid:5", "aid:6"})
+            self.hide(APP_DB, "aid:5", False)
+            self.hide(APP_DB, "aid:6", False)
+            sync()
+            self.assertEqual(self.hidden(PC_DB), {})
+            self.hide(APP_DB, "aid:6")
+            with device(APP_DB), database.db() as c:  # later than the Undo
+                c.execute("UPDATE continue_hidden SET at='2099-01-01 00:00:00'")
+            sync()
+            self.assertEqual(set(self.hidden(PC_DB)), {"aid:6", "folder-1"})
+
+    def test_use_the_pcs_takes_but_sends_nothing(self):
+        with device(APP_DB), database.db() as c:
+            c.execute("UPDATE sync_peer SET take='pc'")
+        self.hide(APP_DB, "aid:9")
+        self.hide(PC_DB, "aid:5")
+        sync()
+        self.assertEqual(set(self.hidden(APP_DB)), {"aid:5", "aid:9"})
+        self.assertEqual(set(self.hidden(PC_DB)), {"aid:5"})
+
+    def test_an_older_pc_gets_nothing_it_cant_read(self):
+        real = peersync.facts_payload
+        def old():
+            f = real()
+            f.pop("home_hidden")
+            return f
+        self.hide(APP_DB, "aid:9")
+        with patch.object(peersync, "facts_payload", old):
+            sync()
+        self.assertEqual(self.hidden(PC_DB), {})
+
+    def test_a_tie_goes_to_the_undo_and_the_shape_is_checked(self):
+        mine = {"hidden": {"5": "2026-11-14 10:00:00"}, "shown": {}}
+        theirs = {"hidden": {}, "shown": {"5": "2026-11-14 10:00:00"}}
+        self.assertEqual(peersync.merge_hidden(mine, theirs),
+                         ({"hidden": {}, "shown": {"5": "2026-11-14 10:00:00"}}, {"hidden": {}, "shown": {}}))
+        for bad in ({"hidden": {"aid:5": "x"}}, {"shown": {"5": 3}}, {"hidden": []}, []):
+            self.assertIsNotNone(peersync.check_apply({"home_hidden": bad}), bad)
+        self.assertIsNone(peersync.check_apply({"home_hidden": {"hidden": {"5": "x"}}}))
+
+
+class Watch(unittest.TestCase):
+    """The app's wait on the PC (Decision 99): a new mark syncs at once."""
+
+    class Stop(BaseException):
+        pass
+
+    def run_watch(self, answers, paired_=True, away=False):
+        calls, soons = [], []
+
+        def call(address, path, token=None, body=None):
+            calls.append(path)
+            if not answers:
+                raise self.Stop()
+            a = answers.pop(0)
+            if isinstance(a, Exception):
+                raise a
+            return {"mark": a}, None
+
+        wake = patch.dict(peersync._watch, {"away": away, "wake": type("W", (), {
+            "wait": lambda self_, t=None: (_ for _ in ()).throw(Watch.Stop()) if away else None,
+            "clear": lambda self_: None, "set": lambda self_: None})()})
+        with patch.object(peersync, "_call", call), patch.object(peersync, "soon", lambda d=None: soons.append(d)), \
+                patch.object(peersync, "peer", lambda: {"address": "http://pc:1", "token": "t"} if paired_ else None), wake:
+            with self.assertRaises(self.Stop):
+                peersync.watch()
+        return calls, soons
+
+    def test_a_new_mark_syncs_and_the_first_one_does_not(self):
+        calls, soons = self.run_watch(["b-1", "b-1", "b-2"])
+        self.assertEqual(calls, ["/api/sync/wait?since=", "/api/sync/wait?since=b-1", "/api/sync/wait?since=b-1",
+                                 "/api/sync/wait?since=b-2"])
+        self.assertEqual(soons, [0])
+
+    def test_unreachable_starts_over(self):
+        calls, soons = self.run_watch(["b-1", peersync.SyncError("Can't reach the PC."), "b-2"])
+        self.assertEqual(calls[2], "/api/sync/wait?since=")  # the next answer is a fresh start
+        self.assertEqual(soons, [])
+
+    def test_away_asks_nothing(self):
+        calls, _ = self.run_watch(["b-1"], away=True)
+        self.assertEqual(calls, [])
 
 
 class PastTheVpn(unittest.TestCase):
@@ -372,12 +558,14 @@ class Pairing(unittest.TestCase):
     def test_pair_then_sync(self):
         code = remote.new_code()
         with patch.object(peersync, "soon", lambda *a: None):
-            st = peersync.pair(self.addr, " " + code[:3] + "-" + code[3:] + "\n")
+            st = peersync.pair(self.addr, " " + code[:3] + "-" + code[3:] + "\n", "pc")
         self.assertTrue(st["paired"])
+        self.assertEqual(peersync.peer()["take"], "pc")
         self.assertNotIn("token", st)
         self.assertEqual([d["name"] for d in remote.devices()], ["Android app"])
         self.assertEqual(peersync.sync_once(), {"pulled": 0, "pushed": 0})
         self.assertIsNotNone(peersync.status()["last_ok"])
+        self.assertIsNone(peersync.peer()["take"])
         # The app's own pairing route is not for a paired phone to use.
         with self.assertRaises(peersync.SyncError) as e:
             peersync._call("http://" + self.addr, "/api/peer", peersync.peer()["token"], {"op": "forget"})
@@ -400,6 +588,21 @@ class Pairing(unittest.TestCase):
             with self.assertRaises(peersync.SyncError) as e:
                 peersync.pair(self.addr, bad)
             self.assertIn("6-digit code", str(e.exception))
+
+    def test_the_wait_answers_when_the_pc_changes(self):
+        """GET /api/sync/wait through the real listener (Decision 99)."""
+        code = remote.new_code()
+        with patch.object(peersync, "soon", lambda *a: None):
+            peersync.pair(self.addr, code)
+        tok = peersync.peer()["token"]
+        mark = peersync._call("http://" + self.addr, "/api/sync/wait", tok)[0]["mark"]
+        threading.Timer(0.3, peersync.touched).start()
+        t = time.time()
+        got = peersync._call("http://" + self.addr, "/api/sync/wait?since=" + mark, tok)[0]["mark"]
+        self.assertNotEqual(got, mark)
+        self.assertLess(time.time() - t, 5)  # at once, not after the full wait
+        with patch.object(peersync, "WAIT", 0.2):
+            self.assertEqual(peersync.wait_payload(got, 0.2), {"mark": got})  # nothing new: the same mark
 
     def test_pc_not_there(self):
         with database.db() as c:

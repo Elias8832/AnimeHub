@@ -24,20 +24,21 @@ the next sync picks it up. Nothing here talks to AniList: each device sends
 its own watching there, as before."""
 
 import json
+import os
 import re
 import socket
 import threading
 import time
 from http.cookies import CookieError, SimpleCookie
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 from . import VERSION as APP_VERSION, anicli, database, library, mapping, streaming, system, util
 
 VERSION = 1
 EVERY = 120          # seconds between syncs while nothing else asks
-SETTLE = 3           # a burst of changes syncs once
+SETTLE = 1           # a burst of changes syncs once
 TIMEOUT = 20
 EMPTY = [False, 0.0, 0.0, None]
 UA = f"AnimeHub-App/{APP_VERSION} (sync)"
@@ -47,6 +48,15 @@ CUR_FIELDS = ("status", "score", "favourite", "rewatches", "started_at", "finish
 _run_lock = threading.Lock()   # one sync at a time
 _wake = threading.Event()
 _state = {"running": False, "stamp": 0, "last": None}
+
+# Near-instant sync (Decision 99). On the PC: a count of its own changes a
+# paired app cares about; GET /api/sync/wait holds until it moves (or
+# WAIT seconds pass). The app keeps one such request open while its page is
+# in front and syncs the moment the PC answers with a new count.
+WAIT = 15            # seconds the PC holds a wait (under TIMEOUT)
+_touch = {"n": 0, "boot": os.urandom(4).hex()}
+_touch_cv = threading.Condition()
+_watch = {"away": False, "wake": threading.Event()}
 
 
 class SyncError(Exception):
@@ -238,14 +248,95 @@ def apply_curation(rows):
     changed()
 
 
+# --- "Remove from Home" -----------------------------------------------------
+# Home's Continue watching keeps a show's removal by show id (Decision 81):
+# "aid:<id>" for an online show, a folder's own id for files. Between devices
+# it travels by AniList id: "hidden" {id: when removed}, "shown" {id: when an
+# Undo put it back}. The later of the two wins; an Undo wins a tie.
+
+AID_RE = re.compile(r"^aid:([1-9][0-9]{0,9})$")
+
+
+def _show_mids():
+    """{folder show id: {AniList ids}} for this device's files."""
+    scan = library.scan_library()
+    library.merge_db(scan)
+    return {s["id"]: {u["media_id"] for u in mapping.release_units(s)} for s in scan}
+
+
+def _by_mid(rows, folders):
+    """{show id or "aid:<id>": when} -> {"<AniList id>": the latest when}."""
+    out = {}
+    for key, ts in rows:
+        m = AID_RE.match(key)
+        for mid in ({int(m.group(1))} if m else folders.get(key, ())):
+            out[str(mid)] = max(ts, out.get(str(mid), ""))
+    return out
+
+
+def hidden_facts():
+    with database.db() as c:
+        hid = c.execute("SELECT show_id, at FROM continue_hidden").fetchall()
+        shown = c.execute("SELECT key, ts FROM sync_gone WHERE kind='continue'").fetchall()
+    folders = _show_mids() if any(not AID_RE.match(k) for k, _ in hid + shown) else {}
+    return {"hidden": _by_mid(hid, folders), "shown": _by_mid(shown, folders)}
+
+
+def _home_state(facts, mid):
+    """(when, 1 shown / 0 hidden) or None."""
+    h, s = facts["hidden"].get(mid), facts["shown"].get(mid)
+    if s and (not h or s >= h):
+        return (s, 1)
+    return (h, 0) if h else None
+
+
+def merge_hidden(mine, theirs):
+    """(for me, for them), each {"hidden": {}, "shown": {}}: the later state
+    of each show goes to the side that lacks it."""
+    for_me, for_them = {"hidden": {}, "shown": {}}, {"hidden": {}, "shown": {}}
+    for mid in set(mine["hidden"]) | set(mine["shown"]) | set(theirs["hidden"]) | set(theirs["shown"]):
+        m, t = _home_state(mine, mid), _home_state(theirs, mid)
+        win = max(x for x in (m, t) if x)
+        for side, have in ((for_me, m), (for_them, t)):
+            if have != win:
+                side["shown" if win[1] else "hidden"][mid] = win[0]
+    return for_me, for_them
+
+
+def apply_hidden(got):
+    """Write the other side's removals (and Undos) to this device's shows:
+    the online one ("aid:<id>") and every folder holding that entry."""
+    if not got or not (got.get("hidden") or got.get("shown")):
+        return
+    folders = _show_mids()
+    owners = {}
+    for sid, mids in folders.items():
+        for mid in mids:
+            owners.setdefault(str(mid), []).append(sid)
+    with database.db() as c:
+        for mid, at in got.get("hidden", {}).items():
+            for sid in [f"aid:{mid}"] + owners.get(mid, []):
+                c.execute("INSERT INTO continue_hidden(show_id, at) VALUES(?,?) "
+                          "ON CONFLICT(show_id) DO UPDATE SET at=MAX(at, excluded.at)", (sid, at))
+                c.execute("DELETE FROM sync_gone WHERE kind='continue' AND key=? AND ts<?", (sid, at))
+        for mid, ts in got.get("shown", {}).items():
+            c.execute("INSERT INTO sync_gone(kind, key, ts) VALUES('continue', ?, ?) "
+                      "ON CONFLICT(kind, key) DO UPDATE SET ts=MAX(ts, excluded.ts)", (f"aid:{mid}", ts))
+            for sid in [f"aid:{mid}"] + owners.get(mid, []):
+                c.execute("DELETE FROM continue_hidden WHERE show_id=? AND at<=?", (sid, ts))
+    changed()
+
+
 # --- what the PC answers ----------------------------------------------------
 
 def facts_payload():
     """GET /api/sync/facts."""
     # every_slot (additive): "episodes" lists every slot, so a missing one
     # is "not here", not "unwatched". An older PC's answer lacks it.
+    # home_hidden (additive): "Remove from Home"; an older PC lacks it.
     return {"version": VERSION, "name": socket.gethostname(), "episodes": episode_facts(),
-            "every_slot": True, "playlists": playlist_facts(), "curation": curation_facts()}
+            "every_slot": True, "playlists": playlist_facts(), "curation": curation_facts(),
+            "home_hidden": hidden_facts()}
 
 
 def _check_fact(f):
@@ -289,7 +380,18 @@ def check_apply(body):
                                             and all(_scalar(v.get(f)) for f in CUR_FIELDS)
                                             for k, v in cur.items()):
         return "'curation' must map 'aid:<id>' to an entry"
+    if check_hidden(body.get("home_hidden", {"hidden": {}, "shown": {}})):
+        return "'home_hidden' must hold 'hidden' and 'shown', each mapping an AniList id to when"
     return None
+
+
+def check_hidden(v):
+    """True when v isn't {"hidden": {id: when}, "shown": {id: when}}."""
+    return not (isinstance(v, dict) and all(
+        isinstance(v.get(k, {}), dict) and all(
+            isinstance(mid, str) and re.match(r"^[1-9][0-9]{0,9}$", mid) and isinstance(ts, str) and len(ts) <= 32
+            for mid, ts in v.get(k, {}).items())
+        for k in ("hidden", "shown")))
 
 
 def apply_payload(body):
@@ -297,6 +399,7 @@ def apply_payload(body):
     done = apply_episodes(body.get("episodes") or {})
     apply_playlists(body.get("playlists") or {}, body.get("gone") or {})
     apply_curation(body.get("curation") or {})
+    apply_hidden(body.get("home_hidden"))
     return {"ok": True, "applied": done}
 
 
@@ -390,6 +493,33 @@ def episode_writes(facts, every_slot, base, result):
     return out
 
 
+def take_theirs(mine, theirs):
+    """The first sync with "Use the PC's": every slot as the PC has it. A
+    slot the PC hasn't touched is cleared here (its length stays)."""
+    out = {}
+    for key in set(mine) | set(theirs):
+        t = theirs.get(key, EMPTY)
+        if _meaningful(t):
+            out[key] = list(t)
+        else:
+            m = mine.get(key, EMPTY)
+            out[key] = [False, 0.0, m[2], None]
+    return out
+
+
+def take_their_playlists(mine, theirs):
+    """(lists for me, gone for me) with "Use the PC's": the PC's lists as
+    they are; this device's other lists go."""
+    lists = {u: p for u, p in theirs["lists"].items()
+             if u not in mine["lists"] or mine["lists"][u]["changed"] != p["changed"]}
+    gone = {u: ts for u, ts in theirs["gone"].items() if mine["gone"].get(u, "") < ts}
+    now = util.utc_stamp()
+    for u in mine["lists"]:
+        if u not in theirs["lists"]:
+            gone[u] = max(now, gone.get(u, ""))
+    return lists, gone
+
+
 def merge_curation(mine, theirs):
     for_me = {r: v for r, v in theirs.items() if r not in mine or v["updated_at"] > mine[r]["updated_at"]}
     for_them = {r: v for r, v in mine.items() if r not in theirs or v["updated_at"] > theirs[r]["updated_at"]}
@@ -400,12 +530,13 @@ def merge_curation(mine, theirs):
 
 def peer():
     with database.db() as c:
-        r = c.execute("SELECT address, token, pc, paired, snapshot, last_ok, last_try, last_error "
+        r = c.execute("SELECT address, token, pc, paired, snapshot, last_ok, last_try, last_error, take "
                       "FROM sync_peer WHERE id=1").fetchone()
     if not r:
         return None
     return {"address": r[0], "token": r[1], "pc": r[2], "paired": r[3],
-            "snapshot": json.loads(r[4]) if r[4] else None, "last_ok": r[5], "last_try": r[6], "last_error": r[7]}
+            "snapshot": json.loads(r[4]) if r[4] else None, "last_ok": r[5], "last_try": r[6], "last_error": r[7],
+            "take": r[8]}
 
 
 def _note(**kw):
@@ -512,9 +643,16 @@ def _call(address, path, token=None, body=None):
     return answer, cookies
 
 
-def pair(address, code):
+TAKES = ("combine", "pc")
+
+
+def pair(address, code, take="combine"):
     """POST /api/peer {op: "pair"}: trade the PC's pairing code for a token,
-    then sync at once."""
+    then sync at once. take: the first sync "combine"s both sides, or takes
+    the PC's ("pc": this device's own watching, playlists and list entries
+    give way to the PC's; Decision 98)."""
+    if take not in TAKES:
+        raise SyncError("Pick Combine both or Use the PC's.")
     address = normal_address(address)
     code = re.sub(r"[^0-9]", "", code) if isinstance(code, str) else ""  # spaces, dashes, a pasted "123 456"
     if len(code) != 6:
@@ -538,9 +676,10 @@ def pair(address, code):
         raise SyncError("The PC didn't hand over a key. Try again.")
     with database.db() as c:
         c.execute("DELETE FROM sync_peer")
-        c.execute("INSERT INTO sync_peer(id, address, token, paired) VALUES(1, ?, ?, ?)",
-                  (address, token, util.utc_stamp()))
+        c.execute("INSERT INTO sync_peer(id, address, token, paired, take) VALUES(1, ?, ?, ?, ?)",
+                  (address, token, util.utc_stamp(), take))
     soon(0)
+    _watch["wake"].set()  # start waiting on the PC now, not at the next idle check
     return status()
 
 
@@ -594,20 +733,47 @@ def sync_once():
             mine = episode_facts(slots)
             base = p["snapshot"]
             every = bool(theirs.get("every_slot"))
-            result = merge_episodes(mine, theirs["episodes"], base, every)
-            to_them = episode_writes(theirs["episodes"], every, base, result)
+            take_pc = base is None and p.get("take") == "pc"
+            drop_cur = []
+            if take_pc:  # the first sync, "Use the PC's": nothing goes to the PC
+                result = take_theirs(mine, theirs["episodes"])
+                to_them = {}
+                lists_me, gone_me = take_their_playlists(playlist_facts(), theirs["playlists"])
+                lists_them, gone_them, renames = {}, {}, {}
+                own = curation_facts()
+                cur_me = {r: v for r, v in theirs["curation"].items() if own.get(r) != v}
+                cur_them = {}
+                drop_cur = [r for r in own if r not in theirs["curation"]]
+            else:
+                result = merge_episodes(mine, theirs["episodes"], base, every)
+                to_them = episode_writes(theirs["episodes"], every, base, result)
+                lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(playlist_facts(), theirs["playlists"])
+                cur_me, cur_them = merge_curation(curation_facts(), theirs["curation"])
+            theirs_hid = theirs.get("home_hidden")
+            if theirs_hid is not None and check_hidden(theirs_hid):
+                theirs_hid = None
+            hid_me, hid_them = merge_hidden(hidden_facts(), theirs_hid) if theirs_hid is not None else ({}, {})
+            if take_pc or theirs_hid is None or not (hid_them["hidden"] or hid_them["shown"]):
+                hid_them = {}  # "Use the PC's" sends nothing; an older PC has no "Remove from Home"
+            n_hid_me = len(hid_me.get("hidden", {})) + len(hid_me.get("shown", {}))
             to_me = episode_writes(mine, True, base, result)
-            lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(playlist_facts(), theirs["playlists"])
             if renames:
                 with database.db() as c:
                     c.executemany("UPDATE playlists SET uid=? WHERE uid=?", [(new, old) for old, new in renames.items()])
-            cur_me, cur_them = merge_curation(curation_facts(), theirs["curation"])
             sent = {"episodes": to_them, "playlists": lists_them, "gone": gone_them, "curation": cur_them}
+            if hid_them:
+                sent["home_hidden"] = hid_them
             got = _call(p["address"], "/api/sync/apply", p["token"], sent)[0] if any(sent.values()) else {"applied": []}
             there = set(got.get("applied") or [])
             here = set(apply_episodes(to_me, slots))
             apply_playlists(lists_me, gone_me)
             apply_curation(cur_me)
+            if n_hid_me:
+                apply_hidden(hid_me)
+            if drop_cur:
+                with database.db() as c:
+                    c.executemany("DELETE FROM curation WHERE ref=?", [(r,) for r in drop_cur])
+                changed()
             _link_in_progress({k: v[1] for k, v in to_me.items() if k in here}, slots)
             snap = {}
             for k, v in result.items():
@@ -615,11 +781,11 @@ def sync_once():
                 keep = (base or {}).get(k) if held else v
                 if keep and _meaningful(keep):
                     snap[k] = keep
-            pulled = len(here) + len(lists_me) + len(gone_me) + len(cur_me)
-            pushed = len(there) + len(lists_them) + len(gone_them) + len(cur_them)
+            pulled = len(here) + len(lists_me) + len(gone_me) + len(cur_me) + len(drop_cur) + n_hid_me
+            pushed = len(there) + len(lists_them) + len(gone_them) + len(cur_them) + sum(map(len, hid_them.values()))
             _state["last"] = {"pulled": pulled, "pushed": pushed}
             with database.db() as c:
-                c.execute("UPDATE sync_peer SET snapshot=?, last_ok=?, last_error=NULL, pc=? WHERE id=1",
+                c.execute("UPDATE sync_peer SET snapshot=?, last_ok=?, last_error=NULL, pc=?, take=NULL WHERE id=1",
                           (json.dumps(snap), util.utc_stamp(), theirs.get("name") or p["pc"]))
             return _state["last"]
         except SyncError as e:
@@ -637,6 +803,68 @@ def soon(delay=SETTLE):
     """Sync shortly (something changed here, or the app came back)."""
     _state["due"] = time.time() + delay
     _wake.set()
+    touched()
+
+
+def touched():
+    """Something here changed that a paired device should hear of now."""
+    with _touch_cv:
+        _touch["n"] += 1
+        _touch_cv.notify_all()
+
+
+def _touch_mark():
+    return f"{_touch['boot']}-{_touch['n']}"
+
+
+def wait_payload(since, timeout=WAIT):
+    """GET /api/sync/wait?since=<mark>: answers when this device changed
+    after `since`, or after `timeout` seconds. {"mark": now}."""
+    with _touch_cv:
+        _touch_cv.wait_for(lambda: _touch_mark() != since, timeout if since else 0)
+        return {"mark": _touch_mark()}
+
+
+def away(gone):
+    """The app's page went to the back (True) or came to the front."""
+    _watch["away"] = bool(gone)
+    if not gone:
+        _watch["wake"].set()
+
+
+def watch():
+    """The app's side: one wait at a time on the paired PC while the page is
+    in front; a new mark syncs at once. Backs off when the PC can't be
+    reached, and for a while when it's too old to have the wait."""
+    mark = None
+    while True:
+        p = peer()
+        if not p or _watch["away"]:
+            mark = None
+            _watch["wake"].wait(30)
+            _watch["wake"].clear()
+            continue
+        try:
+            got, _ = _call(p["address"], "/api/sync/wait?since=" + quote(mark or ""), p["token"])
+        except SyncError as e:
+            mark = None
+            _watch["wake"].wait(300 if "too old" in str(e) else 15)
+            _watch["wake"].clear()
+            continue
+        except Exception as e:  # never let it die
+            util.log("sync watch: %r" % e)
+            mark = None
+            _watch["wake"].wait(15)
+            _watch["wake"].clear()
+            continue
+        new = got.get("mark") if isinstance(got, dict) else None
+        if not isinstance(new, str):
+            _watch["wake"].wait(300)
+            _watch["wake"].clear()
+            continue
+        if mark is not None and new != mark:
+            soon(0)
+        mark = new
 
 
 def loop():
@@ -661,3 +889,5 @@ def loop():
 
 def start():
     threading.Thread(target=loop, daemon=True).start()
+    if system.ANDROID:
+        threading.Thread(target=watch, daemon=True).start()

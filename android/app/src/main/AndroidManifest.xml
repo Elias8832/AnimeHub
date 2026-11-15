@@ -16,11 +16,18 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true"
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- the PC's QR page: "Open in the app" fills in Settings → PC sync -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="animehub" android:host="pair" />
             </intent-filter>
         </activity>
         <service android:name=".TermuxResult" android:exported="false" />

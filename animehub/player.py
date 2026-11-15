@@ -822,6 +822,8 @@ def _watch(proc, ep_id, sock_path, startup, failure):
     done = (duration and duration - last_time <= 3) or marker.exists()
     if not retired:
         finish_episode(ep_id, last_time, duration, done)
+        from . import peersync  # here: peersync reaches player through library
+        peersync.touched()  # a paired phone hears of it at once (Decision 99)
     autoplay = False
     version = 0
     with _active_lock:
