@@ -183,10 +183,28 @@ class Frontend(unittest.TestCase):
         for u in urls:
             self.assertTrue((WEB / u.lstrip("/")).is_file(), u)
         self.assertNotIn("fonts.googleapis", CSS + HTML)
-        for fam in ("Hanken Grotesk", "JetBrains Mono", "Barlow Condensed"):
+        for fam in ("Hanken Grotesk", "JetBrains Mono", "Barlow Condensed", "Anime Hub Digits"):
             self.assertIn(f'font-family:"{fam}"', CSS)
-        for lic in ("OFL-hankengrotesk.txt", "OFL-jetbrainsmono.txt", "OFL-barlowcondensed.txt"):
+        for lic in ("OFL-hankengrotesk.txt", "OFL-jetbrainsmono.txt", "OFL-barlowcondensed.txt", "OFL-inter.txt"):
             self.assertTrue((WEB / "fonts" / lic).is_file(), lic)
+
+    def test_number_font(self):
+        # Settings → Appearance → Numbers (Decision 100): a digits-only family in front of the text font.
+        out = run_js("""return [uiStack("default", "default"), uiStack("default", "text"), uiStack("default", "mono"),
+            uiStack("serif", "default"), uiStack("system", "text"), uiStack("u:My.ttf", "u:Nums.ttf"),
+            fontGet("num"), fontFace({id: "Nums.ttf", url: "/user-fonts/Nums.ttf"}, true)];""", {"font_num": "nope"})
+        self.assertEqual(out[0], "")  # both default: the stylesheet's --ui (Inter's digits, Hanken's letters)
+        self.assertEqual(out[1], '"Hanken Grotesk", system-ui, sans-serif')
+        self.assertEqual(out[2], '"Anime Hub Digits Mono", "Hanken Grotesk", system-ui, sans-serif')
+        self.assertTrue(out[3].startswith('"Anime Hub Digits", "Iowan Old Style"'))
+        self.assertEqual(out[4], "system-ui, sans-serif")
+        self.assertEqual(out[5], '"hubu-Nums_ttf-n", "hubu-My_ttf", "Hanken Grotesk", sans-serif')
+        self.assertEqual(out[6], "default")  # an unknown pick falls back
+        self.assertIn('font-family:"hubu-Nums_ttf-n"', out[7])
+        self.assertIn("unicode-range:U+0030-0039", out[7])
+        for fam in ("Anime Hub Digits", "Anime Hub Digits Mono", "Anime Hub Digits Condensed"):
+            self.assertIn(f'font-family:"{fam}"', CSS)
+        self.assertIn('--ui: "Anime Hub Digits", "Hanken Grotesk"', CSS)
 
     def test_shell(self):
         # The art canvas, the top bar (tabs, number keys, settings icon) and the status line.
