@@ -3,7 +3,7 @@
 Your anime in one place. Your files and your AniList list on one page per show, played in mpv, or in the Android app on your phone.
 
 ## Important!
-This app is early in development — expect bugs and breaking changes.
+This app is early in development — expect bugs and breaking changes. **Feedback is appreciated!**
 
 ![Home](docs/screenshots/home.png)
 
