@@ -101,9 +101,9 @@ class Merge(unittest.TestCase):
         self.assertEqual(peersync.merge_episodes({"1:2": self.B}, {}, {"1:2": self.B}), {"1:2": self.B})
 
     def test_addresses(self):
-        for raw in ("192.168.2.31:8789", " http://192.168.2.31:8789/ ", "HTTP://192.168.2.31:8789"):
-            self.assertEqual(peersync.normal_address(raw), "http://192.168.2.31:8789")
-        for raw in ("", "192.168.2.31", "http://:80", 5):
+        for raw in ("192.168.1.20:8789", " http://192.168.1.20:8789/ ", "HTTP://192.168.1.20:8789"):
+            self.assertEqual(peersync.normal_address(raw), "http://192.168.1.20:8789")
+        for raw in ("", "192.168.1.20", "http://:80", 5):
             with self.assertRaises(peersync.SyncError):
                 peersync.normal_address(raw)
 
@@ -330,7 +330,7 @@ class UseThePcs(unittest.TestCase):
 
     def test_an_unknown_choice_is_refused(self):
         with self.assertRaises(peersync.SyncError):
-            peersync.pair("192.168.2.31:8789", "123456", "phone")
+            peersync.pair("192.168.1.20:8789", "123456", "phone")
 
 
 class HomeShowsWhatCameOver(unittest.TestCase):

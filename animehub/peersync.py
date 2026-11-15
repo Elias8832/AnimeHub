@@ -555,7 +555,7 @@ def status():
 
 
 def normal_address(raw):
-    """"192.168.2.31:8789" or a pasted link -> "http://192.168.2.31:8789"."""
+    """"192.168.1.20:8789" or a pasted link -> "http://192.168.1.20:8789"."""
     raw = (raw or "").strip().rstrip("/") if isinstance(raw, str) else ""
     if raw and not re.match(r"^https?://", raw, re.I):
         raw = "http://" + raw
@@ -563,11 +563,11 @@ def normal_address(raw):
         u = urlparse(raw)
         port = u.port
     except ValueError:
-        raise SyncError("That isn't an address. Type it as the PC shows it, like 192.168.2.31:8788.")
+        raise SyncError("That isn't an address. Type it as the PC shows it, like 192.168.1.20:8788.")
     if not u.hostname:
         raise SyncError("Type the PC's address, as Settings → Phone on the PC shows it.")
     if not port:
-        raise SyncError("Add the port, as the PC shows it: like 192.168.2.31:8788.")
+        raise SyncError("Add the port, as the PC shows it: like 192.168.1.20:8788.")
     host = f"[{u.hostname}]" if ":" in u.hostname else u.hostname
     return f"{u.scheme.lower()}://{host}:{port}"
 
