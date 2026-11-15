@@ -1,30 +1,46 @@
-# AnimeHub
-
-Your anime in one place. Your files and your AniList list on one page per show, played in mpv.
-
-## Important!
-This app is early in development — expect bugs and breaking changes.
-
 ![Home](docs/screenshots/home.png)
 
-## Why it's nice
+This app is in somewhat early development - expect bugs and breaking changes. **[Feedback is appreciated](https://github.com/Elias8832/AnimeHub/issues)**
+# AnimeHub
 
-- **One page per show.** Every season, movie and special together, with your AniList entry right there.
-- **Your files and online episodes in one list.** Missing an episode? Watch or download it from the same page. Auto-play carries on from a file to an online episode.
-- **Made for mpv.** Resume, skip openings and endings with Enter, marks on the timeline, next episode. Screenshots go to `Pictures/AnimeHub`. Your own `mpv.conf` still loads.
-- **AniList stays in sync.** Progress and scores go back to your list, even after being offline. Use MyAnimeList instead if that's where your list is.
-- **A calendar of what's airing**, and a Journal of what you watched.
-- **Your phone as a remote.** No app to install, and it has its own phone layout.
+Everything you need to watch anime in one app:
 
-![Show](docs/screenshots/show.png)
+- Desktop/Android (any phone as a remote)
 
-![Library](docs/screenshots/library.png)
+- Files/Online (with [ani-cli](https://github.com/pystardust/ani-cli))
+
+- AniList/MyAnimeList
+
+- mpv pre-configured/own configuration
+
+- Calendar/Journal
+
+- VPN warnings
+
+# **[See screenshots](#screenshots)**
 
 ## Install
 
-You need **Python 3.9+**(Linux), a **Chromium-family browser**(Linux and Windows) (chromium, chrome, brave or edge)
+### Unstable/Stable Versions
 
-**From git** (needs rust/cargo)**:**
+**Select in Releases**
+
+- ***Stable*** is more ***tested***
+- ***Unstable*** has the ***newest*** features, but is likelier to ***break***
+
+- [Linux](#linux)
+- [Windows](#windows)
+- [Android](#android)
+
+## Linux
+
+**Required (Git and AppImage)**:
+- Python 3.9+ (often preinstalled)
+- Chromium-family browser (Chrome, Brave, Edge, Chromium)
+
+**Git** (needs rust/cargo):
+
+1. Open terminal and paste this:
 
 ```sh
 git clone https://github.com/Elias8832/AnimeHub.git
@@ -33,88 +49,120 @@ cargo build --release
 ./install.sh
 ```
 
-**AppImage:** download `AnimeHub-x86_64.AppImage` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases), then:
+2. Installed, open it like any other app
+
+**AppImage:**
+
+1. **Download** `AnimeHub-x86_64.AppImage` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases)
+2. Open terminal and paste this
 
 ```sh
+cd ~/Downloads
 chmod +x AnimeHub-x86_64.AppImage
 ./AnimeHub-x86_64.AppImage
 ```
 
-<details>
-<summary>Optional extras</summary>
+3. Installed, **BUT** apps like [GearLever](https://flathub.org/apps/it.mijorus.gearlever) are suggested to make it appear in searches and app lists
 
-An AniList account; ani-cli 5.1+ for online episodes (the app can fetch it, it needs curl); [Upscayl](https://upscayl.org/download) for sharper banners; ffprobe for faster episode lengths.
+## Windows
 
-</details>
+1. **Download** `AnimeHub-windows-x64.zip` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases)
+2. **Unzip** it anywhere
+3. **Windows will warn you that the app is dangerous on the next step**, that is not true, I am just not willing to pay $100
+4. **Double-click** `AnimeHub.exe` 
+5. **Click** "More info"
+6. **Click** "Run anyway"
+7. Installed, open it like any other app
 
-<details>
-<summary>Windows (experimental)</summary>
+## Android
 
-New zips only come with bigger releases (v0.4, v0.5, …), so Windows can be a little behind. Python is inside the zip.
+**Important**, following install will be different for everybody and on some phones specific security settings will need to be turned off, but something like this:
 
-1. Download `AnimeHub-windows-x64.zip` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases) and unzip it anywhere. Keep the folder together.
-2. Double-click `AnimeHub.exe`. If Windows warns you: "More info", then "Run anyway". It adds itself to the Start menu.
-3. In the first-run tour, click **Install what's missing**. It installs [Scoop](https://scoop.sh), Git, mpv, ani-cli and yt-dlp for you, no admin rights needed. It's also in Settings → System → Tools.
+**Required**
+- **Termux** for online episodes (download from **[F-Droid](https://f-droid.org/packages/com.termux/)**, the Play Store version is too old, install is similar to AnimeHub)
 
-Won't start? Logs are in `%LOCALAPPDATA%\anime-hub-wrapper\`.
+1. **Download** `AnimeHub-android.apk` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases)
+2. **Open** it
+3. **Click** through any warnings
+4. **Click** Install
+5. Installed, open it like any other app
 
-</details>
+## Your files
 
-<details>
-<summary>Updating</summary>
+One folder per show. AnimeHub finds seasons, movies and episode numbers by itself, and never renames or moves anything.
 
-Settings → System shows the new version: click **Install**, then **Restart now**. Your data is kept. It works for the AppImage, the Windows zip and a git copy. **From git** the copy must be on master with no changes of its own; if the window app changed, the app says to run `cargo build --release && ./install.sh` in `desktop/`. **Windows:** a version that needs a newer Python asks you to download the new zip and replace the whole folder.
-
-</details>
-
-<details>
-<summary>Library folders</summary>
-
-One folder per show, with seasons as `Season 1` or `Part 1`, extras in `Specials` or `OVA`, and movies in `Movies`. Files can also sit directly in the show folder. Episode numbers come from names like `S01E05`, `E05`, `Episode 5` or `Title - 05`. Files are never renamed or moved.
-
-</details>
-
-<details>
-<summary>Configuration</summary>
-
-Most of it is in Settings. The file is `~/.config/anime-hub/config.json` (Windows: `%APPDATA%\anime-hub\config.json`), or use `--config FILE`. Every key is optional:
-
-| Key | Meaning |
-| --- | --- |
-| `library_root`, `library_extra` | your folders (easiest from Settings → Library) |
-| `port` | server port (default `8787`) |
-| `data_dir` | where data lives (default `~/.local/share/anime-hub`, Windows: `%LOCALAPPDATA%\anime-hub`) |
-| `window` | `"app"`, `"browser"` or `"none"` |
-| `anilist_client_id` | your own AniList app id, only if you change `port` |
-| `mal_client_id` | your own MyAnimeList app id |
-| `remote_port` | the phone remote's Wi-Fi port (default `port` + 1) |
-| `keep_running` | the desktop app's server stays on after you close the window (default off; Settings → Phone remote) |
-| `start_at_login` | the desktop app's server starts at login, without a window (default off; Settings → Phone remote) |
-| `remote_hosts` | host names for reaching it through a proxy, e.g. `["pc.tailnet.ts.net"]` |
-
-Your data is all in `data_dir`. Deleting that folder is a full reset.
-
-</details>
+- [How to name folders](#library-folders)
 
 ## Privacy
 
-No tracking, no accounts, no ads. Your data stays on your PC.
-
-<details>
-<summary>What it talks to, and security</summary>
-
-- **Internet:** [AniList](https://anilist.co) (info, art, your list), [ani.zip](https://api.ani.zip) (episode titles and pictures), [MyAnimeList](https://myanimelist.net) (your list, only if you connect it), [AniSkip](https://aniskip.com) (only if you turn it on; it sees which episode you start and its length), GitHub (the list of all anime titles for typo-proof search: on your first AniList search, then every two weeks, 6 MB, or 62 MB on Windows; also when you get or update ani-cli, or when you check for new versions: on a click, or once a day if you say yes; you can limit this to when a VPN is on). With online episodes, ani-cli contacts the streaming site; the app warns you when no VPN is on. Before you click, it contacts the site only while a VPN is up (Warn without VPN off lifts that): to link a show, refresh its episode list, or get the next episode ready.
-- **Access:** the server only listens on your PC. The phone remote is off by default; when on, only phones you paired get in, and they can't change your folders or account.
-- **Proxy:** through `remote_hosts` there's no password, so everyone on that network can use it.
-- **Logins:** AniList's token in `anilist_token.json`, MyAnimeList's in `mal_token.json`, readable only by your user.
-
-</details>
+- Open source
+- No tracking
+- No accounts
+- No ads
+- Everything is yours
+- Everything stays with you
+- VPN warning before online episodes
+  
+- [In detail](#privacy-expanded)
 
 ## AI-notice
 
-- AnimeHub was made with a lot of help from mainly GLM 5.3 Flash, Opus 5.5(after v0.2) and very little help from Sonnet 5.5.
-- I want to make clear that using LLMs didn't take anyone's job here. AnimeHub simply wouldn't exist without them, because I would never have started this project.
-- I **DID NOT** give a large LLM $200, a prompt and a couple of hours. I built this project step by step. This is my app, built with passion over many, many hours, and I want to keep working on it.
+- AnimeHub was made with a lot of care, time and passion, but it has to be noted that I would not have made this app without LLMs. I want to make clear that the usage of LLMs in this project:
+
+- ***DID NOT***  steal anyone's job
+- ***WASN'T***  specifically told to copy anything
+- ***DID NOT***  create artwork or similar
+
+- I solely used it for turning ***MY IDEAS*** into reality, over more than a month, and I want to continue refining it and adding new features, especially if people are interested
+
+## Library-Folders
+
+One folder per show. Seasons, extras and movies get their own folders inside it, or the files sit right in the show folder.
+
+```
+Anime/
+├── Jujutsu Kaisen/
+│   ├── Season 1/
+│   │   ├── Jujutsu Kaisen - S01E01.mkv
+│   │   └── Jujutsu Kaisen - S01E02.mkv
+│   ├── Season 2/
+│   ├── Specials/
+│   └── Movies/
+└── Chainsaw Man/
+    ├── Chainsaw Man - 01.mkv
+    └── Chainsaw Man - 02.mkv
+```
+
+- **Seasons:** `Season 1` or `Part 1`
+- **Extras:** `Specials` or `OVA`
+- **Movies:** `Movies`
+- **Episode numbers:** names like `S01E05`, `E05`, `Episode 5` or `Title - 05`
+
+## Privacy-Expanded
+
+### Internet:
+- [AniList](https://anilist.co): info, art, your list.
+- [ani.zip](https://api.ani.zip): episode titles and pictures.
+- [MyAnimeList](https://myanimelist.net): your list, only if you connect it.
+- [AniSkip](https://aniskip.com): only if you turn it on, skipping times
+
+### GitHub
+
+- The list of all anime titles, for typo-proof search. On your first AniList search, then every two weeks. 6 MB (62 MB on Windows).
+- Getting or updating ani-cli.
+- Checking for new versions: on a click, or once a day if you say yes. You can allow this only while a VPN is on.
+
+### Windows-setup
+
+- on your click, [Scoop](https://scoop.sh) and the programs it installs.
+
+### Online-episodes
+
+- Are handled solely through ani-cli, AnimeHub does not contain any code for scraping, or similar! The app warns you when no VPN is on. Without a click, it contacts the site only while a VPN is on: to link a show, refresh its episode list or get the next episode ready. To allow these without a VPN, turn off _Online episodes and downloads_ in Settings → Privacy & VPN; this also stops the warning.
+
+### Phone-sync
+
+- The Android app talks straight to the PC you paired it with, over your own network. No server in between, and nothing about the sync goes to AniList.
 
 ## Streaming/downloading/hosting/etc.-notice
 
@@ -134,6 +182,20 @@ GPL-3.0. See [LICENSE](LICENSE).
 - AniList data is kept on your PC only to show it, never as a backup. Free and non-commercial, following the [AniList API terms](https://docs.anilist.co/guide/terms-of-use).
 - Typo-proof search uses the [anime-offline-database](https://github.com/manami-project/anime-offline-database) by manami-project, under the [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) / [DbCL 1.0](https://opendatacommons.org/licenses/dbcl/1-0/). Only its titles and AniList links are kept.
 - Playback by [mpv](https://mpv.io).
+- Online episodes and downloads by your own [ani-cli](https://github.com/pystardust/ani-cli).
+- The Android app runs the same Python code through [Chaquopy](https://chaquo.com/chaquopy/) (MIT) and starts ani-cli through [Termux](https://termux.dev). Python's and Chaquopy's licence texts ship inside the app.
 - Sharper banners by [Upscayl](https://upscayl.org), if you install it.
 - Playlist icons: [Lucide](https://lucide.dev), ISC licence (text in `web/icons/LICENSE-lucide.txt`).
 - Fonts: [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk), [Inter](https://github.com/rsms/inter) (its digits), [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Barlow Condensed](https://github.com/jpt/barlow), all under the SIL Open Font License 1.1 (licence texts in `web/fonts/`). `mpv/fonts/` holds the same fonts as plain TTF files for the player's controls.
+
+## Screenshots
+
+![Show](docs/screenshots/show.png)
+
+![Library](docs/screenshots/library.png)
+
+![Playlists](docs/screenshots/playlists.png)
+
+![The Android app](docs/screenshots/android.png)
+
+# [To the Top](#animehub)
