@@ -21,7 +21,7 @@ Everything you need to watch anime in one app:
 
 ## Install
 
-### Unstable/Stable
+### Unstable/Stable Versions
 
 **Select in Releases**
 
@@ -61,7 +61,7 @@ chmod +x AnimeHub-x86_64.AppImage
 ./AnimeHub-x86_64.AppImage
 ```
 
-3. Installed, **BUT** apps like GearLever are suggested to make it appear in searches and app lists
+3. Installed, **BUT** apps like [GearLever](https://flathub.org/apps/it.mijorus.gearlever) are suggested to make it appear in searches and app lists
 
 ## Windows
 
@@ -196,3 +196,5 @@ GPL-3.0. See [LICENSE](LICENSE).
 ![Playlists](docs/screenshots/playlists.png)
 
 ![The Android app](docs/screenshots/android.png)
+
+# [To the Top](#animehub)
