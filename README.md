@@ -34,7 +34,7 @@ Everything you need to watch anime in one app:
 
 ## Linux
 
-**Required (For Git)**:
+**Required (Git and AppImage)**:
 - Python 3.9+ (often preinstalled)
 - Chromium-family browser (Chrome, Brave, Edge, Chromium)
 
@@ -57,6 +57,7 @@ cargo build --release
 2. Open terminal and paste this
 
 ```sh
+cd ~/Downloads
 chmod +x AnimeHub-x86_64.AppImage
 ./AnimeHub-x86_64.AppImage
 ```
@@ -78,7 +79,7 @@ chmod +x AnimeHub-x86_64.AppImage
 **Important**, following install will be different for everybody and on some phones specific security settings will need to be turned off, but something like this:
 
 **Required**
-- **Termux** for online episodes (download from **[F-Droid](https://f-droid.org/packages/com.termux/)**, the Play Store version is too old)
+- **Termux** for online episodes (download from **[F-Droid](https://f-droid.org/packages/com.termux/)**, the Play Store version is too old, install is similar to AnimeHub)
 
 1. **Download** `AnimeHub-android.apk` from the [Releases page](https://github.com/Elias8832/AnimeHub/releases)
 2. **Open** it
@@ -110,7 +111,7 @@ One folder per show. AnimeHub finds seasons, movies and episode numbers by itsel
 
 - ***DID NOT***  steal anyone's job
 - ***WASN'T***  specifically told to copy anything
-- ***DID NOT***  create artwork
+- ***DID NOT***  create artwork or similar
 
 - I solely used it for turning ***MY IDEAS*** into reality, over more than a month, and I want to continue refining it and adding new features, especially if people are interested
 
