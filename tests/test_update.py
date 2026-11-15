@@ -467,10 +467,12 @@ def snapshot(root):
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
 
 
-OLD = {"AnimeHub.exe": b"MZ old exe", "README.txt": b"readme", "python/python.exe": b"MZ python",
+# No "MZ" at the start: Defender takes a tiny "MZ…" file for a trojan
+# (Bearfoos.A!ml) and blocks reading it, which failed these on a real PC.
+OLD = {"AnimeHub.exe": b"old exe", "README.txt": b"readme", "python/python.exe": b"python",
        "python/python312._pth": b"python312.zip\n.\n../app\n", "app/hub.py": b"old hub",
        "app/animehub/update.py": b"old update", "app/animehub/gone.py": b"dropped later", "app/web/app.js": b"same"}
-NEW = {**{k: v for k, v in OLD.items() if k != "app/animehub/gone.py"}, "AnimeHub.exe": b"MZ new exe",
+NEW = {**{k: v for k, v in OLD.items() if k != "app/animehub/gone.py"}, "AnimeHub.exe": b"new exe",
        "app/hub.py": b"new hub", "app/animehub/added.py": b"new module"}
 
 
@@ -511,7 +513,7 @@ class WindowsZip(unittest.TestCase):
     def test_tidy_takes_what_the_running_exe_left(self):
         old = self.root / ".update-abc-old"
         (old / "AnimeHub.exe").parent.mkdir(parents=True)
-        (old / "AnimeHub.exe").write_bytes(b"MZ")
+        (old / "AnimeHub.exe").write_bytes(b"")
         kept = self.root / ".update-def-old"
         (kept / "app").mkdir(parents=True)
         (kept / "app" / "hub.py").write_bytes(b"a way back")
@@ -526,9 +528,9 @@ class WindowsZip(unittest.TestCase):
         self.assertUntouched()
 
     def test_another_python_changes_nothing(self):
-        self.assertIn("newer Python", self.swap({**NEW, "python/python313.dll": b"MZ"})["error"])
+        self.assertIn("newer Python", self.swap({**NEW, "python/python313.dll": b""})["error"])
         self.assertUntouched()
-        self.assertIn("newer Python", self.swap({**NEW, "python/python.exe": b"MZ other"})["error"])
+        self.assertIn("newer Python", self.swap({**NEW, "python/python.exe": b"other"})["error"])
         self.assertUntouched()
 
     def test_an_odd_zip_changes_nothing(self):

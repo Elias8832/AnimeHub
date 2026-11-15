@@ -34,10 +34,12 @@ def open_show_folder(show_id):
     path = library.abs_path(show["path"])
     if path is None:
         raise ValueError("folder not found")
-    path = path.resolve()
+    # normpath, not resolve: a show linked in from another disk (a symlink, a
+    # Windows junction) leads outside the library, and opens under its link.
+    path = Path(os.path.normpath(path))
     if path.is_file():
         path = path.parent
-    if not path.is_dir() or not any(path.is_relative_to(r.resolve()) for _, r in library.roots()):
+    if not path.is_dir() or not any(path.is_relative_to(os.path.normpath(r)) for _, r in library.roots()):
         raise ValueError("folder not found")
     system.open_external(path)
 

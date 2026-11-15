@@ -178,6 +178,8 @@ def _follow(path, real_roots):
     linked one only when it leads outside every library folder."""
     if not (os.path.islink(path) or _isjunction(path)):
         return True
+    if not os.path.exists(path):
+        return False  # its disk is gone: a junction still lists as a folder, unlike a broken symlink
     real = _real(path)
     return not any(real == r or real.startswith(r.rstrip(os.sep) + os.sep) for r in real_roots)
 
@@ -213,7 +215,7 @@ def _library_sig(root, seen, real_roots):
                     if e.name.startswith("."):
                         continue
                     try:
-                        if e.is_symlink():
+                        if e.is_symlink() or _isjunction(e.path):
                             links.append((e.path, os.path.exists(e.path)))
                         if e.is_dir() and _follow(e.path, real_roots):
                             stack.append(e.path)
@@ -350,7 +352,8 @@ def _scan_library():
             dirnames[:] = sorted(d for d in dirnames
                                  if not d.startswith(".") and _follow(os.path.join(dirpath, d), real_roots))
             # A broken link (its disk unplugged) is skipped quietly; a broken
-            # folder link never gets here (os.walk lists it as a file).
+            # folder link never gets here (os.walk lists it as a file, and
+            # _follow drops a junction whose target is gone).
             videos = sorted(f for f in filenames if Path(f).suffix.lower() in VIDEO_EXTS
                             and os.path.exists(os.path.join(dirpath, f)))
             if not videos:

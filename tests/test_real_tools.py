@@ -256,6 +256,35 @@ class RealDisk(unittest.TestCase):
         self.assertEqual(os.path.normcase(r.stdout.strip()), os.path.normcase(str(exe)))
 
     @unittest.skipUnless(system.WINDOWS, "Windows")
+    def test_a_show_linked_by_a_junction(self):
+        """mklink /J needs no admin, unlike a symlink. A junction whose target
+        is gone still lists as a folder, so the scan said "Some folders could
+        not be read"; and Open the folder resolved the junction out of the
+        library and refused it (v0.5 Windows pass)."""
+        import _winapi
+        from animehub import server
+        base = Path(tempfile.mkdtemp(dir=support.TMP))
+        lib, disk = base / "library", base / "other disk" / "Frieren"
+        lib.mkdir()
+        disk.mkdir(parents=True)
+        (disk / "Frieren - 01.mkv").write_bytes(b"x")
+        _winapi.CreateJunction(str(disk), str(lib / "Frieren"))
+        apply_config(dict(CONFIG, library_root=lib, data_dir=base / "data"))
+        self.addCleanup(apply_config, CONFIG)
+        config.DATA.mkdir(parents=True)
+        database.init_db()
+        library._scan_memo["sig"] = None
+        show, = library.scan_library()
+        with mock.patch.object(system, "open_external") as opened:
+            server.open_show_folder(show["id"])
+        self.assertEqual(os.path.normcase(opened.call_args[0][0]), os.path.normcase(lib / "Frieren"))
+        disk.rename(disk.with_name("away"))
+        self.assertEqual(library.scan_library(), [])
+        self.assertEqual(library.scan_state["state"], "ok")
+        disk.with_name("away").rename(disk)
+        self.assertEqual([s["title"] for s in library.scan_library()], ["Frieren"])  # no folder in the library changed
+
+    @unittest.skipUnless(system.WINDOWS, "Windows")
     def test_the_stored_path_is_read(self):
         """Decision 87: Windows' own PATH from the registry holds System32."""
         dirs = [os.path.normcase(d.rstrip("\\")) for d in system.stored_path_dirs()]

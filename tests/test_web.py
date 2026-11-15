@@ -477,6 +477,7 @@ class SettingsLayout(unittest.TestCase):
         self.assertTrue(used)
         self.assertEqual(used - tabs, set())
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_a_value_steps_both_ways_and_opens_a_list(self):
         # Decision 73: ‹ value › — the arrows wrap around, the middle is a <select> (the app's own list).
         code = APP[APP.index("function pick(label"):APP.index("const onoff = ")]
@@ -492,6 +493,7 @@ class SettingsLayout(unittest.TestCase):
         # the list hangs under the whole ‹ value ›
         self.assertIn('(sel.closest(".fl") || sel.closest(".pk") || sel).getBoundingClientRect()', APP)
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_folder_picker_finds_as_you_type(self):
         # Decision 73: the Settings picker narrows its folders as you type and says how many it shows.
         code = APP[APP.index("const dirName = "):APP.index("function dirRows(p)")]
@@ -524,6 +526,7 @@ class SettingsLayout(unittest.TestCase):
         # mpv_marks lives in s.mpv.marks, so !S.settings[key] could only ever turn it on.
         self.assertIn('const on = t.getAttribute("aria-checked") !== "true";', APP)
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_find_box(self):
         self.assertIn('id="setq"', APP)
         self.assertIn('if (e.key === "/" && !inInput && $("#setq"))', APP)
