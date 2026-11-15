@@ -136,4 +136,4 @@ GPL-3.0. See [LICENSE](LICENSE).
 - Playback by [mpv](https://mpv.io).
 - Sharper banners by [Upscayl](https://upscayl.org), if you install it.
 - Playlist icons: [Lucide](https://lucide.dev), ISC licence (text in `web/icons/LICENSE-lucide.txt`).
-- Fonts: [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk), [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Barlow Condensed](https://github.com/jpt/barlow), all under the SIL Open Font License 1.1 (licence texts in `web/fonts/`). `mpv/fonts/` holds the same fonts as plain TTF files for the player's controls.
+- Fonts: [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk), [Inter](https://github.com/rsms/inter) (its digits), [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Barlow Condensed](https://github.com/jpt/barlow), all under the SIL Open Font License 1.1 (licence texts in `web/fonts/`). `mpv/fonts/` holds the same fonts as plain TTF files for the player's controls.

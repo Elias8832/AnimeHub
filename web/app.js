@@ -509,21 +509,31 @@ const accentIcon = (a) => ACCENT_ICONS[a] ? `/icons/${ACCENT_ICONS[a]}.svg` : "/
 const lookGet = (k) => { const v = lsGet(k, LOOKS[k][0]); return LOOKS[k].includes(v) ? v : LOOKS[k][0]; };
 const accentGet = () => { const v = lsGet("accent", "follow"); return ACCENTS.includes(v) ? v : "follow"; };
 const grainGet = () => lsGet("grain", true) !== false;
-/* Fonts (TODO 122, Decision 69): text and titles each pick a built-in
-   font or one imported in Settings → Appearance. Device preferences like
-   the rest; "fontCss" is what index.html puts on before first paint. */
+/* Fonts (TODO 122, Decisions 69 and 100): text, titles and numbers each
+   pick a built-in font or one imported in Settings → Appearance. Device
+   preferences like the rest; "fontCss" is what index.html puts on before
+   first paint. Numbers swap only the digits 0–9 of the text font. */
 const FONTS = {
   text: [["default", "Anime Hub", ""], ["system", "System", "system-ui, sans-serif"], ["serif", "Serif", '"Iowan Old Style", "Palatino Linotype", Georgia, serif'], ["mono", "Mono", '"JetBrains Mono", ui-monospace, monospace']],
   title: [["default", "Anime Hub", ""], ["grotesk", "Grotesk", '"Hanken Grotesk", system-ui, sans-serif'], ["system", "System", "system-ui, sans-serif"], ["serif", "Serif", '"Iowan Old Style", "Palatino Linotype", Georgia, serif']],
+  num: [["default", "Anime Hub", '"Anime Hub Digits"'], ["text", "Same as text", ""], ["mono", "Mono", '"Anime Hub Digits Mono"'], ["cond", "Condensed", '"Anime Hub Digits Condensed"']],
 };
+const TEXT_BASE = '"Hanken Grotesk", system-ui, sans-serif';
+/* The digits-only family in front of the text font ("" = the text font's own digits). */
+const numFam = (v) => v.startsWith("u:") ? `"${userFam(v.slice(2))}-n"` : FONTS.num.find(([k]) => k === v)?.[2] || "";
+/* --ui for a text pick and a numbers pick; "" when both are the default (the stylesheet's own). */
+const uiStack = (t, n) => t === "default" && n === "default" ? "" : [numFam(n), fontStack("text", t) || TEXT_BASE].filter(Boolean).join(", ");
 const userFam = (id) => "hubu-" + String(id).replace(/[^A-Za-z0-9_-]/g, "_");
 const userFontUrl = (id) => "/user-fonts/" + encodeURIComponent(id);
 const fontGet = (role) => { const v = lsGet("font_" + role, "default"); return typeof v === "string" && (v.startsWith("u:") || FONTS[role].some(([k]) => k === v)) ? v : "default"; };
 const fontStack = (role, v) => v.startsWith("u:") ? `"${userFam(v.slice(2))}", ${role === "title" ? '"Barlow Condensed", ' : ""}"Hanken Grotesk", sans-serif` : FONTS[role].find(([k]) => k === v)?.[2] || "";
 /* One family per added font: its regular file up to weight 500, its bold
    file (when it came with one) from 600; a variable font covers them all. */
-const fontFace = (f) => `@font-face{font-family:"${userFam(f.id)}";src:url("${f.url || userFontUrl(f.id)}");font-display:swap${f.variable ? ";font-weight:100 900" : f.bold ? ";font-weight:100 500" : ""}}`
-  + (f.bold ? `@font-face{font-family:"${userFam(f.id)}";src:url("${f.bold}");font-weight:600 900;font-display:swap}` : "");
+const fontFace = (f, digits) => {
+  const fam = userFam(f.id) + (digits ? "-n" : ""), only = digits ? ";unicode-range:U+0030-0039" : "";
+  return `@font-face{font-family:"${fam}";src:url("${f.url || userFontUrl(f.id)}");font-display:swap${f.variable ? ";font-weight:100 900" : f.bold ? ";font-weight:100 500" : ""}${only}}`
+    + (f.bold ? `@font-face{font-family:"${fam}";src:url("${f.bold}");font-weight:600 900;font-display:swap${only}}` : "");
+};
 /* The added fonts as last seen, so the first paint knows their bold files before Settings loads. */
 const fontList = () => S.settings?.fonts || lsGet("fontList", []);
 function fmtIn(sec) {
@@ -2838,7 +2848,7 @@ function EntryDlg() {
   const on = svcPick(), sw = bothAccts() ? `<div class="seg edsvc" role="radiogroup" aria-label="Edit your entry on">${Object.entries(SVC_NAME).map(([v, l]) =>
     `<button role="radio" class="${v === on ? "on" : ""}" aria-checked="${v === on}" data-a="esvc" data-v="${v}">${l}</button>`).join("")}</div>` : "";
   return `<div class="edh">${art ? `<i class="eda" style="background-image:${esc(cssUrl(art))}"></i>` : ""}${sw}${pst ? `<i class="edp" style="background-image:${esc(cssUrl(pst))}"></i>` : ""}
-    <div class="edt"><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="mono">${esc(facts)}</span>` : ""}</div></div>
+    <div class="edt"><h2 id="dt">${esc(title)}</h2>${facts ? `<span class="edf">${esc(facts)}</span>` : ""}</div></div>
   <div class="edb"><div id="entrybox"><p class="note">Loading…</p></div></div>
   <div class="actions"><span class="note2" id="edfoot">${edFoot(on)}</span><button class="btn" data-a="close">Done${kb("Esc")}</button></div>`;
 }
@@ -3497,18 +3507,21 @@ function fontRows(s) {
   const mine = s.fonts || [];
   let st = $("#ufonts-all"); // the previews need every imported font loaded
   if (!st) { st = document.createElement("style"); st.id = "ufonts-all"; document.head.append(st); }
-  st.textContent = mine.map(fontFace).join("");
+  st.textContent = mine.map((f) => fontFace(f) + fontFace(f, true)).join("");
   lsSet("fontList", mine);
-  const row = (role, title, line, sample) => {
-    const cur = fontGet(role), base = role === "text" ? '"Hanken Grotesk", sans-serif' : '"Barlow Condensed", sans-serif';
-    const opts = [...FONTS[role].map(([v, l, stack]) => [v, l, stack || base]), ...mine.map((f) => ["u:" + f.id, f.name, `"${userFam(f.id)}", sans-serif`])];
-    return srow(title, line, pick(title, "font", role, opts.map(([v, l, stack]) => [v, l, stack]), cur, { cls: "pkfont " + role }));
+  const row = (role, title, line) => {
+    const cur = fontGet(role), base = role === "text" ? `"Anime Hub Digits", ${TEXT_BASE}` : '"Barlow Condensed", sans-serif';
+    const opts = role === "num" // each choice shows its digits, in the text font's letters
+      ? [...FONTS.num, ...mine.map((f) => ["u:" + f.id, f.name, numFam("u:" + f.id)])].map(([v, l, fam]) => [v, l + " 123", (fam ? fam + ", " : "") + (fontStack("text", fontGet("text")) || TEXT_BASE)])
+      : [...FONTS[role].map(([v, l, stack]) => [v, l, stack || base]), ...mine.map((f) => ["u:" + f.id, f.name, `"${userFam(f.id)}", sans-serif`])];
+    return srow(title, line, pick(title, "font", role, opts, cur, { cls: "pkfont " + role }));
   };
   const list = mine.map((f) => `<span class="chip fchip">${esc(f.name)}<button class="fx" data-a="fontdel" data-v="${esc(f.id)}" aria-label="Remove ${esc(f.name)}">${ico("close")}</button></span>`).join("");
   const add = s.phone ? "" : `<button class="btn fimp" data-a="fontpick">${ico("plus")}Add a font</button>`;
-  return row("text", "Text font", "Everything you read.", "Episode 12")
-    + row("title", "Title font", "Show names and big headings.", "Frieren")
-    + (add || list ? srow("Your fonts", mine.length ? "Added fonts show up in both font lists." : "Use any font that's on this PC.", mine.length ? `<span class="fmine">${list}${add}</span>` : pkdo(add), mine.length ? "wide" : "") : "");
+  return row("text", "Text font", "Everything you read.")
+    + row("title", "Title font", "Show names and big headings.")
+    + row("num", "Numbers", "The digits in text. Big numbers use the title font.")
+    + (add || list ? srow("Your fonts", mine.length ? "Added fonts show up in every font list." : "Use any font that's on this PC.", mine.length ? `<span class="fmine">${list}${add}</span>` : pkdo(add), mine.length ? "wide" : "") : "");
 }
 /* Add a font (TODO 122): every font installed on the PC, each name set
    in its own letters; a click copies it into the hub. A file still works. */
@@ -4515,10 +4528,10 @@ function deckFill(src, i, items) {
   const feed = src === "recs", el = $("#deck");
   const dot = (x) => `<i class="mdot"${x.color ? ` style="background:${esc(hexAccent(x.color) || "var(--accent)")}"` : ""}></i>`;
   el.innerHTML = `<div class="deck" role="dialog" aria-modal="true" aria-label="${feed ? "Discover" : "Swipe through your list"}">
-    ${grab}<div class="dtop"><button class="btn ic" data-a="deckclose" aria-label="Close">${ico("close")}</button><b class="dttl">${feed ? "Discover" : esc(statusLabel(S.lib.tab) || "Library")}</b>${feed ? "" : `<span class="dcount mono"><b>${S.deck.i + 1}</b> / ${items.length}</span>`}</div>
+    ${grab}<div class="dtop"><button class="btn ic" data-a="deckclose" aria-label="Close">${ico("close")}</button><b class="dttl">${feed ? "Discover" : esc(statusLabel(S.lib.tab) || "Library")}</b>${feed ? "" : `<span class="dcount"><b>${S.deck.i + 1}</b> / ${items.length}</span>`}</div>
     <div class="dscroll">${items.map((x, k) => `<section class="dpage" style="--h:${hueOf(x.title)}"${x.art ? ` data-art="${esc(x.art)}"` : ""}><i class="dart"></i>
         <div class="dbody"><div class="eye">${dot(x)}<span>${esc(x.eye)}</span></div><h2${x.title.length > 26 ? ' class="long"' : ""}>${esc(x.title)}</h2>
-        <div class="sub mono">${esc(x.facts)}</div>${x.genres.length ? `<div class="dgen">${x.genres.map((g) => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
+        <div class="sub">${esc(x.facts)}</div>${x.genres.length ? `<div class="dgen">${x.genres.map((g) => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
         <div class="cta">${x.play ? `<button class="btn pri big" data-a="deckplay" data-v="${esc(x.play.id)}">${ico("play")}<span>${esc(x.play.label)}</span></button>` : ""}${x.add != null ? `<button class="btn ${x.play ? "" : "pri "}big" data-a="deckadd" data-v="${x.id}" ${x.add ? "" : "disabled"}>${ico(x.add ? "plus" : "check")}<span>${x.add ? "Planning" : "On Planning"}</span></button>` : ""}<button class="btn big" data-a="deckopen" data-v="${esc(x.open.join(":"))}">Details</button></div></div>
         ${k < items.length - 1 && (!feed || !k) ? `<span class="dnext">${ico("up")}${feed ? "Swipe up" : esc(items[k + 1].title)}</span>` : ""}</section>`).join("")}${feed ? `<section class="dpage dend"><div class="dbody"><h2>That's all for now</h2><div class="cta"><button class="btn pri big" data-a="deckagain">Shuffle again</button><button class="btn big" data-a="deckclose">Close</button></div></div></section>` : ""}</div></div>`;
   const sc = el.querySelector(".dscroll"), pages = sc.children;
@@ -6538,11 +6551,11 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
     el.innerHTML = `<video playsinline preload="auto" disablepictureinpicture disableremoteplayback crossorigin="anonymous"></video>
     <div class="pp-wait"><i class="pp-spin"></i><span></span></div>
     <div class="pp-tap" aria-hidden="true"><b class="l"></b><b class="c"></b><b class="r"></b></div>
-    <div class="pp-top"><button class="pp-ic" data-a="ppclose" aria-label="Close the player">${ico("chevl")}</button><div class="pp-t"><b></b><span class="mono"></span></div><button class="pp-ic" data-a="pplock" aria-label="Lock the controls">${ico("lock")}</button></div>
+    <div class="pp-top"><button class="pp-ic" data-a="ppclose" aria-label="Close the player">${ico("chevl")}</button><div class="pp-t"><b></b><span></span></div><button class="pp-ic" data-a="pplock" aria-label="Lock the controls">${ico("lock")}</button></div>
     <button class="pp-unlock" data-a="pplock">${ico("lock")}<span>Tap to unlock</span></button>
     <button class="pp-skip" data-a="ppskip" hidden></button>
     <div class="pp-deck">
-      <div class="pp-bot"><button class="pp-pb" data-a="pptoggle" aria-label="Play or pause">${ico("pause")}</button><span class="pp-time mono">0:00</span><span class="pp-track"><span class="pp-marks" aria-hidden="true"></span><input class="pp-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Position"></span><span class="pp-dur mono">0:00</span></div>
+      <div class="pp-bot"><button class="pp-pb" data-a="pptoggle" aria-label="Play or pause">${ico("pause")}</button><span class="pp-time">0:00</span><span class="pp-track"><span class="pp-marks" aria-hidden="true"></span><input class="pp-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Position"></span><span class="pp-dur">0:00</span></div>
       <div class="pp-tabs"><button data-a="pptab" data-v="eps">${ico("list")}<span>Episodes</span></button><button data-a="pptab" data-v="audio">${ico("cc")}<span class="lw">Audio &amp; subtitles</span><span class="sw">Audio &amp; subs</span></button><button data-a="pptab" data-v="menu">${ico("speed")}<span class="pp-spd">Speed 1×</span></button><button class="pp-nx" data-a="ppnextep">${ico("next")}<span class="lw">Next episode</span><span class="sw">Next ep</span></button></div>
     </div>
     <div class="pp-end" hidden></div><div class="pp-panel" hidden></div><div class="pp-note" role="status"></div>`;
@@ -6680,7 +6693,7 @@ function ppAudioHTML() {
   const r = PP.r || {}, a = r.audio, subs = (r.subs || []).length, tr = ppVideo()?.textTracks[0];
   if (!a && !subs) return `<p class="sub">This episode has one language and no separate subtitles.</p>`;
   return `${a ? ppRow("Language", "ppaudio", [["sub", "Sub"], ["dub", "Dub"]], a.current) : ""}
-    ${subs ? `${ppRow("Subtitles", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Subtitle timing</span><span class="pp-step seg"><button data-a="ppsubd" data-v="-0.25" aria-label="Earlier">${ico("minus")}</button><b class="mono">${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button data-a="ppsubd" data-v="0.25" aria-label="Later">${ico("plus")}</button></span></div>` : ""}
+    ${subs ? `${ppRow("Subtitles", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Subtitle timing</span><span class="pp-step seg"><button data-a="ppsubd" data-v="-0.25" aria-label="Earlier">${ico("minus")}</button><b>${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button data-a="ppsubd" data-v="0.25" aria-label="Later">${ico("plus")}</button></span></div>` : ""}
     ${a ? `<p class="sub">Switching goes back 5 s.</p>` : ""}`;
 }
 /* Episodes tab: stills like the show page's, from the library the page already has. */
@@ -6692,7 +6705,7 @@ function ppEpsHTML() {
     const c = findEpContext(x.id), art = x.thumb || (c ? safeThumb(c.sea, c.ep) : null), cur = x.id === PP.id; // the hub's still (online ones too), else the library's
     const p = c?.ep?.duration ? Math.min(100, Math.round((c.ep.position || 0) / c.ep.duration * 100)) : 0;
     const what = cur ? "Playing now" : x.watched ? "Watched" : x.online ? "Online" : p > 1 ? `${p}% watched` : "";
-    return `<button class="pp-ep${cur ? " cur" : ""}${x.watched ? " seen" : ""}" data-a="ppep" data-v="${esc(x.id)}"><span class="pp-th"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}><i class="mono">E${esc(String(x.number))}</i>${p > 1 && !x.watched ? `<em style="width:${p}%"></em>` : ""}</span><span class="pp-et"><b>${esc(x.title || `Episode ${x.number}`)}</b><small class="mono">${what}</small></span>${x.watched ? ico("check") : ""}</button>`;
+    return `<button class="pp-ep${cur ? " cur" : ""}${x.watched ? " seen" : ""}" data-a="ppep" data-v="${esc(x.id)}"><span class="pp-th"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}><i>E${esc(String(x.number))}</i>${p > 1 && !x.watched ? `<em style="width:${p}%"></em>` : ""}</span><span class="pp-et"><b>${esc(x.title || `Episode ${x.number}`)}</b><small>${what}</small></span>${x.watched ? ico("check") : ""}</button>`;
   }).join("")}</div>`;
 }
 const PP_TABS = [["eps", "Episodes"], ["audio", "Audio"], ["menu", "Playback"]];
@@ -6893,7 +6906,7 @@ function ppTap(e) {
 }
 function ppRipple(side, what) {
   const b = $(`#pp .pp-tap .${side < 0 ? "l" : side > 0 ? "r" : "c"}`); if (!b) return;
-  b.innerHTML = side ? `${ico(side < 0 ? "rew" : "fwd")}<span class="mono">${side < 0 ? "−" : "+"}${what} s</span>` : `<i>${ico(what)}</i>`;
+  b.innerHTML = side ? `${ico(side < 0 ? "rew" : "fwd")}<span>${side < 0 ? "−" : "+"}${what} s</span>` : `<i>${ico(what)}</i>`;
   b.classList.remove("on"); void b.offsetWidth; b.classList.add("on");
   clearTimeout(b._t); b._t = setTimeout(() => b.classList.remove("on"), 650);
 }
@@ -7215,7 +7228,7 @@ const A = {
     let r;
     try { r = await api("/api/fonts/delete", { id: v }); } catch { r = { error: "Could not reach the hub." }; }
     if (!r.ok) return toast(r.error || "Could not remove the font.");
-    for (const k of ["text", "title"]) if (fontGet(k) === "u:" + v) lsSet("font_" + k, "default");
+    for (const k of ["text", "title", "num"]) if (fontGet(k) === "u:" + v) lsSet("font_" + k, "default");
     applyFonts();
     if (S.settings) S.settings.fonts = r.fonts;
     toast("Font removed");
@@ -8202,14 +8215,15 @@ function applyLook() {
   cvRestSoon();
 }
 function applyFonts() {
-  const d = document.documentElement, t = fontGet("text"), h = fontGet("title");
-  const ui = fontStack("text", t), display = fontStack("title", h);
+  const d = document.documentElement, t = fontGet("text"), h = fontGet("title"), n = fontGet("num");
+  const ui = uiStack(t, n), display = fontStack("title", h);
   const ids = [...new Set([t, h].filter((v) => v.startsWith("u:")).map((v) => v.slice(2)))];
   ui ? d.style.setProperty("--ui", ui) : d.style.removeProperty("--ui");
   display ? d.style.setProperty("--display", display) : d.style.removeProperty("--display");
   let st = $("#ufonts");
   if (!st) { st = document.createElement("style"); st.id = "ufonts"; document.head.append(st); }
-  const css = ids.map((id) => fontFace(fontList().find((f) => f.id === id) || { id })).join("");
+  const face = (id, digits) => fontFace(fontList().find((f) => f.id === id) || { id }, digits);
+  const css = ids.map((id) => face(id)).join("") + (n.startsWith("u:") ? face(n.slice(2), true) : "");
   st.textContent = css;
   lsSet("fontCss", ui || display ? { ui, display, css } : null);
 }
