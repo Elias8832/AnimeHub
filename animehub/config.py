@@ -42,7 +42,7 @@ DEFAULT_MAL_CLIENT_ID = "e84657a8feb4042cea3acd38968e21bd"
 # Chromium-family browser names for app-mode window launch (Decision 26),
 # in preference order.
 APP_BROWSERS = ("chromium", "chromium-browser", "google-chrome-stable",
-                "google-chrome", "brave", "microsoft-edge")
+                "google-chrome", "brave", "helium-browser", "microsoft-edge")
 
 
 def _xdg_base(var, fallback, windows_var):
