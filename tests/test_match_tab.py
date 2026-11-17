@@ -204,3 +204,18 @@ class Desktop(unittest.TestCase):
         self.assertIn('WMCLASS="%s"; else WMCLASS="%s"' % (wl, cls), sh)
         self.assertIn("StartupWMClass=$WMCLASS\n", sh)
         self.assertIn('if std::env::var_os("WAYLAND_DISPLAY").is_some() { "wayland" } else { "x11" }', rs)
+
+    def test_browser_lists_match(self):
+        """The wrapper, the hub and install.sh's missing-browser warning
+        look for the same browsers, in the same order (Helium included)."""
+        rs = (support.ROOT / "desktop/src/main.rs").read_text(encoding="utf-8")
+        sh = (support.ROOT / "desktop/install.sh").read_text(encoding="utf-8")
+        from animehub.config import APP_BROWSERS
+        block = re.search(r'#\[cfg\(unix\)\]\nconst CHROMIUM_FAMILY: \[&str; \d+\] = \[(.*?)\];', rs, re.S).group(1)
+        wrapper = tuple(re.findall(r'"([^"]+)"', block))
+        install = tuple(re.search(r"\nfor b in ([^;]+); do\n  command -v", sh).group(1).split())
+        self.assertIn("helium-browser", APP_BROWSERS)
+        self.assertEqual(wrapper, APP_BROWSERS)
+        self.assertEqual(install, APP_BROWSERS)
+        self.assertIn("no Chromium-family browser found", sh)
+        self.assertIn('Command::new("notify-send")', rs)

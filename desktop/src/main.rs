@@ -71,14 +71,18 @@ fn default_hub_py() -> PathBuf {
     data_base().join("anime-hub").join("hub.py")
 }
 
-/// Mirror of animehub/config.py's APP_BROWSERS preference order.
+/// Mirror of animehub/config.py's APP_BROWSERS preference order;
+/// desktop/install.sh warns with the same list when none is installed.
+/// Helium names its app window like Chromium (WAYLAND_CLASS; checked on
+/// Hyprland 2026-11-18, Helium 0.21).
 #[cfg(unix)]
-const CHROMIUM_FAMILY: [&str; 6] = [
+const CHROMIUM_FAMILY: [&str; 7] = [
     "chromium",
     "chromium-browser",
     "google-chrome-stable",
     "google-chrome",
     "brave",
+    "helium-browser",
     "microsoft-edge",
 ];
 
@@ -566,8 +570,13 @@ fn app_window(exe: &str, port: u16, leash: &windows::Leash) -> Child {
 /// A fatal start-up error: printed on Linux, a message box on Windows
 /// (there is no console to print to).
 fn fail(msg: &str) -> ! {
+    // Started from the app menu there is no terminal to read stderr, so the
+    // click looked like nothing happened: say it on screen too.
     #[cfg(unix)]
-    eprintln!("anime-hub: {msg}");
+    {
+        eprintln!("anime-hub: {msg}");
+        let _ = Command::new("notify-send").args(["Anime Hub", msg]).status();
+    }
     #[cfg(windows)]
     windows::error_box(msg);
     std::process::exit(1);

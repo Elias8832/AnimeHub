@@ -36,7 +36,7 @@ Everything you need to watch anime in one app:
 
 **Required (Git and AppImage)**:
 - Python 3.9+ (often preinstalled)
-- Chromium-family browser (Chrome, Brave, Edge, Chromium)
+- Chromium-family browser (Chrome, Brave, Edge, Helium, Chromium)
 
 **Git** (needs rust/cargo):
 

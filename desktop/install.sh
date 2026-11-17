@@ -57,3 +57,12 @@ EOF
 chmod +x "$BIN/anime-hub" "$APP/anime-hub.desktop"
 update-desktop-database "$APP" 2>/dev/null || true
 echo "Installed: $BIN/anime-hub (+ launcher entry 'Anime Hub')"
+
+# The window needs one of these browsers (CHROMIUM_FAMILY in src/main.rs);
+# without one, the app can't open.
+for b in chromium chromium-browser google-chrome-stable google-chrome brave helium-browser microsoft-edge; do
+  command -v "$b" >/dev/null 2>&1 && exit 0
+done
+echo "" >&2
+echo "warning: no Chromium-family browser found, so Anime Hub can't open its window." >&2
+echo "         Install one: Chromium, Chrome, Brave, Helium or Edge (e.g. sudo pacman -S chromium)." >&2
