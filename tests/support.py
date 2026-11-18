@@ -43,6 +43,12 @@ for _mod in list(sys.modules.values()):
         _mod.urlopen = _offline
 
 
+# Upscayl's AppImage is looked for in the real home folder: only its own
+# tests look, in a made-up one.
+find_upscayl_appimages = animehub.server.upscale._appimage_candidates
+animehub.server.upscale._appimage_candidates = lambda: []
+
+
 # A prepared run starts the real ani-cli a moment later: only its own tests do that.
 settings.AUTOMATION_DEFAULTS["prepare_online"] = False
 
