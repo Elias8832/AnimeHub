@@ -9145,7 +9145,10 @@ addEventListener("popstate", (e) => {
   const swiped = backSwiped, app = $("#app"), st = e.state || {};
   backSwiped = false;
   curNid = st.nid || nidNew(); curPnid = st.pnid || null;
-  if (ovSkip) { ovSkip--; if (swiped === "pager") backLand(); else if (swiped) unstyle(app, $("#portal")); return; } // a layer closed by hand took its own entry back
+  /* A layer closed by hand took its own entry back. What changed while it was
+     open (a list picked in the phone's list menu) went into the layer's entry:
+     the page's own entry takes it now, so back from a show lands on that list. */
+  if (ovSkip) { ovSkip--; navKeep(); if (swiped === "pager") backLand(); else if (swiped) unstyle(app, $("#portal")); return; }
   const top = OV.pop();
   if (top && swiped === "pager") { S.navQuiet = true; top.close(); S.navQuiet = false; return backLand(); } // a Settings section, back to the list
   if (top) { top.close(); if (swiped) unstyle(app, $("#portal")); return; } // back closes the top layer first
