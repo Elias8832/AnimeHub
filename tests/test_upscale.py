@@ -60,6 +60,21 @@ def png(w, h):
             + b"\x08\x06\x00\x00\x00" + os.urandom(40000))
 
 
+# A fake Upscayl AppImage: `--appimage-extract PATTERN` writes what matches
+# into ./squashfs-root, and each run leaves a line in `asked` beside it.
+FAKE_APPIMAGE = r"""#!/bin/sh
+PATH=/usr/bin:/bin
+[ "$1" = --appimage-extract ] || exit 1
+echo "$2" >> "$(dirname "$0")/asked"
+r=squashfs-root/resources
+mkdir -p $r/bin $r/models
+case "$2" in
+  resources/bin/upscayl-bin) echo bin > $r/bin/upscayl-bin ;;
+  resources/models/*) n=${2#resources/models/}; n=${n%.*}; echo m > $r/models/$n.bin; echo p > $r/models/$n.param ;;
+esac
+"""
+
+
 class Guard(unittest.TestCase):
     def test_blank_pictures_are_caught(self):
         """The 2026-10-26 failure: right size, all black, exit code 0."""
@@ -95,6 +110,52 @@ class Tool(unittest.TestCase):
         self.assertIn(Path("C:/Program Files/Upscayl/resources"), dirs)
         with patch.object(upscale.system, "WINDOWS", True):
             self.assertIsNone(upscale._find_flatpak())
+
+    @unittest.skipIf(sys.platform == "win32", "AppImages are Linux only")
+    def test_unpacks_an_appimage_once(self):
+        """Elias, 2026-11-18: Upscayl installed as an AppImage wasn't found."""
+        home = self.tmp / "home"
+        (home / "Applications").mkdir(parents=True)
+        appimage = home / "Applications" / "upscayl-2.15.0-linux.AppImage"
+        appimage.write_text(FAKE_APPIMAGE)
+        appimage.chmod(0o755)
+        asked = home / "Applications" / "asked"
+        find = lambda: upscale.find_upscayl(fresh=True)  # noqa: E731
+        with patch.object(upscale, "_appimage_candidates", support.find_upscayl_appimages), \
+             patch.object(upscale.Path, "home", return_value=home), \
+             patch.dict(os.environ, {"PATH": "", "XDG_DATA_HOME": str(home / "share")}), \
+             patch.object(upscale, "_find_native", return_value=None), \
+             patch.object(upscale, "_find_flatpak", side_effect=AssertionError("asked the Flatpak")):
+            tool = find()
+            self.assertEqual(tool["where"], str(appimage))
+            self.assertTrue(Path(tool["cmd"][0]).is_file())
+            self.assertTrue(Path(tool["cmd"][0]).is_relative_to(config.CACHE))
+            for model, _ in upscale.STYLES.values():
+                self.assertTrue((Path(tool["models"]) / f"{model}.bin").is_file())
+            runs = len(asked.read_text().splitlines())
+            self.assertEqual(find(), tool)
+            self.assertEqual(len(asked.read_text().splitlines()), runs)  # not unpacked again
+            os.utime(appimage, (1, 1))  # a new version in its place
+            find()
+            self.assertEqual(len(asked.read_text().splitlines()), 2 * runs)
+
+    @unittest.skipIf(sys.platform == "win32", "AppImages are Linux only")
+    def test_finds_an_appimage_through_its_desktop_entry(self):
+        home = self.tmp / "home"
+        (home / "share" / "applications").mkdir(parents=True)
+        (home / "elsewhere").mkdir()
+        appimage = home / "elsewhere" / "Upscayl.AppImage"
+        appimage.write_text(FAKE_APPIMAGE)
+        appimage.chmod(0o755)
+        (home / "share" / "applications" / "upscayl.desktop").write_text(
+            f'[Desktop Entry]\nName=Upscayl\nExec="{appimage}" --no-sandbox %U\n')
+        with patch.object(upscale, "_appimage_candidates", support.find_upscayl_appimages), \
+             patch.object(upscale.Path, "home", return_value=home), \
+             patch.dict(os.environ, {"PATH": "", "XDG_DATA_HOME": str(home / "share")}):
+            self.assertEqual(upscale._find_appimage()["where"], str(appimage))
+            appimage.write_text("#!/bin/sh\nexit 1\n")  # an AppImage that won't unpack
+            shutil.rmtree(config.CACHE / "upscayl")
+            self.assertIsNone(upscale._find_appimage())
 
     def test_falls_back_to_the_flatpak(self):
         flat = {"cmd": ["flatpak", "run"], "models": "/app/m", "where": "Flatpak"}

@@ -1,5 +1,5 @@
-"""Optional banner upscaling through Upscayl (Flatpak, a normal install, or
-Windows): one banner at a time on a background worker."""
+"""Optional banner upscaling through Upscayl (Flatpak, AppImage, a normal
+install, or Windows): one banner at a time on a background worker."""
 
 import json
 import os
@@ -130,6 +130,100 @@ def _find_native():
     return None
 
 
+# Where people keep AppImages: AppImageLauncher (~/Applications), Gear Lever
+# (~/AppImages), ~/.local/bin, or just Downloads. Desktop entries in
+# ~/.local/share/applications point at any other place.
+APPIMAGE_DIRS = ("Applications", "AppImages", ".local/bin", "bin", "Apps", "App", "Downloads")
+
+
+def _appimage_candidates():
+    home = Path.home()
+    found = []
+    dirs = [home / d for d in APPIMAGE_DIRS]
+    dirs += [Path(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+    for d in dirs:
+        try:
+            found += [p for p in d.iterdir() if "upscayl" in p.name.lower()]
+        except OSError:
+            pass
+    apps = Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "applications"
+    try:
+        entries = [p for p in apps.glob("*.desktop") if "upscayl" in p.name.lower()]
+    except OSError:
+        entries = []
+    for entry in entries:
+        try:
+            lines = entry.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            key, _, value = line.partition("=")
+            if key.strip() in ("TryExec", "Exec") and value.strip():
+                v = value.strip()
+                found.append(Path(v[1:].partition('"')[0] if v.startswith('"') else v.split()[0]))
+    out = []
+    for p in found:
+        try:
+            p = p.resolve()
+            if p.name.lower().endswith(".appimage") and p.is_file() and p not in out:
+                out.append(p)
+        except OSError:
+            pass
+    # The newest one wins: an update usually lands beside the old file.
+    return sorted(out, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _appimage_models():
+    return sorted({model for model, _ in STYLES.values()})
+
+
+def _unpack_appimage(appimage):
+    """Upscayl's AppImage can't be run as a command line tool, but its
+    upscayl-bin and models can be taken out of it (`--appimage-extract`
+    needs no FUSE). Kept in the cache, done again when the file changes."""
+    st = appimage.stat()
+    stamp = {"path": str(appimage), "size": st.st_size, "mtime": st.st_mtime}
+    home = config.CACHE / "upscayl"
+    res = home / "resources"
+    tool = {"cmd": [str(res / "bin" / "upscayl-bin")], "models": str(res / "models"),
+            "where": str(appimage)}
+    try:
+        if json.loads(system.read_bytes(home / "source.json")) == stamp and (res / "bin" / "upscayl-bin").is_file():
+            return tool
+    except (OSError, ValueError):
+        pass
+    tmp = config.CACHE / "upscayl.new"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    try:
+        wanted = ["resources/bin/upscayl-bin"] + [f"resources/models/{m}.*" for m in _appimage_models()]
+        for pattern in wanted:
+            subprocess.run([str(appimage), "--appimage-extract", pattern], cwd=tmp,
+                           capture_output=True, timeout=120)
+        got = tmp / "squashfs-root" / "resources"
+        if not (got / "bin" / "upscayl-bin").is_file() or not all(
+                (got / "models" / f"{m}.bin").is_file() for m in _appimage_models()):
+            return None
+        shutil.rmtree(home, ignore_errors=True)
+        (tmp / "squashfs-root").rename(home)
+        (home / "source.json").write_text(json.dumps(stamp))
+        return tool
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _find_appimage():
+    if system.WINDOWS:
+        return None
+    for appimage in _appimage_candidates():
+        tool = _unpack_appimage(appimage)
+        if tool:
+            return tool
+    return None
+
+
 def _find_flatpak():
     if system.WINDOWS or not shutil.which("flatpak"):
         return None
@@ -148,10 +242,10 @@ _found = {"at": 0.0, "value": None}
 
 def find_upscayl(fresh=False):
     """{cmd, models, where} for the installed Upscayl, or None. A normal
-    install first (no sandbox to start), then the Flatpak. Asked at most
+    install first (no sandbox to start), then an AppImage, then the Flatpak. Asked at most
     once a minute — Settings reads it on every open."""
     if fresh or time.time() - _found["at"] > 60:
-        _found["value"] = _find_native() or _find_flatpak()
+        _found["value"] = _find_native() or _find_appimage() or _find_flatpak()
         _found["at"] = time.time()
     return _found["value"]
 
