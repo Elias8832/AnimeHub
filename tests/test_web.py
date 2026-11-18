@@ -1160,7 +1160,19 @@ class PopupFrame(unittest.TestCase):
         self.assertNotIn('<button class="choice', APP)  # the old cards
         self.assertNotIn('class="sum2', APP)
         self.assertIn(".pkprev .lkv{width:280px", CSS)  # the player drawing has a size (it collapsed in Settings too)
-        self.assertIn('T.choice === "connect" ? " pri" : ""}" data-a="tourconnect"', APP)  # page 3's pick decides the last page's button
+        self.assertIn('T.choice === svc ? " pri" : ""}" data-a="tourconnect" data-v="${svc}"', APP)  # page 3's pick decides the last page's button
+
+    def test_tour_offers_myanimelist(self):
+        """Elias: the tour's account page offers MyAnimeList next to AniList (Decision 75)."""
+        fn = APP[APP.index("const tourPickAcct ="):APP.index("const tourSwitches =")]
+        for v in ('["anilist", "AniList",', '["mal", "MyAnimeList",', '["skip", "Skip for now",'):
+            self.assertIn(v, fn)
+        self.assertEqual(APP.count('["Connect an account?", ""'), 2)  # PC and Android
+        self.assertNotIn("Connect AniList?", APP)
+        self.assertIn('openModal({ t: v === "mal" ? "mal" : "ani" })', APP)  # the last page's Connect opens the picked one
+        # Elias: logged in already, it still showed only AniList; now both services, Connect for the other
+        self.assertIn("const tourPickAcct = (T, a, skipLine) => a.connected ? tourSvcRows(a)", APP)
+        self.assertIn("if (a.connected) return tourSvcRows(a);", APP)
 
     def test_no_text_twice(self):
         """Elias: label + placeholder + help said the same thing; notes that add nothing are gone."""

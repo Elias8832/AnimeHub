@@ -15,7 +15,7 @@ const S = {
          air: air === "FINISHED_AIRING" ? "FINISHED" : air || "all", genres: Array.isArray(genres) ? genres : [],
          year: Array.isArray(year) ? year : "all", score: Array.isArray(score) ? score : "all", average: Array.isArray(average) ? average : "all" }))(lsGet("hubLib", {})),
   histRange: lsGet("histRange", "7d"), histMax: 120, jTab: lsGet("jTab", "history"),
-  match: {}, tour: { step: 0, choice: "connect" }, rec: null, navIn: true, opener: null,
+  match: {}, tour: { step: 0, choice: "anilist" }, rec: null, navIn: true, opener: null,
   slink: {}, dl: [], loadingEp: null, frDown: {},
 };
 
@@ -3365,11 +3365,11 @@ function setSections(s) {
     ${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, off))}</div>`,
     phone: s.android ? syncGroup() : s.phone ? "" : phoneGroup(),
     data: s.android ? g("Updates", updateRows(s)) + g("About", srow("Data folder", `<code>${esc(s.data_dir)}</code>`, ""))
-      + g("Help", srow("First-run tour", "Walk through AniList and Termux again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>')))
+      + g("Help", srow("First-run tour", "Walk through your account and Termux again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>')))
     : g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
       + g("Tools", `${toolsBox(s)}${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
       + g("Files", `${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}`)
-      + g("Help", (isPhone() ? "" : srow("Keys", "Every shortcut. Press ? anywhere for this list.", pkdo('<button class="btn" data-a="menu" data-v="keys">Show keys</button>'))) + srow("First-run tour", "Walk through the library folder and AniList again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>'))),
+      + g("Help", (isPhone() ? "" : srow("Keys", "Every shortcut. Press ? anywhere for this list.", pkdo('<button class="btn" data-a="menu" data-v="keys">Show keys</button>'))) + srow("First-run tour", "Walk through the library folder and your account again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>'))),
   };
 }
 /* Settings → Account (Decision 75): AniList and MyAnimeList can both stay
@@ -5349,9 +5349,12 @@ function tourFound(s, a, n, ok) {
     tourAcct(a, T),
   ].join("");
 }
-/* The account row: who's connected, or Connect (in the accent when page 3 picked it). */
-const tourAcct = (a, T) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
-  : srow(acct(), "Not connected yet.", pkdo(`<button class="btn${T.choice === "connect" ? " pri" : ""}" data-a="tourconnect">Connect ${acct()}</button>`));
+/* The account row: who's connected, or Connect for the service page 3 picked (in the accent then). */
+const tourAcct = (a, T) => {
+  if (a.connected) return tourSvcRows(a);
+  const svc = SVC_NAME[T.choice] ? T.choice : isMal() ? "mal" : "anilist", name = SVC_NAME[svc];
+  return srow(name, "Not connected yet.", pkdo(`<button class="btn${T.choice === svc ? " pri" : ""}" data-a="tourconnect" data-v="${svc}">Connect ${name}</button>`));
+};
 /* The phone page needs the desktop app: without it the tour skips that page. */
 const tourPages = (pages, s) => (s.background_ok ? pages : pages.filter((_, i) => i !== 5));
 /* A small drawing of each player look for the tour: the real layout over a neutral scene, no show's art. */
@@ -5409,7 +5412,7 @@ function tourBlocks() {
       + srow("Playback", "Resumes, skips openings, plays the next one.", "")],
     ["Where's your anime?", "", `${srow("Library folder", folderLine(s, n, eps),
         `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide")}${DirPick("tour")}`],
-    ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this PC.")}`],
+    ["Connect an account?", "", `<p class="sub">Your lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this PC.")}`],
     ["A few tools", "", toolsShown(s.tools_install || {}) ? toolsBox(s, true) : tourTools(s)],
     ["Pick your player", "", tourLooks(s)],
     ["Keep it running?", "", `<p class="sub">For the phone remote in a phone's browser. The Android app doesn't need it.</p>${bgRows(s)}`],
@@ -5417,11 +5420,17 @@ function tourBlocks() {
     ["You're set", "", `<div class="group"><h3>Found</h3>${tourFound(s, a, n, ok)}</div>${tourSwitches(s, a)}`],
   ], s);
 }
-/* Page 3: Connect or Skip, as Settings rows with Pick ›. Already connected: who. */
-const tourPickAcct = (T, a, skipLine) => a.connected ? srow(acct(), "", pkdo(whoTxt(a.user)))
-  : [["connect", `Connect ${acct()}`, "Syncs progress and scores."], ["skip", "Skip for now", skipLine]]
+/* Logged in already: both services (Decision 75), who's on each, Connect for the other. */
+const tourSvcRows = (a) => Object.keys(SVC_NAME).map((v) => {
+  const me = a.accounts?.[v] || {};
+  return srow(SVC_NAME[v], me.user ? (a.service === v ? "In use." : "Logged in, not in use.") : "Not connected.",
+    pkdo(me.user ? whoTxt(me.user) : `<button class="btn" data-a="tourconnect" data-v="${v}">Connect ${SVC_NAME[v]}</button>`));
+}).join("");
+/* Page 3: AniList, MyAnimeList or Skip, as Settings rows with Pick ›. */
+const tourPickAcct = (T, a, skipLine) => a.connected ? tourSvcRows(a)
+  : [["anilist", "AniList", "Syncs progress, scores and favourites."], ["mal", "MyAnimeList", "Syncs progress and scores."], ["skip", "Skip for now", skipLine]]
     .map(([v, l, d]) => srow(l, d, pkdo(T.choice === v ? dotTxt("Picked") : `<button class="btn" data-a="tourpick" data-v="${v}">Pick</button>`), T.choice === v ? "on" : "")).join("");
-const tourSwitches = (s, a) => `<div class="group"><h3>While you watch</h3>${srow("Send watched episodes", "Sends your highest watched episode to AniList.", onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, !a.connected))}${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, !a.connected))}</div>`;
+const tourSwitches = (s, a) => `<div class="group"><h3>While you watch</h3>${srow("Send watched episodes", `Sends your highest watched episode to ${acct()}.`, onoff("auto_progress_sync", "Send watched episodes", s.auto_progress_sync, !a.connected))}${srow("Add shows automatically", "A first watch of a matched show adds it to Watching.", onoff("auto_add_watch", "Add shows automatically", s.auto_add_watch, !a.connected))}</div>`;
 /* Termux commands (Decision 88), the same words the hub's errors use. */
 const TERMUX_INSTALL = "pkg upgrade -y && pkg install -y ani-cli";
 const TERMUX_ALLOW = "mkdir -p ~/.termux && echo allow-external-apps=true >> ~/.termux/termux.properties && termux-reload-settings";
@@ -5446,8 +5455,8 @@ function tourAndroid(T, s, a) {
   return [
     ["Welcome to Anime Hub", "",
       srow("Online episodes", "Search any show and watch it. Needs the free Termux app.", "") + srow("Playback", "Resumes, skips openings, plays the next one.", "")
-      + srow(acct(), "Your lists and progress. Optional.", "")],
-    ["Connect AniList?", "", `<p class="sub">Your AniList lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this phone.")}`],
+      + srow("AniList or MyAnimeList", "Your lists and progress. Optional.", "")],
+    ["Connect an account?", "", `<p class="sub">Your lists become your library.</p>${tourPickAcct(T, a, "Everything stays on this phone.")}`],
     ["Online episodes", "", `<p class="sub">ani-cli finds them. It runs in Termux.</p>${termuxBox(s)}`],
     ["Files on this phone?", "", `<p class="sub">Optional. Episodes on this phone or an SD card.</p>
      ${s.files_ok ? srow("Your files", folderLine(s, n), `<div class="path">${libPath("tour", s)}${dirBtn("tour")}</div>`, "wide") + DirPick("tour") : filesAsk()}`],
@@ -5699,7 +5708,7 @@ function maybeAskUpdates() {
 }
 function maybeTour() {
   if (!S.settings || S.settings.tour_done || location.hash.includes("#show=") || location.hash.includes("#f=") || S.modal) return;
-  S.tour = { step: 0, choice: "connect" };
+  S.tour = { step: 0, choice: "anilist" };
   openModal({ t: "tour" });
 }
 async function openExternal(url) {
@@ -7687,7 +7696,7 @@ const A = {
     else { const m = $("#animsg"); if (m) m.innerHTML = `Popup blocked — <a href="${esc(r.url)}" target="_blank" rel="noopener">open AniList</a> to continue.`; }
     return pollOauth();
   },
-  tour: async () => { if (!S.settings) await loadSettings(); S.tour = { step: 0, choice: "connect" }; S.dir = null; openModal({ t: "tour" }); },
+  tour: async () => { if (!S.settings) await loadSettings(); S.tour = { step: 0, choice: "anilist" }; S.dir = null; openModal({ t: "tour" }); },
   dirbrowse: (v, t) => {
     const ctx = (t.id || "").replace(/^(dirbtn|libpath)-/, "") || (t.closest(".dialog") ? "tour" : "settings"), typed = ($("#libpath-" + ctx)?.value || "").trim(), field = t.tagName === "INPUT";
     if (S.dir?.ctx === ctx) { if (field) dirGo(typed); else dirClose(); return; } // Browse again = Cancel; Enter in the field walks there
@@ -7804,7 +7813,7 @@ const A = {
      dialog never re-nags), then hand off to the connect dialog. Found by
      Elias: choosing connect on page 2 skipped page 3 entirely — the old
      handoff closed the tour before the summary ever showed. */
-  tourconnect: () => { api("/api/settings", { tour_done: true }).catch(() => {}); if (S.settings) S.settings.tour_done = true; closeModal(); openModal({ t: "ani" }); },
+  tourconnect: (v) => { api("/api/settings", { tour_done: true }).catch(() => {}); if (S.settings) S.settings.tour_done = true; closeModal(); openModal({ t: v === "mal" ? "mal" : "ani" }); },
   recset: (v, t) => { S.rec.pick[t.dataset.k || t.dataset.m] = v; paintModal(); },
   recall: (v) => { for (const k of Object.keys(S.rec.pick)) S.rec.pick[k] = v; paintModal(); },
   recmark: (v) => { S.rec.mark = v === "1"; paintModal(); }, // ‹ On / Off › (TODO 226; was a switch)
