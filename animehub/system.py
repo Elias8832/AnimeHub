@@ -381,8 +381,41 @@ def open_external(target):
     if WINDOWS:
         os.startfile(target)
         return
+    if os.path.isdir(target) and _show_in_file_manager(target):
+        return
     subprocess.Popen(["xdg-open", str(target)], stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, **detached())
+
+
+# The desktop's file manager answers here (Dolphin, Nautilus, Thunar, Nemo…).
+# xdg-open follows the folder's default app, and a terminal can claim that
+# (kitty-open.desktop opened show folders in kitty), so a folder asks the
+# file manager first and only falls back to xdg-open when none answers.
+_FILE_MANAGER = ("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
+                 "org.freedesktop.FileManager1.ShowFolders")
+
+
+def _show_in_file_manager(folder):
+    """Ask the session's file manager to show a folder; False when there
+    is none (no D-Bus tool, no session bus, no FileManager1 service)."""
+    dest, obj, method = _FILE_MANAGER
+    uri = Path(os.path.abspath(folder)).as_uri()  # quoted: no ' or , left
+    if shutil.which("gdbus"):
+        cmd = ["gdbus", "call", "--session", "--dest", dest, "--object-path", obj,
+               "--method", method, f"['{uri}']", ""]
+    elif shutil.which("dbus-send"):
+        cmd = ["dbus-send", "--session", "--print-reply", f"--dest={dest}", obj,
+               method, f"array:string:{uri}", "string:"]
+    else:
+        return False
+    try:
+        done = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=10)
+    except subprocess.TimeoutExpired:
+        return True  # a file manager is still starting up: it will show it
+    except OSError:
+        return False
+    return done.returncode == 0
 
 
 # Where Chromium-family browsers install on Windows (they're rarely on

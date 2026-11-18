@@ -427,5 +427,44 @@ class PosixUnchangedTests(unittest.TestCase):
         os.close(slave)
 
 
+@unittest.skipIf(system.WINDOWS, "Linux only")
+class OpenFolderTests(unittest.TestCase):
+    """A show folder opened in kitty: xdg-open followed the folder's default
+    app, a terminal. The file manager is asked first (FileManager1)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.folder = Path(tmp.name) / "Frieren, Season 1"
+        self.folder.mkdir()
+        p = patch.object(system.shutil, "which", side_effect=lambda n: f"/usr/bin/{n}" if n == "gdbus" else None)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def open(self, target, code=0):
+        with patch.object(system.subprocess, "run", return_value=MagicMock(returncode=code)) as run, \
+                patch.object(system.subprocess, "Popen") as popen:
+            system.open_external(target)
+        return run, popen
+
+    def test_a_folder_goes_to_the_file_manager(self):
+        run, popen = self.open(self.folder)
+        cmd = run.call_args[0][0]
+        self.assertEqual(cmd[:2], ["gdbus", "call"])
+        self.assertIn("org.freedesktop.FileManager1.ShowFolders", cmd)
+        self.assertIn(f"['{self.folder.as_uri()}']", cmd)
+        self.assertNotIn(",", self.folder.as_uri())
+        popen.assert_not_called()
+
+    def test_no_file_manager_falls_back_to_xdg_open(self):
+        run, popen = self.open(self.folder, code=1)
+        self.assertEqual(popen.call_args[0][0], ["xdg-open", str(self.folder)])
+
+    def test_a_url_skips_the_file_manager(self):
+        run, popen = self.open("https://anilist.co/anime/1")
+        run.assert_not_called()
+        self.assertEqual(popen.call_args[0][0], ["xdg-open", "https://anilist.co/anime/1"])
+
+
 if __name__ == "__main__":
     unittest.main()
