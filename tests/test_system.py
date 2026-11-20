@@ -230,8 +230,9 @@ class WindowsFileTests(unittest.TestCase):
         self.assertEqual(replace.call_count, 3)
 
     def test_replace_gives_up_in_the_end(self):
+        clock = iter(range(0, 1000, 1))
         with patch.object(system.os, "replace", side_effect=PermissionError(13, "Access is denied")), \
-                patch.object(system.time, "sleep"):
+                patch.object(system.time, "sleep"), patch.object(system.time, "monotonic", lambda: next(clock)):
             with self.assertRaises(PermissionError):
                 system.replace("a", "b")
 

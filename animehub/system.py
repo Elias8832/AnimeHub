@@ -75,29 +75,32 @@ def utf8_stdio():
             stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
+def _patiently(attempt, seconds):
+    """Windows: run `attempt` until it gets past a file lock, trying every
+    few milliseconds for up to `seconds`. A lock is short but comes back
+    often (page requests reading a banner), so frequent tries catch a gap
+    that a few long waits missed (TODO 145's test failed on CI that way)."""
+    deadline = time.monotonic() + seconds
+    while WINDOWS and time.monotonic() < deadline:
+        try:
+            return attempt()
+        except PermissionError:
+            time.sleep(0.005)
+    return attempt()
+
+
 def replace(src, dst):
     """os.replace that outlasts Windows' file locks: there it fails while
     anything has `dst` open (the hub serving that banner, a virus scanner),
-    so it tries again for a moment. POSIX never refuses."""
-    for wait in (0.02, 0.05, 0.1, 0.25, 0.5, 1.0) if WINDOWS else ():
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            time.sleep(wait)
-    os.replace(src, dst)
+    so it keeps trying for a few seconds. POSIX never refuses."""
+    _patiently(lambda: os.replace(src, dst), 5.0)
 
 
 def read_bytes(path):
     """The other side of replace: on Windows, opening a file in the moment
     it is being replaced fails too, which a reader took for "no such file"
-    (a banner's 404, the AniList cache "gone"). Tries again for a moment."""
-    for wait in (0.01, 0.02, 0.05, 0.1, 0.25) if WINDOWS else ():
-        try:
-            return Path(path).read_bytes()
-        except PermissionError:
-            time.sleep(wait)
-    return Path(path).read_bytes()
+    (a banner's 404, the AniList cache "gone"). Keeps trying for a moment."""
+    return _patiently(lambda: Path(path).read_bytes(), 1.0)
 
 
 def open_pty():
