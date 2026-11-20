@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, database, downloader, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
+from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, database, downloader, firewall, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -1128,13 +1128,23 @@ class Handler(BaseHTTPRequestHandler):
                     self._bad("switch the phone remote on first")
                     return
                 remote.new_code()
+                firewall.forget()  # a fresh code looks at the firewall again (TODO 258)
+            elif body.get("firewall_allow") is True:
+                # Windows: open the port for phones, one UAC prompt (TODO 258).
+                if not remote.enabled():
+                    self._bad("switch the phone remote on first")
+                    return
+                problem = firewall.allow(config.REMOTE_PORT)
+                if problem:
+                    self.send_json({"ok": False, **remote.payload(), "firewall_error": problem})
+                    return
             elif "remove" in body:
                 if not isinstance(body["remove"], int) or isinstance(body["remove"], bool):
                     self._bad("'remove' must be a phone's id")
                     return
                 remote.remove(body["remove"])
             else:
-                self._bad("send one of: on, new_code, remove")
+                self._bad("send one of: on, new_code, firewall_allow, remove")
                 return
             self.send_json({"ok": True, **remote.payload()})
         elif route == "/api/watched":

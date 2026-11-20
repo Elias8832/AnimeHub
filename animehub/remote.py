@@ -14,7 +14,7 @@ import threading
 import time
 from urllib.parse import quote
 
-from . import database, qr, settings, system, util
+from . import database, firewall, qr, settings, system, util
 from .config import config
 
 COOKIE = "animehub_remote"
@@ -59,6 +59,32 @@ def _iface_ip(name):
         return None
     finally:
         s.close()
+
+
+def _iface_net(name, ip):
+    """Linux: the network an interface's address sits in (SIOCGIFNETMASK),
+    e.g. 192.168.2.0/24, or None."""
+    import fcntl
+    import struct
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        packed = fcntl.ioctl(s.fileno(), 0x891B, struct.pack("256s", name[:15].encode()))
+        return ipaddress.ip_network(f"{ip}/{socket.inet_ntoa(packed[20:24])}", strict=False)
+    except (OSError, ValueError):
+        return None
+    finally:
+        s.close()
+
+
+def lan_link(ip):
+    """Linux: (interface, network) holding the home address `ip`, for the
+    firewall check (TODO 258). (None, None) elsewhere or when not found."""
+    if system.WINDOWS or not ip or not os.path.isdir("/sys/class/net"):
+        return None, None
+    for n in sorted(os.listdir("/sys/class/net")):
+        if _iface_ip(n) == ip:
+            return n, _iface_net(n, ip)
+    return None, None
 
 
 def _candidates():
@@ -284,13 +310,27 @@ def set_enabled(on, handler):
             _code.update(code=None, until=0.0, tries=0)
 
 
+def firewall_status():
+    """Is a firewall in the way of phones (TODO 258)? See firewall.py."""
+    iface, net = lan_link(lan_ip())
+    tailscale = not system.WINDOWS and os.path.isdir("/sys/class/net/tailscale0")
+    return firewall.status(config.REMOTE_PORT, iface, net, tailscale)
+
+
 def payload():
     """Settings → Phone remote."""
     on = enabled()
     addr = address() if on else None
     code = code_info() if on else None
     out = {"on": on, "listening": bool(_listener["server"]), "error": _listener["error"] if on else None,
-           "address": addr, "port": config.REMOTE_PORT, "devices": devices(), "code": None}
+           "address": addr, "port": config.REMOTE_PORT, "devices": devices(), "code": None,
+           "firewall": None, "vpn": None}
+    if on and addr and _listener["server"]:
+        out["firewall"] = firewall_status()
+        # A VPN's kill switch can drop the home network too (Proton's
+        # "Allow LAN" off): named only while a code is up, as a maybe.
+        vpn = settings.vpn_status() if code else None
+        out["vpn"] = vpn["iface"] if vpn and vpn["active"] else None
     if code and addr:
         link = f"{addr}/pair?c={code['code']}"
         out["code"] = {**code, "link": link, "qr": qr.svg(link)}

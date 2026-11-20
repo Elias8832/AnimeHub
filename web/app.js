@@ -3748,11 +3748,18 @@ function phoneGroup() {
         <p>Or open <code>${esc(r.address)}</code> on the phone and type</p><p class="pcode mono">${esc(code.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
         <p class="sub">Works for ${mins} more minute${mins === 1 ? "" : "s"}, for one phone. On Android it can open the Anime Hub app instead.</p><button class="btn" data-a="rmtcode">New code</button></div></div>`
     : srow("Pair a phone", "Shows a QR code to scan with the phone.", pkdo('<button class="btn pri" data-a="rmtcode">Pair a phone</button>'));
+  /* TODO 258: a firewall that drops phones left pairing failing in silence.
+     Linux: the command to open the port; Windows: one button (UAC). */
+  const fw = r.firewall;
+  const fwRow = !fw ? "" : fw.can_fix
+    ? srow(`Firewall${swarn("Blocks phones")}`, `${esc(fw.name)} stops phones from reaching this PC. Windows asks once to allow them.`, pkdo(`<button class="btn pri" data-a="rmtfw"${S.fwBusy ? " disabled" : ""}>${S.fwBusy ? "Waiting for Windows…" : "Allow phones"}</button>`))
+    : srow(`Firewall${swarn(fw.blocks ? "Blocks phones" : "May block phones")}`, `${fw.blocks ? `${esc(fw.name)} stops phones from reaching this PC. Run this in a terminal:` : `${esc(fw.name)} is on and its rules aren't readable. If the phone can't connect, run this in a terminal:`}<code class="cmd">${esc(fw.fix)}</code>`, pkdo(`<button class="btn pri" data-a="copy" data-v="${esc(fw.fix)}">Copy command</button>`));
+  const vpnRow = code && r.vpn && !fw ? srow("Phone can't connect?", `A VPN is on (${esc(r.vpn)}). Allow LAN connections in its settings, or turn it off while pairing.`, "") : "";
   const devs = r.devices.length ? r.devices.map((d) => srow(esc(d.name), `Paired ${esc(when(d.created))} · last used ${esc(when(d.last_seen))}`, pkdo(`<button class="btn" data-a="rmtdel" data-v="${d.id}">Remove</button>`))).join("")
     : r.on ? '<p class="sub">No phones paired yet.</p>' : "";
   return `<div class="group"><h3>Phone remote</h3>
     ${srow("Phone remote", "Control playback from the phone's browser, or sync with the Anime Hub Android app.", pick("Phone remote", "rmton", null, [["on", "On"], ["off", "Off"]], r.on ? "on" : "off"))}
-    ${pair}${r.on ? srow("Keep the PC playing", "Off: playing an episode on the phone stops mpv here. On: both play at once.", onoff("phone_play_both", "Keep the PC playing", S.settings?.phone_play_both)) : ""}${S.settings?.background_ok ? srow("When the window closes", "Keep running and Start at login are in System.", "") : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
+    ${pair}${fwRow}${vpnRow}${r.on ? srow("Keep the PC playing", "Off: playing an episode on the phone stops mpv here. On: both play at once.", onoff("phone_play_both", "Keep the PC playing", S.settings?.phone_play_both)) : ""}${S.settings?.background_ok ? srow("When the window closes", "Keep running and Start at login are in System.", "") : ""}</div>${r.on || r.devices.length ? `<div class="group"><h3>Paired phones</h3>${devs}</div>` : ""}`;
 }
 /* Settings → PC sync in the Android app (Decision 91): pair once with the
    PC's phone remote (address + code), then the two keep watched episodes,
@@ -7608,6 +7615,15 @@ const A = {
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
+  rmtfw: async () => {
+    S.fwBusy = true; render(true);
+    try {
+      const r = await api("/api/remote", { firewall_allow: true });
+      S.remote = r;
+      toast(r.firewall_error || (r.firewall ? "Still blocked. Check Windows Firewall's settings." : "Phones can reach this PC now"), r.firewall_error ? "err" : undefined);
+    } catch { toast("Could not reach the hub.", "err"); }
+    S.fwBusy = false; render(true);
+  },
   peerpair: () => { S.peerAddr = $("#peeraddr")?.value || ""; S.peerCode = $("#peercode")?.value || ""; openModal({ t: "peer" }); },
   peerpick: (v) => { S.modal.take = v; for (const b of document.querySelectorAll("#modal .pko")) { const on = b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); } }, // in place: the pop-up doesn't redraw
   peertake: () => { const v = S.modal?.take || "combine"; closeModal(); peerDo({ op: "pair", address: S.peerAddr, code: S.peerCode, take: v }, () => { S.peerCode = ""; return "Paired. Syncing with the PC…"; }).then(() => setTimeout(() => api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}), 4000)); },

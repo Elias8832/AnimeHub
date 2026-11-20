@@ -2349,6 +2349,7 @@ body.rmt-open .rbar,body.rmt-open #nav,body.rmt-open #status,body.rmt-open #app{
 .pairbox .qr{width:208px;flex:none;border-radius:14px;overflow:hidden;background:#fff}
 .pairbox .qr svg{display:block;width:100%;height:auto}
 .pairtxt{flex:1;min-width:220px}
+.set2 .srow code.cmd{display:block;margin-top:4px;word-break:normal;overflow-wrap:anywhere} /* TODO 258: a command, wrapped at spaces */
 .pairtxt p{margin:6px 0}
 .pairtxt .pcode{font-size:32px;font-weight:700;letter-spacing:.12em;color:var(--ink)}
 :root[data-motion=calm] .rbar{animation:none}
