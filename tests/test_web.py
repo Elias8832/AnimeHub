@@ -1113,6 +1113,21 @@ class TabEntrances(unittest.TestCase):
             self.assertIn(part, CSS)
         self.assertNotIn("#app.nav-in .airside>", CSS)  # a click on a day swaps its cards at once
 
+    def test_journal_builds_in(self):
+        """Elias, 2026-11-20: the Journal's opening wasn't on par: cards popped in, bars crawled for ~2.4 s."""
+        for part in ("#app.nav-in .jr2 .jband>.n{", "#app.nav-in .jr2 .jcols .jcard{", "#app.nav-in .jr2 .heat i{", "#app.nav-in .jr2 .tl .ev{"):
+            self.assertIn(part, CSS)
+        # a chart's wave lasts as long whatever its number of bars: by place (--t), not by index × step
+        self.assertIn("--t:${items.length > 1 ?", APP)
+        self.assertNotIn("animation-delay:calc(var(--i) * 40ms + .15s)", CSS)
+        self.assertIn('style="--c:${', APP)  # every card has its place in the wave
+        self.assertIn("jCount();", APP[APP.index("function render("):APP.index("paintPortals();\n}")])
+        count = APP[APP.index("function jCount()"):APP.index("/* The phone Journal's two tabs slide")]
+        self.assertIn('mq("(pointer:coarse)")', count)  # Decision 44: no entrances on touch
+        self.assertIn("t.data !== last", count)  # a redraw mid-count keeps its own text
+        # a range switch redraws in place, so kept bars glide instead of all regrowing
+        self.assertIn('lsSet("histRange", v); render(true);', APP)
+
 
 class NoPageWideHas(unittest.TestCase):
     def test_no_body_has_rules(self):

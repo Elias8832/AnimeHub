@@ -549,6 +549,32 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font:400 13px var(--
 #app.nav-in .airside{animation:fin .34s .14s var(--ease) backwards} /* the panel, not its cards: a click on a day swaps the cards at once */
 #app.nav-in .tline .tli{animation:rise .34s var(--ease) backwards;animation-delay:calc(min(var(--i,0),8)*28ms + .12s)}
 #app.nav-in .wkcal .psec{animation:soft .4s .2s var(--ease) backwards}
+/* Journal (Elias, 2026-11-20: its opening "just isn't on par"): built like Home and the show page.
+   The title and the band first, its numbers one by one (they count up, jCount), the week's bars;
+   then the cards in a wave down the columns (--c, set in Hist/Stats), each card's insides after it:
+   bars grow left to right in .18 s whatever their number (--t = 0..1), history rows, the month's
+   days from the top left (--i = row + column). Home's pace (Elias: ~1 s was "a tad too much"): in by ~.7 s. */
+.jr2 .jcard{--d:calc(var(--c,0) * 45ms + .1s)}
+#app.nav-in .jr2>.hello .hd{animation:up .36s .02s var(--ease) backwards}
+#app.nav-in .jr2 .jband{animation:jUp .36s .04s var(--ease) backwards}
+#app.nav-in .jr2 .jband>.n{animation:up .36s var(--ease) backwards;animation-delay:calc(var(--i,0) * 28ms + .06s)}
+#app.nav-in .jr2 .jband .jbars i{animation:grow .4s var(--ease) backwards;animation-delay:calc(var(--t,0) * .14s + .12s)}
+#app.nav-in .jr2 .jband .jbars span{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--t,0) * .14s + .16s)}
+#app.nav-in .jr2 .jcols .jcard{animation:jUp .36s var(--ease) backwards;animation-delay:var(--d)}
+#app.nav-in .jr2 .jcard .sh{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--d) + .04s)}
+#app.nav-in .jr2 .jcols .jbars i{animation:grow .4s var(--ease) backwards;animation-delay:calc(var(--d) + .06s + var(--t,0) * .18s)}
+#app.nav-in .jr2 .jcols .jbars span{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--d) + .08s)}
+#app.nav-in .jr2 .jcols .jbars.vals em{animation:soft .25s var(--ease) backwards;animation-delay:calc(var(--d) + .24s + var(--t,0) * .18s)}
+#app.nav-in .jr2 .gen .r{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--d) + .06s + var(--i,0) * 28ms)}
+#app.nav-in .jr2 .gen .bar i{animation:growx .45s var(--ease) backwards;animation-delay:calc(var(--d) + .1s + var(--i,0) * 28ms)}
+#app.nav-in .jr2 .heat .h{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--d) + .04s)}
+#app.nav-in .jr2 .heat i{animation:cellIn .32s var(--ease) backwards;animation-delay:calc(var(--d) + .06s + var(--i,0) * 14ms)}
+#app.nav-in .jr2 .jcard .legend{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--d) + .2s)}
+#app.nav-in .jr2 .tops button{animation:rise .34s var(--ease) backwards;animation-delay:calc(var(--d) + .06s + var(--i,0) * 28ms)}
+#app.nav-in .jr2 .tl .dh{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--d) + .04s)}
+#app.nav-in .jr2 .tl .ev{animation:rise .34s var(--ease) backwards;animation-delay:calc(var(--d) + .06s + min(var(--i,0),8) * 20ms)}
+@keyframes jUp{from{opacity:0;transform:translateY(10px)}} /* big panels lift less than small parts */
+@keyframes cellIn{from{opacity:0;transform:scale(.6)}}
 
 /* ───────── responsive (the app is often zoomed to 150–175%, so ~1100–1300px matters) ───────── */
 @media (max-width:1250px){
@@ -1693,7 +1719,7 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
 .jband .k em{font-style:normal;color:var(--accent)}
 .jbars{margin-left:auto;display:flex;align-items:flex-end;gap:8px;height:92px;padding-left:20px}
 .jbars>div{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%}
-.jbars i{width:26px;height:calc(4px + var(--h,0) * 60px);border-radius:7px;background:rgba(255,255,255,.14);transform-origin:bottom;animation:grow .6s var(--ease) both;animation-delay:calc(var(--i) * 40ms + .15s)}
+.jbars i{width:26px;height:calc(4px + var(--h,0) * 60px);border-radius:7px;background:rgba(255,255,255,.14);transform-origin:bottom;animation:grow .5s var(--ease) both;animation-delay:calc(var(--t,0) * .3s + .05s);transition:height .45s var(--ease),background-color .3s}
 .jbars i.z{height:3px;opacity:.6}
 .jbars.many{gap:4px}.jbars.many i{width:10px;border-radius:4px}
 .jbars i.on{background:var(--accent)}
@@ -1736,11 +1762,11 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
 .gen .r{display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:14px}
 .gen .r span:first-child{width:110px}
 .gen .bar{flex:1;height:8px;border-radius:8px;background:rgba(255,255,255,.08);overflow:hidden}
-.gen .bar i{display:block;height:100%;border-radius:8px;background:var(--accent);transform-origin:left;animation:growx .8s var(--ease) both;animation-delay:calc(var(--i) * 80ms + .2s)}
+.gen .bar i{display:block;height:100%;border-radius:8px;background:var(--accent);transform-origin:left;animation:growx .6s var(--ease) both;animation-delay:calc(var(--i) * 50ms + .1s);transition:width .45s var(--ease)}
 .gen .c{width:30px;text-align:right;font:500 12px var(--ui);color:var(--mute)}
 @keyframes growx{from{transform:scaleX(0)}}
 .tops{display:flex;gap:12px}
-.tops button{flex:1;min-width:0;text-align:left}
+.tops button{flex:0 0 calc((100% - 24px) / 3);min-width:0;text-align:left} /* always a third: one top show is a poster, not the whole card */
 .tops .cv{display:block;position:relative;aspect-ratio:2/3;border-radius:14px;background:var(--s2) center/cover;box-shadow:0 10px 24px rgba(0,0,0,.35);transition:transform .3s var(--ease)}
 .tops button:hover .cv{transform:translateY(-4px)}
 .tops .cv span{position:absolute;left:8px;bottom:8px;font:600 11px var(--ui);padding:3px 8px;border-radius:999px;background:var(--glass-h);backdrop-filter:blur(10px)}
@@ -2201,6 +2227,7 @@ body.srch #pal{display:grid}
 .jbars>div{position:relative}
 .jbars.vals em{font:600 11px var(--ui);font-style:normal;color:var(--ink-2);height:12px;white-space:nowrap}
 .jbars.vals em.on{color:var(--accent)}
+.jbars.vals em{animation:soft .3s var(--ease) backwards;animation-delay:calc(var(--t,0) * .3s + .3s)} /* a value shows once its bar is up, not over an empty chart */
 .jbars.full.vals em{font-size:9.5px}
 .tl .ev.q{opacity:.7}.tl .ev.q:hover{opacity:1}
 
@@ -2233,6 +2260,8 @@ body.srch #pal{display:grid}
 .tl .ev b .badge{flex:none;margin-left:0}
 .tl .tlg .ev b{overflow:visible}
 .jband .jchart{margin-top:18px} /* the day labels (12 px + 6 px gap) hang below: the bars themselves centre in the band (Elias) */
+.jband .jbars.days.many{gap:5px}.jband .jbars.days.many i{width:13px;border-radius:5px} /* Month: 30 days at the week's 40 px ran ~530 px out of the band */
+@media (max-width:1250px){.jband .jbars.days.many{gap:3px}.jband .jbars.days.many i{width:8px;border-radius:4px}}
 
 /* ───────── Top bar styles (Settings → Appearance → Top bar; Elias, 2026-10-24) ─────────
    One markup, five dresses: classic (the default above), tabs, line, capsule, island. */

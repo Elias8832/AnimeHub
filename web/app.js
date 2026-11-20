@@ -3033,10 +3033,10 @@ const spineOf = (s) => (s?.meta?.anilist_id && S.data?.spine?.entries?.find((e) 
 /* Journal charts (Decision 38): one bar look and one row look for every panel. */
 function jBars(items, cls = "", val) {
   const mx = Math.max(val ? 1e-9 : 1, ...items.map((b) => b[1])), many = items.length > 12, step = items.length > 24 ? 5 : 3;
-  return `<div class="jbars${many ? " many" : ""}${cls ? " " + cls : ""}">${items.map(([l, v, on], i) => `<div title="${esc(l)}: ${esc(val ? val(v) || "0" : String(v))}">${val && !many ? `<em class="${on ? "on" : ""}">${esc(val(v))}</em>` : ""}<i style="--i:${i};--h:${v / mx || 0}" class="${on ? "on" : ""}${v ? "" : " z"}"></i><span class="${on ? "on" : ""}">${many && i % step && !on ? "" : esc(l)}</span></div>`).join("")}</div>`;
+  return `<div class="jbars${many ? " many" : ""}${cls ? " " + cls : ""}">${items.map(([l, v, on], i) => `<div style="--i:${i};--t:${items.length > 1 ? +(i / (items.length - 1)).toFixed(3) : 0}" title="${esc(l)}: ${esc(val ? val(v) || "0" : String(v))}">${val && !many ? `<em class="${on ? "on" : ""}">${esc(val(v))}</em>` : ""}<i style="--h:${v / mx || 0}" class="${on ? "on" : ""}${v ? "" : " z"}"></i><span class="${on ? "on" : ""}">${many && i % step && !on ? "" : esc(l)}</span></div>`).join("")}</div>`;
 }
 const jRows = (items, fmt = String) => { const mx = Math.max(1, ...items.map((x) => x[1]));
-  return items.map(([l, n], i) => `<div class="r"><span>${esc(l)}</span><span class="bar"><i style="--i:${i};width:${(n / mx) * 100}%"></i></span><span class="c">${esc(fmt(n))}</span></div>`).join(""); };
+  return items.map(([l, n], i) => `<div class="r" style="--i:${i}"><span>${esc(l)}</span><span class="bar"><i style="--i:${i};width:${(n / mx) * 100}%"></i></span><span class="c">${esc(fmt(n))}</span></div>`).join(""); };
 /* The Journal (Elias, 2026-10-24): built on your AniList activity when
    connected — what you watched anywhere, and when — else on this PC's
    watch history. Both become the same events. */
@@ -3126,11 +3126,11 @@ function Hist() {
   }
   /* An AniList journal first (Elias): the big numbers are your AniList totals; the range lives in the chart. */
   const T = jTotals(), rl = (J_RANGES.find(([k]) => k === S.histRange) || [0, ""])[1].toLowerCase();
-  const band = `<div class="jband"><div class="n"><b class="v">${T.hours.toLocaleString()}<small>h</small></b><span class="k">watched</span></div>
-    <div class="n"><b class="v">${T.eps.toLocaleString()}</b><span class="k">episodes</span></div>
-    <div class="n"><b class="v">${T.done}</b><span class="k">completed</span></div>
-    <div class="n"><b class="v">${T.mean}</b><span class="k">mean score</span></div>
-    <div class="n"><b class="v">${cur}<small>day${cur === 1 ? "" : "s"}</small></b><span class="k">streak · <em>best ${best}</em></span></div>
+  const band = `<div class="jband"><div class="n" style="--i:0"><b class="v">${T.hours.toLocaleString()}<small>h</small></b><span class="k">watched</span></div>
+    <div class="n" style="--i:1"><b class="v">${T.eps.toLocaleString()}</b><span class="k">episodes</span></div>
+    <div class="n" style="--i:2"><b class="v">${T.done}</b><span class="k">completed</span></div>
+    <div class="n" style="--i:3"><b class="v">${T.mean}</b><span class="k">mean score</span></div>
+    <div class="n" style="--i:4"><b class="v">${cur}<small>day${cur === 1 ? "" : "s"}</small></b><span class="k">streak · <em>best ${best}</em></span></div>
     <div class="jchart" title="${esc(rl)}: ${eps} episode${eps === 1 ? "" : "s"}">${jBars(bars, "days")}</div></div>`;
   /* history: one row per show per day (its episodes merged); a finished show stands out */
   const groups = [];
@@ -3158,15 +3158,16 @@ function Hist() {
   const fr = new Map(), gen = {};
   for (const e of seen) { const f = fr.get(e.fkey) || { e, n: 0 }; f.n += e.eps; fr.set(e.fkey, f); for (const g of e.genres) gen[g] = (gen[g] || 0) + e.eps; }
   const top = [...fr.values()].filter((x) => x.n).sort((a, b) => b.n - a.n).slice(0, 3);
-  const most = top.length ? `<div class="jcard"><div class="sh"><b>Most watched</b></div><div class="tops">${top.map(({ e, n }) => `<button data-a="${e.open[0]}" data-v="${esc(String(e.open[1]))}"><span class="cv" ${e.poster ? `style="background-image:${esc(cssUrl(e.poster))}"` : ""}><span>${n} ep</span></span><b>${esc(e.title)}</b></button>`).join("")}</div></div>` : "";
+  let sc = 0.5; const nextC = () => (sc += 0.5) - 0.5; // the side column's cards, one after another in the opening wave
+  const most = top.length ? `<div class="jcard" style="--c:${nextC()}"><div class="sh"><b>Most watched</b></div><div class="tops">${top.map(({ e, n }, i) => `<button style="--i:${i}" data-a="${e.open[0]}" data-v="${esc(String(e.open[1]))}"><span class="cv" ${e.poster ? `style="background-image:${esc(cssUrl(e.poster))}"` : ""}><span>${n} ep</span></span><b>${esc(e.title)}</b></button>`).join("")}</div></div>` : "";
   const gtop = Object.entries(gen).filter(([, n]) => n).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const genres = gtop.length ? `<div class="jcard gen"><div class="sh"><b>Top genres</b><span>${esc((J_RANGES.find(([k]) => k === S.histRange) || [0, ""])[1].toLowerCase())}</span></div>${jRows(gtop)}</div>` : "";
+  const genres = gtop.length ? `<div class="jcard gen" style="--c:${nextC()}"><div class="sh"><b>Top genres</b><span>${esc((J_RANGES.find(([k]) => k === S.histRange) || [0, ""])[1].toLowerCase())}</span></div>${jRows(gtop)}</div>` : "";
   const first = new Date(now.getFullYear(), now.getMonth(), 1), lead = (first.getDay() + 6) % 7, dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), perDay = {};
   for (const e of all) if (watchKind(e.kind) && e.at >= first) perDay[e.at.getDate()] = (perDay[e.at.getDate()] || 0) + e.eps;
   const hmax = Math.max(1, ...Object.values(perDay)), lvl = (n) => !n ? "" : n / hmax > 0.66 ? "l3" : n / hmax > 0.33 ? "l2" : "l1";
-  const heat = `<div class="jcard"><div class="sh"><b>${esc(now.toLocaleDateString(undefined, { month: "long" }))}</b><span>episodes per day</span></div><div class="heat">${["M", "T", "W", "T", "F", "S", "S"].map((x) => `<span class="h">${x}</span>`).join("")}${"<i class=\"pad\"></i>".repeat(lead)}${Array.from({ length: dim }, (_, i) => `<i class="${lvl(perDay[i + 1])}${i + 1 === now.getDate() ? " today" : ""}" title="${i + 1}: ${perDay[i + 1] || 0}"></i>`).join("")}</div>
+  const heat = `<div class="jcard" style="--c:${nextC()}"><div class="sh"><b>${esc(now.toLocaleDateString(undefined, { month: "long" }))}</b><span>episodes per day</span></div><div class="heat">${["M", "T", "W", "T", "F", "S", "S"].map((x) => `<span class="h">${x}</span>`).join("")}${"<i class=\"pad\"></i>".repeat(lead)}${Array.from({ length: dim }, (_, i) => `<i style="--i:${Math.floor((lead + i) / 7) + (lead + i) % 7}" class="${lvl(perDay[i + 1])}${i + 1 === now.getDate() ? " today" : ""}" title="${i + 1}: ${perDay[i + 1] || 0}"></i>`).join("")}</div>
     <div class="legend">less <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i> more</div></div>`;
-  const st = Stats(true); // all time, in the same two columns (no gaps: each column stacks on its own)
+  const st = Stats(true, nextC()); // all time, in the same two columns (no gaps: each column stacks on its own)
   /* Phones (TODO 177, Elias picked "Tabs"): the numbers as one sideways row, the
      range's chart, then History or Stats: two short pages, not one long scroll. */
   if (isPhone()) {
@@ -3183,12 +3184,36 @@ function Hist() {
   }
   return `<div class="jr2">${head}
     ${band}
-    <div class="jcols"><div class="jmain"><div class="jcard tl"><div class="sh"><b>History</b><span>on this PC</span></div><div class="tlg">${out || `<p class="empty">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"}.</p>`}</div>
+    <div class="jcols"><div class="jmain"><div class="jcard tl" style="--c:0"><div class="sh"><b>History</b><span>on this PC</span></div><div class="tlg">${out || `<p class="empty">Nothing watched ${S.histRange === "all" ? "yet" : "in this range"}.</p>`}</div>
       ${hev.length > S.histMax ? `<div class="more"><button class="btn sm" data-a="histmore">Show earlier (${hev.length - S.histMax} left)</button></div>` : ""}</div>
       ${st.main}</div>
       <div class="jside">${most}${genres}${heat}${st.side}</div></div></div>`;
 }
 
+/* The Journal's big numbers count up as the page opens (Decision 38's count-ups),
+   each as its figure rises in (style.css, "Journal (Elias, 2026-11-20…"). Held at
+   its final width, so the band doesn't shuffle while the digits grow. A redraw
+   meanwhile (the activity or the totals landing) wins: its text stands. */
+function jCount() {
+  if (reduceMotion() || mq("(pointer:coarse)") || document.documentElement.dataset.motion === "calm") return;
+  $$("#app .jr2 .jband .v").forEach((v, i) => {
+    const t = v.firstChild, s = t?.nodeType === 3 ? t.data : "";
+    if (!/^\d[\d,.]*$/.test(s)) return; // "—": nothing to count
+    const dec = (s.split(".")[1] || "").length, to = parseFloat(s.replace(/,/g, ""));
+    if (!(to > 0)) return;
+    const fmt = (x) => x.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    v.style.minWidth = v.offsetWidth + "px";
+    let last = fmt(0); t.data = last;
+    const t0 = performance.now() + 60 + i * 28, dur = 480;
+    const step = (now) => {
+      if (t.data !== last || !t.isConnected) return;
+      const p = Math.min(1, Math.max(0, (now - t0) / dur)), e = 1 - (1 - p) ** 3;
+      last = p >= 1 ? s : fmt(dec ? to * e : Math.round(to * e)); t.data = last;
+      if (p < 1) requestAnimationFrame(step); else v.style.minWidth = "";
+    };
+    requestAnimationFrame(step);
+  });
+}
 /* The phone Journal's two tabs slide, and follow a sideways finger (Elias):
    p runs from 0 (History) to 1 (Stats). The tab not shown folds to no height,
    so the page is as long as the tab you see. */
@@ -3239,7 +3264,7 @@ function jTotals() {
   return { hours: Math.round(minutes / 60), eps, done: E.filter((e) => e.status === "COMPLETED").length,
     mean: scored.length ? (scored.reduce((a, e) => a + e.score, 0) / scored.length).toFixed(1) : "—" };
 }
-function Stats(embed) {
+function Stats(embed, sideC = 0.5) {
   if (!embed) return Hist();
   const E = statsEntries(), u = aniMode() ? S.alData?.user : null;
   const scored = E.filter((e) => e.score > 0), done = E.filter((e) => e.status === "COMPLETED").length;
@@ -3263,13 +3288,14 @@ function Stats(embed) {
   const note = aniMode() && !u ? `<p class="stat-note">Loading your full ${acct()} totals…</p>` : "";
   const fmts2 = Object.entries(fmts).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const curY = new Date().getFullYear();
-  const card = (cls, head, body) => `<div class="jcard${cls ? " " + cls : ""}"><div class="sh">${head}</div>${body}</div>`;
+  /* c: the card's place in the Journal's opening wave (main column under History, side column after Hist's cards) */
+  const card = (cls, head, body, c) => `<div class="jcard${cls ? " " + cls : ""}" style="--c:${c}"><div class="sh">${head}</div>${body}</div>`;
   return {
-    main: note + `<div class="jpair">${card("", `<b>Episodes per month</b><span>${aniMode() ? "from " + acct() : "on this PC"}</span>`, jBars(months.map(([l, v], i) => [l, v, i === months.length - 1]), "full vals", (v) => (v ? String(v) : "")))}`
-      + `${card("", "<b>Release years</b>", yItems.length ? jBars(yItems.map(([l, v]) => [l, v, +l === curY]), "full") : '<p class="empty">No year data yet.</p>')}</div>`
-      + `<div class="jpair">${card("", `<b>Scores you give</b>${scored.length ? `<span>mean ${mean}</span>` : ""}`, scored.length ? jBars(dist.map(([l, v]) => [l, v, false]), "full") : '<p class="empty">No scores yet.</p>')}`
-      + `${card("gen", "<b>Formats</b>", fmts2.length ? jRows(fmts2) : '<p class="empty">No data yet.</p>')}</div>`,
-    side: card("gen", "<b>Your lists</b>", byList.length ? jRows(byList) : '<p class="empty">No list data yet.</p>'),
+    main: note + `<div class="jpair">${card("", `<b>Episodes per month</b><span>${aniMode() ? "from " + acct() : "on this PC"}</span>`, jBars(months.map(([l, v], i) => [l, v, i === months.length - 1]), "full vals", (v) => (v ? String(v) : "")), 1)}`
+      + `${card("", "<b>Release years</b>", yItems.length ? jBars(yItems.map(([l, v]) => [l, v, +l === curY]), "full") : '<p class="empty">No year data yet.</p>', 1.5)}</div>`
+      + `<div class="jpair">${card("", `<b>Scores you give</b>${scored.length ? `<span>mean ${mean}</span>` : ""}`, scored.length ? jBars(dist.map(([l, v]) => [l, v, false]), "full") : '<p class="empty">No scores yet.</p>', 2)}`
+      + `${card("gen", "<b>Formats</b>", fmts2.length ? jRows(fmts2) : '<p class="empty">No data yet.</p>', 2.5)}</div>`,
+    side: card("gen", "<b>Your lists</b>", byList.length ? jRows(byList) : '<p class="empty">No list data yet.</p>', sideC),
   };
 }
 function loadAlData() {
@@ -6126,6 +6152,7 @@ function render(inPlace = false) {
   $$("#app [data-glide]").forEach(glide);
   strips(); artDim();
   setEnter();
+  if (fresh && app.classList.contains("nav-in") && (S.view === "history" || S.view === "stats")) jCount();
   if (S.view === "settings" && S.setFlash) { const t = S.setFlash; S.setFlash = null; const r = $$("#app .srow").find((x) => x.querySelector("b")?.textContent.startsWith(t)); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }
   /* The strip opens on the next episode, with the one before it in view — whole tiles, never a cut one. */
   if (fresh && (S.view === "fr" || S.view === "show")) { const st = $("#app .eps.strip"), t = st?.querySelector(".ep.resume"), b = t?.previousElementSibling; if (st && t) st.scrollLeft = b ? b.offsetLeft - st.firstElementChild.offsetLeft : 0; }
@@ -7198,7 +7225,7 @@ const A = {
     const tb = $("#app .jr2.phone .jtabs"); // switched while far down: back to the tabs, the other tab starts at its top
     if (was !== v && tb && tb.getBoundingClientRect().top < 0) scrollTo({ top: scrollY + tb.getBoundingClientRect().top - 70, behavior: "smooth" });
   },
-  hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(); },
+  hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(true); }, // in place: kept bars glide to their new heights, new ones grow
   histmore: () => { S.histMax += 200; render(); },
   play: (v) => play(v), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
   cm: (v, t, e) => openCm(v, e.clientX, e.clientY),
