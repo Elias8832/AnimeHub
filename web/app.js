@@ -2431,7 +2431,7 @@ function Fran() {
      (TODO 183): say so, and let a click look (the play click's VPN ask). */
   const held = (p.vpn_held || []).includes(e.id) && !resolving;
   const busy = S.checkBusy === e.id;
-  const heldTile = held ? `<div class="ep held" tabindex="0" data-a="frcheck" title="Load them now (asks about the VPN first)">
+  const heldTile = held ? `<div class="ep held" tabindex="0" data-a="frcheck" role="button">
     <div class="epa"><span class="heldin">${busy ? '<i class="spin"></i>' : SHIELD_OFF}<b>${busy ? "Loading…" : "More episodes are out"}</b><small>${busy ? "" : "Load them now"}</small></span></div>
     <div class="et"><b>Not loaded — no VPN is on</b><small>they load once a VPN is on</small></div></div>` : "";
   const note = e.slots.length ? (!e.slots.some((x) => x.local) && !ready ? '<p class="sub eps-note">Install ani-cli to watch these online.</p>'
