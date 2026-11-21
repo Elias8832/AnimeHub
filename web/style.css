@@ -641,6 +641,10 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font:400 13px var(--
 .rt input::-webkit-slider-runnable-track{height:32px;background:none}
 .rt input::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:16px;height:16px;margin-top:8px;border-radius:50%;background:var(--ink);border:3px solid var(--accent);cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,.5);transition:transform .15s}
 .rt input:active::-webkit-slider-thumb{cursor:grabbing;transform:scale(1.15)}
+/* a two-handle range takes the whole track (app.js rngD): the handles leave the pointer to it */
+.rng .rt{cursor:pointer;touch-action:none}
+.rng .rt input::-webkit-slider-thumb{pointer-events:none}
+.rng .rt.drag{cursor:grabbing}.rng .rt input.on::-webkit-slider-thumb{transform:scale(1.15)}
 .rt input:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 35%,transparent)}
 .pop.sr .mi>em{margin-left:auto;font-style:normal;flex:none}
 .chip.vpn{font-weight:600}.chip.vpn .ico{width:14px;height:14px}.chip.vpn.on{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}.chip.vpn.on .ico{fill:color-mix(in srgb,var(--ok) 25%,transparent)}
@@ -1185,21 +1189,21 @@ span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgb
 .home2.wide .btn:active,.home2.wide .twb:active,.home2.wide .hc:active .epa,.home2.wide .rec:active .rcv{transform:scale(.97)}
 /* the banner: its art glows around it; this episode's progress bar */
 /* its height follows the width, so the banner keeps the art's own wide shape on every screen (400 px on 2048), never so tall that a short screen loses the row below */
-.home2.wide .upn{min-height:clamp(320px,min(20.4cqw,100vh - 380px),560px);border-radius:24px;overflow:visible;box-shadow:none;background:none}
-.home2.wide .upn::before{content:"";position:absolute;inset:0 -1% -9%;z-index:-2;border-radius:inherit;background:var(--art) center 30%/cover;filter:blur(80px) saturate(1.6);opacity:.5;transition:opacity .35s var(--ease)}
-.home2.wide .upn:hover::before{opacity:.62}
-.home2.wide .upn:hover .upa{scale:1}
-.home2.wide .upn .upa{background:radial-gradient(ellipse 42% 75% at 14% 66%,rgba(10,11,14,.6),transparent 70%),linear-gradient(90deg,rgba(10,11,14,.82),rgba(10,11,14,.42) 30%,transparent 55%),linear-gradient(0deg,rgba(10,11,14,.5),transparent 38%),var(--art) center 30%/cover}
-.home2.wide .upn .upc{padding:40px 48px}
-.home2.wide .upn h1{font-size:84px;max-width:46cqw} /* a long title wraps on the shaded side instead of running over the picture */
-.home2.wide .upn.tl2 h1{font-size:68px}
-.home2.wide .upn.tl3 h1{font-size:58px}
-.home2.wide .upn .sub{font-size:20px;color:var(--ink)}
-.home2.wide .upn .facts{font:500 15px var(--ui);color:rgba(243,243,241,.85)}
-.home2.wide .upn .hbar{width:300px;height:4px;border-radius:2px;margin-top:16px;overflow:hidden;background:rgba(255,255,255,.2)}
-.home2.wide .upn .hbar i{display:block;height:100%;border-radius:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
-.home2.wide .upn .cta{margin-top:22px}
-.home2.wide .upn .btn.big{height:48px;font-size:15px;padding:0 22px}
+:is(.home2.wide,.brw) .upn{min-height:clamp(320px,min(20.4cqw,100vh - 380px),560px);border-radius:24px;overflow:visible;box-shadow:none;background:none}
+:is(.home2.wide,.brw) .upn::before{content:"";position:absolute;inset:0 -1% -9%;z-index:-2;border-radius:inherit;background:var(--art) center 30%/cover;filter:blur(80px) saturate(1.6);opacity:.5;transition:opacity .35s var(--ease)}
+:is(.home2.wide,.brw) .upn:hover::before{opacity:.62}
+:is(.home2.wide,.brw) .upn:hover .upa{scale:1}
+:is(.home2.wide,.brw) .upn .upa{background:radial-gradient(ellipse 42% 75% at 14% 66%,rgba(10,11,14,.6),transparent 70%),linear-gradient(90deg,rgba(10,11,14,.82),rgba(10,11,14,.42) 30%,transparent 55%),linear-gradient(0deg,rgba(10,11,14,.5),transparent 38%),var(--art) center 30%/cover}
+:is(.home2.wide,.brw) .upn .upc{padding:40px 48px}
+:is(.home2.wide,.brw) .upn h1{font-size:84px;max-width:46cqw} /* a long title wraps on the shaded side instead of running over the picture */
+:is(.home2.wide,.brw) .upn.tl2 h1{font-size:68px}
+:is(.home2.wide,.brw) .upn.tl3 h1{font-size:58px}
+:is(.home2.wide,.brw) .upn .sub{font-size:20px;color:var(--ink)}
+:is(.home2.wide,.brw) .upn .facts{font:500 15px var(--ui);color:rgba(243,243,241,.85)}
+:is(.home2.wide,.brw) .upn .hbar{width:300px;height:4px;border-radius:2px;margin-top:16px;overflow:hidden;background:rgba(255,255,255,.2)}
+:is(.home2.wide,.brw) .upn .hbar i{display:block;height:100%;border-radius:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+:is(.home2.wide,.brw) .upn .cta{margin-top:22px}
+:is(.home2.wide,.brw) .upn .btn.big{height:48px;font-size:15px;padding:0 22px}
 /* Continue watching: 2 columns a card; it lifts and its art glows underneath */
 .home2.wide .hc{position:relative;isolation:isolate;width:calc(var(--col) * 2 + 24px);transition:transform .25s var(--ease)}
 .home2.wide .hc::before{content:"";position:absolute;left:1%;top:14px;width:98%;aspect-ratio:16/9;z-index:-1;border-radius:18px;background:var(--art) center/cover;filter:blur(32px) saturate(1.4);opacity:0;transition:opacity .25s var(--ease)}
@@ -4267,7 +4271,7 @@ body.pp-open #modal{z-index:70}
    the pictures lose theirs. Off: both. */
 :root:is([data-glow=pictures],[data-glow=off]) :is(.home2.wide .hc .eprog i,.sp2 .eprog:not(.dl) i,.lib2 .card .prog i,.cc-art .ccbar i,.home2.wide .upn .hbar i,.uph .hbar i,.sp2 .tbar span.tline i){box-shadow:none}
 :root:is([data-glow=pictures],[data-glow=off]) :is(.home2.wide .hc .eprog i,.sp2 .eprog:not(.dl) i,.lib2 .card .prog i,.cc-art .ccbar i)::after{box-shadow:none}
-:root:is([data-glow=bars],[data-glow=off]) :is(.home2.wide .upn,.home2.wide .hc,.home2.wide .twb,.home2.wide .rec,.sp2 .ep)::before,:root:is([data-glow=bars],[data-glow=off]) .lib2 .card::before{display:none}
+:root:is([data-glow=bars],[data-glow=off]) :is(.home2.wide .upn,.brw .upn,.home2.wide .hc,.home2.wide .twb,.home2.wide .rec,.sp2 .ep)::before,:root:is([data-glow=bars],[data-glow=off]) .lib2 .card::before{display:none}
 
 
 /* ───────── The phone's Home: small labels in the text font, like the PC's Home (TODO 236, Elias 2026-11-14) ─────────
@@ -4280,3 +4284,65 @@ body.pp-open #modal{z-index:70}
 .home2.phone .sh .link-btn{font-size:13px}
 .home2.phone .rec .tg{font-size:11px;font-weight:600}
 .cc-art .newtag{position:absolute;left:9px;top:9px;z-index:2;padding:2px 8px;border-radius:999px;font:700 11px/1.4 var(--ui);color:#111;background:var(--accent-hi)}
+
+/* ───────── Browse (TODO 260): the Library's layout and pieces over AniList's catalog ───────── */
+.brw .lmain{container-type:inline-size}
+.brw .upn{margin:0 0 6px;cursor:pointer}
+.brw .upn .facts .sep{background:rgba(243,243,241,.5)}
+.brw .upn .bhadd{min-width:172px;justify-content:center}
+.brw .upn .bhadd.done{pointer-events:none}
+.brs{margin-top:44px}
+.brs .sh{align-items:baseline}.brs .sh h2{font:600 20px var(--ui)}
+.brs .brsub{font:500 13px var(--ui);color:var(--mute)}
+.brs .link-btn{height:36px;padding:0 10px 0 14px;font:600 14px var(--ui);color:var(--ink-2)}.brs .link-btn .ico{width:16px;height:16px;transition:transform .3s var(--ease)}
+.brs .link-btn:hover{color:var(--ink);background:rgba(255,255,255,.06)}.brs .link-btn:hover .ico{transform:translateX(3px)}
+/* one row of posters, as many as fit (the rest hidden, see the container rules below) */
+.brrow{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(176px,1fr);column-gap:22px;padding:10px 10px 6px;margin:-10px -10px -6px}
+.brw .wall.brwall{margin-top:8px;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:34px 22px} /* the rows' poster size: See all keeps the scale */
+/* a new list or filter: the Library's fade-in (.wall.fade) */
+.brrow.fade .card{animation:rise .34s var(--ease) both;animation-delay:calc(var(--i)*12ms)}
+#app.nav-in .brw :is(.brrow,.brwall) .card{animation:rise .34s var(--ease) backwards;animation-delay:calc(min(var(--i,0),14)*12ms + .08s)}
+.brw .card{cursor:pointer}
+.brw .card .m{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brw .card:focus-visible{outline:none}.brw .card:focus-visible .pw{box-shadow:0 0 0 2px var(--accent),0 26px 36px -18px #000}
+/* + Planning: Home's Recommended button, on the poster while you rest on it */
+.brc .radd{position:absolute;left:50%;bottom:12px;z-index:5;display:flex;align-items:center;gap:6px;height:32px;padding:0 14px 0 10px;border-radius:999px;transform:translate(-50%,6px);opacity:0;background:var(--ink);color:#111;font:600 12px var(--ui);box-shadow:0 8px 20px rgba(0,0,0,.4);transition:opacity .25s,transform .3s var(--ease)}
+.brc .radd .ico{width:14px;height:14px}
+.brc:hover .radd,.brc .radd:focus-visible{opacity:1;transform:translate(-50%,0)}
+.brc .radd.busy{opacity:1;pointer-events:none;background:var(--ink-2)}
+@media (hover:none){.brc .radd{opacity:1;transform:translate(-50%,0)}}
+/* Top 100: the place on the poster */
+.brrn{position:absolute;left:12px;bottom:4px;z-index:4;font:700 58px/1 var(--display);color:#fff;text-shadow:0 4px 24px rgba(0,0,0,.8);pointer-events:none}
+.brw .brhd{gap:12px}
+.brw .brhd .lh{display:flex;align-items:baseline;gap:10px;font:600 22px var(--ui);margin:0;letter-spacing:-.01em}
+.brfx{font:500 14px var(--ui);color:var(--mute);margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}
+.brsteps{display:inline-flex;align-items:center;gap:6px}.brsteps .lh{margin-left:10px}
+.brmore{display:flex;justify-content:center;margin:-40px 0 60px}
+.brnote{text-align:center;color:var(--mute);margin:-40px 0 60px}
+.brw .brflt{margin-bottom:26px}
+/* loading: quiet placeholders the size of a card (nothing jumps when the posters land) */
+.brphc{display:flex;flex-direction:column;min-width:0}
+.brphc>*{display:block;border-radius:10px;background:rgba(255,255,255,.05)}
+.brphc i{aspect-ratio:2/3}.brphc b{height:14px;width:78%;margin:14px 0 8px;border-radius:5px}.brphc u{height:11px;width:52%;border-radius:5px;margin-bottom:21px}
+.brph{display:block;height:clamp(320px,20.4cqw,560px);border-radius:24px;margin-bottom:50px;background:rgba(255,255,255,.04)}
+.brwait .brrow{grid-template-columns:repeat(auto-fill,minmax(176px,1fr))}
+/* side list: Filter carries Clear; season-set Year and Season show their value, no fold */
+.lnav .brfh{display:flex;align-items:center}
+.brclr{margin:-6px 0 -6px auto;font:600 12px var(--ui);text-transform:none;letter-spacing:0;color:var(--ink-2);padding:3px 8px;border-radius:7px;transition:background .2s,color .2s}
+.brclr:hover{background:rgba(255,255,255,.08);color:var(--ink)}
+.brw .fdrop.now .fpanel{animation:none}
+.brw .brerr,.brw .brnone{padding:110px 0}
+.lnav.brnav .sum span:nth-of-type(1){display:inline}
+/* readable over a bright glow (the art behind the page) */
+.brw .card h3,.brw .card .m,.brw .brhd,.brw .brs .sh,.brw .emptyx{text-shadow:0 1px 8px rgba(0,0,0,.6)}
+@media (prefers-reduced-motion:reduce){:root:not([data-motion=always]) .brrow.fade .card,:root:not([data-motion=always]) #app.nav-in .brw .card{animation:none}}
+/* one row: as many posters as fit */
+@container (max-width:789px){.brrow>:nth-child(n+4){display:none}}
+@container (max-width:987px){.brrow>:nth-child(n+5){display:none}}
+@container (max-width:1185px){.brrow>:nth-child(n+6){display:none}}
+@container (max-width:1383px){.brrow>:nth-child(n+7){display:none}}
+@container (max-width:1581px){.brrow>:nth-child(n+8){display:none}}
+@container (max-width:1779px){.brrow>:nth-child(n+9){display:none}}
+@container (max-width:1977px){.brrow>:nth-child(n+10){display:none}}
+@container (max-width:2175px){.brrow>:nth-child(n+11){display:none}}
+@container (max-width:2373px){.brrow>:nth-child(n+12){display:none}}

@@ -271,6 +271,53 @@ class JournalKeys(unittest.TestCase):
         self.assertRegex(APP, r"const fmtName = \(f\) =>")
 
 
+class BrowseTab(unittest.TestCase):
+    """TODO 260: AniList's catalog as a tab, in the Library's layout."""
+
+    def test_five_lists_the_rest_are_sorts(self):
+        # All-time popular and Top 100 were All anime in another order; Trending now stays a list (Elias)
+        self.assertIn('const BR_LISTS = [["over", "Overview"], ["all", "All anime"], ["trending", "Trending now"], ["season", "This season"], ["next", "Next season"]];', APP)
+        self.assertIn('const BR_OLD = { popular: "", top: "score" };', APP)  # an older save opens All anime in that order
+        self.assertIn('const see = { trending: "trending", season: "season", top: "all:score" };', APP)
+        self.assertIn('bs: S.view === "browse" ? S.br.sort : undefined,', APP)  # Back returns to the order you had
+
+    def test_a_season_list_changes_with_its_filters(self):
+        # Year and Season are the season list's own filters, not locked (Elias)
+        self.assertIn('brRange("fyear", "Year", sea && [sea.year, sea.year]), brDrop("fseason", "Season", BR_SEASONS.map((s) => [s, cap(s)]), false, sea && [sea.season])', APP)
+        self.assertIn('if (brSeasonList() && (k === "fyear" || k === "fseason")) return brSeaFiltered(k);', APP)
+        self.assertIn("if (f.fseason && one) {", APP)  # one season of one year stays a season list; wider is All anime
+
+    def test_a_range_takes_the_whole_track(self):
+        # the 14px handles alone were too hard to catch: a press anywhere brings the nearer one (Library too)
+        self.assertIn('const t = e.target.closest?.(".rng .rt");', APP)
+        self.assertIn('d.ins[d.i].dispatchEvent(new Event("change", { bubbles: true }))', APP)
+        self.assertIn(".rng .rt input::-webkit-slider-thumb{pointer-events:none}", CSS)
+        self.assertIn(".brclr{margin:-6px 0 -6px auto;", CSS)  # Clear showing up doesn't push the sliders down
+
+    def test_a_tab_between_library_and_journal(self):
+        self.assertIn('["library", "Library"], ["browse", "Browse"], ["history", "Journal"]', APP)
+        self.assertIn('browse: Browse,', APP)
+        self.assertIn("#(library|browse|history|stats|settings|week)$", APP)  # #browse opens it
+
+    def test_reads_the_catalog_route(self):
+        self.assertIn('api("/api/catalog")', APP)
+        self.assertIn('"/api/catalog?" + new URLSearchParams', APP)
+
+    def test_filters_fold_down_in_the_side_list(self):
+        # the Library's own fold-down filters (fdrop), never a popup (Elias, Library polish)
+        self.assertIn('return fdrop("br" + k, label,', APP)
+        self.assertIn('<aside class="lnav brnav">', APP)
+
+    def test_a_failed_read_waits_for_try_again(self):
+        # no retry loop: a failure stays until the button asks again
+        self.assertIn("(!more && (c.page || c.err))", APP)
+        self.assertIn("(o?.err && !o.data)", APP)
+
+    def test_back_lands_where_you_were(self):
+        self.assertIn('if (from === "browse") navKeep();', APP)
+        self.assertIn('history.scrollRestoration = "manual"', APP)
+
+
 class WeekSection(unittest.TestCase):
     def test_calendar_context_only_states_facts(self):
         self.assertIn('const airTag = (x) => (x.start || x.ep === 1 ? "Premiere" : x.ep && x.ep === x.e.episodes ? "Finale" : "");', APP)
@@ -321,7 +368,7 @@ class WeekSection(unittest.TestCase):
         """Easy to miss behind a Home link, so it sits in both tab bars."""
         self.assertIn('["week", "Calendar"]];', APP)
         self.assertIn('["week", "Calendar", "cal"]];', APP)
-        self.assertIn('["Home, Library, Journal, Calendar", ["1", "2", "3", "4"]]', APP)
+        self.assertIn('["Home, Library, Browse, Journal, Calendar", ["1", "2", "3", "4", "5"]]', APP)
         self.assertIn('const order = ["home", "library", "history", "week"]', APP)
         self.assertIn('<b>See when your shows air</b>', APP)  # logged out: one clear way in
         self.assertNotIn('Connect AniList to see what airs next.', APP)
@@ -444,11 +491,11 @@ class Journal(unittest.TestCase):
     """TODO 60 step 5: History + Stats are one page (Journal, key 3); the old
     #history / #stats links still open it."""
     def test_journal(self):
-        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"], ["week", "Calendar"]];', APP)
+        self.assertIn('const TABS = [["home", "Home"], ["library", "Library"], ["browse", "Browse"], ["history", "Journal"], ["week", "Calendar"]];', APP)
         self.assertIn('const J_RANGES = [["7d", "This week"], ["1mo", "Month"], ["1y", "Year"], ["all", "All time"]];', APP)
         self.assertIn('if (!embed) return Hist();', APP)  # #stats lands on the Journal
         self.assertIn('<div class="jside">${most}${genres}${heat}${st.side}</div>', APP)  # all time in the same two columns
-        self.assertIn('const VIEWS = ["home", "library", "history", "stats", "settings", "week"];', APP)
+        self.assertIn('const VIEWS = ["home", "library", "browse", "history", "stats", "settings", "week"];', APP)
 
 
 class SearchPalette(unittest.TestCase):
@@ -638,7 +685,7 @@ class Polish(unittest.TestCase):
         and reduceMotion() leave it alone."""
         import re
         blocks = re.findall(r"@media \(prefers-reduced-motion:reduce\)\{(.*?)\}\}", CSS)
-        self.assertEqual(len(blocks), 6)
+        self.assertEqual(len(blocks), 7)
         for block in blocks:
             for rule in block.split("}"):
                 for sel in rule.split("{")[0].split(","):

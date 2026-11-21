@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, database, downloader, firewall, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
+from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, catalog, database, downloader, firewall, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -596,6 +596,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(journal.journal(since))
         elif route == "/api/schedule":
             self.send_json(schedule.schedule())
+        elif route == "/api/catalog":
+            # TODO 260 (additive): the Browse tab — AniList's public catalog,
+            # read on demand, kept in memory a few minutes only.
+            try:
+                self.send_json(catalog.catalog(parse_qs(urlparse(self.path).query)))
+            except ValueError as e:
+                self._bad(str(e))
+            except Exception as e:
+                self.send_json({"error": anilist.friendly_error(e), **anilist.error_hint(e)}, 502)
         elif route == "/api/recommendations":
             # TODO 65 (additive): Home's "Recommended for you" row.
             self.send_json(recommend.recommendations())

@@ -806,6 +806,266 @@ function loadRecs(tries = 0) {
 }
 /* @home:end */
 
+/* ---------- browse ---------- */
+/* @browse:start */
+/* Browse (TODO 260, Elias picked mockup B, 2026-11-21): AniList's catalog in the
+   Library's layout — the lists and their filters in the side list, Overview
+   (the #1 trending show big, then a row per list) or one list as a grid on the
+   right. The hub reads AniList on demand (/api/catalog); nothing is kept. */
+/* Five lists (Elias: All-time popular and Top 100 were All anime in another order): most popular and best rated are
+   All anime's sort. Trending now stays a list of its own anyway (Elias: "add back trending"), and so does a season. */
+const BR_LISTS = [["over", "Overview"], ["all", "All anime"], ["trending", "Trending now"], ["season", "This season"], ["next", "Next season"]];
+const BR_SORT0 = { trending: "trending" }; // the rest: most popular first
+const BR_SEASONS = ["WINTER", "SPRING", "SUMMER", "FALL"];
+const BR_SORTS = [["trending", "trending"], ["popularity", "popularity"], ["score", "average score"], ["newest", "newest"], ["title", "title"]];
+const BR_FMT = [["TV", "TV"], ["MOVIE", "Movie"], ["ONA", "ONA"], ["OVA", "OVA"], ["SPECIAL", "Special"], ["TV_SHORT", "TV short"]];
+const brF0 = () => ({ genres: [], fyear: "all", fseason: "", format: "", score: "all" });
+S.br = { list: "over", sea: null, sort: "", f: brF0(), ...lsGet("br", {}) };
+S.br.f = { ...brF0(), ...S.br.f };
+/* A list that became a sort (an older save, or history from before) opens All anime in that order. */
+const BR_OLD = { popular: "", top: "score" };
+function brListOf(l, sort) { return l in BR_OLD ? ["all", BR_OLD[l]] : BR_LISTS.some(([k]) => k === l) ? [l, sort || ""] : ["over", ""]; }
+[S.br.list, S.br.sort] = brListOf(S.br.list, S.br.sort);
+for (const k of ["fyear", "score"]) if (!Array.isArray(S.br.f[k])) S.br.f[k] = "all"; // ranges, like the Library's (an older single value reads as any)
+const BR_RANGE = { fyear: () => [1960, new Date().getFullYear() + 1, 1], score: () => [0, 100, 5] };
+const brSave = () => lsSet("br", { list: S.br.list, f: S.br.f, sort: S.br.sort });
+const brSeaLabel = (x) => x ? `${x.season[0]}${x.season.slice(1).toLowerCase()} ${x.year}` : "";
+function brStep(x, n) { const i = BR_SEASONS.indexOf(x.season) + n; return { season: BR_SEASONS[((i % 4) + 4) % 4], year: x.year + Math.floor(i / 4) }; }
+const brOn = () => { const f = S.br.f; return f.genres.length > 0 || Array.isArray(f.fyear) || Array.isArray(f.score) || !!(f.fseason || f.format); };
+const brSeasonList = (l = S.br.list) => l === "season" || l === "next";
+/* Which season a season list shows: the one you stepped to, else AniList's own. */
+const brSea = () => S.br.sea || S.brOver?.data?.seasons?.[S.br.list] || null;
+const brSort = () => S.br.sort || BR_SORT0[S.br.list] || "popularity";
+function brSpec() {
+  const f = S.br.f, sp = { list: S.br.list, sort: brSort() };
+  if (brSeasonList()) { const x = brSea(); if (x) Object.assign(sp, { season: x.season, year: x.year }); }
+  if (f.genres.length) sp.genres = f.genres.join(",");
+  for (const k of ["fyear", "fseason", "format", "score"]) if (f[k] && f[k] !== "all" && !(brSeasonList() && (k === "fyear" || k === "fseason"))) sp[k] = Array.isArray(f[k]) ? f[k].join("-") : f[k];
+  return sp;
+}
+const brQS = (sp, page = 1) => "/api/catalog?" + new URLSearchParams({ ...sp, page }).toString();
+const brKey = (sp) => JSON.stringify(sp);
+S.brc = {}; // spec key → { items, page, has_next, busy, err }
+function brLoad(more) {
+  const sp = brSpec(), key = brKey(sp), c = (S.brc[key] ||= { items: [], page: 0, has_next: true, busy: false, err: null });
+  if (c.busy || (!more && (c.page || c.err)) || (more && !c.has_next)) return c; // a failure waits for Try again
+  c.busy = true; c.err = null;
+  api(brQS(sp, c.page + 1)).then((r) => {
+    if (r.error) throw r;
+    const have = new Set(c.items.map((x) => x.id));
+    c.items.push(...(r.items || []).filter((x) => !have.has(x.id))); c.page = r.page; c.has_next = !!r.has_next;
+  }).catch((e) => { c.err = e?.error || "AniList didn't answer — try again."; c.retry = e?.retry_in; })
+    .finally(() => { c.busy = false; if (S.view === "browse") brPaint(); });
+  return c;
+}
+function brLoadOver() {
+  const o = S.brOver;
+  if (o?.busy || (o?.err && !o.data) || (o?.data && Date.now() - o.at < 10 * 60e3)) return;
+  S.brOver = { ...(o || {}), busy: true, err: null };
+  api("/api/catalog").then((r) => { if (r.error) throw r; S.brOver = { data: r, at: Date.now() }; })
+    .catch((e) => { S.brOver = { ...(S.brOver || {}), busy: false, err: e?.error || "AniList didn't answer — try again." }; })
+    .finally(() => { if (S.brOver) S.brOver.busy = false; if (S.view === "browse") brPaint(); });
+}
+function brLoadGenres() {
+  if (S.brGenres || S.brGenresBusy || S.brGenresTried > Date.now() - 60e3) return;
+  S.brGenresTried = Date.now();
+  S.brGenresBusy = true;
+  api("/api/catalog?list=genres").then((r) => { if (r.genres) S.brGenres = r.genres; }).catch(() => {})
+    .finally(() => { S.brGenresBusy = false; if (S.view === "browse") brPaint(); });
+}
+/* What you have on your lists, by AniList id: the poster says so. */
+function brStatus() {
+  const m = new Map();
+  if (aniMode()) for (const e of S.data.spine?.entries || []) if (e.status) m.set(e.id, e.status);
+  for (const id of S.brAdded || []) if (!m.has(id)) m.set(id, "PLANNING");
+  return m;
+}
+const BR_PH = '<div class="brphc" aria-hidden="true"><i></i><b></b><u></u></div>'; // a card while it loads: poster, title, facts (no jump when they land)
+/* The Library's own card: the average as the chip by the title, your list in the line under it (no pills on the art,
+   Elias). + Planning shows on hover, like Home's Recommended row. */
+function brCard(x, i, o = {}) {
+  const st = o.st.get(x.id), add = aniMode() && !st;
+  const facts = [st ? statusLabel(st) : "", fmtName(x.format), o.noYear ? "" : x.year].filter(Boolean).join(" · ");
+  return `<div class="card brc" role="button" tabindex="0" style="--i:${Math.min(i, 24)}" data-a="bopen" data-v="${x.id}" data-poster="${esc(x.poster || "")}" data-color="${esc(x.color || "")}" aria-label="${esc(x.title)}">
+    <div class="pw">${poster(x.title, x.poster)}${o.rank ? `<b class="brrn">${o.rank}</b>` : ""}${add ? `<button class="radd" data-a="badd" data-v="${x.id}" title="Add to Planning">${ico("plus")}Planning</button>` : ""}</div>
+    <h3><span class="ttl">${esc(x.title)}</span>${x.average ? `<span class="kb" title="AniList average">${x.average}</span>` : ""}</h3><div class="m">${esc(facts)}</div></div>`;
+}
+/* The side list's filters: the Library's own folds (fdrop), pick lists and two-handle ranges. */
+function brDrop(k, label, opts, multi, now) {
+  const f = S.br.f, cur = now || (multi ? f[k] : f[k] ? [f[k]] : []);
+  const val = !cur.length ? "any" : multi && cur.length > 2 ? `${cur.length} picked` : cur.map((v) => (opts.find(([x]) => String(x) === String(v)) || [v, v])[1]).join(", ");
+  return fdrop("br" + k, label, `<div class="fchips" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => {
+    const on = cur.map(String).includes(String(v));
+    return `<button class="fopt${on ? " on" : ""}" aria-pressed="${on}" data-a="bpick" data-k="${k}" data-v="${esc(v)}"><span>${esc(l)}</span>${ico("check")}</button>`;
+  }).join("")}</div>`, val, cur.length > 0);
+}
+function brRange(k, label, now) {
+  const [lo, hi, step] = BR_RANGE[k](), set = !!now || Array.isArray(S.br.f[k]), v = now || (set ? S.br.f[k] : [lo, hi]);
+  const a = Math.max(lo, Math.min(hi, v[0])), b = Math.max(a, Math.min(hi, v[1])), pct = (x) => ((x - lo) / (hi - lo || 1)) * 100;
+  const inp = (n, val, l) => `<input type="range" aria-label="${label} ${l}" min="${lo}" max="${hi}" step="${step}" value="${val}" data-r="${n}">`;
+  const txt = !set ? "any" : a === b ? String(a) : `${a} – ${b}`; // one year reads as that year
+  return fdrop("br" + k, label, `<div class="fl rng${set ? " set" : ""}" data-k="${k}" data-br="1" style="--a:${pct(a)}%;--b:${pct(b)}%"><span>${label}</span><div class="rt">${inp(0, a, "from")}${inp(1, b, "to")}</div><b class="rv"><i>${txt}</i></b></div>`,
+    txt, set);
+}
+/* A Browse range moving: like the Library's, into S.br.f; the list follows when it's let go. */
+function brRangeInput(r) {
+  const box = r.closest(".rng"), k = box.dataset.k, [i0, i1] = box.querySelectorAll("input");
+  let a = +i0.value, b = +i1.value;
+  if (a > b) { if (r === i0) i0.value = a = b; else i1.value = b = a; }
+  const lo = +i0.min, hi = +i0.max, all = a <= lo && b >= hi, txt = all ? "any" : a === b ? String(a) : `${a} – ${b}`;
+  S.br.f[k] = all ? "all" : [a, b];
+  box.style.setProperty("--a", ((a - lo) / (hi - lo || 1)) * 100 + "%"); box.style.setProperty("--b", ((b - lo) / (hi - lo || 1)) * 100 + "%");
+  box.querySelector(".rv i").textContent = txt; box.classList.toggle("set", !all);
+  const dd = box.closest(".fdrop"); if (dd) { dd.classList.toggle("set", !all); dd.querySelector(".fdb b").textContent = txt; }
+}
+function brFilters() {
+  const sea = brSeasonList() && brSea(), cap = (x) => x[0] + x.slice(1).toLowerCase();
+  return [S.brGenres ? brDrop("genres", "Genres", S.brGenres.map((g) => [g, g]), true) : "",
+    /* a season list shows its season as these two filters, and they change it (Elias) */
+    brRange("fyear", "Year", sea && [sea.year, sea.year]), brDrop("fseason", "Season", BR_SEASONS.map((s) => [s, cap(s)]), false, sea && [sea.season]),
+    brDrop("format", "Format", BR_FMT), brRange("score", "Average")].join("");
+}
+function brRail() {
+  let n = 0;
+  const seas = S.brOver?.data?.seasons || {};
+  /* A season list stepped to the other one lights that one; stepped further, neither (the grid's title says which). */
+  const sea = brSeasonList() && S.br.sea, on = !sea ? S.br.list : ["season", "next"].find((k) => seas[k] && seas[k].season === sea.season && seas[k].year === sea.year) || S.br.list;
+  const it = ([k, l]) => `<button class="${on === k ? "on" : ""}" style="--i:${n++}" data-a="blist" data-v="${k}">${esc(l)}${seas[k] ? `<span class="n">${esc(seas[k].label)}</span>` : ""}</button>`;
+  return `<aside class="lnav brnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Browse</h1><div class="sum"><span>from AniList</span></div></div>
+    <h4 style="--i:${n++}">Lists</h4>${BR_LISTS.map(it).join("")}
+    <h4 style="--i:${n++}" class="brfh">Filter${brOn() ? `<button class="brclr" data-a="bclear">Clear</button>` : ""}</h4><div class="lflt" style="--i:${n++}">${brFilters()}</div></aside>`;
+}
+function brHero(x, st) {
+  const add = aniMode() && !st.get(x.id), size = x.title.length > 24 ? " tl3" : x.title.length > 12 ? " tl2" : "";
+  const facts = [x.average ? `★ ${x.average}` : "", fmtName(x.format), x.year, x.studio, x.genres.slice(0, 3).join(", ")].filter(Boolean).map(esc).join('<i class="sep"></i>');
+  return `<div class="upn brhero${size}" data-a="bopen" data-v="${x.id}" data-k="hero" style="--h:${hueOf(x.title)};--art:${esc(cssUrl(x.banner || x.poster))}"><i class="upa"></i><div class="upc">
+    <div class="eye"><i class="mdot"></i>trending now · #1${st.get(x.id) ? ` · <span class="ok">${esc(statusLabel(st.get(x.id)).toLowerCase())}</span>` : ""}</div>
+    <h1>${esc(x.title)}</h1><div class="facts">${facts}</div>
+    <div class="cta">${add || S.brAdded?.has(x.id) ? `<button class="btn pri big bhadd${S.brAdded?.has(x.id) ? " done" : ""}" data-a="badd" data-v="${x.id}">${S.brAdded?.has(x.id) ? ico("check") + "<span>Planning</span>" : ico("plus") + "<span>Planning</span>"}</button>` : ""}<button class="btn big" data-a="bopen" data-v="${x.id}">Open show</button></div></div></div>`;
+}
+const brErr = (msg, a = "bretry") => `<div class="emptyx brerr"><div class="eico">${ico("refresh")}</div><b>Couldn't reach AniList</b><span>${esc(msg)}</span><button class="btn" data-a="${a}">Try again</button></div>`;
+function brOverHTML(st) {
+  const o = S.brOver;
+  if (!o?.data) return o?.err ? brErr(o.err, "bretryo") : `<div class="brwait"><i class="brph"></i><div class="brrow">${BR_PH.repeat(9)}</div></div>`;
+  const R = o.data.rows, seas = o.data.seasons, hero = (R.trending || []).find((x) => x.banner);
+  /* See all: Trending now and This season are lists; Top rated is All anime, best rated first. */
+  const see = { trending: "trending", season: "season", top: "all:score" };
+  const row = (k, title, sub, ranked) => (R[k] || []).length ? `<section class="hsec brs" data-sec="${k}"><div class="sh"><h2>${esc(title)}</h2>${sub ? `<small class="brsub">${esc(sub)}</small>` : ""}<span class="fill"></span><button class="link-btn" data-a="blist" data-v="${see[k]}">See all${ico("arrowr")}</button></div>
+    <div class="brrow">${R[k].slice(k === "trending" && hero ? 1 : 0).map((x, i) => brCard(x, i, { st, rank: ranked ? i + 1 : 0 })).join("")}</div></section>` : ""; // the banner is #1: its row starts at #2
+  /* Three rows (Elias: "so much at once"); Next season is in the side list. */
+  return (hero ? brHero(hero, st) : "") + row("trending", "Trending now") + row("season", "This season", seas.season?.label) + row("top", "Top rated", "", true);
+}
+function brGridHTML(st) {
+  const L = S.br.list, c = brLoad(), sea = brSeasonList() ? brSea() : null;
+  const ranked = L === "all" && brSort() === "score" && !brOn(); // the places on AniList, as the Overview's Top rated row shows them
+  const title = sea ? brSeaLabel(sea) : (BR_LISTS.find(([k]) => k === L) || [0, ""])[1];
+  /* The app's own round arrows, before the title: they stay under the pointer as you step (no pills naming the
+     neighbours, Elias: "this looks bad"); the season they go to is their tooltip. */
+  const nb = (n) => esc(brSeaLabel(brStep(sea, n)));
+  const steps = sea ? `<span class="brsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}" title="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}" title="${nb(1)}">${ico("chevr")}</button><h2 class="lh">${esc(title)}</h2></span>` : "";
+  const sort = `<label class="fl">sort<select data-a="bsort">${BR_SORTS.map(([k, l]) => `<option value="${k}"${brSort() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
+  const span = (r) => r[0] === r[1] ? String(r[0]) : r.join("–");
+  const f = S.br.f, fx = [...f.genres, Array.isArray(f.fyear) && !sea ? span(f.fyear) : "", f.fseason && !sea ? f.fseason[0] + f.fseason.slice(1).toLowerCase() : "", f.format ? fmtName(f.format) : "", Array.isArray(f.score) ? `average ${span(f.score)}` : ""].filter(Boolean);
+  const head = `<div class="filters brhd${sea ? " sea" : ""}">${steps || `<h2 class="lh">${esc(title)}</h2>`}${fx.length ? `<span class="brfx">${fx.map(esc).join(" · ")}</span>` : ""}<span class="fill"></span>${sort}</div>`;
+  let body;
+  if (!c.items.length && c.err) body = brErr(c.err);
+  else if (!c.items.length && !c.busy && c.page) body = `<div class="emptyx brnone"><div class="eico">${ico("search")}</div><b>Nothing matches</b><span>No show on AniList has all of these.</span><button class="btn" data-a="bclear">Clear filters</button></div>`;
+  else body = `<div class="wall brwall">${c.items.map((x, i) => brCard(x, i, { st, rank: ranked ? i + 1 : 0, noYear: !!sea })).join("")}${c.busy ? BR_PH.repeat(c.items.length ? 7 : 21) : ""}</div>
+    ${c.has_next && c.items.length ? `<div class="brmore"><button class="btn" data-a="bmore">${c.busy ? "Loading…" : "Show more"}</button></div>` : ""}${c.err && c.items.length ? `<p class="brnote">${esc(c.err)} <button class="link-btn" data-a="bmore">Try again</button></p>` : ""}`;
+  return head + body;
+}
+function brMainHTML() {
+  const st = brStatus();
+  return S.br.list === "over" ? brOverHTML(st) : brGridHTML(st);
+}
+function Browse() {
+  brLoadOver(); brLoadGenres();
+  const rail = isRail();
+  const head = rail ? "" : `<div class="hello"><h1 class="hd">Browse</h1></div><div class="tabs" data-glide="brtabs">${BR_LISTS.map(([k, l]) => `<button class="${S.br.list === k ? "on" : ""}" data-a="blist" data-v="${k}">${esc(l)}</button>`).join("")}</div>
+    <div class="filters brflt">${brFilters()}${brOn() ? `<button class="btn clr" data-a="bclear">${ico("close")}Clear</button>` : ""}</div>`;
+  return `<div class="lib2 brw">${head}<div class="libg">${rail ? brRail() : ""}<div class="lmain" id="brmain">${brMainHTML()}</div></div></div>`;
+}
+/* Redraw in place. A new list or filter fades the posters in the Library's way (.wall.fade); nothing glides or slides. */
+function brPaint(fade) {
+  if (S.view !== "browse") return;
+  const fk = $(".brw .fdrop.open")?.dataset.k; // a fold you're picking in stays open
+  render(true);
+  if (fk) {
+    const d = $(`.brw .fdrop[data-k="${fk}"]`);
+    if (d && !d.classList.contains("open")) { d.classList.add("open", "now"); d.querySelector(".fdb")?.setAttribute("aria-expanded", "true"); setTimeout(() => d.classList.toggle("now", false), 250); }
+  }
+  if (fade) for (const w of $$("#brmain .brwall, #brmain .brrow")) { w.classList.toggle("fade", false); void w.offsetWidth; w.classList.add("fade"); }
+  brWatch();
+}
+/* More as you scroll: the next page when the end comes near. */
+let brIO = null;
+function brWatch() {
+  brIO?.disconnect(); brIO = null;
+  const m = $("#brmain .brmore");
+  if (!m || !("IntersectionObserver" in window)) return;
+  brIO = new IntersectionObserver(([en]) => { if (en.isIntersecting) { brLoad(true); brPaint(); } }, { rootMargin: "600px 0px" });
+  brIO.observe(m);
+}
+function brGo(list, push = true, sort = "") {
+  if (list === S.br.list && sort === S.br.sort && !S.br.sea) return;
+  S.br.list = list; S.br.sea = null; S.br.sort = sort; brSave();
+  scrollTo(0, 0);
+  brPaint(true);
+  if (push) pushNav();
+}
+/* A filter picked on the Overview opens All anime with it (the side list shows where you are). */
+function brFiltered(k) {
+  if (brSeasonList() && (k === "fyear" || k === "fseason")) return brSeaFiltered(k);
+  brSave();
+  if (S.br.list === "over" && brOn()) { S.br.list = "all"; brSave(); scrollTo(0, 0); brPaint(true); return pushNav(); }
+  brPaint(true);
+}
+/* A season list is All anime for one season of one year: its Year and Season are those filters. Narrowed back to
+   one season of one year it stays a season list (that season); anything wider is All anime with those filters. */
+function brSeaFiltered(k) {
+  const sea = brSea(), f = S.br.f;
+  if (!sea) return brPaint(true);
+  if (k === "fyear" && !f.fseason) f.fseason = sea.season; // the year moved, the season stays
+  if (k === "fseason" && !Array.isArray(f.fyear)) f.fyear = [sea.year, sea.year]; // and the other way round
+  const y = f.fyear, one = Array.isArray(y) && y[0] === y[1];
+  if (f.fseason && one) {
+    S.br.sea = { season: f.fseason, year: y[0] }; f.fseason = ""; f.fyear = "all";
+    brSave(); brPaint(true); return navKeep();
+  }
+  S.br.list = "all"; S.br.sea = null; brSave(); scrollTo(0, 0); brPaint(true); pushNav();
+}
+const BR_A = {
+  blist: (v) => { const [l, s] = v.split(":"); brGo(l, true, s || ""); }, // "all:score": All anime, best rated first
+  bopen: (v) => openFranchise(+v),
+  bretry: () => { delete S.brc[brKey(brSpec())]; brPaint(); },
+  bretryo: () => { S.brOver = null; brPaint(); },
+  bmore: () => { const c = S.brc[brKey(brSpec())]; if (c) c.err = null; brLoad(true); brPaint(); },
+  bstep: (v) => { S.br.sea = brStep(brSea(), +v); brPaint(true); navKeep(); },
+  bsort: (v) => { S.br.sort = v === (BR_SORT0[S.br.list] || "popularity") ? "" : v; brSave(); brPaint(true); navKeep(); },
+  bclear: () => { S.br.f = brF0(); fdropClose(); brFiltered(); },
+  bpick: (v, t) => {
+    const k = t.dataset.k, f = S.br.f;
+    if (k === "genres") f.genres = f.genres.includes(v) ? f.genres.filter((g) => g !== v) : [...f.genres, v];
+    else if (k === "fseason" && brSeasonList()) { f.fseason = brSea()?.season === v ? "" : v; fdropClose(); } // the season shown is the ticked one
+    else { f[k] = String(f[k]) === v ? "" : v; fdropClose(); }
+    brFiltered(k);
+  },
+  badd: (v, t) => {
+    const id = +v;
+    if (S.brAdded?.has(id) || t.disabled) return;
+    t.disabled = true; t.classList.add("busy");
+    entrySave(id, { status: "PLANNING" }).then((r) => {
+      if (!r || r.error) throw 0;
+      (S.brAdded ||= new Set()).add(id); toast("Added to Planning"); // like Home's Recommended: the button goes, the card says Planning
+      brPaint(); refreshData();
+    }).catch(() => { t.disabled = false; t.classList.remove("busy"); toast("Could not add it — try again"); });
+  },
+};
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.classList?.contains("brc")) { e.preventDefault(); A.bopen(e.target.dataset.v); }
+});
+/* @browse:end */
+
 /* ---------- library ---------- */
 /* @lib:start */
 /* Year and score filters are ranges: "all" or [lo, hi] (older saved
@@ -1675,10 +1935,11 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".fdro
 let rngFrame = 0;
 /* Every filter change replays the cards' rise-in (Elias, TODO 210); a range
    does it once, when it's let go, not on every step of the drag. */
-document.addEventListener("change", (e) => { if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); saveLib(); if (e.target.closest(".fsheet")) return fltRepaint(); paintWall(true); syncFilters(); } });
+document.addEventListener("change", (e) => { if (e.target.closest?.(".rng[data-br] input")) return brFiltered(e.target.closest(".rng").dataset.k); if (e.target.closest?.(".rng input")) { clearTimeout(rngFrame); saveLib(); if (e.target.closest(".fsheet")) return fltRepaint(); paintWall(true); syncFilters(); } });
 document.addEventListener("input", (e) => {
   const r = e.target.closest?.(".rng input");
   if (!r) return;
+  if (r.closest(".rng[data-br]")) return brRangeInput(r); // Browse's own (TODO 260)
   const box = r.closest(".rng"), k = box.dataset.k, [i0, i1] = box.querySelectorAll("input");
   let a = +i0.value, b = +i1.value;
   if (a > b) { if (r === i0) i0.value = a = b; else i1.value = b = a; }
@@ -1693,6 +1954,46 @@ document.addEventListener("input", (e) => {
   clearTimeout(rngFrame);
   rngFrame = setTimeout(() => { paintWall(); syncFilters(); saveLib(); }, 30);
 });
+/* A two-handle range takes the whole track: press anywhere on it and the nearer
+   handle comes there and follows the pointer. The 14px handles alone were too
+   hard to catch ("these sliders don't work", Elias). It drives the inputs and
+   sends their own input/change events, so the Library and Browse code above
+   stays as it is; the keys still move a focused handle. */
+let rngD = null;
+function rngAt(d, x) {
+  const [i0] = d.ins, lo = +i0.min, hi = +i0.max, st = +i0.step || 1, r = d.t.getBoundingClientRect(), k = 7; // k: half a handle, its centre's travel stops there
+  const f = Math.min(1, Math.max(0, (x - r.left - k) / (r.width - 2 * k || 1)));
+  return Math.min(hi, Math.max(lo, +(lo + Math.round((f * (hi - lo)) / st) * st).toFixed(st < 1 ? 1 : 0)));
+}
+function rngSet(d, v) {
+  const inp = d.ins[d.i];
+  if (+inp.value === v) return;
+  inp.value = v; d.moved = true;
+  inp.dispatchEvent(new Event("input", { bubbles: true }));
+}
+document.addEventListener("pointerdown", (e) => {
+  const t = e.target.closest?.(".rng .rt");
+  if (!t || e.button) return;
+  const ins = [...t.querySelectorAll("input")];
+  if (ins.length !== 2) return;
+  e.preventDefault(); // the native handle drag stays out of it
+  const d = { t, ins, i: 0, moved: false }, v = rngAt(d, e.clientX), a = +ins[0].value, b = +ins[1].value;
+  d.i = v <= a ? 0 : v >= b ? 1 : v - a < b - v ? 0 : 1;
+  if (a === b) d.i = v < a ? 0 : 1;
+  rngD = d;
+  ins[d.i].focus({ preventScroll: true });
+  t.classList.add("drag"); ins[d.i].classList.add("on");
+  try { t.setPointerCapture(e.pointerId); } catch {}
+  rngSet(d, v);
+});
+document.addEventListener("pointermove", (e) => { if (rngD) rngSet(rngD, rngAt(rngD, e.clientX)); });
+const rngEnd = () => {
+  const d = rngD; rngD = null;
+  if (!d) return;
+  d.t.classList.remove("drag"); d.ins.forEach((x) => x.classList.remove("on"));
+  if (d.moved) d.ins[d.i].dispatchEvent(new Event("change", { bubbles: true }));
+};
+document.addEventListener("pointerup", rngEnd); document.addEventListener("pointercancel", rngEnd);
 /* Keep the "set" tint and the Clear button in step with the selects without rebuilding them (focus stays put). */
 function syncFilters() {
   const f = $(".filters");
@@ -2250,7 +2551,7 @@ document.addEventListener("pointerover", (e) => {
   const art = { blur: c.dataset.poster || null, sharp: null, color: c.dataset.color || colorOfId(+c.dataset.v) || null };
   /* A colour change restyles the whole page (~15 ms with a full wall), so here it
      swaps without the fade and skips posters the pointer only sweeps across. */
-  libRest = { el: c, a: setTimeout(() => { document.documentElement.classList.add("amb-now"); accentFrom(art.blur, art.color); }, 140), t: setTimeout(() => { if (S.view === "library") { S.libHover = art; swapLayer("cv-blur", lookGet("art") === "off" ? null : art.blur); } }, 450) };
+  libRest = { el: c, a: setTimeout(() => { document.documentElement.classList.add("amb-now"); accentFrom(art.blur, art.color); }, 140), t: setTimeout(() => { if (S.view === "library" || S.view === "browse") { S.libHover = art; swapLayer("cv-blur", lookGet("art") === "off" ? null : art.blur); } }, 450) };
 }, { passive: true });
 /* Hovering a card prefetches its page (stored data only — the hub starts nothing). */
 let peekTimer = 0;
@@ -2662,7 +2963,7 @@ function frCm(id, x0, y0) {
   return true;
 }
 
-function backLabel() { return S.showBack === "library" ? "Library" : S.showBack === "history" || S.showBack === "stats" ? "Journal" : S.showBack === "week" ? "Calendar" : "Home"; }
+function backLabel() { return S.showBack === "browse" ? "Browse" : S.showBack === "library" ? "Library" : S.showBack === "history" || S.showBack === "stats" ? "Journal" : S.showBack === "week" ? "Calendar" : "Home"; }
 
 /* A folder with no AniList match yet: its files, and the way to match it.
    Matched folders and online episodes open their franchise page (Fran),
@@ -4042,7 +4343,7 @@ async function loadSettings() {
 }
 
 /* ---------- nav, search, downloads ---------- */
-const VIEWS = ["home", "library", "history", "stats", "settings", "week"];
+const VIEWS = ["home", "library", "browse", "history", "stats", "settings", "week"];
 /* One list for library and AniList hits: ranked by how well the title
    matches, library first on ties; an AniList hit that is a library show
    shows once, as the library show. AniList results follow the typing
@@ -4310,11 +4611,11 @@ function NextDlg() {
 }
 /* The three places + their number keys (Decision 38; History and Stats
    become Journal in step 5); Settings lives behind the icon (,). */
-const TABS = [["home", "Home"], ["library", "Library"], ["history", "Journal"], ["week", "Calendar"]];
+const TABS = [["home", "Home"], ["library", "Library"], ["browse", "Browse"], ["history", "Journal"], ["week", "Calendar"]];
 /* The keys sheet (? anywhere, Decision 84): a full-screen cheat sheet in
    three columns: this page's keys first (read from the buttons that are
    really there), then everywhere, then your own player keys. */
-const KEYS_ALL = [["Search or run a command", ["/"]], ["Home, Library, Journal, Calendar", ["1", "2", "3", "4"]], ["Settings", [","]], ["Move around", ["←", "↑", "↓", "→"]], ["Open", ["↵"]], ["Back", ["Esc"]], ["These keys", ["?"]]];
+const KEYS_ALL = [["Search or run a command", ["/"]], ["Home, Library, Browse, Journal, Calendar", ["1", "2", "3", "4", "5"]], ["Settings", [","]], ["Move around", ["←", "↑", "↓", "→"]], ["Open", ["↵"]], ["Back", ["Esc"]], ["These keys", ["?"]]];
 const KEYS_MENU = [["Move", ["↑", "↓"]], ["Pick", ["↵"]], ["Close", ["Esc"]]];
 const KEYS_HOME = [["Resume", ["↵"]], ["Open the show", ["O"]]];
 const KEYS_SHOW = [["Play", ["↵"]], ["Edit your entry", ["E"]], ["Download", ["D"]], ["Mark all watched", ["⇧", "W"]], ["Pick episodes", ["Ctrl", "click"]], ["Pick a run of episodes", ["⇧", "click"]]];
@@ -4391,7 +4692,7 @@ function paintSr() {
 }
 function paintNav() {
   paintTabbar(); paintSide(); paintTop();
-  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
+  const cur = S.view === "show" || S.view === "fr" ? (S.showBack === "browse" ? "browse" : "library") : S.view === "stats" ? "history" : S.view;
   const links = $("#links");
   links.innerHTML = TABS.map(([k, n]) => `<button class="link ${cur === k ? "on" : ""}" ${cur === k ? 'aria-current="page"' : ""} data-a="go" data-v="${k}">${n}</button>`).join(""); // no key hints in the top bar (TODO 236); 1–4 still work, "keys ?" lists them
   glide(links);
@@ -5888,6 +6189,11 @@ function canvasArt() {
   if (S.view === "show") { const s = showById(S.showId); return s && { blur: s.banner || s.poster, sharp: s.banner, color: showColor(s) }; }
   if (S.view === "home") { const s = nextUpInfo()?.s; return s && { blur: s.banner || s.poster, sharp: null, color: showColor(s) }; } // Home: a full blur of the up-next show
   if (S.view === "library" && S.libHover) return S.libHover;
+  if (S.view === "browse") { // the poster you rest on, else the #1 trending show
+    if (S.libHover) return S.libHover;
+    const h = S.brOver?.data?.rows?.trending?.find((x) => x.banner);
+    return h ? { blur: h.banner, sharp: null, color: h.color } : null;
+  }
   if (S.view === "history" || S.view === "stats") {
     const top = jTop();
     if (top) return { blur: top.poster || top.art, sharp: null, color: colorOfId(top.mid) || S.jr?.media?.[top.mid]?.color || null };
@@ -6043,7 +6349,7 @@ function accentFrom(url, color) {
   if (/^https?:/.test(url)) direct(url); else read(url, false, url !== own ? () => direct(own) : null);
 }
 const ambient = paintCanvas;
-const VIEW_TITLE = { home: "", library: "Library", history: "Journal", stats: "Journal", settings: "Settings", week: "Calendar" };
+const VIEW_TITLE = { home: "", library: "Library", browse: "Browse", history: "Journal", stats: "Journal", settings: "Settings", week: "Calendar" };
 /* ---------- in-place updates (TODO 61) ----------
    A background refresh brings the open page up to date without rebuilding
    it: the new HTML is matched against the live nodes (by data-a/data-v or
@@ -6134,7 +6440,7 @@ function render(inPlace = false) {
   paintNav();
   io && io.disconnect();
   const app = $("#app");
-  const html = { home: Home, library: Lib, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran, week: Week }[S.view]();
+  const html = { home: Home, library: Lib, browse: Browse, history: Hist, stats: Stats, settings: Sett, show: Det, fr: Fran, week: Week }[S.view]();
   const morph = inPlace === true && !fresh && app._view === viewKey();
   /* An in-place update leaves the entrance animation running. */
   const railTop = !fresh && app._view === viewKey() ? $(".lnav")?.scrollTop : 0; // a click in the side list keeps its place
@@ -6155,6 +6461,7 @@ function render(inPlace = false) {
   app._view = viewKey();
   if (S.view === "fr") frLastSig = frSig();
   if (S.view === "library") { paintWall(!!S.fadeNext); S.fadeNext = false; startMetaWatch(); }
+  if (S.view === "browse") brWatch();
   lazyBg();
   $$("#app [data-glide]").forEach(glide);
   strips(); artDim();
@@ -6198,7 +6505,7 @@ function clearSearch() { if (S.menu === "sr") ovDrop("sr"); S.srScope = null; S.
 /* Switching Home · Library · Journal · Calendar on a touch screen slides the page in
    from the side of the tab you went to (one transform on #app, no fill,
    so nothing stays transformed afterwards). */
-const TAB_AT = { home: 0, library: 1, history: 2, stats: 2, week: 3 };
+const TAB_AT = { home: 0, library: 1, browse: 2, history: 3, stats: 3, week: 4 };
 function tabSlide(from, to) {
   if (reduceMotion() || !mq("(pointer:coarse), (max-width:700px)")) return;
   const a = TAB_AT[from], b = TAB_AT[to], app = $("#app"), page = (v) => v === "show" || v === "fr";
@@ -6221,13 +6528,14 @@ function nav(view, fn, quiet) {
   frOpenTok++; // a show page still waiting to open (openFranchise) doesn't pull you back
   const from = S.view;
   if (TAB_AT[from] != null) tabScroll[from] = scrollY;
+  if (from === "browse") navKeep(); // back to Browse lands where you were in it
   const go = () => {
     const prev = S.view;
     backSave();
     S.navIn = true; S.navQuiet = !!quiet; S.view = view; clearSearch(); fIdx = -1;
     if (view === "library" && !quiet) S.fadeNext = true;
     if (fn) fn(prev);
-    render(); scrollTo(0, TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); pushNav();
+    render(); scrollTo(0, view === "browse" && (prev === "fr" || prev === "show") ? tabScroll.browse || 0 : TAB_AT[view] != null && TAB_AT[from] != null && isPhone() ? tabScroll[view] || 0 : 0); pushNav();
   };
   if (quiet) { go(); return calmIn($("#app")); }
   dip(go);
@@ -8078,6 +8386,7 @@ const A = {
   },
   close: () => closeModal(), scrim: (v, t, e) => { if (e.target === t) S.modal?.t === "done" ? A.dnskip() : closeModal(); }, /* a backdrop dismissal is a Skip (Decision 25: once per event) */
 };
+Object.assign(A, BR_A); // Browse (TODO 260)
 
 /* ---------- events ---------- */
 const isField = (t) => /^(SELECT|INPUT)$/.test(t.tagName);
@@ -8512,7 +8821,7 @@ document.addEventListener("keydown", (e) => {
     if (S.sel && !inInput) { selEnd(); return; }
     if (S.q) { clearSearch(); paintNav(); q.blur(); return; }
     if (inInput) { document.activeElement.blur(); return; }
-    if (S.view === "show" || S.view === "fr") A.back(); else if (S.view !== "home") nav("home");
+    if (S.view === "show" || S.view === "fr") A.back(); else if (S.view === "browse" && S.br.list !== "over") { if (brOn()) A.bclear(); else brGo("over"); } else if (S.view !== "home") nav("home");
     return;
   }
   if (inInput || S.menu === "keys") return; // the keys sheet covers the page: no moving around behind it
@@ -8558,7 +8867,7 @@ const PULL = [
   { sel: "#modal .dialog", scroller: (el) => el.querySelector(".rcbody") || el, close: () => modalDismiss(), /* the connect dialog scrolls its rows, not itself */ when: () => isPhone() && S.modal && S.modal.t !== "tour" },
   { sel: "#cm", scroller: (el) => el, close: () => { cmHide(); ovClosed("cm"); }, when: () => isPhone() },
 ];
-const NO_PULL = "input[type=range], .fsl, .seg, .strip, .eps.strip, .srposters, .hstrip, .srscope, .dgen, .gtray, .switch";
+const NO_PULL = "input[type=range], .fsl, .rng .rt, .seg, .strip, .eps.strip, .srposters, .hstrip, .srscope, .dgen, .gtray, .switch";
 /* Pull to refresh (Home, Library, Journal, the week): installed web apps
    get no browser pull-to-refresh, so the app draws its own — a circle that
    drops in with the pull, turns with it, and spins while the hub reloads. */
@@ -9156,7 +9465,7 @@ let navSeeded = false;
 const nidNew = () => Math.random().toString(36).slice(2, 10);
 let curNid = nidNew(), curPnid = null;
 const navSnap = () => ({ nid: curNid, pnid: curPnid, view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY,
-  lt: S.view === "library" ? S.lib.tab : undefined, pl: S.view === "library" && S.lib.tab === "PLAYLISTS" ? S.lib.pl ?? null : undefined });
+  lt: S.view === "library" ? S.lib.tab : undefined, bl: S.view === "browse" ? S.br.list : undefined, bs: S.view === "browse" ? S.br.sort : undefined, pl: S.view === "library" && S.lib.tab === "PLAYLISTS" ? S.lib.pl ?? null : undefined });
 const navUrl = () => location.pathname + location.search + (S.view === "show" ? "#show=" + encodeURIComponent(S.showId) : S.view === "fr" ? "#f=" + S.fr.eid : VIEWS.includes(S.view) && S.view !== "home" ? "#" + S.view : "");
 /* The page as it is now, into its own history entry (keeps how it was reached). */
 const navKeep = () => history.replaceState({ ...history.state, ...navSnap() }, "", navUrl());
@@ -9170,10 +9479,11 @@ function pushNav() {
 }
 function applyNav(h, quiet) {
   frOpenTok++; // back/forward wins over a show page still waiting to open
-  const stay = S.view === "library" && h.view === "library"; // a step inside the Library: the side list stays put (Elias)
+  const stay = (S.view === "library" && h.view === "library") || (S.view === "browse" && h.view === "browse"); // a step inside the Library or Browse: the side list stays put (Elias)
   const wasPl = stay && !!plCurrent();
   S.navIn = !stay; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";
   if (S.view === "fr") S.fr = { eid: h.fr, page: frKnown(h.fr), err: null };
+  if (S.view === "browse" && h.bl) { const [l, s] = brListOf(h.bl, h.bs); if (l !== S.br.list || s !== S.br.sort) { S.br.list = l; S.br.sea = null; S.br.sort = s; brSave(); } }
   if (S.view === "library" && h.lt) { // back/forward between a Library tab, the playlists and one playlist
     if (h.pl && !(S.data.playlists || []).some((p) => p.id === h.pl)) h.pl = null; // deleted since
     S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true;
@@ -9200,12 +9510,15 @@ addEventListener("popstate", (e) => {
   if (swiped === "pager") return backLand();
   if (swiped) { unstyle(app, $("#portal")); app.classList.remove("enter", "tab-l", "tab-r"); void app.offsetWidth; app.classList.add("tab-r"); }
 });
+/* The app puts the page where it was itself (applyNav): the browser's own
+   restore ran after it and put back the spot it saw at the push (the top). */
+try { history.scrollRestoration = "manual"; } catch {}
 history.replaceState(navSnap(), "", location.href);
 navSeeded = true;
 
 /* ---------- boot ---------- */
 aniStatusRefresh();
-const hashShow = location.hash.match(/^#show=(.+)$/), hashFr = location.hash.match(/^#f=(\d+)$/), hashView = location.hash.match(/^#(library|history|stats|settings|week)$/);
+const hashShow = location.hash.match(/^#show=(.+)$/), hashFr = location.hash.match(/^#f=(\d+)$/), hashView = location.hash.match(/^#(library|browse|history|stats|settings|week)$/);
 applyLook(); // index.html already did; this drops an unknown saved value
 applyZoom(); // before first paint, so the UI never flashes at 100 %
 reload().then(() => {
