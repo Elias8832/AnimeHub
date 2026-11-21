@@ -180,6 +180,19 @@ class View(unittest.TestCase):
         s3 = self.entry(pages.franchise_view(195516), 195516)["slots"]
         self.assertEqual(player.next_up("stream:176301:24")["id"], s3[0]["id"] if s3 else None)
 
+    def test_online_chain_stays_online(self):
+        """TODO 262 (Elias): an episode watched online goes on online, in the
+        show's Sub/Dub, even where the next one is on disk too; a file goes
+        on with the file. Only a show page click picks the file."""
+        show = support.folder(self.scan, "The Apothecary Diaries")
+        disk = support.season(show, "Season 2")["episodes"]
+        self.assertEqual(player.next_up("stream:176301:2"), {"id": "stream:176301:3", "source": "online",
+                                                            "show": "The Apothecary Diaries", "label": "Season 2 · E3"})
+        self.assertEqual(player.next_up(disk[1]["id"]), {"id": disk[2]["id"], "source": "local"})
+        menu = player.episode_menu("stream:176301:2")
+        self.assertTrue(menu and all(x["id"].startswith("stream:") and x["online"] for x in menu))
+        self.assertIn(disk[2]["id"], [x["id"] for x in player.episode_menu(disk[1]["id"])])
+
     def test_autoplay_never_skips_ahead(self):
         """Without ani-cli, Season 2's missing episodes can't play: the
         chain stops instead of jumping to whatever comes next on disk."""
