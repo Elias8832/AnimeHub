@@ -266,6 +266,17 @@ def control(action, value=None):
     return {"ok": True, **live, "tracks": track_menu(data)}
 
 
+def slot_play(entry, x, ep_id):
+    """What a franchise page slot plays when the chain comes from ep_id:
+    (id, online?), or (None, False). The file when there is one, except
+    after an online episode: then the chain stays online, in the show's
+    Sub/Dub (Elias, TODO 262) — a show page click still picks the file."""
+    on = (x.get("online") or {}).get("id") if entry["online"]["available"] else None
+    if on and (ep_id.startswith("stream:") or not x["local"]):
+        return on, True
+    return (x["id"], False) if x["local"] and x["id"] else (None, False)
+
+
 def next_up(ep_id):
     """What plays after ep_id, on its franchise page: {"id", "source"} with
     source "local" / "online", "missing" when the next episode exists but
@@ -286,12 +297,11 @@ def next_up(ep_id):
             missing = {"id": None, "source": "missing"}
 
             def playable(entry, x):
-                if x["local"] and x["id"]:
-                    return {"id": x["id"], "source": "local"}
-                if x["online"] and entry["online"]["available"] and x["id"]:
-                    return {"id": x["id"], "source": "online",
+                pid, online = slot_play(entry, x, ep_id)
+                if pid and online:
+                    return {"id": pid, "source": "online",
                             "show": page.get("title"), "label": f'{entry["label"]} · E{x["number"]}'}
-                return missing
+                return {"id": pid, "source": "local"} if pid else missing
 
             # Aired on AniList but no slot (no ani-cli, nothing on disk):
             # it exists, it just can't play.
@@ -387,10 +397,11 @@ def episode_menu(ep_id):
             hide = settings.automation_enabled("hide_spoilers")
             def keep(x):
                 return not (hide and x["id"] != ep_id and _unseen(x))
-            return [{"id": x["id"], "number": x["number"], "watched": bool(x.get("watched")),
+            picks = ((x, *slot_play(e, x, ep_id)) for x in e["slots"])
+            return [{"id": pid, "number": x["number"], "watched": bool(x.get("watched")),
                      "title": x.get("title") if keep(x) else None,
-                     "online": not x["local"], "thumb": x.get("thumb") if keep(x) else None}
-                    for x in e["slots"] if x["id"] and (x["local"] or (x["online"] and e["online"]["available"]))]
+                     "online": online, "thumb": x.get("thumb") if keep(x) else None}
+                    for x, pid, online in picks if pid]
     s, ep = library.episode_by_id(ep_id)
     sea = next((x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"])), None) if ep else None
     return [{"id": x["id"], "number": x["number"], "title": None, "watched": bool(x.get("watched")),
