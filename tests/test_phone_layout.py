@@ -37,7 +37,7 @@ class PhoneLayout(unittest.TestCase):
     def test_week_is_a_view(self):
         self.assertIn('week: Week }[S.view]()', APP)
         self.assertIn('"week"]', APP)
-        self.assertIn("(library|history|stats|settings|week)", APP)
+        self.assertIn("(library|browse|history|stats|settings|week)", APP)
 
     def test_fixed_bits_live_outside_the_animated_page(self):
         """The entrance animation leaves a transform on #app's children, so
@@ -125,7 +125,7 @@ class TouchSmoothness(unittest.TestCase):
 
 class TabSlideAndSearch(unittest.TestCase):
     def test_tab_slide(self):
-        self.assertIn("const TAB_AT = { home: 0, library: 1, history: 2, stats: 2, week: 3 };", APP)
+        self.assertIn("const TAB_AT = { home: 0, library: 1, browse: 2, history: 3, stats: 3, week: 4 };", APP)
         self.assertIn("  tabSlide(from, view);\n}", APP)
         self.assertIn("#app.tab-l{animation:tabL .34s", CSS)
         self.assertNotIn("#app.tab-l{animation:tabL .34s cubic-bezier(.2,.8,.2,1) both", CSS)  # no fill: no transform left on #app
