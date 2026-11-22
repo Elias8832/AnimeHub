@@ -688,8 +688,8 @@ function heroHTML(up, wide = false) {
     <div class="sub">${esc(sub)}</div>
     <div class="facts">${[left, src].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
     ${prog}
-    <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span></button><button class="btn big" data-a="open" data-v="${esc(s.id)}">Open show</button></div>
-  </div></div>`;
+    <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span></button></div>
+  </div></div>`; // no Open show (Elias): the whole banner opens it
 }
 /* One tile per show you actually played, newest first, each pointing at the
    next relevant episode. The show the hero already features is skipped. */
@@ -8859,7 +8859,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "?") { e.preventDefault(); S.menu = S.menu === "keys" ? null : "keys"; paintNav(); return; }
     /* The show page's keys (no hints on its buttons since Decision 66; ? lists them): E edit, D download, ⇧W mark all, ↵ play. */
     if (S.view === "home") {
-      const b = e.key === "o" ? $('#app .upn [data-a="open"]') : e.key === "Enter" && fIdx < 0 && !document.activeElement.closest?.("#app [data-a]") ? $('#app .upn [data-a="play"]') : null;
+      const b = e.key === "o" ? $('#app .upn[data-a="open"]') : e.key === "Enter" && fIdx < 0 && !document.activeElement.closest?.("#app [data-a]") ? $('#app .upn [data-a="play"]') : null;
       if (b) { e.preventDefault(); b.click(); return; }
     }
     if (S.view === "fr" || S.view === "show") {

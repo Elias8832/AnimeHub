@@ -194,8 +194,9 @@ test("homepage renders the new hero, excludes its duplicate tile, and targets it
   assert.match(html, /\/img\/Recent\.banner\.jpg/);
   assert.doesNotMatch(html, /<h3>Recent<\/h3>/); // the up-next show is skipped in Continue watching
   assert.match(html, /<h3>Older<\/h3>/);
-  assert.match(html, /data-a="play" data-v="preview"/); // hero buttons target the hero episode
-  assert.match(html, /data-a="open" data-v="Recent"/);
+  assert.match(html, /data-a="play" data-v="preview"/); // hero button targets the hero episode
+  assert.match(html, /<div class="upn" data-a="open" data-v="Recent"/); // the whole banner opens the show
+  assert.doesNotMatch(html, /Open show/); // no separate Open show button
 });
 
 test("selection follows timestamps rather than input order", () => {
