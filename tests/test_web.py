@@ -1308,6 +1308,31 @@ class ContextMenuPolish(unittest.TestCase):
         self.assertIn("if (next) { next.focus(); cmFire(next); }", APP)
         self.assertNotIn('eyebrow: "Layout"', APP)
         # Very subtle: no icon spins or tilts, no accent fill on the primary highlight
+
+
+class ArrowButtonsPolish(unittest.TestCase):
+    """Soft filled squircle arrows across Home, Show, Browse, Calendar and the date picker (2026-11-22)."""
+
+    def test_soft_squircle_arrows_everywhere(self):
+        # One .arr: no outline circles, no double borders, both arrows the same (no grey disc on > alone)
+        self.assertIn(".arr{width:34px;height:34px;border:0;border-radius:10px;background:rgba(255,255,255,.06);box-shadow:none;", CSS)
+        self.assertNotIn('.sp2 .eps-head .ctl .arr[data-d="1"]{background:rgba(255,255,255,.1)}', CSS)
+        self.assertNotIn(".home2.wide .hsec .arr:disabled{opacity:0", CSS)
+        self.assertNotIn(".hsec .arr{width:32px;height:32px;border-radius:999px;", CSS)
+        # Directional hover nudge and press response on .arr, Calendar .airnav, and date picker
+        self.assertIn('.arr:is([data-d="-1"],[data-v="-1"]):not(.plarr):hover:not(:disabled) .ico{transform:translateX(-2px)}', CSS)
+        self.assertIn('.arr:is([data-d="1"],[data-v="1"]):not(.plarr):hover:not(:disabled) .ico{transform:translateX(2px)}', CSS)
+        self.assertIn(".airnav{display:inline-flex;align-items:center;gap:2px;height:34px}", CSS)
+        # Browse season and Calendar titles slide in the step direction (including return via Today & async repaint)
+        self.assertIn("S.br.stepDir = +v; S.br.stepAt = performance.now();", APP)
+        self.assertIn("c.stepDir = +v;", APP)
+        self.assertIn("c.stepDir = tgt === cur ? 0 : tgt > cur ? 1 : -1;", APP)
+        self.assertIn("@keyframes stepInR{from{opacity:.45;transform:translateX(8px)}}", CSS)  # never blinks out on fast clicks
+        self.assertIn(".sp2 .eps-head .ctl .arr{color:rgba(243,243,241,.92);background:var(--glass);", CSS)  # readable on bright art
+        # Date picker: fixed 6-row height (0px jump), 34px targets, in-place month patch preserves focus
+        self.assertIn(".cal-g{grid-auto-rows:32px;min-height:202px;align-content:start}", CSS)
+        self.assertIn(".cal-h button{width:34px;height:34px;border-radius:10px;", CSS)
+        self.assertIn('n.classList?.contains("pka") ? "pka|" + n.dataset.d', APP)
         self.assertNotIn(".cm-i-close{transform:rotate", CSS)
         self.assertNotIn("#cm .cmhl.pri{", CSS)
         # No bare .warn callout rule leaking a curved border-left onto #cm .cmhl.warn
