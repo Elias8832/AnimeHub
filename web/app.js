@@ -3229,21 +3229,22 @@ function cmOther(id) {
   const to = pw === "phone" ? "pc" : "phone";
   return cmRow("playon", id, to === "pc" ? "tv" : "phone", to === "pc" ? "Play on the PC" : "Play on this phone", "", "", `data-where="${to}"`);
 }
-function cmItems({ id, ep, files, verId, online, onlineId, other, local, dl, fix, playable = true }) {
+function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, dl, fix, playable = true }) {
   const vpn = S.data?.vpn, vpnTag = !vpn?.known ? "" : vpn.active ? '<span class="v ok">vpn ✓</span>' : '<span class="v warn">no vpn</span>';
   const res = resumable(ep), rows = [];
   if (playable) rows.push(cmRow("playep", id, "play", res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"));
   if (playable && res) rows.push(cmRow("playstart", id, "undo", "Play from the start", "B"));
   if (playable) rows.push(cmOther(id));
   if (files.length > 1) files.forEach((fl, i) => rows.push(cmRow("playep", verId, "play", `Play ${esc(fl.label)}`, "", "", `data-ver="${i}"`)));
-  if (local && online) rows.push(cmRow("playep", onlineId, "radio", "Play online", "O"));
-  if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${other === "dub" ? "dubbed" : "subbed"}`, "A", "", `data-m="${other}"`));
+  const modeWord = (m) => (m === "dub" ? "dubbed" : "subbed");
+  if (local && online) rows.push(cmRow("playmode", onlineId, "radio", `Play ${modeWord(mode)} online`, "O", "", `data-m="${mode}"`));
+  if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${modeWord(other)}${local ? " online" : ""}`, "A", "", `data-m="${other}"`));
   const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}" data-warn="1"`)];
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
   if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
   const end = [];
   if (dl) end.push(cmRow("dlep", onlineId, "download", "Download", "D", vpnTag));
-  if (fix) end.push(cmRow("srcfix", "", "search", "Wrong episode?"));
+  if (fix) end.push(cmRow("srcfix", "", "search", local ? "Wrong online episodes?" : "Wrong episode?"));
   return [rows, mid, end].filter((g) => g.length).map((g) => g.join("")).join('<div class="sep"></div>');
 }
 function frCm(id, x0, y0, targetEl = null) {
@@ -3263,7 +3264,7 @@ function frCm(id, x0, y0, targetEl = null) {
   const eyebrow = movie ? (hasTitle ? "Movie" : (e.year ? String(e.year) : "")) : hasTitle ? `Episode ${String(x.number).padStart(2, "0")}` : e.label || "";
   const title = hasTitle ? x.title : movie ? (e.label || p?.title || "Movie") : `Episode ${String(x.number).padStart(2, "0")}`;
   const head = cmHead({ eyebrow, title, fact, art, kind: "still", pos, pct, spoil: !!(x.thumb && spoils(x)) });
-  const rows = cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, other, local: !!x.local, playable: playableSlot(e, x),
+  const rows = cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, mode, other, local: !!x.local, playable: playableSlot(e, x),
     dl: online && !x.local && !dlJob(x.online.id), fix: !!S.data.stream_ready && !!x.online });
   m.innerHTML = cmWrap(head, rows);
   cmShow(m, x0, y0, targetEl, cmAccent(e.color || p?.color || ""));
