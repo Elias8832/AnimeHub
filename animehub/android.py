@@ -282,7 +282,7 @@ def anicli_copy():
 
 
 _fetch_lock = threading.Lock()
-_last = {"ts": 0.0, "problem": ""}
+_last = {"ts": float("-inf"), "problem": ""}  # never tried: monotonic() counts from boot, so 0.0 would hold the first try back on a freshly started phone or CI machine
 
 
 def fetch_anicli(force=False):
