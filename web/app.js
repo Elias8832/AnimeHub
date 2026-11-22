@@ -5448,6 +5448,29 @@ function liveFrom(now) {
   S.live.paused = !!S.live.paused;
 }
 let rmtSig = "";
+/* The Android app (TODO 263): the page belongs to the phone's own hub, so
+   what mpv plays on the paired PC comes through it (/api/peer/now), and the
+   remote's buttons go back the same way. The PC's episode ids mean nothing
+   here; its AniList slot ("<id>:<n>") finds the show in this phone's library. */
+const rmtNow = () => S.data?.now || S.pcNow || null;
+const onPC = (now) => !!now && now === S.pcNow;
+function rmtCtx(now) {
+  if (!onPC(now)) { const c = findEpContext(now.episode_id); return { ctx: c, s: c?.s }; }
+  const m = /^([1-9][0-9]*):([1-9][0-9]*)$/.exec(now.slot || ""), aid = m ? +m[1] : 0;
+  const ctx = m ? findEpContext(`stream:${m[1]}:${m[2]}`) : null;
+  return { ctx, s: ctx?.s || (aid ? allShows().find((x) => x.meta?.anilist_id === aid || x.seasons.some((sea) => sea.media_id === aid)) : null) };
+}
+let pcBusy = false;
+async function pcPoll() {
+  if (!S.settings?.android || pcBusy || document.hidden) return;
+  pcBusy = true;
+  try {
+    const r = await api("/api/peer/now");
+    S.pcNow = r?.now || null;
+    if (!S.data?.now) { if (S.pcNow) liveFrom({ ...S.pcNow, playing: true }); else S.live = null; }
+    paintRemote();
+  } catch {} finally { pcBusy = false; }
+}
 function rmtEpisodes(ctx, nowId) {
   if (!ctx) return "";
   const { s, sea } = ctx, eps = [...sea.episodes].sort((x, y) => x.number - y.number);
@@ -5463,13 +5486,13 @@ function rmtEpisodes(ctx, nowId) {
   return `<div class="eps-head"><h2>${esc(sea.label || sea.name || "Episodes")}</h2><span class="rk">${at + 1} of ${eps.length}</span></div><div class="eps strip mr" data-at="${at}">${tiles}</div>`;
 }
 function paintRemote() {
-  const el = $("#rmt"), now = S.data?.now;
+  const el = $("#rmt"), now = rmtNow();
   if (!now || !phoneUI()) {
     if (rmtSig) { el.innerHTML = ""; rmtSig = ""; document.body.classList.remove("rmt-on", "rmt-open"); if (S.rmtOpen) { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } }
     S.rmtOpen = false;
     return;
   }
-  const ctx = findEpContext(now.episode_id), s = ctx?.s, l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
+  const { ctx, s } = rmtCtx(now), l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
   const hasNext = !!now.next && (now.next.source === "local" || now.next.source === "online");
   const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, S.rmtRow]);
   if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
@@ -5504,7 +5527,7 @@ function paintRemote() {
         <div class="rskip">${skip("rsk")}</div>
         <div class="rmore"><button class="btn" data-a="rmt" data-v="stop">${ico("stop")}Stop</button><button class="btn" data-a="rmt" data-v="next" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}Next episode</button></div>
         <div class="rlist">${rows}</div>
-        ${rmtEpisodes(ctx, now.episode_id)}
+        ${onPC(now) ? "" /* a tap would play on this phone */ : rmtEpisodes(ctx, now.episode_id)}
       </div>`;
     const barIn = `${thumb}<div class="rt"><b>${esc(s?.title || now.show)}</b><span><i class="led"></i>${now.loading ? "starting on the PC…" : esc(epNo)}<span class="rbt"></span></span></div>${skip("rbskip")}${pp("rp")}<i class="rprog"><i></i></i>`;
     /* Patch in place: rebuilding the bar or the page would replay their entrance. */
@@ -5550,12 +5573,13 @@ async function remoteSend(action, value) {
   const l = S.live;
   if (action === "toggle" && l) { l.position = livePos(); l.at = Date.now(); l.paused = !l.paused; l.hold = Date.now() + 1500; paintRemote(); }
   let r;
-  try { r = await api("/api/control", value === undefined ? { action } : { action, value }); } catch { r = { error: "Could not reach the PC." }; }
+  const body = value === undefined ? { action } : { action, value }, pc = onPC(rmtNow());
+  try { r = await api(pc ? "/api/peer" : "/api/control", pc ? { op: "control", ...body } : body); } catch { r = { error: "Could not reach the PC." }; }
   if (r.error) { toast(r.error); pollSoon(200); return; }
   if (action === "stop" || action === "next") { toast(action === "next" ? "Starting the next episode…" : "Stopped"); if (action === "stop") { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } pollSoon(800); return; }
   if (action === "stop_after") { if (l) { l.stop_after = r.stop_after; l.hold = Date.now() + 1500; } toast(r.stop_after ? "Stops after this episode" : "Auto-play is back on"); paintRemote(); return; }
   if (r.position == null) { pollSoon(300); return; } // skipped an ending: the episode finished
-  S.live = { ...(l || {}), ep: S.data?.now?.episode_id, at: Date.now(), hold: Date.now() + 1500, ...Object.fromEntries(LIVE_KEYS.filter((k) => k in r).map((k) => [k, r[k]])) };
+  S.live = { ...(l || {}), ep: rmtNow()?.episode_id, at: Date.now(), hold: Date.now() + 1500, ...Object.fromEntries(LIVE_KEYS.filter((k) => k in r).map((k) => [k, r[k]])) };
   S.live.paused = !!S.live.paused;
   paintRemote();
 }
@@ -6183,7 +6207,7 @@ const colorOfId = (id) => (id && S.data?.spine?.entries?.find((e) => e.id === id
 const showColor = (s) => colorOfId(s?.meta?.anilist_id);
 const lastShow = () => { for (const h of S.data?.history || []) { const c = findEpContext(h.id); if (c) return c.s; } return null; };
 function canvasArt() {
-  if (S.rmtOpen && S.data?.now) { const c = findEpContext(S.data.now.episode_id); if (c) return { blur: c.s.banner || c.s.poster, sharp: c.s.banner, color: showColor(c.s) }; }
+  if (S.rmtOpen && rmtNow()) { const c = rmtCtx(rmtNow()); if (c.s) return { blur: c.s.banner || c.s.poster, sharp: c.s.banner, color: showColor(c.s) }; }
   if (!S.data || S.view === "settings") return null;
   if (S.view === "fr") { const e = frEntry(), p = S.fr?.page; return { blur: e?.banner || p?.banner || e?.poster || p?.poster, sharp: e?.banner || p?.banner, color: e?.color || colorOfId(e?.id) }; }
   if (S.view === "show") { const s = showById(S.showId); return s && { blur: s.banner || s.poster, sharp: s.banner, color: showColor(s) }; }
@@ -6737,6 +6761,7 @@ function listsWatch(l) {
 function pollSoon(ms) { if (nowTimer) clearTimeout(nowTimer); nowTimer = setTimeout(pollNow, ms); }
 async function pollNow() {
   nowTimer = null;
+  pcPoll(); // the Android app: what plays on the paired PC (TODO 263)
   try {
     const now = await api("/api/now");
     if (now.error && now.error !== lastNowError) { lastNowError = now.error; toast(now.error); } else if (!now.error) lastNowError = null;
@@ -6779,7 +6804,7 @@ async function pollNow() {
     else if (dlChanged) pagePatch(); // progress on the tiles
     const sig = JSON.stringify([S.data?.now, S.outbox, S.dl, S.data?.vpn]);
     if (sig !== navSig) { navSig = sig; paintNav(); }
-    if (!now.playing) S.live = null;
+    if (!now.playing) { if (!S.pcNow) S.live = null; } // the app keeps the PC's (pcPoll)
     else if (!S.live || S.live.ep !== now.episode_id) liveFrom(now);
     paintRemote();
     if (!now.playing) { const st = now.synced || 0, seen = S.synced; S.synced = st; if (seen !== undefined && st !== seen) await reload(); } // the paired PC or app changed something here (Decision 91)
@@ -6788,7 +6813,7 @@ async function pollNow() {
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.rmtOpen || S.data?.now || S.lists?.loading ? 1000 : S.artWorking ? 1500 : 2000); // while playing: Home follows mpv within a second; idle: a sync with the phone or PC shows within 2 s (Decision 99)
+  pollSoon(S.rmtOpen || S.data?.now || S.pcNow || S.lists?.loading ? 1000 : S.artWorking ? 1500 : 2000); // while playing: Home follows mpv within a second; idle: a sync with the phone or PC shows within 2 s (Decision 99)
 }
 /* A banner was upscaled (or put back) under the same name: point every
    copy of its URL at the new ?v= stamp — the data the page draws from and
