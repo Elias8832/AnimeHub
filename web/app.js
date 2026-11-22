@@ -359,13 +359,26 @@ const epName = (s, sea, ep) => (spoils(ep) ? null : epTitle(s, sea, ep));
    (season_rank): main seasons first, extras last. */
 /* A slot is watched when any source is (Decision 35): a file counts as
    watched when the same entry's online copy is, and the other way round.
-   Only one-season shows: their entry and episode numbers line up. */
+   Any season of a folder too (TODO 265): its ranges say which entry each
+   episode is, as the hub's mapping.release_units reads them. */
 function slotSeen(s, ep) {
   if (ep.watched) return true;
-  const aid = s?.seasons?.length === 1 ? s.meta?.anilist_id : null;
-  if (!aid || typeof ep.number !== "number") return false;
-  return allShows().some((x) => x !== s && x.seasons.length === 1 && x.meta?.anilist_id === aid
-    && x.seasons[0].episodes.some((e) => e.number === ep.number && e.watched));
+  const ix = epIndex(), k = ix?.slot.get(ep.id);
+  return !!k && ix.bySlot.get(k).some((e) => e.watched);
+}
+/* An episode's place in its AniList entry, "<id>:<n>", or null: the last of
+   its season's ranges that holds it (Elias's AoT S3E13 is 104578:1). A
+   season without ranges counts only in a one-season show, by the show's own match. */
+function epSlot(s, sea, ep) {
+  const n = ep.number;
+  if (typeof n !== "number" || n < 1) return null;
+  const rs = sea.releases || [];
+  for (let i = rs.length - 1; i >= 0; i--) {
+    const r = rs[i];
+    if (r.first_ep <= n && (r.last_ep == null || n <= r.last_ep)) return n + r.offset >= 1 ? `${r.id}:${n + r.offset}` : null;
+  }
+  const aid = !rs.length && s.seasons.length === 1 ? s.meta?.anilist_id : null;
+  return aid ? `${aid}:${n}` : null;
 }
 function pickTarget(s) {
   const ord = s.seasons.map((sea) => ({ sea }));
@@ -394,24 +407,65 @@ const streamEp = (ep) => ep.id.startsWith("stream:");
    now: the hub's answer replaces S.data whole, shows and episodes are never
    added or dropped in place. */
 let epIdx = null;
-function findEpContext(id) {
+function epIndex() {
   const d = S.data;
   if (!d) return null;
   const n = d.shows.length + (d.streams?.length || 0);
   if (!epIdx || epIdx.d !== d || epIdx.shows !== d.shows || epIdx.streams !== d.streams || epIdx.n !== n) {
-    const at = new Map();
-    for (const s of allShows()) for (const sea of s.seasons) for (const ep of sea.episodes) if (!at.has(ep.id)) at.set(ep.id, { s, sea, ep });
-    epIdx = { d, shows: d.shows, streams: d.streams, n, at };
+    const at = new Map(), slot = new Map(), bySlot = new Map(); // episode → where it is; its slot; a slot's episodes (watch facts read live)
+    for (const s of allShows()) for (const sea of s.seasons) for (const ep of sea.episodes) {
+      if (at.has(ep.id)) continue;
+      at.set(ep.id, { s, sea, ep });
+      const k = epSlot(s, sea, ep);
+      if (!k) continue;
+      slot.set(ep.id, k);
+      if (bySlot.has(k)) bySlot.get(k).push(ep); else bySlot.set(k, [ep]);
+    }
+    epIdx = { d, shows: d.shows, streams: d.streams, n, at, slot, bySlot };
   }
-  const c = epIdx.at.get(id);
+  return epIdx;
+}
+function findEpContext(id) {
+  const c = epIndex()?.at.get(id);
   return c ? { s: c.s, sea: c.sea, ep: c.ep } : null;
 }
 
+/* One key per show however many copies it has (TODO 265): a folder and the
+   online release of the same AniList entry are one show on Home, so Continue
+   watching gives it one tile. Linked by the AniList id (the show's, a
+   season's, a release's "aid:<id>") and the list entry's two show ids. */
+let twinIdx = null;
+function showKey(s) {
+  const d = S.data;
+  if (!d || !s) return s?.id;
+  const n = d.shows.length + (d.streams?.length || 0);
+  if (!twinIdx || twinIdx.d !== d || twinIdx.shows !== d.shows || twinIdx.streams !== d.streams || twinIdx.n !== n) {
+    const up = new Map(), find = (k) => { while (up.has(k)) k = up.get(k); return k; };
+    const join = (a, b) => { if (!a || !b) return; a = find(a); b = find(b); if (a !== b) up.set(b, a); };
+    for (const x of allShows()) {
+      const aid = x.meta?.anilist_id ?? (x.id.startsWith("aid:") ? x.id.slice(4) : null);
+      if (aid) join(x.id, "aid:" + aid);
+      for (const sea of x.seasons) {
+        if (sea.media_id) join(x.id, "aid:" + sea.media_id);
+        for (const r of sea.releases || []) join(x.id, "aid:" + r.id);
+      }
+    }
+    for (const e of d.spine?.entries || []) join(e.local_show_id, e.stream_show_id);
+    twinIdx = { d, shows: d.shows, streams: d.streams, n, find };
+  }
+  return twinIdx.find(s.id);
+}
+const keyOfId = (id) => { const s = id && showById(id); return s ? showKey(s) : id; };
 /* Taken off Continue watching (Decision 81): only until something of the
-   show plays after that, then it's back. */
+   show plays after that, then it's back. Its folder and online copy go and
+   come back together (TODO 265). */
 function contHidden(s) {
-  const at = S.data?.continue_hidden?.[s.id];
-  return !!at && !s.seasons.some((sea) => sea.episodes.some((e) => (e.last_played || "") > at));
+  const hid = S.data?.continue_hidden;
+  if (!hid) return false;
+  const k = showKey(s), at = Object.keys(hid).filter((id) => hid[id] && keyOfId(id) === k).map((id) => hid[id]).sort().pop();
+  if (!at) return false;
+  const twins = allShows().filter((x) => showKey(x) === k);
+  return !twins.some((x) => x.seasons.some((sea) => sea.episodes.some((e) => (e.last_played || "") > at)));
 }
 /* The hero follows the most recently touched show, period. Continue rows
    (position > 30 s) and history rows overlap — either may hold the true
@@ -640,12 +694,13 @@ function heroHTML(up, wide = false) {
 /* One tile per show you actually played, newest first, each pointing at the
    next relevant episode. The show the hero already features is skipped. */
 function keepWatching(skipId) {
-  const seen = new Set(skipId ? [skipId] : []), out = [];
+  const seen = new Set(skipId ? [keyOfId(skipId)] : []), out = [];
   const hist = (S.data.history || []).map((ep) => ({ ep, ctx: findEpContext(ep.id) })).filter((x) => x.ctx)
     .sort((a, b) => (b.ep.last_played || "").localeCompare(a.ep.last_played || ""));
   for (const x of hist) {
-    if (seen.has(x.ctx.s.id)) continue;
-    seen.add(x.ctx.s.id);
+    const k = showKey(x.ctx.s); // the newest played copy speaks for the show
+    if (seen.has(k)) continue;
+    seen.add(k);
     if (contHidden(x.ctx.s)) continue;
     const t = pickTarget(x.ctx.s);
     if (t && t.kind !== "rewatch") out.push({ s: x.ctx.s, t });
@@ -670,7 +725,7 @@ function contCard({ s, t }, k) {
 function newEps(skipId, now) {
   if (!aniMode()) return [];
   return S.data.spine.entries.filter((e) => e.airing === "RELEASING" && inProg(e.status)).map((e) => airState(e, now))
-    .filter((x) => x.behind > 0 && ![x.e.local_show_id, x.e.stream_show_id].includes(skipId))
+    .filter((x) => x.behind > 0 && !(skipId && [x.e.local_show_id, x.e.stream_show_id].some((id) => id && keyOfId(id) === keyOfId(skipId))))
     .sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
 }
 function newCard({ e, behind }, k) {
@@ -759,8 +814,8 @@ function Home() {
   let body = "";
   if (!wide) body += homePair(L, airing);
   else {
-    const out = newEps(up?.s.id, Date.now()), outIds = new Set(out.flatMap((x) => [x.e.local_show_id, x.e.stream_show_id]));
-    const tiles = [...out.map(newCard), ...L.filter((x) => !outIds.has(x.s.id)).map((x, k) => contCard(x, out.length + k))];
+    const out = newEps(up?.s.id, Date.now()), outIds = new Set(out.flatMap((x) => [x.e.local_show_id, x.e.stream_show_id].filter(Boolean).map(keyOfId)));
+    const tiles = [...out.map(newCard), ...L.filter((x) => !outIds.has(showKey(x.s))).map((x, k) => contCard(x, out.length + k))];
     if (tiles.length) body += `<section class="hsec"><div class="sh"><h2>Continue watching</h2><span class="fill"></span>${arrows}</div><div class="strip hstrip">${tiles.join("")}</div></section>`;
     if (airing.length && typeof loadSched === "function" && (!S.sched || (S.sched.at && Date.now() - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out
     body += weekHTML(airing);
@@ -4816,7 +4871,7 @@ function newStill({ e, behind }) {
 }
 function HomePhone() {
   const d = S.data, up = nextUpInfo(), L = keepWatching(up && up.s.id), airing = airingList(), now = Date.now();
-  const out = newEps(up?.s.id, now), outIds = new Set(out.flatMap((x) => [x.e.local_show_id, x.e.stream_show_id]));
+  const out = newEps(up?.s.id, now), outIds = new Set(out.flatMap((x) => [x.e.local_show_id, x.e.stream_show_id].filter(Boolean).map(keyOfId)));
   // This week only counts down: an episode that's out sits in Continue watching instead
   const soon = airing.filter((e) => airAt(e, now) > now - 3600e3 && !out.some((x) => x.e.id === e.id && airAt(e, now) <= now)).slice(0, 3);
   const touched = new Set((d.history || []).map((e) => e.show_id));
@@ -4825,7 +4880,7 @@ function HomePhone() {
   let body = up ? upHero(up) : "";
   // no count beside the title: the cards show how many (TODO 236, like the PC)
   if (airing.length && (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out, as on the PC
-  const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(x.s.id)).map(contStill)];
+  const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(showKey(x.s))).map(contStill)];
   if (tiles.length) body += `<section class="psec"><div class="sh"><h2>Continue watching</h2></div><div class="crail">${tiles.join("")}</div></section>`;
   if (soon.length) body += `<section class="psec"><div class="sh"><h2>This week</h2><span class="fill"></span><button class="link-btn" data-a="go" data-v="week">Whole week${ico("arrowr")}</button></div>${soon.map((e) => airRow(e, now)).join("")}</section>`;
   const recs = recsFor();

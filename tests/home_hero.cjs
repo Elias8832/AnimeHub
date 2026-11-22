@@ -245,3 +245,52 @@ test("Continue watching captions say only what's left and where (TODO 236)", () 
   assert.match(html, /<h3>Older<\/h3><small>[^<·]+ left · disk<\/small>/);
   assert.doesNotMatch(html, /A long episode name/);
 });
+
+test("a show on disk and online is one tile in Continue watching (TODO 265)", () => {
+  const disk = { ...episode("disk8", earlier), number: 8 };
+  const online = { ...episode("stream:140960:9", latest), number: 9 };
+  const other = episode("other", "2026-10-14 15:00:00");
+  const folder = { ...show("SPY x FAMILY", [disk]), id: "45ff60cc03d1", meta: { anilist_id: 140960 } };
+  const release = { ...show("SPY x FAMILY", [online]), id: "aid:140960", kind: "stream" };
+  release.seasons[0].label = "Episodes";
+  const data = { shows: [folder, show("Other", [other])], streams: [release],
+    continue: [disk, online, other], history: [online, disk, other] };
+  const app = homepage(data);
+  const ids = (L) => [...L].map((x) => x.s.id); // arrays from the page's own realm
+  const tiles = (html) => [...html.matchAll(/data-cw="([^"]+)"/g)].map((m) => m[1]);
+  // the hero takes the newest copy, and its folder twin doesn't come back as a tile
+  assert.equal(app.nextUpInfo().s.id, "aid:140960");
+  assert.deepEqual(tiles(app.Home()), ["aid:140960", "Other"]); // the big card, then the row: no folder tile
+  assert.deepEqual(ids(app.keepWatching()), ["aid:140960", "Other"]); // the newest played copy speaks for it
+  // linked only through the list entry (no AniList id on the folder)
+  folder.meta = {};
+  data.spine = { entries: [{ id: 140960, local_show_id: "45ff60cc03d1", stream_show_id: "aid:140960" }] };
+  data.shows = [...data.shows]; // a fresh library load
+  assert.deepEqual(ids(app.keepWatching()), ["aid:140960", "Other"]);
+  // Remove from Home on one copy takes the show off, until either copy plays again
+  data.continue_hidden = { "45ff60cc03d1": "2026-10-14 15:20:00" };
+  assert.deepEqual(ids(app.keepWatching()), ["Other"]);
+  disk.last_played = "2026-10-14 15:30:00";
+  assert.deepEqual(ids(app.keepWatching()), ["45ff60cc03d1", "Other"]);
+});
+
+test("online ticks count on every season of a folder, and back (TODO 265)", () => {
+  const ep = (id, number, watched = false) => ({ ...episode(id, null, watched, 0), number });
+  // a folder whose Season 3 holds two entries: E1–12 is 99147, E13 on is 104578 (offset −12)
+  const s1 = [ep("s1e1", 1, true), ep("s1e2", 2, true)];
+  const s3 = [ep("s3e12", 12, true), ep("s3e13", 13), ep("s3e14", 14)];
+  const folder = { ...show("Attack on Titan", []), id: "aot", meta: { anilist_id: 16498 }, seasons: [
+    { key: 1, season: 1, label: "Season 1", episodes: s1, releases: [{ id: 16498, first_ep: 1, last_ep: null, offset: 0 }] },
+    { key: 3, season: 3, label: "Season 3", episodes: s3, releases: [{ id: 99147, first_ep: 1, last_ep: 12, offset: 0 }, { id: 104578, first_ep: 13, last_ep: null, offset: -12 }] }] };
+  const on1 = ep("stream:104578:1", 1, true), on2 = ep("stream:104578:2", 2);
+  const release = { ...show("Attack on Titan Season 3 Part 2", []), id: "aid:104578", kind: "stream", meta: { anilist_id: 104578 },
+    seasons: [{ key: 1, season: 1, label: "Episodes", episodes: [on1, on2], releases: [{ id: 104578, first_ep: 1, last_ep: null, offset: 0 }] }] };
+  const app = homepage({ shows: [folder], streams: [release], continue: [], history: [] });
+  assert.equal(app.slotSeen(folder, s3[1]), true); // S3E13 = 104578 E1, watched online
+  assert.equal(app.pickTarget(folder).ep.id, "s3e14");
+  s3[2].watched = true; // S3E14 on disk = 104578 E2: the online release moves on too (marks are read live)
+  assert.equal(app.slotSeen(release, on2), true);
+  assert.equal(app.slotSeen(folder, s1[0]), true);
+  assert.equal(app.slotSeen(release, ep("stray", 0)), false); // no number, no slot
+  assert.equal(app.showKey(folder), app.showKey(release)); // and one tile on Home
+});
