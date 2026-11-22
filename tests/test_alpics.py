@@ -88,7 +88,7 @@ class Paths(unittest.TestCase):
         self.assertIn('const cssUrl = (u) => `url("${String(pic(u)).replace(', APP)
         self.assertIn("  url = pic(url);\n  const seen = !!url && imgSeen.has(url);", APP)
         self.assertIn('<img src="${esc(pic(item.poster))}" alt="">', APP)
-        self.assertIn('<img alt="" src="${esc(pic(s.poster))}">', APP)
+        self.assertIn('<img alt="" src="${esc(pic(tsrc))}"', APP)
         self.assertIn("im.src = pic(u);", APP)
         # the accent's colour is read from the copy; one passed on to AniList is read there, as before
         self.assertIn("read(url, false, url !== own ? () => direct(own) : null);", APP)

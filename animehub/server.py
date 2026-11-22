@@ -652,6 +652,10 @@ class Handler(BaseHTTPRequestHandler):
                      "matching": list(metadata._meta_status["matching"])}  # additive (TODO 222)
                     if metadata._meta_status["running"] else None)
             phone_now = phoneplay.now()
+            # Additive (TODO 263): a paired device (the Android app) finds the
+            # playing episode in its own library by its AniList slot.
+            cur = next(iter(list(player._active)), None) if self.remote_device is not None else None
+            extra = (cur, peersync.now_extra(cur)) if cur else None
             # Additive (Decision 75): the lists' stamp and, while they are
             # read, how far — the page reloads itself when they arrive.
             lists = anilist.lists_status()
@@ -703,6 +707,8 @@ class Handler(BaseHTTPRequestHandler):
                     payload["meta"] = meta
                 if phone_now:
                     payload["phone"] = phone_now
+                if extra and extra[0] == a["ep_id"]:
+                    payload.update(extra[1])  # slot, cover, banner
                 # Additive (TODO 10): where the next episode comes from.
                 if a.get("next"):
                     payload["next"] = a["next"]
@@ -853,6 +859,9 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/peer":
             # Settings → PC in the Android app (Decision 91).
             self.send_json(peersync.status())
+        elif route == "/api/peer/now":
+            # Additive (TODO 263): the Android app's "playing on the PC" bar.
+            self.send_json(peersync.pc_now())
         elif route == "/manifest.webmanifest":
             self.send_file_body(json.dumps(MANIFEST).encode(), "application/manifest+json")
         elif route == "/icon.svg":
@@ -953,6 +962,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _post(self, route, body):
         if route == "/api/play":
+            if "slot" in body and "id" not in body:
+                # Additive (TODO 263): the Android app starts an episode here by its AniList slot.
+                eid = peersync.episode_for_slot(body["slot"], online=body.get("mode") in anicli.STREAM_MODES)
+                if not eid:
+                    self._bad("'slot' must look like \"<AniList id>:<episode>\"")
+                    return
+                body = {**body, "id": eid}
             if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
                 start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
@@ -1121,8 +1137,23 @@ class Handler(BaseHTTPRequestHandler):
                 elif op == "forget":
                     peersync.forget()
                     self.send_json(peersync.status())
+                elif op == "play":
+                    # Additive (TODO 263): Play on the PC from the app.
+                    if not isinstance(body.get("id"), str) or not isinstance(body.get("from_start", False), bool) \
+                            or body.get("mode") not in (None, *anicli.STREAM_MODES):
+                        self._bad("'id' must be a string, 'from_start' a boolean, 'mode' one of: %s" % ", ".join(anicli.STREAM_MODES))
+                        return
+                    r = peersync.pc_play(body["id"], body.get("from_start", False), body.get("mode"))
+                    self.send_json(r, 400 if r.get("error") else 200)
+                elif op == "control":
+                    # Additive (TODO 263): the app's remote for the PC hands a button on.
+                    if not isinstance(body.get("action"), str):
+                        self._bad("'action' must be a string")
+                        return
+                    r = peersync.pc_control(body["action"], body.get("value"))
+                    self.send_json(r, 400 if r.get("error") and r["error"] != "nothing is playing" else 200)
                 else:
-                    self._bad("'op' is one of: pair, now, soon, away, forget")
+                    self._bad("'op' is one of: pair, now, soon, away, forget, control, play")
             except peersync.SyncError as e:
                 self.send_json({**peersync.status(), "error": str(e)}, 400)
         elif route == "/api/remote":
