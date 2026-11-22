@@ -1431,7 +1431,7 @@ class DropdownMenuPolish(unittest.TestCase):
         # Active season keeps its episode count alongside the check; Settings parent row stays lit & matches .pkm width
         self.assertIn('<small class="r">${esc(o.dataset.r)}</small>', APP)
         self.assertIn('<span class="ddck" aria-hidden="true">${ico("check")}</span>', APP)
-        self.assertIn("#ddm.pkdd:not(.sheet) button{justify-content:flex-start;", CSS)
+        self.assertIn("#ddm.pkdd:not(.sheet) button{justify-content:center;", CSS)  # Settings values centred (TODO 273)
         self.assertIn(".set2 .srow:is(:hover,:focus-within,:has(.pk.ddon))", CSS)
         self.assertIn("pk?.querySelector(\".pkm\")", APP)
         # Commits at 0ms, restores focus across async render(), keeps zoompick animation, cleans ddEat on pointerup
