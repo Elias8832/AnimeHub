@@ -534,6 +534,13 @@ function hexAccent(hex) {
   const h = (mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
   return `hsl(${Math.round(h)} 72% 70%)`;
 }
+function sbarMetrics(scrollH, clientH, top, trackH, minH = 36) {
+  const max = scrollH - clientH;
+  if (max <= 1 || trackH <= 0) return { show: false, h: 0, y: 0 };
+  const h = Math.min(trackH, Math.max(minH, Math.round((clientH / scrollH) * trackH)));
+  const y = Math.round((Math.max(0, Math.min(max, top)) / max) * (trackH - h));
+  return { show: true, h, y };
+}
 /* @pure:end */
 
 /* @lists:start */
@@ -1017,7 +1024,11 @@ function brGridHTML(st) {
   /* The app's own round arrows, before the title: they stay under the pointer as you step (no pills naming the
      neighbours, Elias: "this looks bad"); the season they go to is their tooltip. */
   const nb = (n) => esc(brSeaLabel(brStep(sea, n)));
-  const steps = sea ? `<span class="brsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}" title="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}" title="${nb(1)}">${ico("chevr")}</button><h2 class="lh">${esc(title)}</h2></span>` : "";
+  const age = S.br.stepDir ? performance.now() - (S.br.stepAt || 0) : 999;
+  const scls = age < 220 ? (S.br.stepDir > 0 ? " step-r" : " step-l") : "";
+  const ssty = scls && age > 8 ? ` style="animation-delay:${-Math.round(age)}ms"` : "";
+  if (age >= 220) S.br.stepDir = 0;
+  const steps = sea ? `<span class="brsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}" title="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}" title="${nb(1)}">${ico("chevr")}</button><h2 class="lh${scls}"${ssty}>${esc(title)}</h2></span>` : "";
   const sort = `<label class="fl">sort<select data-a="bsort">${BR_SORTS.map(([k, l]) => `<option value="${k}"${brSort() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
   const span = (r) => r[0] === r[1] ? String(r[0]) : r.join("–");
   const f = S.br.f, fx = [...f.genres, Array.isArray(f.fyear) && !sea ? span(f.fyear) : "", f.fseason && !sea ? f.fseason[0] + f.fseason.slice(1).toLowerCase() : "", f.format ? fmtName(f.format) : "", Array.isArray(f.score) ? `average ${span(f.score)}` : ""].filter(Boolean);
@@ -1095,7 +1106,7 @@ const BR_A = {
   bretry: () => { delete S.brc[brKey(brSpec())]; brPaint(); },
   bretryo: () => { S.brOver = null; brPaint(); },
   bmore: () => { const c = S.brc[brKey(brSpec())]; if (c) c.err = null; brLoad(true); brPaint(); },
-  bstep: (v) => { S.br.sea = brStep(brSea(), +v); brPaint(true); navKeep(); },
+  bstep: (v) => { S.br.stepDir = +v; S.br.stepAt = performance.now(); S.br.sea = brStep(brSea(), +v); brPaint(true); navKeep(); },
   bsort: (v) => { S.br.sort = v === (BR_SORT0[S.br.list] || "popularity") ? "" : v; brSave(); brPaint(true); navKeep(); },
   bclear: () => { S.br.f = brF0(); fdropClose(); brFiltered(); },
   bpick: (v, t) => {
@@ -1696,7 +1707,7 @@ function plBoxMenu(id, x, y, home, open = false, targetEl = null) {
   const m = $("#cm");
   const ey = [plCount(p.items.length), p.pinned ? "on Home" : ""].filter(Boolean).join(" · ");
   const head = cmHead({ eyebrow: ey, title: p.name, fact: p.note || "", kind: "pl", icon: p.icon && LUCIDE[p.icon] ? lu(p.icon) : ico("list") });
-  const rows = `${open ? "" : cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open", "↵")}${cmRow("pledit", p.id, "edit", "Edit", "E")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home", "P")}<div class="sep danger-sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "Del", "", 'data-danger="1"')}`;
+  const rows = `${open ? "" : cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open", "↵")}${cmRow("pledit", p.id, "edit", "Edit", "E")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home", "P", "", p.pinned ? 'data-warn="1"' : "")}<div class="sep danger-sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "Del", "", 'data-danger="1"')}`;
   m.innerHTML = cmWrap(head, rows);
   cmShow(m, x, y, targetEl, hexAccent(p.color) || "");
 }
@@ -2949,7 +2960,7 @@ function Fran() {
     <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
     ${e.overview ? `<p class="desc" data-a="descx">${esc(e.overview)}</p>` : ""}
     <div class="stats2" id="entrystats"></div>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button><button class="btn ic ctamore" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
   <div class="eps-head"><div class="tabs2">${tabs || (byOrder ? frPick(p, e) : `<h2>${esc(movie ? "Movie" : "Episodes")}</h2>`)}</div><span class="srcl">${esc(srcLine)}</span><div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
@@ -3293,26 +3304,27 @@ function cmShow(m, x, y, targetEl = null, accent = "", exactPos = false, from = 
 /* A phone with a set Play button: every menu that starts an episode also
    offers the other place (Elias, 2026-11-10; Decision 71). "" elsewhere. */
 function cmOther(id) {
-  const pw = awayDevice() && !S.settings?.android ? playWhere() : null; // no PC to offer in the Android app
+  const pw = awayDevice() && (!S.settings?.android || S.pcPaired) ? playWhere() : null; // the Android app: once paired with a PC (TODO 263)
   if (!pw) return "";
   const to = pw === "phone" ? "pc" : "phone";
   return cmRow("playon", id, to === "pc" ? "tv" : "phone", to === "pc" ? "Play on the PC" : "Play on this phone", "", "", `data-where="${to}"`);
 }
-function cmItems({ id, ep, files, verId, online, onlineId, other, local, dl, fix, playable = true }) {
+function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, dl, fix, playable = true }) {
   const vpn = S.data?.vpn, vpnTag = !vpn?.known ? "" : vpn.active ? '<span class="v ok">vpn ✓</span>' : '<span class="v warn">no vpn</span>';
   const res = resumable(ep), rows = [];
   if (playable) rows.push(cmRow("playep", id, "play", res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"));
   if (playable && res) rows.push(cmRow("playstart", id, "undo", "Play from the start", "B"));
   if (playable) rows.push(cmOther(id));
   if (files.length > 1) files.forEach((fl, i) => rows.push(cmRow("playep", verId, "play", `Play ${esc(fl.label)}`, "", "", `data-ver="${i}"`)));
-  if (local && online) rows.push(cmRow("playep", onlineId, "radio", "Play online", "O"));
-  if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${other === "dub" ? "dubbed" : "subbed"}`, "A", "", `data-m="${other}"`));
-  const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}"`)];
+  const modeWord = (m) => (m === "dub" ? "dubbed" : "subbed");
+  if (local && online) rows.push(cmRow("playmode", onlineId, "radio", `Play ${modeWord(mode)} online`, "O", "", `data-m="${mode}"`));
+  if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${modeWord(other)}${local ? " online" : ""}`, "A", "", `data-m="${other}"`));
+  const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}" data-warn="1"`)];
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
   if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
   const end = [];
   if (dl) end.push(cmRow("dlep", onlineId, "download", "Download", "D", vpnTag));
-  if (fix) end.push(cmRow("srcfix", "", "search", "Wrong episode?"));
+  if (fix) end.push(cmRow("srcfix", "", "search", local ? "Wrong online episodes?" : "Wrong episode?"));
   return [rows, mid, end].filter((g) => g.length).map((g) => g.join("")).join('<div class="sep"></div>');
 }
 function frCm(id, x0, y0, targetEl = null) {
@@ -3332,7 +3344,7 @@ function frCm(id, x0, y0, targetEl = null) {
   const eyebrow = movie ? (hasTitle ? "Movie" : (e.year ? String(e.year) : "")) : hasTitle ? `Episode ${String(x.number).padStart(2, "0")}` : e.label || "";
   const title = hasTitle ? x.title : movie ? (e.label || p?.title || "Movie") : `Episode ${String(x.number).padStart(2, "0")}`;
   const head = cmHead({ eyebrow, title, fact, art, kind: "still", pos, pct, spoil: !!(x.thumb && spoils(x)) });
-  const rows = cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, other, local: !!x.local, playable: playableSlot(e, x),
+  const rows = cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, mode, other, local: !!x.local, playable: playableSlot(e, x),
     dl: online && !x.local && !dlJob(x.online.id), fix: !!S.data.stream_ready && !!x.online });
   m.innerHTML = cmWrap(head, rows);
   cmShow(m, x0, y0, targetEl, cmAccent(e.color || p?.color || ""));
@@ -4002,7 +4014,7 @@ function pick(label, act, k, opts, cur, o = {}) {
     if (n <= 3 && !o.dot && !opts.some((x) => x[2]) && opts.reduce((t, x) => t + x[1].length, 0) <= 17)
       return `<span class="${cls} pkseg" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => `<button class="${v === curV ? "on" : ""}" aria-pressed="${v === curV}" data-a="${act}"${dk} data-v="${esc(v)}"${dis}>${esc(l)}</button>`).join("")}</span>`;
   }
-  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(opts[(i + d + n) % n][0])}" aria-label="${esc(label)}: ${word}"${dis}>${ico(icon)}</button>`;
+  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(opts[(i + d + n) % n][0])}" aria-label="${esc(label)}: ${word}" data-d="${d}"${dis}>${ico(icon)}</button>`;
   const font = opts[i][2] ? ` style="font-family:${esc(opts[i][2])}"` : "";
   return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}${pickTouch ? " pklist" : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
 }
@@ -4388,11 +4400,11 @@ window.addEventListener("keydown", (e) => {
 function playerGroup(s) {
   const m = s.mpv || {}, hub = m.design === "on";
   const w = playWhere();
-  const here = awayDevice() && !S.settings?.android ? `<div class="group"><h3>On this phone</h3>${srow("Play button", "Where episodes play when you tap Play here. Online ones come through the PC.", pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
+  const here = awayDevice() && (!S.settings?.android || S.pcPaired) ? `<div class="group"><h3>On this phone</h3>${srow("Play button", `Where episodes play when you tap Play here.${s.android ? "" : " Online ones come through the PC."}`, pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
   const rc = `<div class="group"><h3>Before a new season</h3>
     ${srow("Season reminder", "When you start a new season, see how the last one ended: its last episode, recaps and characters.", onoff("recap_ask", "Season reminder", s.recap_ask !== false))}
     ${srow("Remind me after", "Only if you finished the last season at least this long ago.", pick("Remind me after", "spref", "recap_after", [["1", "1 month"], ["2", "2 months"], ["3", "3 months"], ["6", "6 months"], ["12", "1 year"]], s.recap_after || "2", { off: s.recap_ask === false }))}</div>`;
-  if (s.android) return rc; // the Android app has no mpv (Decision 88)
+  if (s.android) return here + rc; // the Android app has no mpv (Decision 88); paired, Play may start on the PC (TODO 263)
   return `${here}<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. A choice here wins over it; My config leaves it to your file.</p>
     ${srow("Fullscreen", "Start every episode in fullscreen.", mpvSeg(m, "fullscreen", "Fullscreen"))}
     ${srow("Starting volume", "Where I left it: the volume the last episode ended on.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Where I left it"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
@@ -5471,10 +5483,12 @@ function CalDesk() {
   /* Hidden copies of every month's title share the title's grid cell, so it
      is always as wide as the widest one and the arrows don't move. */
   const mons = Array.from({ length: 12 }, (_, i) => new Date(c.y, i, 28));
-  const sizers = mons.map((d) => `<span aria-hidden="true">${week ? `${esc(md(d))} <span>– ${esc(md(d))}</span>` : `${esc(monthName(d))} <span>${c.y}</span>`}</span>`).join("");
+  const sizers = mons.map((d) => `<span aria-hidden="true">${week ? `${esc(md(d))} <span>– ${esc(md(d))}</span>` : `${esc(monthName(d))} <span>8888</span>`}</span>`).join("");
   const rel = c.sel === tk ? "Today" : c.sel === airKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)) ? "Tomorrow" : "";
   const panel = `<aside class="airside"><p class="airsel">${esc(monthName(sel))}${rel ? ` · <b>${rel}</b>` : ""}</p><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
-  return `<div class="airp2"><div class="airhead"><h1 class="hd"><span>${title}</span>${sizers}</h1>
+  const asd = c.stepDir; c.stepDir = 0;
+  const acls = asd ? (asd > 0 ? " step-r" : " step-l") : "";
+  return `<div class="airp2"><div class="airhead${acls}"><h1 class="hd"><span>${title}</span>${sizers}</h1>
     <span class="airnav"><button class="i" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button data-a="airtoday">Today</button><button class="i" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button></span>
     ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
     <span class="airtabs" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><i class="airdiv"></i><span class="airtabs" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
@@ -5579,7 +5593,9 @@ function paintPortals() {
   const el = $("#portal");
   if (!el) return;
   let html = "";
-  if (isPhone() && (S.view === "show" || S.view === "fr")) {
+  /* One floating player at a time (TODO 263, Elias: "two pills"): while the remote's
+     bar is up, the show page keeps Play and ⋯ in the page (.ctamore), not as a strip. */
+  if (isPhone() && (S.view === "show" || S.view === "fr") && !document.body.classList.contains("rmt-on")) {
     const b = $("#app .sp2 .cta .btn.pri"), more = $("#app .frpage .cta [data-a=frmore]");
     const tile = b?.dataset.v && $(`#app .eps .ep[data-v="${CSS.escape(b.dataset.v)}"]`);
     if (b) html += tile ? playStrip(b, tile, more) : `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
@@ -5824,7 +5840,35 @@ function liveFrom(now) {
   S.live.paused = !!S.live.paused;
 }
 let rmtSig = "";
-function rmtEpisodes(ctx, nowId) {
+/* The Android app (TODO 263): the page belongs to the phone's own hub, so
+   what mpv plays on the paired PC comes through it (/api/peer/now), and the
+   remote's buttons go back the same way. The PC's episode ids mean nothing
+   here; its AniList slot ("<id>:<n>") finds the show in this phone's library. */
+const rmtNow = () => S.data?.now || S.pcNow || null;
+const onPC = (now) => !!now && now === S.pcNow;
+function rmtCtx(now) {
+  if (!onPC(now)) { const c = findEpContext(now.episode_id); return { ctx: c, s: c?.s }; }
+  const m = /^([1-9][0-9]*):([1-9][0-9]*)$/.exec(now.slot || ""), aid = m ? +m[1] : 0;
+  const ctx = m ? findEpContext(`stream:${m[1]}:${m[2]}`) : null;
+  /* No slot (a PC from before it): the same title here. Not here at all: AniList's pictures the PC sent. */
+  const s = ctx?.s || (aid ? allShows().find((x) => x.meta?.anilist_id === aid || x.seasons.some((sea) => sea.media_id === aid)) : null)
+    || (!aid && now.show ? allShows().find((x) => x.title === now.show) : null)
+    || (now.cover || now.banner ? { id: "", title: now.show, poster: now.cover || null, banner: now.banner || null, meta: aid ? { anilist_id: aid } : {}, seasons: [] } : null);
+  return { ctx, s };
+}
+let pcBusy = false;
+async function pcPoll() {
+  if (!S.settings?.android || pcBusy || document.hidden) return;
+  pcBusy = true;
+  try {
+    const r = await api("/api/peer/now");
+    S.pcNow = r?.now || null;
+    if (!!r?.paired !== !!S.pcPaired) { S.pcPaired = !!r?.paired; if (S.view === "settings") render(true); } // Play on the PC is offered once paired
+    if (!S.data?.now) { if (S.pcNow) liveFrom({ ...S.pcNow, playing: true }); else S.live = null; }
+    paintRemote();
+  } catch {} finally { pcBusy = false; }
+}
+function rmtEpisodes(ctx, nowId, pc) {
   if (!ctx) return "";
   const { s, sea } = ctx, eps = [...sea.episodes].sort((x, y) => x.number - y.number);
   const at = Math.max(0, eps.findIndex((e) => e.id === nowId));
@@ -5832,29 +5876,31 @@ function rmtEpisodes(ctx, nowId) {
     const rt = epThumbOf(sea.thumbs, ep), art = rt || s.poster || s.banner, cur = ep.id === nowId;
     const online = String(ep.id).startsWith("stream:"), mins = minsOf(ep.duration || ep.length);
     const meta = cur ? "playing now" : `${mins ? mins + " min · " : ""}${online ? "online" : "disk"}`;
-    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : "", rt && !cur && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : "playep", v: ep.id, i,
+    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : "", rt && !cur && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : pc ? "pcplay" : "playep", v: ep.id, i,
       art, pos: rt ? "50% 50%" : "50% 22%", num: "E" + String(ep.number).padStart(2, "0"), watched: ep.watched && !cur, title: (cur ? epTitle(s, sea, ep) : epName(s, sea, ep)) || "Episode " + ep.number, meta, menu: "" })
       .replace(/<button class="dots"[\s\S]*?<\/button>/, "");
   }).join("");
   return `<div class="eps-head"><h2>${esc(sea.label || sea.name || "Episodes")}</h2><span class="rk">${at + 1} of ${eps.length}</span></div><div class="eps strip mr" data-at="${at}">${tiles}</div>`;
 }
 function paintRemote() {
-  const el = $("#rmt"), now = S.data?.now;
+  const el = $("#rmt"), now = rmtNow();
   if (!now || !phoneUI()) {
-    if (rmtSig) { el.innerHTML = ""; rmtSig = ""; document.body.classList.remove("rmt-on", "rmt-open"); if (S.rmtOpen) { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } }
+    if (rmtSig) { el.innerHTML = ""; rmtSig = ""; document.body.classList.remove("rmt-on", "rmt-open"); paintPortals(); if (S.rmtOpen) { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } }
     S.rmtOpen = false;
     return;
   }
-  const ctx = findEpContext(now.episode_id), s = ctx?.s, l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
+  const { ctx, s } = rmtCtx(now), l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
   const hasNext = !!now.next && (now.next.source === "local" || now.next.source === "online");
-  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, S.rmtRow]);
+  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, ctx && epThumbOf(ctx.sea.thumbs, ctx.ep), S.rmtRow]);
   if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
     rmtSig = sig;
-    document.body.classList.add("rmt-on");
+    if (!document.body.classList.contains("rmt-on")) { document.body.classList.add("rmt-on"); paintPortals(); } // the show page's Play strip steps back into the page
     const paused = !!l.paused, busy = now.loading ? "disabled" : "", epNo = ctx ? "E" + String(ctx.ep.number).padStart(2, "0") : now.label;
     const pp = (c) => `<button class="btn pri ic ${c}" data-a="rmt" data-v="toggle" aria-label="${paused ? "Play" : "Pause"}" ${busy}>${ico(paused ? "play" : "pause")}</button>`;
     const skip = (c) => `<button class="btn ${c}" data-a="rmt" data-v="skip" hidden>${ico("next")}<span>Skip opening</span></button>`;
-    const thumb = s?.poster ? `<img alt="" src="${esc(pic(s.poster))}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
+    /* The bar wears the show page's Play strip look (Elias, TODO 263 round 4): the episode's still in a circle, the poster only without one. */
+    const still = ctx ? epThumbOf(ctx.sea.thumbs, ctx.ep) : null, tsrc = still || s?.poster;
+    const thumb = tsrc ? `<img alt="" src="${esc(pic(tsrc))}"${still ? "" : ' class="rpo"'}>` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
     const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
     const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
     /* The remote (TODO 177, Elias picked B): the show's art fills the top, big −10 · Play · +10
@@ -5880,7 +5926,7 @@ function paintRemote() {
         <div class="rskip">${skip("rsk")}</div>
         <div class="rmore"><button class="btn" data-a="rmt" data-v="stop">${ico("stop")}Stop</button><button class="btn" data-a="rmt" data-v="next" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}Next episode</button></div>
         <div class="rlist">${rows}</div>
-        ${rmtEpisodes(ctx, now.episode_id)}
+        ${rmtEpisodes(ctx, onPC(now) ? ctx?.ep.id : now.episode_id, onPC(now))}
       </div>`;
     const barIn = `${thumb}<div class="rt"><b>${esc(s?.title || now.show)}</b><span><i class="led"></i>${now.loading ? "starting on the PC…" : esc(epNo)}<span class="rbt"></span></span></div>${skip("rbskip")}${pp("rp")}<i class="rprog"><i></i></i>`;
     /* Patch in place: rebuilding the bar or the page would replay their entrance. */
@@ -5926,12 +5972,13 @@ async function remoteSend(action, value) {
   const l = S.live;
   if (action === "toggle" && l) { l.position = livePos(); l.at = Date.now(); l.paused = !l.paused; l.hold = Date.now() + 1500; paintRemote(); }
   let r;
-  try { r = await api("/api/control", value === undefined ? { action } : { action, value }); } catch { r = { error: "Could not reach the PC." }; }
+  const body = value === undefined ? { action } : { action, value }, pc = onPC(rmtNow());
+  try { r = await api(pc ? "/api/peer" : "/api/control", pc ? { op: "control", ...body } : body); } catch { r = { error: "Could not reach the PC." }; }
   if (r.error) { toast(r.error); pollSoon(200); return; }
   if (action === "stop" || action === "next") { toast(action === "next" ? "Starting the next episode…" : "Stopped"); if (action === "stop") { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } pollSoon(800); return; }
   if (action === "stop_after") { if (l) { l.stop_after = r.stop_after; l.hold = Date.now() + 1500; } toast(r.stop_after ? "Stops after this episode" : "Auto-play is back on"); paintRemote(); return; }
   if (r.position == null) { pollSoon(300); return; } // skipped an ending: the episode finished
-  S.live = { ...(l || {}), ep: S.data?.now?.episode_id, at: Date.now(), hold: Date.now() + 1500, ...Object.fromEntries(LIVE_KEYS.filter((k) => k in r).map((k) => [k, r[k]])) };
+  S.live = { ...(l || {}), ep: rmtNow()?.episode_id, at: Date.now(), hold: Date.now() + 1500, ...Object.fromEntries(LIVE_KEYS.filter((k) => k in r).map((k) => [k, r[k]])) };
   S.live.paused = !!S.live.paused;
   paintRemote();
 }
@@ -6567,7 +6614,7 @@ const colorOfId = (id) => (id && S.data?.spine?.entries?.find((e) => e.id === id
 const showColor = (s) => colorOfId(s?.meta?.anilist_id);
 const lastShow = () => { for (const h of S.data?.history || []) { const c = findEpContext(h.id); if (c) return c.s; } return null; };
 function canvasArt() {
-  if (S.rmtOpen && S.data?.now) { const c = findEpContext(S.data.now.episode_id); if (c) return { blur: c.s.banner || c.s.poster, sharp: c.s.banner, color: showColor(c.s) }; }
+  if (S.rmtOpen && rmtNow()) { const c = rmtCtx(rmtNow()); if (c.s) return { blur: c.s.banner || c.s.poster, sharp: c.s.banner, color: showColor(c.s) }; }
   if (!S.data || S.view === "settings") return null;
   if (S.view === "fr") { const e = frEntry(), p = S.fr?.page; return { blur: e?.banner || p?.banner || e?.poster || p?.poster, sharp: e?.banner || p?.banner, color: e?.color || colorOfId(e?.id) }; }
   if (S.view === "show") { const s = showById(S.showId); return s && { blur: s.banner || s.poster, sharp: s.banner, color: showColor(s) }; }
@@ -6743,7 +6790,7 @@ const VIEW_TITLE = { home: "", library: "Library", browse: "Browse", history: "J
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
 const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "cm-target", "cm-target-out", "ddon", "dd-picked", "dd-back", "setin"];
-const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
+const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.classList?.contains("pka") ? "pka|" + n.dataset.d : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
   for (const { name } of [...a.attributes]) if (name !== "style" && !b.hasAttribute(name)) a.removeAttribute(name);
@@ -7125,6 +7172,7 @@ function listsWatch(l) {
 function pollSoon(ms) { if (nowTimer) clearTimeout(nowTimer); nowTimer = setTimeout(pollNow, ms); }
 async function pollNow() {
   nowTimer = null;
+  pcPoll(); // the Android app: what plays on the paired PC (TODO 263)
   try {
     const now = await api("/api/now");
     if (now.error && now.error !== lastNowError) { lastNowError = now.error; toast(now.error); } else if (!now.error) lastNowError = null;
@@ -7167,7 +7215,7 @@ async function pollNow() {
     else if (dlChanged) pagePatch(); // progress on the tiles
     const sig = JSON.stringify([S.data?.now, S.outbox, S.dl, S.data?.vpn]);
     if (sig !== navSig) { navSig = sig; paintNav(); }
-    if (!now.playing) S.live = null;
+    if (!now.playing) { if (!S.pcNow) S.live = null; } // the app keeps the PC's (pcPoll)
     else if (!S.live || S.live.ep !== now.episode_id) liveFrom(now);
     paintRemote();
     if (!now.playing) { const st = now.synced || 0, seen = S.synced; S.synced = st; if (seen !== undefined && st !== seen) await reload(); } // the paired PC or app changed something here (Decision 91)
@@ -7176,7 +7224,7 @@ async function pollNow() {
     if (now.next_prompt) maybeNextPrompt(now.next_prompt);
     else if (S.modal?.t === "nxt") closeModal(); // answered elsewhere
   } catch {}
-  pollSoon(S.rmtOpen || S.data?.now || S.lists?.loading ? 1000 : S.artWorking ? 1500 : 2000); // while playing: Home follows mpv within a second; idle: a sync with the phone or PC shows within 2 s (Decision 99)
+  pollSoon(S.rmtOpen || S.data?.now || S.pcNow || S.lists?.loading ? 1000 : S.artWorking ? 1500 : 2000); // while playing: Home follows mpv within a second; idle: a sync with the phone or PC shows within 2 s (Decision 99)
 }
 /* A banner was upscaled (or put back) under the same name: point every
    copy of its URL at the new ?v= stamp — the data the page draws from and
@@ -7233,7 +7281,7 @@ function accentHex(show) {
    reports a fine pointer, which read it as a PC (Elias, 2026-11-10). A touch
    laptop's main pointer is its mouse or trackpad, so it stays a PC. */
 const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && matchMedia("(hover:none)").matches);
-const playWhere = () => { if (S.settings?.android) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app has no PC (Decision 88)
+const playWhere = () => { if (S.settings?.android && !S.pcPaired) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app: a PC only once paired (Decision 88, TODO 263)
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
 /* Pairing the app with a PC (Decision 98): what the first sync does. Two
    choices like the Library's filter sheet (tap one, a tick), then Pair. */
@@ -7246,7 +7294,7 @@ function PeerDlg() {
     <div class="pkfoot"><button class="btn pri" data-a="peertake">Pair</button></div></div>`;
 }
 function WhereDlg() {
-  return dlHead("Play where?") + dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`)
+  return dlHead("Play where?") + (S.settings?.android ? "" : dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`))
     + dlFoot(setLink("player", "", "Player"), '<button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button>');
 }
 /* Remember the season before (TODO 133, Decision 85): Play on the first
@@ -7756,6 +7804,7 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
       return phonePlay(id, version, fromStart, mode, skipOk);
     }
   }
+  if (S.settings?.android) return pcPlay(id, fromStart, mode); // the app's "On the PC" (TODO 263)
   if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk, where) });
   if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
   if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
@@ -7773,6 +7822,19 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   S.playBusy = false;
   if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
   pollSoon(600);
+}
+/* The Android app starts an episode on its paired PC: the app's hub finds it
+   there by its AniList slot (TODO 263). Play: the PC's own pick (its file
+   first, its Sub/Dub, VPN and skip settings); a Sub/Dub pick from the menu
+   plays online in that language. The bar for it shows within a second or two. */
+async function pcPlay(id, fromStart, mode) {
+  const ctx = findEpContext(id);
+  toast(`Starting ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"} on the PC…`, "busy");
+  /* Play dubbed / Play subbed picks online in that language there, even when the PC has the file. */
+  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart, ...(mode ? { mode } : {}) }).catch(() => ({ error: "Could not reach the PC." }));
+  if (r.error) toast(r.error, "err");
+  else toast("Playing on the PC");
+  pollSoon(300);
 }
 /* Queue ani-cli downloads; they land in the library folder as ordinary files. */
 async function download(mid, eps, asked) {
@@ -7830,11 +7892,19 @@ const A = {
   fclear: () => { clearFilters(); saveLib(); if ($(".fsheet .filters")) return fltRepaint(); S.fadeNext = true; render(); },
   airgo: (v) => {
     const c = S.airCal;
+    c.stepDir = +v;
     if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
     else { const d = new Date(c.y, c.m + +v, 1); c.y = d.getFullYear(); c.m = d.getMonth(); }
     render(true);
   },
-  airtoday: () => { const d = new Date(); Object.assign(S.airCal, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) }); render(true); },
+  airtoday: () => {
+    const d = new Date(), c = S.airCal;
+    const cur = c.mode === "week" ? new Date(`${c.sel}T00:00:00`).getTime() : new Date(c.y, c.m, 1).getTime();
+    const tgt = c.mode === "week" ? new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() : new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    c.stepDir = tgt === cur ? 0 : tgt > cur ? 1 : -1;
+    Object.assign(c, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) });
+    render(true);
+  },
   airday: (v) => { S.airCal.sel = v; render(true); },
   airscope: (v) => { S.airCal.scope = v; render(true); },
   /* The phone's day strip: to that day, or the next one something airs. */
@@ -8027,6 +8097,7 @@ const A = {
   playmode: (v, t) => play(v, 0, t.dataset.m),
   playstart: (v) => play(v, 0, undefined, false, true),
   playon: (v, t) => play(v, 0, undefined, false, undefined, undefined, t.dataset.where),
+  pcplay: (v) => play(v, 0, undefined, false, undefined, undefined, "pc"), // the remote's episodes, app on the PC (TODO 263)
   unavail: (v, t, e) => (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey) ? selToggle(v, e?.shiftKey) : toast(S.data.stream_ready ? "This episode isn't available to watch online." : "Install ani-cli to watch this online."),
   dlep: (v) => { const [, mid, ep] = v.split(":"); download(+mid, [ep]); },
   dlmany: (v, t) => download(+v, JSON.parse(t.dataset.eps || "[]")),
@@ -8119,7 +8190,24 @@ const A = {
     S.cal = { k: v, y: +cur[0] || now.getFullYear(), m: cur[1] ? +cur[1] - 1 : cur[0] ? 0 : now.getMonth() };
     if (S.entry?.f) entryPaint(S.entry.f, false);
   },
-  calnav: (v) => { if (!S.cal) return; const d = new Date(S.cal.y, S.cal.m + +v, 1); S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); entryPaint(S.entry.f, false); },
+  calnav: (v) => {
+    if (!S.cal) return;
+    const dir = +v, d = new Date(S.cal.y, S.cal.m + dir, 1);
+    S.cal.y = d.getFullYear(); S.cal.m = d.getMonth();
+    const cal = $("#entrybox .cal");
+    if (!cal) return entryPaint(S.entry.f, false);
+    const t = document.createElement("template");
+    t.innerHTML = calHTML(S.cal, S.entry?.f?.[S.cal.k]);
+    const nxt = t.content.firstElementChild;
+    const hd = cal.querySelector(".cal-h b"), nhd = nxt?.querySelector(".cal-h b");
+    if (hd && nhd) {
+      hd.textContent = nhd.textContent;
+      hd.classList.remove("step-r", "step-l");
+      if (!reduceMotion()) { void hd.offsetWidth; hd.classList.add(dir > 0 ? "step-r" : "step-l"); }
+    }
+    const g = cal.querySelector(".cal-g"), ng = nxt?.querySelector(".cal-g");
+    if (g && ng) g.innerHTML = ng.innerHTML;
+  },
   calday: (v) => { const k = S.cal?.k; S.cal = null; if (k && v !== (S.entry?.f?.[k] || "")) entryPatch({ [k]: v }); else calClose(); },
   escore: (v, t) => {
     const n = Math.round(+v * 10) / 10, had = document.activeElement === t;
@@ -9368,7 +9456,7 @@ function applyFonts() {
   st.textContent = css;
   lsSet("fontCss", ui || display ? { ui, display, css } : null);
 }
-function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; }
+function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; sbQueue(false); }
 function zoomSet(z) { lsSet("hubZoom", z); applyZoom(); const el = $("#zoomval"); if (el) el.textContent = z + "%"; if (ddSel?.isConnected) ddPos(ddSel, $("#ddm")); }
 if (SHELL) {
   /* Browser zoom stays suppressed; it does not drive the setting. */
@@ -9491,7 +9579,82 @@ function paintTop() {
   if (!el) { el = document.createElement("button"); el.id = "totop"; el.dataset.a = "totop"; el.setAttribute("aria-label", "Back to top"); el.innerHTML = ico("up"); document.body.append(el); }
   el.classList.toggle("on", S.view === "library" && scrollY > 500);
 }
-addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); }, { passive: true }); // the dock keeps its size while you scroll (Elias, TODO 236)
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); sbQueue(true); }, { passive: true }); // the dock keeps its size while you scroll (Elias, TODO 236)
+/* Floating desktop overlay scrollbar (#sbar): native html scrolling stays intact,
+   while the opaque browser gutter is hidden on fine pointers so #canvas, #nav and
+   #status reach the edge cleanly. */
+function paintSbar(flash) {
+  const bar = $("#sbar"), th = bar?.firstElementChild;
+  if (!bar || !th) return;
+  const trackH = bar.clientHeight;
+  if (!trackH) return; // hidden on touch / coarse pointers (display:none)
+  const de = document.documentElement;
+  const m = sbarMetrics(de.scrollHeight, de.clientHeight, de.scrollTop, trackH);
+  bar.classList.toggle("none", !m.show);
+  if (!m.show) { bar.classList.remove("on"); return; }
+  th.style.height = m.h + "px";
+  th.style.transform = `translate3d(0,${m.y}px,0)`;
+  if (flash) {
+    bar.classList.add("on");
+    clearTimeout(paintSbar.t);
+    paintSbar.t = setTimeout(() => bar.classList.remove("on"), 1000);
+  }
+}
+function sbQueue(flash) {
+  if (flash) sbQueue.fl = true;
+  if (sbQueue.f) return;
+  sbQueue.f = requestAnimationFrame(() => {
+    const fl = !!sbQueue.fl;
+    sbQueue.f = 0; sbQueue.fl = false;
+    paintSbar(fl);
+  });
+}
+(() => {
+  const bar = $("#sbar"), th = bar?.firstElementChild;
+  if (!bar || !th) return;
+  let drag = null;
+  const end = () => {
+    if (!drag) return;
+    drag = null;
+    bar.classList.remove("drag");
+    document.body.classList.remove("sb-drag");
+  };
+  bar.addEventListener("pointerenter", () => sbQueue(false), { passive: true });
+  bar.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    paintSbar(false);
+    const de = document.documentElement, max = de.scrollHeight - de.clientHeight;
+    if (max <= 1) return;
+    const br = bar.getBoundingClientRect(), tr = th.getBoundingClientRect(), travel = br.height - tr.height;
+    if (travel <= 0) return;
+    if (e.target !== th) {
+      const r = Math.max(0, Math.min(1, (e.clientY - br.top - tr.height / 2) / travel));
+      de.scrollTop = r * max;
+    }
+    drag = { id: e.pointerId, y0: e.clientY, s0: de.scrollTop, travel, max };
+    bar.classList.add("drag");
+    document.body.classList.add("sb-drag");
+    try { bar.setPointerCapture(e.pointerId); } catch {}
+    paintSbar(true);
+    e.preventDefault();
+  });
+  bar.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = e.clientY - drag.y0;
+    document.documentElement.scrollTop = Math.max(0, Math.min(drag.max, drag.s0 + (dy / drag.travel) * drag.max));
+    paintSbar(true);
+  });
+  bar.addEventListener("pointerup", (e) => { if (drag && e.pointerId === drag.id) end(); });
+  bar.addEventListener("pointercancel", (e) => { if (drag && e.pointerId === drag.id) end(); });
+  bar.addEventListener("lostpointercapture", end);
+  addEventListener("resize", () => sbQueue(false), { passive: true });
+  if ("ResizeObserver" in window) {
+    const ro = new ResizeObserver(() => sbQueue(false));
+    ro.observe(document.body);
+    ro.observe(bar);
+  }
+  sbQueue(false);
+})();
 /* The show page's art fades into the dark as you scroll (Decision 67): --sd
    on the wash layer alone, once per frame. */
 function artDim() {

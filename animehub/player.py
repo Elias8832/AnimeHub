@@ -911,15 +911,46 @@ def resume_args(ep_id, from_start=False):
     return [f"--start={int(pos // 60)}:{int(pos % 60)}"] if pos else []
 
 
+def _slot_ids(ep_id):
+    """Every episode id sharing ep_id's slot (local file + online twin), so
+    resuming follows the source played last — matching pages.entry_slots."""
+    ids = [ep_id]
+    try:
+        at = entry_of_episode(ep_id)
+        if not at:
+            return ids
+        mid, n = at
+        page = pages.franchise_view(mid, background=False)
+        e = next((x for x in page["entries"] if x["id"] == mid), None)
+        slot = next((x for x in e["slots"] if x["number"] == n), None) if e else None
+        if slot:
+            for src in (slot.get("local"), slot.get("online")):
+                sid = src and src.get("id")
+                if sid and sid not in ids:
+                    ids.append(sid)
+    except Exception:
+        pass
+    return ids
+
+
 def resume_seconds(ep_id, from_start=False):
     """Where an episode resumes (resume_args' rule), 0 = from the start."""
     if from_start:  # the episode menu's "Play from the start"; the saved point stays until playback moves past it
         return 0
+    ids = _slot_ids(ep_id)
+    marks = ",".join("?" for _ in ids)
     with database.db() as c:
-        row = c.execute("SELECT position, duration, watched FROM episodes WHERE id=?", (ep_id,)).fetchone()
-    pos = row[0] if row else 0
-    dur = row[1] if row else 0
-    watched = bool(row[2]) if row else False
+        rows = c.execute(
+            f"SELECT position, duration, watched, last_played FROM episodes WHERE id IN ({marks})",
+            ids,
+        ).fetchall()
+    if not rows:
+        return 0
+    # Match pages.entry_slots: watched if any source is, position from the source played last.
+    last = max(rows, key=lambda r: (r[3] or "", r[0] or 0))
+    pos = last[0] or 0
+    dur = last[1] or 0
+    watched = any(bool(r[2]) for r in rows)
     if dur and pos / dur > 0.01 and (pos / dur < 0.92 or not watched):
         return pos
     return 0

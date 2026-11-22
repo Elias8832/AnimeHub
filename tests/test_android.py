@@ -6,6 +6,7 @@ is checked: the hub's scripts go in, ani-cli's files come back."""
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -84,7 +85,7 @@ class Base(unittest.TestCase):
             self.addCleanup(p.stop)
         android.anicli_copy().unlink(missing_ok=True)
         self.addCleanup(android.anicli_copy().unlink, True)
-        android._last.update(ts=0.0, problem="")
+        android._last.update(ts=float("-inf"), problem="")
         anicli._anicli_checks.clear()
 
 
@@ -182,7 +183,7 @@ class TermuxSetup(Base):
         self.termux.refuse = "no-permission"  # first start: the permission prompt is still open
         self.assertIsNone(anicli.anicli_path())
         self.termux.refuse = None
-        android._last["ts"] = 0.0  # 20 s later
+        android._last["ts"] = time.monotonic() - 21  # 20 s later
         self.assertEqual(anicli.anicli_path(), str(android.anicli_copy()))
 
     def test_termux_is_not_asked_over_and_over(self):

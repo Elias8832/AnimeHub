@@ -40,11 +40,27 @@
 
 /* ───────── base ───────── */
 *{box-sizing:border-box}
-html{scrollbar-width:thin;scrollbar-color:#2e3238 transparent;transition:--amb .45s ease}
+html{transition:--amb .45s ease}
 html.amb-now{transition:none}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--ui);letter-spacing:-.003em;padding-top:72px;padding-bottom:46px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 ::selection{background:color-mix(in srgb,var(--accent) 42%,transparent)}
-::-webkit-scrollbar{width:11px;height:11px}::-webkit-scrollbar-thumb{background:#2c3036;border-radius:8px;border:3px solid var(--bg)}::-webkit-scrollbar-thumb:hover{background:#3a3f46}::-webkit-scrollbar-track{background:transparent}
+/* Scrollbars: Firefox uses standard scrollbar-width/color; Chromium 121+ disables ::-webkit-scrollbar whenever those are set, so gate them to browsers without ::-webkit-scrollbar. On desktop mice, hide the opaque root gutter so #canvas, #nav and #status reach the edge and float #sbar over the page instead. */
+@supports not selector(::-webkit-scrollbar){html,.plicons,.pal2 .plist,#ddm,#cm .plml,#tside .tsl,.flist,.mlist{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent}}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-button{display:none;width:0;height:0}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:999px;border:2px solid transparent;background-clip:content-box}::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.24);border:2px solid transparent;background-clip:content-box}::-webkit-scrollbar-thumb:active{background:rgba(255,255,255,.36);border:2px solid transparent;background-clip:content-box}
+#sbar{display:none}
+@media not (pointer:coarse){
+  html{scrollbar-width:none}html::-webkit-scrollbar{display:none}
+  #sbar{display:block;position:fixed;right:0;top:74px;bottom:48px;width:16px;z-index:8;touch-action:none;opacity:0;transition:opacity .32s ease}
+  #sbar.none{visibility:hidden;pointer-events:none;opacity:0}
+  :root[data-bar=island] #sbar{top:10px}
+  #sbar.on,#sbar:hover,#sbar.drag{opacity:1;transition:opacity .12s ease}
+  #sbar i{position:absolute;top:0;right:4px;width:3px;min-height:36px;border-radius:999px;background:rgba(255,255,255,.18);will-change:transform;transition:width .16s var(--ease),right .16s var(--ease),background .16s ease}
+  #sbar:hover i,#sbar.drag i{width:5px;right:3px;background:rgba(255,255,255,.34)}
+  #sbar.drag i{background:rgba(255,255,255,.48)}
+  body.srch #sbar,body.rmt-open #sbar,body.deck-open #sbar{opacity:0;pointer-events:none}
+  body.sb-drag{user-select:none}
+}
+@media (max-width:760px) and (not (pointer:coarse)){#sbar{bottom:10px}}
 h1,h2,h3,p{margin:0}h1,h2{text-wrap:balance}p{text-wrap:pretty}
 button,select,input{font:inherit;color:inherit;letter-spacing:inherit}
 button{cursor:pointer;background:none;border:0;padding:0;transition:transform .14s var(--ease),background .18s,color .18s,border-color .18s,box-shadow .2s,opacity .2s}
@@ -234,8 +250,20 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 @keyframes up{from{opacity:0;transform:translateY(18px)}}
 .sec{display:flex;justify-content:space-between;align-items:center;margin:44px 0 16px;gap:16px}.sec.first{margin-top:18px}
 .sec h2{font-size:23px;font-weight:650;letter-spacing:-.022em}
-.arr{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;color:var(--ink-2)}
-.arr:hover:not(:disabled){border-color:var(--line-hi);background:rgba(255,255,255,.06);color:var(--ink)}.arr:disabled{opacity:.3;cursor:default}.arr[hidden]{display:none}.arr .ico{width:15px;height:15px}
+/* Directional scroll & step chevrons: a soft filled squircle (no outline), brighter + a directional nudge on hover */
+.arr{width:34px;height:34px;border:0;border-radius:10px;background:rgba(255,255,255,.06);box-shadow:none;display:grid;place-items:center;color:rgba(243,243,241,.86);transition:background .18s var(--ease),color .16s,opacity .18s,transform .12s var(--ease),box-shadow .18s}
+.arr .ico{width:17px;height:17px;stroke-width:1.9;filter:drop-shadow(0 1px 2px rgba(0,0,0,.78)) drop-shadow(0 2px 8px rgba(0,0,0,.55));transition:transform .2s var(--ease)}
+.arr:hover:not(:disabled){background:rgba(255,255,255,.13);color:#fff}
+.arr:is([data-d="-1"],[data-v="-1"]):not(.plarr):hover:not(:disabled) .ico{transform:translateX(-2px)}
+.arr:is([data-d="1"],[data-v="1"]):not(.plarr):hover:not(:disabled) .ico{transform:translateX(2px)}
+.arr:active:not(:disabled){transform:scale(.9);background:rgba(255,255,255,.18);transition-duration:.08s}
+.arr:is([data-d="-1"],[data-v="-1"]):not(.plarr):active:not(:disabled) .ico{transform:translateX(-3px);transition-duration:.08s}
+.arr:is([data-d="1"],[data-v="1"]):not(.plarr):active:not(:disabled) .ico{transform:translateX(3px);transition-duration:.08s}
+.arr:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--accent-hi)}
+.arr:disabled{opacity:.34;cursor:default;background:none}
+.arr[hidden]{display:none}
+@keyframes stepInR{from{opacity:.45;transform:translateX(8px)}}
+@keyframes stepInL{from{opacity:.45;transform:translateX(-8px)}}
 .empty{color:var(--mute);grid-column:1/-1}
 .emptyx{display:grid;justify-items:center;gap:12px;text-align:center;padding:90px 0;color:var(--mute)}
 .emptyx .eico{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;background:var(--s1);border:1px solid var(--line);color:var(--accent-hi);animation:floaty 4s ease-in-out infinite}
@@ -380,7 +408,6 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 .meta .live-t{display:inline-flex;align-items:center;gap:8px;margin-left:6px;color:var(--warn);font-weight:600;font-size:13px}.meta .live-t:empty{display:none}
 .meta .live-t:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--warn);animation:livePulse 1.8s ease-out infinite}
 .cta{display:flex;gap:16px;align-items:center;margin-top:24px;flex-wrap:wrap}
-.warn{color:var(--warn);font-size:14px;border-left:2px solid var(--warn);padding-left:12px;max-width:300px}
 .body{display:grid;grid-template-columns:1fr 340px;gap:44px;margin-top:48px;padding-bottom:90px;align-items:start}
 .eps-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}.eps-head h2{font-size:26px;font-weight:700;letter-spacing:-.022em}
 .ctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -616,9 +643,16 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font:400 13px var(--
 .datef{position:relative;display:flex;gap:6px;align-items:center}
 .dpk{flex:none;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--mute);border:1px solid var(--line);background:rgba(255,255,255,.015)}.dpk:hover,.dpk[aria-expanded=true]{color:var(--ink);border-color:var(--line-hi);background:rgba(255,255,255,.05)}.dpk .ico{width:16px;height:16px}
 .cal{position:absolute;right:0;top:calc(100% + 6px);z-index:15;width:264px;padding:10px;background:color-mix(in srgb,var(--s2) 96%,transparent);backdrop-filter:blur(16px);border:1px solid var(--line-hi);border-radius:var(--r-l);box-shadow:var(--sh-pop);animation:popIn .16s var(--ease) both;transform-origin:top right}
-.cal-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.cal-h b{font-size:14px;font-weight:650}
-.cal-h button{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--mute)}.cal-h button:hover{color:var(--ink);background:rgba(255,255,255,.06)}.cal-h .ico{width:15px;height:15px}
+.cal-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.cal-h b{font-size:14px;font-weight:650}.cal-h b.step-r{animation:stepInR .2s var(--ease) both}.cal-h b.step-l{animation:stepInL .2s var(--ease) both}
+.cal-h button{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:rgba(243,243,241,.84);background:rgba(255,255,255,.06);transition:background .18s var(--ease),color .16s,transform .12s var(--ease),box-shadow .18s}
+.cal-h button:hover{color:#fff;background:rgba(255,255,255,.13)}
+.cal-h button:active{transform:scale(.9);background:rgba(255,255,255,.18);transition-duration:.08s}
+.cal-h button:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--accent-hi)}
+.cal-h .ico{width:17px;height:17px;stroke-width:1.9;transition:transform .2s var(--ease)}
+.cal-h button[data-v="-1"]:hover .ico{transform:translateX(-2px)}.cal-h button[data-v="1"]:hover .ico{transform:translateX(2px)}
+.cal-h button[data-v="-1"]:active .ico{transform:translateX(-3px);transition-duration:.08s}.cal-h button[data-v="1"]:active .ico{transform:translateX(3px);transition-duration:.08s}
 .cal-w,.cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}.cal-w span{font-size:11px;color:var(--mute);padding:4px 0}
+.cal-g{grid-auto-rows:32px;min-height:202px;align-content:start}
 .cal-g button{height:32px;border-radius:8px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink-2)}.cal-g button:hover{background:rgba(255,255,255,.07);color:var(--ink)}
 .cal-g button.now{color:var(--accent-hi);font-weight:700}.cal-g button.on{background:var(--accent);color:var(--accent-ink);font-weight:700}
 .cal-f{display:flex;justify-content:space-between;margin-top:8px;padding:6px 4px 0;border-top:1px solid var(--line);font-size:13px}
@@ -738,6 +772,7 @@ span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgb
 .ahead .lnk .ico{width:13px;height:13px;transition:transform .2s var(--ease)}.ahead .lnk:hover .ico{transform:translateX(2px)}
 /* Play + the action pill */
 .sp2 .cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px;align-items:center}
+.cta>.ctamore{display:none} /* the phone's ⋯ beside Play while the remote's bar floats (TODO 263) */
 .sp2 .cta .btn.big{height:48px;font-size:15px;padding:0 26px 0 22px}
 .sp2 .cta .btn.loading{opacity:.85}
 .sp2 .grp{height:48px;display:inline-flex;align-items:center;gap:2px;padding:0 5px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
@@ -764,29 +799,22 @@ span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgb
 .sp2 .rels button sup{font:500 11px var(--ui);margin-left:5px;opacity:.7;top:0}
 .sp2 .rels button small{font:600 11px var(--ui);letter-spacing:0;margin-right:6px}
 .sp2 .rels.extra{border:0;margin:0}.sp2 .rels.extra button{height:28px;font-size:11px}
-.sp2 .ctl{margin-left:auto;display:flex;align-items:center;gap:10px}
+.sp2 .ctl{margin-left:auto;display:flex;align-items:center;gap:2px}
 .sp2 .srcl{font:500 12px var(--ui);color:var(--mute)}
 .sp2 .srcl:empty{display:none}
-.sp2 .ctl .arr{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:var(--glass);box-shadow:var(--edge);color:var(--ink-2)}
-.sp2 .ctl .arr:hover:not(:disabled){background:var(--glass-h);color:var(--ink)}.sp2 .ctl .arr:disabled{opacity:.3}
-/* The episode row's controls (mockup A, 2026-11-10): Sub/Dub and the arrows
-   in one glass bar, the same build and size as the action bar above. */
+/* The episode row's controls: Sub/Dub keeps a compact 34px glass switch matching the 34px borderless arrows beside it. */
 @media (min-width:701px){
-  .sp2 .eps-head .ctl{height:48px;gap:2px;padding:0 5px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
-  .sp2 .eps-head .ctl:empty,.sp2 .eps-head .ctl:not(:has(>:not([hidden]))){height:auto;padding:0;background:none;box-shadow:none;backdrop-filter:none} /* stays as a spacer: the source line keeps its place */
-  .sp2 .eps-head .ctl .seg{padding:0;gap:2px;background:none;box-shadow:none;backdrop-filter:none}
-  .sp2 .eps-head .ctl .seg button{height:38px;min-width:64px;padding:0 16px;font:600 14.5px var(--ui);color:var(--ink-2);transition:background .18s,color .18s}
+  .sp2 .eps-head .ctl{gap:2px}
+  .sp2 .eps-head .ctl .seg{padding:3px;gap:2px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
+  .sp2 .eps-head .ctl .seg:has(+.arr:not([hidden])){margin-right:10px}
+  .sp2 .eps-head .ctl .seg button{height:28px;min-width:54px;padding:0 14px;font:600 13px var(--ui);color:var(--ink-2);transition:background .18s,color .18s}
   .sp2 .eps-head .ctl .seg button:hover:not(:disabled):not(.on){background:rgba(255,255,255,.1);color:var(--ink)}
   .sp2 .eps-head .ctl .seg button.on{background:var(--ink);color:#111}
   .sp2 .eps-head .ctl .seg .spin{border-color:rgba(255,255,255,.25);border-top-color:var(--ink)}
-  .sp2 .eps-head .ctl .arr{position:relative;width:38px;height:38px;border:0;background:none;box-shadow:none;color:var(--ink);transition:background .15s,opacity .15s}
-  .sp2 .eps-head .ctl .arr:hover:not(:disabled){background:rgba(255,255,255,.17)}
-  .sp2 .eps-head .ctl .arr[data-d="1"]{background:rgba(255,255,255,.1)} /* forward is the usual way: it gets the circle (mockup A) */
-  .sp2 .eps-head .ctl .arr:disabled{background:none;opacity:.3}
-  .sp2 .eps-head .ctl .arr[hidden]{display:none}
-  .sp2 .eps-head .ctl .arr .ico{width:18px;height:18px;stroke-width:2.8}
-  .sp2 .eps-head .ctl .seg+.arr:not([hidden]){margin-left:9px}
-  .sp2 .eps-head .ctl .seg+.arr:not([hidden])::before{content:"";position:absolute;left:-6px;top:9px;width:1px;height:20px;background:rgba(255,255,255,.14)} /* the action bar's .gsep */
+  .sp2 .eps-head .ctl .arr{color:rgba(243,243,241,.92);background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)} /* on the artwork: the Sub/Dub switch's glass, so a bright poster can't swallow it */
+  .sp2 .eps-head .ctl .arr:hover:not(:disabled){background:var(--glass-h);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+  .sp2 .eps-head .ctl .arr:active:not(:disabled){background:var(--glass-h)}
+  .sp2 .eps-head .ctl .arr:disabled{background:var(--glass);opacity:.5}
 }
 .sp2 .eps.strip{display:flex;gap:16px;overflow-x:auto;overflow-y:visible;padding:8px 6px 14px;margin:0 -6px;scroll-behavior:smooth;scroll-snap-type:x proximity;scrollbar-width:none}
 .sp2 .eps.strip::-webkit-scrollbar{display:none}
@@ -899,7 +927,7 @@ span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgb
 /* Characters (TODO 172, round 5): the watch order's tiles (.ot in a
    .frorder row); only what differs from it is here. */
 .sp2 .hsec.cast{margin-top:52px}.sp2 .hsec.cast:empty{display:none}
-.sp2 .cast .sh{align-items:center;gap:10px}.sp2 .cast .sh .seg{margin-right:6px}
+.sp2 .cast .sh{align-items:center;gap:10px}.sp2 .cast .sh .seg{margin-right:2px}.sp2 .cast .sh .seg button{height:28px;font-size:13px}
 .sp2 .castrow .ot.big:not(:first-child):not(.apart){margin-left:0} /* main characters are one group, not one each */
 .sp2 .castrow .ot{text-decoration:none}
 .sp2 .hsec.ford{margin-top:52px}
@@ -1077,8 +1105,7 @@ span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgb
 .hsec .sh h2{font:600 18px var(--ui);margin:0;letter-spacing:-.01em}
 .hsec .mut{font:500 12px var(--ui);color:var(--mute)}
 .hsec .sh .fill{flex:1}
-.hsec .arr{width:32px;height:32px;border-radius:999px;display:grid;place-items:center;background:var(--glass);box-shadow:var(--edge);color:var(--ink-2)}
-.hsec .arr:hover:not(:disabled){background:var(--glass-h);color:var(--ink)}.hsec .arr:disabled{opacity:.3}.hsec .arr[hidden]{display:none}
+.hsec .sh .arr+.arr{margin-left:-6px}
 .hsec .link-btn{font:600 12px var(--ui)}
 .hstrip{display:flex;gap:20px;overflow-x:auto;padding:12px 8px 16px;margin:-12px -8px 0;scroll-behavior:smooth;scrollbar-width:none;scroll-snap-type:x proximity;scroll-padding-left:8px}
 .hstrip::-webkit-scrollbar{display:none}
@@ -1181,8 +1208,6 @@ span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgb
 .home2.wide .hsec .sh h2{font-size:20px;font-weight:650;letter-spacing:-.015em}
 .home2.wide .hsec .sh .mut{display:none}
 .home2.wide .hsec .link-btn{font:500 13px var(--ui);color:var(--ink-2)}
-.home2.wide .hsec .arr{width:40px;height:40px;transition:opacity .2s var(--ease),background .15s}
-.home2.wide .hsec .arr:disabled{opacity:0;pointer-events:none}
 /* rows: room around the cards for their glow (it was cut off at the top, Elias 2026-11-14); the side gutters fade out, so a card never shows as a sliver */
 .home2.wide .hstrip{gap:24px;padding:60px 44px 48px;margin:-60px -44px -48px;scroll-padding-left:44px;-webkit-mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 calc(100% - 44px),transparent calc(100% - 20px));mask:linear-gradient(90deg,transparent 20px,#000 44px,#000 calc(100% - 44px),transparent calc(100% - 20px))}
 .home2.wide .eye{font:600 13px var(--ui);letter-spacing:0}
@@ -1644,7 +1669,7 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
   .plpage .plpcap{padding-left:40px}
 }
 /* The edit dialog */
-.plicons{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:264px;overflow-y:auto;padding:2px;scrollbar-width:thin}
+.plicons{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:264px;overflow-y:auto;padding:2px}
 .plicons .pich{grid-column:1/-1;margin:8px 2px 0;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}.plicons .pich:first-child{margin-top:0}
 .plicons .pic{height:38px;border-radius:11px;display:grid;place-items:center;color:var(--plk,var(--ink-2));background:var(--s2);transition:transform .15s,background .15s,color .25s,box-shadow .25s}
 .plicons .pic .ico{width:19px;height:19px;stroke-width:2}
@@ -1792,7 +1817,7 @@ body.srch #pal{display:grid}
 #sr{flex:1;min-height:0;display:flex}
 #sr .pal2{flex:1;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:minmax(0,1fr) auto}
 @keyframes palin{from{opacity:0;transform:translateY(-8px) scale(.98)}}
-.pal2 .plist{overflow-y:auto;padding:8px 10px;border-right:1px solid rgba(255,255,255,.08);scrollbar-width:thin}
+.pal2 .plist{overflow-y:auto;padding:8px 10px;border-right:1px solid rgba(255,255,255,.08)}
 .pal2 .psec{font:600 12px var(--ui);color:var(--mute);padding:12px 12px 6px;display:flex;gap:8px;align-items:center}
 .pal2 .psec .link-btn{margin-left:auto;padding:0 8px;font:inherit}
 .pal2 .mi{display:flex;align-items:center;gap:12px;padding:7px 12px;border-radius:12px;font-size:14px;cursor:pointer}
@@ -1858,10 +1883,15 @@ body.srch #pal{display:grid}
 .sline{display:none}
 /* A value: ‹ [the app's own list] › */
 .pk{display:inline-grid;grid-template-columns:34px minmax(0,1fr) 34px;align-items:center;width:250px;flex:none}
-.pka{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:var(--mute);transition:color .15s,background .15s,transform .15s var(--spring)}
-.pka .ico{width:17px;height:17px}
-.pka:hover:not(:disabled){color:var(--accent);background:rgba(255,255,255,.06)}
-.pka:active:not(:disabled){transform:scale(.86)}
+.pka{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:rgba(243,243,241,.68);transition:color .16s,background .18s var(--ease),transform .12s var(--ease),box-shadow .18s}
+.pka .ico{width:17px;height:17px;transition:transform .2s var(--ease)}
+.pka:hover:not(:disabled){color:#fff;background:rgba(255,255,255,.13)}
+.pka[data-d="-1"]:hover:not(:disabled) .ico{transform:translateX(-2px)}
+.pka[data-d="1"]:hover:not(:disabled) .ico{transform:translateX(2px)}
+.pka:active:not(:disabled){transform:scale(.9);background:rgba(255,255,255,.15);transition-duration:.08s}
+.pka[data-d="-1"]:active:not(:disabled) .ico{transform:translateX(-3px);transition-duration:.08s}
+.pka[data-d="1"]:active:not(:disabled) .ico{transform:translateX(3px);transition-duration:.08s}
+.pka:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--accent-hi)}
 .pkm{display:flex;align-items:center;justify-content:center;gap:9px;min-width:0}
 .pk select.pkv{min-width:0;max-width:100%;height:34px;padding:0 10px;border-radius:10px;background:none;box-shadow:none;backdrop-filter:none;font:500 15.5px var(--ui);color:var(--ink);text-align:center;text-align-last:center;text-overflow:ellipsis}
 .pk select.pkv:hover:not(:disabled){background-color:rgba(255,255,255,.06)}
@@ -2123,7 +2153,7 @@ body.srch #pal{display:grid}
 
 /* Dropdown list (replaces the browser's own for mouse clicks) */
 /* The drop-down list (Library polish round 4, Elias: "overhaul the pop up"): a quiet caption, roomy rows, a check on the picked one. */
-#ddm{position:fixed;z-index:80;display:none;flex-direction:column;gap:1px;max-height:340px;overflow-y:auto;padding:6px;border-radius:18px;background:rgba(20,21,25,.94);box-shadow:0 24px 60px -12px rgba(0,0,0,.75),0 2px 8px rgba(0,0,0,.3),var(--edge);backdrop-filter:blur(30px) saturate(1.3);scrollbar-width:thin}
+#ddm{position:fixed;z-index:80;display:none;flex-direction:column;gap:1px;max-height:340px;overflow-y:auto;padding:6px;border-radius:18px;background:rgba(20,21,25,.94);box-shadow:0 24px 60px -12px rgba(0,0,0,.75),0 2px 8px rgba(0,0,0,.3),var(--edge);backdrop-filter:blur(30px) saturate(1.3)}
 #ddm.open{display:flex;overscroll-behavior:contain;animation:ddIn .2s var(--ease) both}
 @keyframes ddIn{from{opacity:0;transform:translateY(-4px) scale(.96)}}
 #ddm .ddcap{padding:8px 12px 6px;font:600 11px var(--ui);letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
@@ -2158,7 +2188,7 @@ body.srch #pal{display:grid}
 #cm .plmq:focus-within .ico{color:var(--ink-2)}
 #cm .plmq input,#cm .plmq input:hover:not(:disabled),#cm .plmq input:focus-visible{flex:1;min-width:0;height:100%;border:0;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;outline:0;color:var(--ink);caret-color:var(--accent);font:500 14px var(--ui);padding:0}
 #cm .plmq input::placeholder{color:var(--mute)}
-#cm .plml{max-height:min(340px,46vh);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+#cm .plml{max-height:min(340px,46vh);overflow-y:auto;overscroll-behavior:contain}
 #cm .mi.plmi{height:48px;gap:11px}
 #cm .plmi .ml small i{font-style:normal;color:var(--ink);font-weight:600}
 #cm .plmi .ml b mark{background:none;color:var(--accent-hi)}
@@ -2477,7 +2507,7 @@ body.deck-open:not(.peek) #canvas,body.deck-open:not(.peek) #app,body.deck-open:
 /* tablet landscape: your lists beside the show page */
 #tside{position:fixed;left:0;top:68px;bottom:42px;width:340px;z-index:8;display:flex;flex-direction:column;border-right:1px solid var(--line);background:rgba(10,11,13,.5);backdrop-filter:blur(22px)}
 #tside .tsh{padding:14px 16px 8px}
-#tside .tsl{flex:1;overflow-y:auto;padding:0 10px 20px;scrollbar-width:thin}
+#tside .tsl{flex:1;overflow-y:auto;padding:0 10px 20px}
 #tside .prow{padding:8px;border-bottom:0;border-radius:14px}
 body.has-side #app{padding-left:340px}
 
@@ -2517,9 +2547,14 @@ body.has-side #app{padding-left:340px}
   #status{display:none}
   body{padding-bottom:110px}
   body.rmt-on{padding-bottom:170px}
-  .rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:60px;padding:0 8px 0 9px;border-radius:26px;background:var(--dockbg);box-shadow:var(--pill-sh);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
-  .rbar img,.rbar .rph{width:40px;height:40px;border-radius:11px}
-  .rbar .rprog{left:18px;right:18px}
+  .rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:62px;padding:0 8px;gap:8px;border-radius:31px;background:var(--dockbg);box-shadow:var(--pill-sh);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
+  /* The show page's Play strip look (Elias, TODO 263 round 4): a round still that follows the pill's end, the strip's sizes. */
+  .rbar img,.rbar .rph{width:46px;height:46px;border-radius:50%;box-shadow:var(--edge)}
+  .rbar img.rpo{object-position:50% 22%}
+  .rbar .rt{margin-left:3px}
+  .rbar .rt b{font-size:14.5px}
+  .rbar .rp{width:46px;height:46px}
+  .rbar .rprog{left:30px;right:30px}
   .rbar{z-index:32} /* above the dock's fade */
   /* Home */
   .home2.phone .hello{margin:14px 0 18px}
@@ -2920,15 +2955,23 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 /* the desktop calendar */
 .airp2{padding:0 44px 60px;max-width:1800px;margin:0 auto}
 .airhead{display:flex;align-items:center;gap:10px;margin-top:8px}
-.airhead .hd{font:700 clamp(44px,5vw,64px)/1 var(--display);text-transform:uppercase;margin:0 16px 0 0;white-space:nowrap;display:grid}.airhead .hd>span{grid-area:1/1}.airhead .hd>[aria-hidden]{visibility:hidden}.airhead .hd>span>span{color:var(--mute);font-weight:500}
-/* The head's buttons (TODO 208) look like the top bar: ‹ Today › in one glass pill, the views as its tabs. */
-.airnav{display:inline-flex;align-items:center;height:40px;padding:0 4px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
-.airnav button{height:32px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:999px;font:600 13.5px var(--ui);color:var(--ink-2);transition:color .15s,background .15s}.airnav button:hover{color:var(--ink);background:rgba(255,255,255,.08)}
-.airnav .i{width:32px;padding:0}.airnav .ico{width:16px;height:16px}
-.airtabs{display:inline-flex;gap:2px}.airtabs button{height:36px;padding:0 14px;border-radius:999px;font:600 14.5px var(--ui);color:rgba(243,243,241,.6);text-shadow:0 1px 8px rgba(0,0,0,.5);transition:color .15s,background .2s}
+.airhead .hd{font:700 clamp(44px,5vw,64px)/1 var(--display);font-variant-numeric:tabular-nums;text-transform:uppercase;margin:0 16px 0 0;white-space:nowrap;display:grid}.airhead .hd>span{grid-area:1/1}.airhead .hd>[aria-hidden]{visibility:hidden}.airhead .hd>span>span{color:var(--mute);font-weight:500}
+/* The head's controls: borderless ghost chevrons + quiet tinted Today button. */
+.airnav{display:inline-flex;align-items:center;gap:2px;height:34px}
+.airnav button{height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border-radius:10px;font:600 13.5px var(--ui);color:rgba(243,243,241,.86);text-shadow:0 1px 8px rgba(0,0,0,.55);transition:color .16s,background .18s var(--ease),transform .12s var(--ease),box-shadow .18s}
+.airnav button{background:rgba(255,255,255,.06)}.airnav button[data-a="airtoday"]{background:rgba(255,255,255,.1)}
+.airnav button:hover{color:#fff;background:rgba(255,255,255,.15)}
+.airnav button:active{transform:scale(.9);background:rgba(255,255,255,.18);transition-duration:.08s}
+.airnav button:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--accent-hi)}
+.airnav .i{width:34px;padding:0}
+.airnav .ico{width:17px;height:17px;stroke-width:1.9;filter:drop-shadow(0 1px 2px rgba(0,0,0,.75)) drop-shadow(0 2px 8px rgba(0,0,0,.55));transition:transform .2s var(--ease)}
+.airnav .i[data-v="-1"]:hover .ico{transform:translateX(-2px)}.airnav .i[data-v="1"]:hover .ico{transform:translateX(2px)}
+.airnav .i[data-v="-1"]:active .ico{transform:translateX(-3px);transition-duration:.08s}.airnav .i[data-v="1"]:active .ico{transform:translateX(3px);transition-duration:.08s}
+.airhead.step-r .hd>span:first-child{animation:stepInR .22s var(--ease) both}.airhead.step-l .hd>span:first-child{animation:stepInL .22s var(--ease) both}
+.airtabs{display:inline-flex;gap:2px}.airtabs button{height:36px;padding:0 14px;border-radius:999px;font:600 14.5px var(--ui);color:rgba(243,243,241,.6);text-shadow:0 1px 8px rgba(0,0,0,.5);transition:color .15s,background .2s,transform .16s var(--ease)}
 .airtabs button:hover{color:var(--ink)}.airtabs button.on{color:var(--ink);background:var(--pick)}
 .airdiv{width:1px;height:20px;margin:0 8px;background:rgba(255,255,255,.12)}
-.airnav button:active,.airtabs button:active{transform:scale(.95)}.airnav button,.airtabs button{transition:color .15s,background .2s,transform .16s var(--ease)}
+.airtabs button:active{transform:scale(.95)}
 .airsum{display:flex;align-items:center;gap:10px;margin:4px 0 16px;font:500 12px var(--ui);color:var(--mute)}.airsum b{color:var(--ink)}.airsum .sep{width:3px;height:3px;border-radius:50%;background:var(--mute)}
 .airload{display:inline-flex;align-items:center;gap:8px;margin-left:10px;font:500 12px var(--ui)}
 .airbody{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:20px;align-items:start}
@@ -3043,7 +3086,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .fq{display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:var(--edge);margin-bottom:12px;color:var(--mute)}
 .fq .ico{width:16px;height:16px;flex-shrink:0}.fq input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:15px}
 .fq:focus-within{box-shadow:inset 0 0 0 1.5px var(--accent)}
-.flist{display:grid;align-content:start;gap:2px;height:min(420px,52vh);overflow:auto;margin:0 -8px 18px;padding:0 8px;scrollbar-width:thin}
+.flist{display:grid;align-content:start;gap:2px;height:min(420px,52vh);overflow:auto;margin:0 -8px 18px;padding:0 8px}
 .flist .dim{padding:20px 12px;color:var(--mute)}
 .frow{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 12px;border-radius:12px;text-align:left;transition:background .15s}
 .frow:hover:not(:disabled){background:rgba(255,255,255,.06)}
@@ -3472,6 +3515,11 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .hero .grp>*,.sp2.frpage .hero #entryacts>*{flex:1 1 0}
   .sp2.frpage .hero #entryacts{display:contents}
   .sp2.frpage .hero .gsep,.sp2.frpage .hero .grp [data-a=frmore]{display:none} /* ⋯ lives in the dock (Elias) */
+  /* The strip's own pair, in the page: Play, then ⋯ round beside it (Elias, round 4: not a fourth action under it). */
+  body.rmt-on .sp2.frpage .hero .cta:has(>.btn.pri){display:grid!important;grid-template-columns:1fr 48px;gap:14px 8px;align-items:center}
+  body.rmt-on .sp2.frpage .hero .cta>.btn.pri{display:flex;grid-column:1;height:48px;justify-content:center;margin:0}
+  body.rmt-on .sp2.frpage .hero .cta>.ctamore{display:flex;grid-column:2;width:48px;height:48px;padding:0;border-radius:50%;background:rgba(255,255,255,.08);box-shadow:var(--edge)}
+  body.rmt-on .sp2.frpage .hero .cta>.grp{grid-column:1/-1}
   .sp2.frpage .hero .gb{flex-direction:column;gap:6px;height:auto;min-width:0;padding:8px 2px;border-radius:14px;font:600 11.5px var(--ui);color:var(--ink-2);white-space:normal;text-align:center;line-height:1.2}
   .sp2.frpage .hero .gb .ico{width:21px;height:21px;color:var(--ink)}
   .sp2.frpage .hero .gb:active{background:rgba(255,255,255,.07)}
@@ -3803,7 +3851,7 @@ body.pp-open #modal{z-index:70}
 .mres:empty{display:none}
 .mcaph{display:flex;align-items:baseline;gap:14px;margin:0 0 12px}.mcaph .cap{margin:0;font:600 12px var(--ui);color:var(--mute)}
 .mcaph .link-btn{display:inline-flex;align-items:center;gap:6px;font:600 12px var(--ui);color:var(--mute);background:none;border:0;padding:0}.mcaph .link-btn:hover{color:var(--ink)}.mcaph .link-btn .ico{width:12px;height:12px}
-.mlist{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto;margin:0 -10px;padding:0 10px;scrollbar-width:thin}
+.mlist{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto;margin:0 -10px;padding:0 10px}
 .mhit{display:flex;align-items:center;gap:14px;width:100%;padding:8px 12px 8px 8px;border:0;border-radius:14px;background:none;text-align:left;color:var(--ink);transition:background .15s}
 .mhit:hover{background:rgba(255,255,255,.05)}.mhit.on{background:rgba(255,255,255,.09);box-shadow:var(--edge)}
 .mhit .poster.t{width:40px;border-radius:8px}
@@ -4180,7 +4228,7 @@ body.pp-open #modal{z-index:70}
   .jcard .sh b,.sp2 .eps-head h2,.sp2 .about h2,.sp2 .hsec .sh h2{font-size:20px;font-weight:650;letter-spacing:-.015em}
   .lnav>button,.lib2 .lflt .fl,.lflt .fdb,.lib2 .card h3,.plcap h3,.lsubpl,
   .jr2 .tabs button,.tl .ev b,.gen .r,.airx b,.airtabs button,.set2 .srow>div:first-child>b,
-  .sp2 .desc,.sp2 .backbtn,.sp2 .gb,.sp2 .et b,.sp2 .about dl,.sp2 .ot b,.sp2 .eps-head .ctl .seg button{font-size:15px}
+  .sp2 .desc,.sp2 .backbtn,.sp2 .gb,.sp2 .et b,.sp2 .about dl,.sp2 .ot b{font-size:15px}
   .plintro span,.airside .sub,.airnav button,.set2 .group>.sub,.set2 .srow>div:first-child>p,.sp2 .meta{font-size:13px}
   .lnav .sum,.lib2 .resume-tag,.airtags u,.sp2 .et small,.sp2 .meta .fmt{font-size:12px}
   .lnav h4,.air1w u,.jbars span,.tl .ev .badge,.tops .cv span,.heat .h,.jcard .legend,.jbars.full.vals em{font-size:11px}
@@ -4316,7 +4364,7 @@ body.pp-open #modal{z-index:70}
 .brw .brhd{gap:12px}
 .brw .brhd .lh{display:flex;align-items:baseline;gap:10px;font:600 22px var(--ui);margin:0;letter-spacing:-.01em}
 .brfx{font:500 14px var(--ui);color:var(--mute);margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}
-.brsteps{display:inline-flex;align-items:center;gap:6px}.brsteps .lh{margin-left:10px}
+.brsteps{display:inline-flex;align-items:center;gap:4px}.brsteps .lh{margin-left:10px}.brsteps .lh.step-r{animation:stepInR .22s var(--ease) both}.brsteps .lh.step-l{animation:stepInL .22s var(--ease) both}
 .brmore{display:flex;justify-content:center;margin:-40px 0 60px}
 .brnote{text-align:center;color:var(--mute);margin:-40px 0 60px}
 .brw .brflt{margin-bottom:26px}
@@ -4412,6 +4460,8 @@ body.pp-open #modal{z-index:70}
   #cm .cmhl.press{transform:translateY(var(--hl-y,0px)) scale(.986);background:rgba(255,255,255,.16);transition-duration:.07s}
   #cm .cmhl.warn{background:rgba(255,196,107,.10);box-shadow:inset 0 0 0 1px rgba(255,196,107,.16)}
   #cm .cmhl.danger{background:rgba(239,138,143,.16);box-shadow:inset 0 0 0 1px rgba(239,138,143,.24)}
+  #cm .cmhl.warn.press{background:rgba(255,196,107,.17)}
+  #cm .cmhl.danger.press{background:rgba(239,138,143,.24)}
   /* Very subtle: a 1px nudge in the icon's own direction, no spins or tilts */
   #cm .mi.sel .cm-i-play{transform:translateX(1px)}
   #cm .mi.sel .cm-i-arrowr{transform:translateX(1.5px)}
@@ -4545,9 +4595,7 @@ body.pp-open #modal{z-index:70}
     position:relative;display:flex;flex-direction:column;gap:1px;
     max-height:var(--dd-mh,340px);overflow-y:auto;overscroll-behavior:contain;
   }
-  @supports not selector(::-webkit-scrollbar){
-    #ddm:not(.sheet) .ddl{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
-  }
+  @supports not selector(::-webkit-scrollbar){#ddm:not(.sheet) .ddl{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}}
   #ddm:not(.sheet) .ddl::-webkit-scrollbar{width:4px}
   #ddm:not(.sheet) .ddl::-webkit-scrollbar-track{background:transparent}
   #ddm:not(.sheet) .ddl::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border:0;border-radius:99px}

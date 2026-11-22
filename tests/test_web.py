@@ -639,8 +639,39 @@ class Polish(unittest.TestCase):
     def test_episode_menu(self):
         self.assertIn('res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"', APP)
         self.assertIn('cmRow("playstart", id, "undo", "Play from the start", "B")', APP)
-        self.assertIn('cmRow("srcfix", "", "search", "Wrong episode?")', APP)
+        self.assertIn('cmRow("srcfix", "", "search", local ? "Wrong online episodes?" : "Wrong episode?")', APP)
         self.assertIn("if (fromStart) body.from_start = true;", APP)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_episode_menu_disk_and_online_labels(self):
+        """A slot on disk + online names the language on both online rows and
+        clarifies that Wrong online episodes? fixes the online match, not disk."""
+        cm_items = re.search(r"function cmItems\([^)]*\) \{.*?\n\}\n", APP, re.S).group(0)
+        out = run_js("""
+            const S = { data: {}, sel: null, settings: {} };
+            const resumable = (ep) => !!ep.duration && ep.position / ep.duration > 0.01 && (!ep.watched || ep.position / ep.duration < 0.92);
+            const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+            const esc = (s) => String(s);
+            const selKey = () => "fr:1";
+            const cmOther = () => "";
+            const cmRow = (a, v, icon, label, key = "", extra = "", attrs = "") => ({ a, v, icon, label, key, attrs });
+        """ + cm_items.replace('.map((g) => g.join("")).join(\'<div class="sep"></div>\')', '.flat().filter((r) => typeof r === "object")') + """
+            const ep = { watched: true, position: 945, duration: 1485 };
+            return {
+                diskDub: cmItems({ id: "loc:11", ep, files: [{ label: "default" }], verId: "loc:11", online: true, onlineId: "stream:1:11", mode: "dub", other: "sub", local: true, dl: false, fix: true }),
+                diskSub: cmItems({ id: "loc:11", ep, files: [{ label: "default" }], verId: "loc:11", online: true, onlineId: "stream:1:11", mode: "sub", other: "dub", local: true, dl: false, fix: true }),
+                onlineOnly: cmItems({ id: "stream:1:11", ep, files: [], verId: null, online: true, onlineId: "stream:1:11", mode: "dub", other: "sub", local: false, dl: true, fix: true }),
+            };
+        """)
+        labels = lambda rows: [(r["label"], r["key"], r["a"], r["attrs"]) for r in rows]
+        self.assertIn(("Play dubbed online", "O", "playmode", 'data-m="dub"'), labels(out["diskDub"]))
+        self.assertIn(("Play subbed online", "A", "playmode", 'data-m="sub"'), labels(out["diskDub"]))
+        self.assertIn(("Wrong online episodes?", "", "srcfix", ""), labels(out["diskDub"]))
+        self.assertIn(("Play subbed online", "O", "playmode", 'data-m="sub"'), labels(out["diskSub"]))
+        self.assertIn(("Play dubbed online", "A", "playmode", 'data-m="dub"'), labels(out["diskSub"]))
+        self.assertNotIn("Play online", [r["label"] for r in out["diskDub"]])
+        self.assertIn(("Play subbed", "A", "playmode", 'data-m="sub"'), labels(out["onlineOnly"]))
+        self.assertIn(("Wrong episode?", "", "srcfix", ""), labels(out["onlineOnly"]))
 
     def test_rewatch_tiles_show_the_stop_point(self):
         self.assertIn("(!ep.watched || ep.position / ep.duration < 0.92)", APP)  # mirrors player.resume_args
@@ -729,7 +760,7 @@ class Polish(unittest.TestCase):
 
     def test_android_settings_have_no_pc_parts(self):
         """Decision 88: no mpv, library folder, desktop updates or tools on Android."""
-        self.assertIn("if (s.android) return rc; // the Android app has no mpv", APP)
+        self.assertIn("if (s.android) return here + rc; // the Android app has no mpv", APP)  # here: Play button, once paired (TODO 263)
         self.assertIn('${s.android ? "" : `<div class="group"><h3>Subtitle look</h3>', APP)
         self.assertIn('${s.android ? "" : srow("Mark them on the seek bar"', APP)
         self.assertIn('if (s.android) return `<div class="group"><h3>Termux</h3>', APP)
@@ -1308,8 +1339,76 @@ class ContextMenuPolish(unittest.TestCase):
         self.assertIn("if (next) { next.focus(); cmFire(next); }", APP)
         self.assertNotIn('eyebrow: "Layout"', APP)
         # Very subtle: no icon spins or tilts, no accent fill on the primary highlight
+
+
+class ArrowButtonsPolish(unittest.TestCase):
+    """Soft filled squircle arrows across Home, Show, Browse, Calendar and the date picker (2026-11-22)."""
+
+    def test_soft_squircle_arrows_everywhere(self):
+        # One .arr: no outline circles, no double borders, both arrows the same (no grey disc on > alone)
+        self.assertIn(".arr{width:34px;height:34px;border:0;border-radius:10px;background:rgba(255,255,255,.06);box-shadow:none;", CSS)
+        self.assertNotIn('.sp2 .eps-head .ctl .arr[data-d="1"]{background:rgba(255,255,255,.1)}', CSS)
+        self.assertNotIn(".home2.wide .hsec .arr:disabled{opacity:0", CSS)
+        self.assertNotIn(".hsec .arr{width:32px;height:32px;border-radius:999px;", CSS)
+        # Directional hover nudge and press response on .arr, Calendar .airnav, and date picker
+        self.assertIn('.arr:is([data-d="-1"],[data-v="-1"]):not(.plarr):hover:not(:disabled) .ico{transform:translateX(-2px)}', CSS)
+        self.assertIn('.arr:is([data-d="1"],[data-v="1"]):not(.plarr):hover:not(:disabled) .ico{transform:translateX(2px)}', CSS)
+        self.assertIn(".airnav{display:inline-flex;align-items:center;gap:2px;height:34px}", CSS)
+        # Browse season and Calendar titles slide in the step direction (including return via Today & async repaint)
+        self.assertIn("S.br.stepDir = +v; S.br.stepAt = performance.now();", APP)
+        self.assertIn("c.stepDir = +v;", APP)
+        self.assertIn("c.stepDir = tgt === cur ? 0 : tgt > cur ? 1 : -1;", APP)
+        self.assertIn("@keyframes stepInR{from{opacity:.45;transform:translateX(8px)}}", CSS)  # never blinks out on fast clicks
+        self.assertIn(".sp2 .eps-head .ctl .arr{color:rgba(243,243,241,.92);background:var(--glass);", CSS)  # readable on bright art
+        # Date picker: fixed 6-row height (0px jump), 34px targets, in-place month patch preserves focus
+        self.assertIn(".cal-g{grid-auto-rows:32px;min-height:202px;align-content:start}", CSS)
+        self.assertIn(".cal-h button{width:34px;height:34px;border-radius:10px;", CSS)
+        self.assertIn('n.classList?.contains("pka") ? "pka|" + n.dataset.d', APP)
         self.assertNotIn(".cm-i-close{transform:rotate", CSS)
         self.assertNotIn("#cm .cmhl.pri{", CSS)
+        # No bare .warn callout rule leaking a curved border-left onto #cm .cmhl.warn
+        self.assertNotRegex(CSS, r"(?m)^\.warn\{")
+        # Caution hover applies consistently to state-clearing/unpinning rows too
+        self.assertIn('data-w="${!ep.watched}" data-warn="1"', APP)
+        self.assertIn('p.pinned ? \'data-warn="1"\' : ""', APP)
+
+
+class ScrollbarPolish(unittest.TestCase):
+    """Floating overlay scrollbar on desktop and arrow-free inner scrollbars."""
+
+    def test_chromium_webkit_scrollbars_are_not_overridden_by_standard_thin(self):
+        # In Chromium 121+, scrollbar-width:thin disables ::-webkit-scrollbar and draws native arrows.
+        # Every scrollbar-width:thin must stay inside the Firefox-only @supports block.
+        without_supports = re.sub(r"@supports not selector\(::-webkit-scrollbar\)\{[^}]*\{[^}]*\}\}", "", CSS)
+        self.assertNotIn("scrollbar-width:thin", without_supports)
+        self.assertIn("@supports not selector(::-webkit-scrollbar){", CSS)
+        self.assertIn("::-webkit-scrollbar-button{display:none;width:0;height:0}", CSS)
+        self.assertIn("background-clip:content-box", CSS)
+
+    def test_desktop_overlay_scrollbar_markup_and_rules(self):
+        self.assertIn('<div id="sbar" aria-hidden="true"><i></i></div>', HTML)
+        self.assertIn("@media not (pointer:coarse){", CSS)
+        self.assertIn("html{scrollbar-width:none}html::-webkit-scrollbar{display:none}", CSS)
+        self.assertIn("#sbar{display:block;position:fixed;right:0;top:74px;bottom:48px;", CSS)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_overlay_scrollbar_metrics(self):
+        fn = re.search(r"function sbarMetrics\([^)]*\) \{.*?\n\}\n", APP, re.S).group(0)
+        out = run_js(fn + """return [
+            sbarMetrics(900, 900, 0, 800),
+            sbarMetrics(2000, 1000, 0, 800),
+            sbarMetrics(2000, 1000, 500, 800),
+            sbarMetrics(2000, 1000, 1000, 800),
+            sbarMetrics(50000, 1000, 49000, 800),
+            sbarMetrics(2000, 1000, 0, 20),
+        ];""")
+        self.assertEqual(out[0], {"show": False, "h": 0, "y": 0})
+        self.assertEqual(out[1], {"show": True, "h": 400, "y": 0})
+        self.assertEqual(out[2], {"show": True, "h": 400, "y": 200})
+        self.assertEqual(out[3], {"show": True, "h": 400, "y": 400})
+        self.assertEqual(out[4], {"show": True, "h": 36, "y": 764})  # min thumb height clamped
+        self.assertEqual(out[5], {"show": True, "h": 20, "y": 0})    # never taller than track
+
 
 
 class DropdownMenuPolish(unittest.TestCase):

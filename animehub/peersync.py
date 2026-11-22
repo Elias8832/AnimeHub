@@ -584,10 +584,10 @@ def normal_address(raw):
     return f"{u.scheme.lower()}://{host}:{port}"
 
 
-def _plain(url, data, headers):
+def _plain(url, data, headers, timeout=TIMEOUT):
     """(status, body, Set-Cookie lines) the normal way; OSError when unreachable."""
     try:
-        with urlopen(Request(url, data=data, headers=headers), timeout=TIMEOUT) as r:
+        with urlopen(Request(url, data=data, headers=headers), timeout=timeout) as r:
             return r.status, r.read(), r.headers.get_all("Set-Cookie") or []
     except HTTPError as e:
         try:
@@ -598,12 +598,12 @@ def _plain(url, data, headers):
         raise OSError(str(e.reason))
 
 
-def _home_network(url, data, headers):
+def _home_network(url, data, headers, timeout=TIMEOUT):
     """The Android app: straight over Wi-Fi, past a VPN that lets apps do
     that (Lan.java). Raises when there is no Wi-Fi or the VPN refuses."""
     from java import jclass  # Chaquopy, only inside the app
     got = jclass("io.github.elias8832.animehub.Lan").call(
-        url, data.decode() if data is not None else None, headers.get("Cookie"), UA, TIMEOUT * 1000)
+        url, data.decode() if data is not None else None, headers.get("Cookie"), UA, int(timeout * 1000))
     return int(str(got[0])), str(got[1]).encode(), [x for x in str(got[2]).split("\n") if x]
 
 
@@ -618,7 +618,7 @@ def _vpn_up():
 VPN_BLOCKS = "Your VPN blocks it. It syncs once the VPN is off for a moment."
 
 
-def _call(address, path, token=None, body=None):
+def _call(address, path, token=None, body=None, timeout=TIMEOUT):
     """One request to the PC: (JSON answer, Set-Cookie lines). In the Android
     app over the home network first, so a VPN doesn't stand in the way."""
     headers = {"User-Agent": UA, "Accept": "application/json"}
@@ -631,12 +631,12 @@ def _call(address, path, token=None, body=None):
     got = None
     if system.ANDROID:
         try:
-            got = _home_network(address + path, data, headers)
+            got = _home_network(address + path, data, headers, timeout)
         except Exception as e:
             util.log("sync over Wi-Fi: %s" % e)
     if got is None:
         try:
-            got = _plain(address + path, data, headers)
+            got = _plain(address + path, data, headers, timeout)
         except (OSError, ValueError):
             if system.ANDROID and _vpn_up():
                 raise SyncError(VPN_BLOCKS)
@@ -810,6 +810,127 @@ def sync_once():
             raise SyncError("Sync failed. It tries again in a moment.")
         finally:
             _state["running"] = False
+
+
+# --- what plays on the PC (TODO 263) -------------------------------------------
+# The browser remote shows a bar while mpv plays on the PC (Decision 43). The
+# app's page is served by its own hub, so its hub asks the paired PC and hands
+# the remote's buttons on, with the token pairing gave it.
+
+PC_NOW_KEYS = ("show", "label", "percent", "episode_id", "loading", "next", "slot", "cover", "banner", "position", "duration",
+               "paused", "volume", "tracks", "speed", "sub_delay", "segments", "stop_after")
+PC_TIMEOUT = 4       # a poll: a PC that's gone answers "nothing" quickly
+_pc = {"at": 0.0, "now": None}
+_pc_lock = threading.Lock()
+_slots = {}
+
+
+def slot_of(ep_id):
+    """"<AniList id>:<n>" for an episode on this device (the sync's key), or
+    None. Remembered per id: asked on every remote poll."""
+    if ep_id in _slots:
+        return _slots[ep_id]
+    slot = _stream_slot(ep_id) if ep_id.startswith("stream:") else None
+    if not ep_id.startswith("stream:"):
+        try:
+            s, _ = library.episode_by_id(ep_id)
+            for u in mapping.release_units(s) if s else ():
+                if mapping.unit_fits(u, u["total"]):
+                    slot = next((f"{u['media_id']}:{n}" for ep, n in u["eps"] if ep["id"] == ep_id), slot)
+        except Exception as e:  # a remote poll never fails on this
+            util.log("slot_of %s: %r" % (ep_id, e))
+    if len(_slots) > 500:
+        _slots.clear()
+    _slots[ep_id] = slot
+    return slot
+
+
+def now_extra(ep_id):
+    """What a paired device needs to show the playing episode as its own:
+    {"slot", "cover", "banner"} (AniList's picture links, as stored)."""
+    slot = slot_of(ep_id)
+    if not slot:
+        return {}
+    out = {"slot": slot}
+    with database.db() as c:
+        r = c.execute("SELECT data FROM media WHERE id=?", (int(slot.split(":")[0]),)).fetchone()
+    try:
+        m = json.loads(r[0]) if r else {}
+    except ValueError:
+        m = {}
+    cover = (m.get("coverImage") or {}).get("extraLarge") if isinstance(m.get("coverImage"), dict) else None
+    for k, v in (("cover", cover), ("banner", m.get("bannerImage"))):
+        if isinstance(v, str) and v.startswith("https://"):
+            out[k] = v
+    return out
+
+
+def episode_for_slot(slot, online=False):
+    """The PC's side of "Play on the PC" from the app: its own episode for an
+    AniList slot. A file on disk first, then its online episode; an entry it
+    has neither of plays online (ani-cli links it on the way). online: the
+    online episode even when a file is there (a Sub/Dub pick)."""
+    if not isinstance(slot, str) or not SLOT_RE.match(slot):
+        return None
+    if online:
+        return "stream:" + slot
+    ids = slot_map().get(slot, [])
+    return next((i for i in ids if not i.startswith("stream:")), None) or (ids[0] if ids else "stream:" + slot)
+
+
+def pc_play(ep_id, from_start=False, mode=None):
+    """POST /api/peer {op: "play"}: start this phone's episode on the paired
+    PC, found there by its AniList slot. mode ("sub"/"dub"): online in that
+    language, as the menu's Play dubbed / Play subbed."""
+    p = peer()
+    if not p:
+        return {"error": "Not paired with a PC."}
+    slot = slot_of(ep_id) if isinstance(ep_id, str) else None
+    if not slot:
+        return {"error": "This show isn't matched to AniList, so the PC can't find it."}
+    _pc["at"] = 0.0
+    try:
+        got, _ = _call(p["address"], "/api/play", p["token"],
+                       {"slot": slot, "from_start": bool(from_start), **({"mode": mode} if mode else {})}, timeout=15)
+    except SyncError as e:
+        if "'id'" in str(e):  # a PC from before "slot"
+            return {"error": "Update Anime Hub on the PC to start episodes there from the app."}
+        return {"error": str(e)}
+    return got if isinstance(got, dict) else {"error": "The PC answered something odd."}
+
+
+def pc_now():
+    """GET /api/peer/now: what mpv plays on the paired PC, {"now": {...}} or
+    {"now": None}, and whether a PC is paired. Pages share one answer per second."""
+    p = peer()
+    if not p:
+        return {"now": None, "paired": False}
+    with _pc_lock:
+        if time.time() - _pc["at"] < 0.8:
+            return {"now": _pc["now"], "paired": True}
+        try:
+            got, _ = _call(p["address"], "/api/now", p["token"], timeout=PC_TIMEOUT)
+        except SyncError:
+            got = {}
+        now = ({k: got[k] for k in PC_NOW_KEYS if k in got}
+               if isinstance(got, dict) and got.get("playing") is True and isinstance(got.get("episode_id"), str) else None)
+        _pc.update(at=time.time(), now=now)
+        return {"now": now, "paired": True}
+
+
+def pc_control(action, value=None):
+    """POST /api/peer {op: "control"}: a remote button, handed to the PC's
+    /api/control. The PC's answer, or {"error": why}."""
+    p = peer()
+    if not p:
+        return {"error": "Not paired with a PC."}
+    _pc["at"] = 0.0  # the next poll asks the PC again
+    try:
+        got, _ = _call(p["address"], "/api/control", p["token"],
+                       {"action": action} if value is None else {"action": action, "value": value}, timeout=8)
+    except SyncError as e:
+        return {"error": str(e)}
+    return got if isinstance(got, dict) else {"error": "The PC answered something odd."}
 
 
 def soon(delay=SETTLE):
