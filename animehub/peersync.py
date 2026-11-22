@@ -817,7 +817,7 @@ def sync_once():
 # app's page is served by its own hub, so its hub asks the paired PC and hands
 # the remote's buttons on, with the token pairing gave it.
 
-PC_NOW_KEYS = ("show", "label", "percent", "episode_id", "loading", "next", "slot", "position", "duration",
+PC_NOW_KEYS = ("show", "label", "percent", "episode_id", "loading", "next", "slot", "cover", "banner", "position", "duration",
                "paused", "volume", "tracks", "speed", "sub_delay", "segments", "stop_after")
 PC_TIMEOUT = 4       # a poll: a PC that's gone answers "nothing" quickly
 _pc = {"at": 0.0, "now": None}
@@ -845,15 +845,64 @@ def slot_of(ep_id):
     return slot
 
 
-def pc_now():
-    """GET /api/peer/now: what mpv plays on the paired PC, {"now": {...}} or
-    {"now": None}. Pages share one answer per second."""
+def now_extra(ep_id):
+    """What a paired device needs to show the playing episode as its own:
+    {"slot", "cover", "banner"} (AniList's picture links, as stored)."""
+    slot = slot_of(ep_id)
+    if not slot:
+        return {}
+    out = {"slot": slot}
+    with database.db() as c:
+        r = c.execute("SELECT data FROM media WHERE id=?", (int(slot.split(":")[0]),)).fetchone()
+    try:
+        m = json.loads(r[0]) if r else {}
+    except ValueError:
+        m = {}
+    cover = (m.get("coverImage") or {}).get("extraLarge") if isinstance(m.get("coverImage"), dict) else None
+    for k, v in (("cover", cover), ("banner", m.get("bannerImage"))):
+        if isinstance(v, str) and v.startswith("https://"):
+            out[k] = v
+    return out
+
+
+def episode_for_slot(slot):
+    """The PC's side of "Play on the PC" from the app: its own episode for an
+    AniList slot. A file on disk first, then its online episode; an entry it
+    has neither of plays online (ani-cli links it on the way)."""
+    if not isinstance(slot, str) or not SLOT_RE.match(slot):
+        return None
+    ids = slot_map().get(slot, [])
+    return next((i for i in ids if not i.startswith("stream:")), None) or (ids[0] if ids else "stream:" + slot)
+
+
+def pc_play(ep_id, from_start=False):
+    """POST /api/peer {op: "play"}: start this phone's episode on the paired
+    PC, found there by its AniList slot."""
     p = peer()
     if not p:
-        return {"now": None}
+        return {"error": "Not paired with a PC."}
+    slot = slot_of(ep_id) if isinstance(ep_id, str) else None
+    if not slot:
+        return {"error": "This show isn't matched to AniList, so the PC can't find it."}
+    _pc["at"] = 0.0
+    try:
+        got, _ = _call(p["address"], "/api/play", p["token"], {"slot": slot, "from_start": bool(from_start)}, timeout=15)
+    except SyncError as e:
+        if "'id'" in str(e):  # a PC from before "slot"
+            return {"error": "Update Anime Hub on the PC to start episodes there from the app."}
+        return {"error": str(e)}
+    return got if isinstance(got, dict) else {"error": "The PC answered something odd."}
+
+
+def pc_now():
+    """GET /api/peer/now: what mpv plays on the paired PC, {"now": {...}} or
+    {"now": None}, and whether a PC is paired. Pages share one answer per second."""
+    p = peer()
+    if not p:
+        return {"now": None, "paired": False}
     with _pc_lock:
         if time.time() - _pc["at"] < 0.8:
-            return {"now": _pc["now"]}
+            return {"now": _pc["now"], "paired": True}
         try:
             got, _ = _call(p["address"], "/api/now", p["token"], timeout=PC_TIMEOUT)
         except SyncError:
@@ -861,7 +910,7 @@ def pc_now():
         now = ({k: got[k] for k in PC_NOW_KEYS if k in got}
                if isinstance(got, dict) and got.get("playing") is True and isinstance(got.get("episode_id"), str) else None)
         _pc.update(at=time.time(), now=now)
-        return {"now": now}
+        return {"now": now, "paired": True}
 
 
 def pc_control(action, value=None):

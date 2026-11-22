@@ -599,6 +599,11 @@ class Pairing(unittest.TestCase):
         self.addCleanup(self.unpair)
 
     @staticmethod
+    def forget_media():
+        with database.db() as c:
+            c.execute("DELETE FROM media WHERE id=21")
+
+    @staticmethod
     def unpair():
         with database.db() as c:
             c.execute("DELETE FROM sync_peer")
@@ -654,8 +659,9 @@ class Pairing(unittest.TestCase):
 
     def test_the_app_sees_and_steers_what_plays_on_the_pc(self):
         """TODO 263: the app's "playing on the PC" bar, through the real listener."""
-        self.assertEqual(peersync.pc_now(), {"now": None})  # not paired
+        self.assertEqual(peersync.pc_now(), {"now": None, "paired": False})
         self.assertEqual(peersync.pc_control("toggle"), {"error": "Not paired with a PC."})
+        self.assertEqual(peersync.pc_play("stream:21:3"), {"error": "Not paired with a PC."})
         code = remote.new_code()
         with patch.object(peersync, "soon", lambda *a: None):
             peersync.pair(self.addr, code)
@@ -663,21 +669,41 @@ class Pairing(unittest.TestCase):
             player._active.clear()
         self.addCleanup(player._active.clear)
         peersync._pc["at"] = 0.0
-        self.assertEqual(peersync.pc_now(), {"now": None})  # nothing plays
+        self.assertEqual(peersync.pc_now(), {"now": None, "paired": True})  # nothing plays
+        with database.db() as c:  # the PC knows the show: AniList's pictures go along
+            c.execute("INSERT OR REPLACE INTO media(id, data, ts) VALUES(21, ?, 0)", (json.dumps(
+                {"id": 21, "coverImage": {"extraLarge": "https://s4.anilist.co/c/21.jpg"}, "bannerImage": "javascript:x"}),))
+        self.addCleanup(self.forget_media)
         player._active["stream:21:3"] = {"proc": None, "ep_id": "stream:21:3", "show_title": "One Piece", "label": "E3",
                                          "percent": 40, "sock": "/nowhere", "position": 600.0, "duration": 1440.0}
         peersync._pc["at"] = 0.0
         now = peersync.pc_now()["now"]
         self.assertEqual((now["show"], now["label"], now["slot"], now["position"]), ("One Piece", "E3", "21:3", 600.0))
+        self.assertEqual(now["cover"], "https://s4.anilist.co/c/21.jpg")
+        self.assertNotIn("banner", now)  # only https links
         self.assertNotIn("vpn", now)  # only what the remote shows
         self.assertEqual(peersync.pc_control("stop_after", True), {"ok": True, "stop_after": True})
         self.assertTrue(player._active["stream:21:3"]["stop_after"])
         self.assertIn("must be true or false", peersync.pc_control("stop_after", "x")["error"])
+        # Play on the PC: the phone's episode, found on the PC by its slot.
+        started = []
+        with patch.object(player, "start_play", lambda eid, version=0, from_start=False: started.append((eid, from_start)) or {"ok": True}):
+            self.assertEqual(peersync.pc_play("stream:21:4", True), {"ok": True})
+            self.assertIn("isn't matched to AniList", peersync.pc_play("12345")["error"])
+        self.assertEqual(started, [("stream:21:4", True)])  # nothing of it on the PC: it plays online
         with database.db() as c:  # the PC went away: nothing plays, quickly
             c.execute("UPDATE sync_peer SET address='http://127.0.0.1:9'")
         peersync._pc["at"] = 0.0
-        self.assertEqual(peersync.pc_now(), {"now": None})
+        self.assertEqual(peersync.pc_now(), {"now": None, "paired": True})
         self.assertIn("Can't reach the PC", peersync.pc_control("toggle")["error"])
+
+    def test_the_pc_picks_its_file_before_its_online_episode(self):
+        with patch.object(peersync, "slot_map", lambda: {"21:3": ["stream:21:3", "f9"], "21:4": ["stream:21:4"]}):
+            self.assertEqual(peersync.episode_for_slot("21:3"), "f9")
+            self.assertEqual(peersync.episode_for_slot("21:4"), "stream:21:4")
+            self.assertEqual(peersync.episode_for_slot("21:5"), "stream:21:5")
+            for bad in ("21", "0:1", "a:1", None, "21:3:1"):
+                self.assertIsNone(peersync.episode_for_slot(bad))
 
     def test_pc_not_there(self):
         with database.db() as c:

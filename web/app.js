@@ -2926,7 +2926,7 @@ function cmShow(m, x, y) {
 /* A phone with a set Play button: every menu that starts an episode also
    offers the other place (Elias, 2026-11-10; Decision 71). "" elsewhere. */
 function cmOther(id) {
-  const pw = awayDevice() && !S.settings?.android ? playWhere() : null; // no PC to offer in the Android app
+  const pw = awayDevice() && (!S.settings?.android || S.pcPaired) ? playWhere() : null; // the Android app: once paired with a PC (TODO 263)
   if (!pw) return "";
   const to = pw === "phone" ? "pc" : "phone";
   return cmRow("playon", id, to === "pc" ? "tv" : "phone", to === "pc" ? "Play on the PC" : "Play on this phone", "", "", `data-where="${to}"`);
@@ -4012,11 +4012,11 @@ window.addEventListener("keydown", (e) => {
 function playerGroup(s) {
   const m = s.mpv || {}, hub = m.design === "on";
   const w = playWhere();
-  const here = awayDevice() && !S.settings?.android ? `<div class="group"><h3>On this phone</h3>${srow("Play button", "Where episodes play when you tap Play here. Online ones come through the PC.", pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
+  const here = awayDevice() && (!S.settings?.android || S.pcPaired) ? `<div class="group"><h3>On this phone</h3>${srow("Play button", `Where episodes play when you tap Play here.${s.android ? "" : " Online ones come through the PC."}`, pick("Play button", "playwhere", null, [["", "Ask"], ["phone", "This phone"], ["pc", "The PC"]], w || ""))}</div>` : "";
   const rc = `<div class="group"><h3>Before a new season</h3>
     ${srow("Season reminder", "When you start a new season, see how the last one ended: its last episode, recaps and characters.", onoff("recap_ask", "Season reminder", s.recap_ask !== false))}
     ${srow("Remind me after", "Only if you finished the last season at least this long ago.", pick("Remind me after", "spref", "recap_after", [["1", "1 month"], ["2", "2 months"], ["3", "3 months"], ["6", "6 months"], ["12", "1 year"]], s.recap_after || "2", { off: s.recap_ask === false }))}</div>`;
-  if (s.android) return rc; // the Android app has no mpv (Decision 88)
+  if (s.android) return here + rc; // the Android app has no mpv (Decision 88); paired, Play may start on the PC (TODO 263)
   return `${here}<div class="group"><h3>When an episode starts</h3><p class="sub">Your mpv.conf always loads. A choice here wins over it; My config leaves it to your file.</p>
     ${srow("Fullscreen", "Start every episode in fullscreen.", mpvSeg(m, "fullscreen", "Fullscreen"))}
     ${srow("Starting volume", "Where I left it: the volume the last episode ended on.", mpick(m, "start_volume", "Starting volume", [["own", "My config"], ["last", "Where I left it"], ["25", "25"], ["50", "50"], ["75", "75"], ["100", "100"]]))}</div>
@@ -5458,7 +5458,11 @@ function rmtCtx(now) {
   if (!onPC(now)) { const c = findEpContext(now.episode_id); return { ctx: c, s: c?.s }; }
   const m = /^([1-9][0-9]*):([1-9][0-9]*)$/.exec(now.slot || ""), aid = m ? +m[1] : 0;
   const ctx = m ? findEpContext(`stream:${m[1]}:${m[2]}`) : null;
-  return { ctx, s: ctx?.s || (aid ? allShows().find((x) => x.meta?.anilist_id === aid || x.seasons.some((sea) => sea.media_id === aid)) : null) };
+  /* No slot (a PC from before it): the same title here. Not here at all: AniList's pictures the PC sent. */
+  const s = ctx?.s || (aid ? allShows().find((x) => x.meta?.anilist_id === aid || x.seasons.some((sea) => sea.media_id === aid)) : null)
+    || (!aid && now.show ? allShows().find((x) => x.title === now.show) : null)
+    || (now.cover || now.banner ? { id: "", title: now.show, poster: now.cover || null, banner: now.banner || null, meta: aid ? { anilist_id: aid } : {}, seasons: [] } : null);
+  return { ctx, s };
 }
 let pcBusy = false;
 async function pcPoll() {
@@ -5467,11 +5471,12 @@ async function pcPoll() {
   try {
     const r = await api("/api/peer/now");
     S.pcNow = r?.now || null;
+    if (!!r?.paired !== !!S.pcPaired) { S.pcPaired = !!r?.paired; if (S.view === "settings") render(true); } // Play on the PC is offered once paired
     if (!S.data?.now) { if (S.pcNow) liveFrom({ ...S.pcNow, playing: true }); else S.live = null; }
     paintRemote();
   } catch {} finally { pcBusy = false; }
 }
-function rmtEpisodes(ctx, nowId) {
+function rmtEpisodes(ctx, nowId, pc) {
   if (!ctx) return "";
   const { s, sea } = ctx, eps = [...sea.episodes].sort((x, y) => x.number - y.number);
   const at = Math.max(0, eps.findIndex((e) => e.id === nowId));
@@ -5479,7 +5484,7 @@ function rmtEpisodes(ctx, nowId) {
     const rt = epThumbOf(sea.thumbs, ep), art = rt || s.poster || s.banner, cur = ep.id === nowId;
     const online = String(ep.id).startsWith("stream:"), mins = minsOf(ep.duration || ep.length);
     const meta = cur ? "playing now" : `${mins ? mins + " min · " : ""}${online ? "online" : "disk"}`;
-    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : "", rt && !cur && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : "playep", v: ep.id, i,
+    return tileHTML({ cls: ["ep", cur ? "resume" : "", ep.watched && !cur ? "watched" : "", rt && !cur && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" "), a: cur ? "rmtclose" : pc ? "pcplay" : "playep", v: ep.id, i,
       art, pos: rt ? "50% 50%" : "50% 22%", num: "E" + String(ep.number).padStart(2, "0"), watched: ep.watched && !cur, title: (cur ? epTitle(s, sea, ep) : epName(s, sea, ep)) || "Episode " + ep.number, meta, menu: "" })
       .replace(/<button class="dots"[\s\S]*?<\/button>/, "");
   }).join("");
@@ -5527,7 +5532,7 @@ function paintRemote() {
         <div class="rskip">${skip("rsk")}</div>
         <div class="rmore"><button class="btn" data-a="rmt" data-v="stop">${ico("stop")}Stop</button><button class="btn" data-a="rmt" data-v="next" ${hasNext && !now.loading ? "" : "disabled"}>${ico("next")}Next episode</button></div>
         <div class="rlist">${rows}</div>
-        ${onPC(now) ? "" /* a tap would play on this phone */ : rmtEpisodes(ctx, now.episode_id)}
+        ${rmtEpisodes(ctx, onPC(now) ? ctx?.ep.id : now.episode_id, onPC(now))}
       </div>`;
     const barIn = `${thumb}<div class="rt"><b>${esc(s?.title || now.show)}</b><span><i class="led"></i>${now.loading ? "starting on the PC…" : esc(epNo)}<span class="rbt"></span></span></div>${skip("rbskip")}${pp("rp")}<i class="rprog"><i></i></i>`;
     /* Patch in place: rebuilding the bar or the page would replay their entrance. */
@@ -6870,7 +6875,7 @@ function accentHex(show) {
    reports a fine pointer, which read it as a PC (Elias, 2026-11-10). A touch
    laptop's main pointer is its mouse or trackpad, so it stays a PC. */
 const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && matchMedia("(hover:none)").matches);
-const playWhere = () => { if (S.settings?.android) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app has no PC (Decision 88)
+const playWhere = () => { if (S.settings?.android && !S.pcPaired) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app: a PC only once paired (Decision 88, TODO 263)
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
 /* Pairing the app with a PC (Decision 98): what the first sync does. Two
    choices like the Library's filter sheet (tap one, a tick), then Pair. */
@@ -6883,7 +6888,7 @@ function PeerDlg() {
     <div class="pkfoot"><button class="btn pri" data-a="peertake">Pair</button></div></div>`;
 }
 function WhereDlg() {
-  return dlHead("Play where?") + dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`)
+  return dlHead("Play where?") + (S.settings?.android ? "" : dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`))
     + dlFoot(setLink("player", "", "Player"), '<button class="btn" data-a="wherego" data-v="pc">On the PC</button><button class="btn pri" data-a="wherego" data-v="phone">On this phone</button>');
 }
 /* Remember the season before (TODO 133, Decision 85): Play on the first
@@ -7393,6 +7398,7 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
       return phonePlay(id, version, fromStart, mode, skipOk);
     }
   }
+  if (S.settings?.android) return pcPlay(id, fromStart); // the app's "On the PC" (TODO 263)
   if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk, where) });
   if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
   if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
@@ -7410,6 +7416,17 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   S.playBusy = false;
   if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
   pollSoon(600);
+}
+/* The Android app starts an episode on its paired PC: the app's hub finds it
+   there by its AniList slot (TODO 263). The PC plays it its own way (its
+   Sub/Dub, VPN and skip settings); the bar for it shows within a second or two. */
+async function pcPlay(id, fromStart) {
+  const ctx = findEpContext(id);
+  toast(`Starting ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"} on the PC…`, "busy");
+  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart }).catch(() => ({ error: "Could not reach the PC." }));
+  if (r.error) toast(r.error, "err");
+  else toast("Playing on the PC");
+  pollSoon(300);
 }
 /* Queue ani-cli downloads; they land in the library folder as ordinary files. */
 async function download(mid, eps, asked) {
@@ -7652,6 +7669,7 @@ const A = {
   playmode: (v, t) => play(v, 0, t.dataset.m),
   playstart: (v) => play(v, 0, undefined, false, true),
   playon: (v, t) => play(v, 0, undefined, false, undefined, undefined, t.dataset.where),
+  pcplay: (v) => play(v, 0, undefined, false, undefined, undefined, "pc"), // the remote's episodes, app on the PC (TODO 263)
   unavail: (v, t, e) => (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey) ? selToggle(v, e?.shiftKey) : toast(S.data.stream_ready ? "This episode isn't available to watch online." : "Install ani-cli to watch this online."),
   dlep: (v) => { const [, mid, ep] = v.split(":"); download(+mid, [ep]); },
   dlmany: (v, t) => download(+v, JSON.parse(t.dataset.eps || "[]")),
