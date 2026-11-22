@@ -1310,6 +1310,11 @@ class ContextMenuPolish(unittest.TestCase):
         # Very subtle: no icon spins or tilts, no accent fill on the primary highlight
         self.assertNotIn(".cm-i-close{transform:rotate", CSS)
         self.assertNotIn("#cm .cmhl.pri{", CSS)
+        # No bare .warn callout rule leaking a curved border-left onto #cm .cmhl.warn
+        self.assertNotRegex(CSS, r"(?m)^\.warn\{")
+        # Caution hover applies consistently to state-clearing/unpinning rows too
+        self.assertIn('data-w="${!ep.watched}" data-warn="1"', APP)
+        self.assertIn('p.pinned ? \'data-warn="1"\' : ""', APP)
 
 
 class ScrollbarPolish(unittest.TestCase):

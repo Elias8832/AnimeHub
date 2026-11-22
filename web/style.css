@@ -396,7 +396,6 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 .meta .live-t{display:inline-flex;align-items:center;gap:8px;margin-left:6px;color:var(--warn);font-weight:600;font-size:13px}.meta .live-t:empty{display:none}
 .meta .live-t:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--warn);animation:livePulse 1.8s ease-out infinite}
 .cta{display:flex;gap:16px;align-items:center;margin-top:24px;flex-wrap:wrap}
-.warn{color:var(--warn);font-size:14px;border-left:2px solid var(--warn);padding-left:12px;max-width:300px}
 .body{display:grid;grid-template-columns:1fr 340px;gap:44px;margin-top:48px;padding-bottom:90px;align-items:start}
 .eps-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}.eps-head h2{font-size:26px;font-weight:700;letter-spacing:-.022em}
 .ctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -4439,6 +4438,8 @@ body.pp-open #modal{z-index:70}
   #cm .cmhl.press{transform:translateY(var(--hl-y,0px)) scale(.986);background:rgba(255,255,255,.16);transition-duration:.07s}
   #cm .cmhl.warn{background:rgba(255,196,107,.10);box-shadow:inset 0 0 0 1px rgba(255,196,107,.16)}
   #cm .cmhl.danger{background:rgba(239,138,143,.16);box-shadow:inset 0 0 0 1px rgba(239,138,143,.24)}
+  #cm .cmhl.warn.press{background:rgba(255,196,107,.17)}
+  #cm .cmhl.danger.press{background:rgba(239,138,143,.24)}
   /* Very subtle: a 1px nudge in the icon's own direction, no spins or tilts */
   #cm .mi.sel .cm-i-play{transform:translateX(1px)}
   #cm .mi.sel .cm-i-arrowr{transform:translateX(1.5px)}

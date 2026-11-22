@@ -1703,7 +1703,7 @@ function plBoxMenu(id, x, y, home, open = false, targetEl = null) {
   const m = $("#cm");
   const ey = [plCount(p.items.length), p.pinned ? "on Home" : ""].filter(Boolean).join(" · ");
   const head = cmHead({ eyebrow: ey, title: p.name, fact: p.note || "", kind: "pl", icon: p.icon && LUCIDE[p.icon] ? lu(p.icon) : ico("list") });
-  const rows = `${open ? "" : cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open", "↵")}${cmRow("pledit", p.id, "edit", "Edit", "E")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home", "P")}<div class="sep danger-sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "Del", "", 'data-danger="1"')}`;
+  const rows = `${open ? "" : cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open", "↵")}${cmRow("pledit", p.id, "edit", "Edit", "E")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home", "P", "", p.pinned ? 'data-warn="1"' : "")}<div class="sep danger-sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "Del", "", 'data-danger="1"')}`;
   m.innerHTML = cmWrap(head, rows);
   cmShow(m, x, y, targetEl, hexAccent(p.color) || "");
 }
@@ -3234,7 +3234,7 @@ function cmItems({ id, ep, files, verId, online, onlineId, other, local, dl, fix
   if (files.length > 1) files.forEach((fl, i) => rows.push(cmRow("playep", verId, "play", `Play ${esc(fl.label)}`, "", "", `data-ver="${i}"`)));
   if (local && online) rows.push(cmRow("playep", onlineId, "radio", "Play online", "O"));
   if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${other === "dub" ? "dubbed" : "subbed"}`, "A", "", `data-m="${other}"`));
-  const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}"`)];
+  const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}" data-warn="1"`)];
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
   if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
   const end = [];
