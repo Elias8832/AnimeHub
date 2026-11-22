@@ -271,7 +271,7 @@ class PhonePolish(unittest.TestCase):
 
     def test_home_new_episodes_in_continue_watching(self):
         # like the PC: episodes that are out sit first in Continue watching, This week only counts down (TODO 236)
-        self.assertIn("const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(x.s.id)).map(contStill)];", APP)
+        self.assertIn("const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(showKey(x.s))).map(contStill)];", APP)  # one tile per show, disk or online (TODO 265)
         self.assertIn('<span class="newtag">${behind} new</span><em>E${n}</em>', APP)
         self.assertIn("!out.some((x) => x.e.id === e.id && airAt(e, now) <= now)", APP)
         self.assertIn(".cc-art .newtag{position:absolute", CSS)
