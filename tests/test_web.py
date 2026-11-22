@@ -729,7 +729,7 @@ class Polish(unittest.TestCase):
 
     def test_android_settings_have_no_pc_parts(self):
         """Decision 88: no mpv, library folder, desktop updates or tools on Android."""
-        self.assertIn("if (s.android) return rc; // the Android app has no mpv", APP)
+        self.assertIn("if (s.android) return here + rc; // the Android app has no mpv", APP)  # here: Play button, once paired (TODO 263)
         self.assertIn('${s.android ? "" : `<div class="group"><h3>Subtitle look</h3>', APP)
         self.assertIn('${s.android ? "" : srow("Mark them on the seek bar"', APP)
         self.assertIn('if (s.android) return `<div class="group"><h3>Termux</h3>', APP)

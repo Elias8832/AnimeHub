@@ -576,14 +576,16 @@ class PlayOnTheOtherSide(unittest.TestCase):
     def test_the_menu_offers_the_other_place(self):
         i = APP.index("function cmOther(")
         body = APP[i:APP.index("\n}\n", i)]
-        self.assertIn("awayDevice() && !S.settings?.android ? playWhere() : null", body)  # no PC in the Android app
+        self.assertIn("awayDevice() && (!S.settings?.android || S.pcPaired) ? playWhere() : null", body)  # the Android app: once paired (TODO 263)
         self.assertIn('to === "pc" ? "Play on the PC" : "Play on this phone"', body)
         self.assertIn('`data-where="${to}"`', body)
 
-    def test_the_android_app_always_plays_here(self):
-        # Decision 88: no PC to ask about, and no Play button choice in Settings.
-        self.assertIn('const playWhere = () => { if (S.settings?.android) return "phone";', APP)
-        self.assertIn("const here = awayDevice() && !S.settings?.android ? ", APP)
+    def test_the_android_app_plays_here_until_paired(self):
+        # Decision 88: no PC to ask about and no Play button choice in Settings,
+        # until the app is paired with one (TODO 263, Decision 104): then as in the browser.
+        self.assertIn('const playWhere = () => { if (S.settings?.android && !S.pcPaired) return "phone";', APP)
+        self.assertIn("const here = awayDevice() && (!S.settings?.android || S.pcPaired) ? ", APP)
+        self.assertIn('if (S.settings?.android) return pcPlay(id, fromStart);', APP)  # "On the PC" goes through the app's hub
 
     def test_every_place_an_episode_starts(self):
         # Episode menus, Home's Continue watching, and every other Play button.
