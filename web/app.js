@@ -534,6 +534,13 @@ function hexAccent(hex) {
   const h = (mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
   return `hsl(${Math.round(h)} 72% 70%)`;
 }
+function sbarMetrics(scrollH, clientH, top, trackH, minH = 36) {
+  const max = scrollH - clientH;
+  if (max <= 1 || trackH <= 0) return { show: false, h: 0, y: 0 };
+  const h = Math.min(trackH, Math.max(minH, Math.round((clientH / scrollH) * trackH)));
+  const y = Math.round((Math.max(0, Math.min(max, top)) / max) * (trackH - h));
+  return { show: true, h, y };
+}
 /* @pure:end */
 
 /* @lists:start */
@@ -9079,7 +9086,7 @@ function applyFonts() {
   st.textContent = css;
   lsSet("fontCss", ui || display ? { ui, display, css } : null);
 }
-function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; }
+function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; sbQueue(false); }
 function zoomSet(z) { lsSet("hubZoom", z); applyZoom(); const el = $("#zoomval"); if (el) el.textContent = z + "%"; }
 if (SHELL) {
   /* Browser zoom stays suppressed; it does not drive the setting. */
@@ -9202,7 +9209,82 @@ function paintTop() {
   if (!el) { el = document.createElement("button"); el.id = "totop"; el.dataset.a = "totop"; el.setAttribute("aria-label", "Back to top"); el.innerHTML = ico("up"); document.body.append(el); }
   el.classList.toggle("on", S.view === "library" && scrollY > 500);
 }
-addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); }, { passive: true }); // the dock keeps its size while you scroll (Elias, TODO 236)
+addEventListener("scroll", () => { document.body.classList.toggle("sc", scrollY > 8); document.body.classList.toggle("sc2", scrollY > 84); paintTop(); artDim(); sbQueue(true); }, { passive: true }); // the dock keeps its size while you scroll (Elias, TODO 236)
+/* Floating desktop overlay scrollbar (#sbar): native html scrolling stays intact,
+   while the opaque browser gutter is hidden on fine pointers so #canvas, #nav and
+   #status reach the edge cleanly. */
+function paintSbar(flash) {
+  const bar = $("#sbar"), th = bar?.firstElementChild;
+  if (!bar || !th) return;
+  const trackH = bar.clientHeight;
+  if (!trackH) return; // hidden on touch / coarse pointers (display:none)
+  const de = document.documentElement;
+  const m = sbarMetrics(de.scrollHeight, de.clientHeight, de.scrollTop, trackH);
+  bar.classList.toggle("none", !m.show);
+  if (!m.show) { bar.classList.remove("on"); return; }
+  th.style.height = m.h + "px";
+  th.style.transform = `translate3d(0,${m.y}px,0)`;
+  if (flash) {
+    bar.classList.add("on");
+    clearTimeout(paintSbar.t);
+    paintSbar.t = setTimeout(() => bar.classList.remove("on"), 1000);
+  }
+}
+function sbQueue(flash) {
+  if (flash) sbQueue.fl = true;
+  if (sbQueue.f) return;
+  sbQueue.f = requestAnimationFrame(() => {
+    const fl = !!sbQueue.fl;
+    sbQueue.f = 0; sbQueue.fl = false;
+    paintSbar(fl);
+  });
+}
+(() => {
+  const bar = $("#sbar"), th = bar?.firstElementChild;
+  if (!bar || !th) return;
+  let drag = null;
+  const end = () => {
+    if (!drag) return;
+    drag = null;
+    bar.classList.remove("drag");
+    document.body.classList.remove("sb-drag");
+  };
+  bar.addEventListener("pointerenter", () => sbQueue(false), { passive: true });
+  bar.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    paintSbar(false);
+    const de = document.documentElement, max = de.scrollHeight - de.clientHeight;
+    if (max <= 1) return;
+    const br = bar.getBoundingClientRect(), tr = th.getBoundingClientRect(), travel = br.height - tr.height;
+    if (travel <= 0) return;
+    if (e.target !== th) {
+      const r = Math.max(0, Math.min(1, (e.clientY - br.top - tr.height / 2) / travel));
+      de.scrollTop = r * max;
+    }
+    drag = { id: e.pointerId, y0: e.clientY, s0: de.scrollTop, travel, max };
+    bar.classList.add("drag");
+    document.body.classList.add("sb-drag");
+    try { bar.setPointerCapture(e.pointerId); } catch {}
+    paintSbar(true);
+    e.preventDefault();
+  });
+  bar.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = e.clientY - drag.y0;
+    document.documentElement.scrollTop = Math.max(0, Math.min(drag.max, drag.s0 + (dy / drag.travel) * drag.max));
+    paintSbar(true);
+  });
+  bar.addEventListener("pointerup", (e) => { if (drag && e.pointerId === drag.id) end(); });
+  bar.addEventListener("pointercancel", (e) => { if (drag && e.pointerId === drag.id) end(); });
+  bar.addEventListener("lostpointercapture", end);
+  addEventListener("resize", () => sbQueue(false), { passive: true });
+  if ("ResizeObserver" in window) {
+    const ro = new ResizeObserver(() => sbQueue(false));
+    ro.observe(document.body);
+    ro.observe(bar);
+  }
+  sbQueue(false);
+})();
 /* The show page's art fades into the dark as you scroll (Decision 67): --sd
    on the wash layer alone, once per frame. */
 function artDim() {
