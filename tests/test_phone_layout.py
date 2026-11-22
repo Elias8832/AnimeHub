@@ -193,7 +193,7 @@ class ShowPagePhone(unittest.TestCase):
         self.assertIn('body.classList.toggle("cm-open", isPhone() && $("#cm").style.display === "block")', APP)
         self.assertIn("body.cm-open{overflow:hidden}", CSS)
         self.assertIn('e.pointerType !== "touch" && e.target.closest?.("#cm .mi")', APP)
-        self.assertIn('if (ddPtr !== "touch") m.querySelector(".mi")?.classList.add("sel")', APP)
+        self.assertIn('if (ddPtr !== "touch" && kb) m.querySelector(".mi")?.classList.add("sel")', APP)  # a finger never; a mouse only after it moves
         self.assertNotIn("#cm .mi:hover:not(:disabled),", CSS)  # :hover only under (hover:hover)
         self.assertIn("@media (hover:hover){#cm .mi:hover:not(:disabled){background:var(--pick)}}", CSS)
         # a tap lights its row at once (:active came late or not at all before the sheet closed)

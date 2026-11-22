@@ -328,7 +328,7 @@ test("the add menu ticks the playlists a show is on and counts them", () => {
   assert.equal(r.foot, "on 1 playlist");
   assert.doesNotMatch(r.rows, /plmake/);
   assert.match(plMenuRows(all, "aid:7", "", 2).rows, /Added · /);
-  assert.equal(plMenuRows(all, "aid:9", "", null).foot, "on no playlist yet");
+  assert.equal(plMenuRows(all, "aid:9", "", null).foot, "Not on a playlist");
 });
 
 test("typing filters the playlists and offers to make one by that name", () => {

@@ -731,7 +731,7 @@ function newEps(skipId, now) {
 function newCard({ e, behind }, k) {
   const n = (e.progress || 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
   const art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster;
-  return `<div class="hc hcnew" style="--i:${k}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-a="${s ? "open" : "entry"}" data-v="${esc(s ? s.id : e.id)}" tabindex="0">
+  return `<div class="hc hcnew" style="--i:${k}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-a="${s ? "open" : "entry"}" data-v="${esc(s ? s.id : e.id)}"${s ? ` data-cw="${esc(s.id)}"${ep ? ` data-cwep="${esc(ep.id)}"` : ""}` : ""} tabindex="0">
     <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:50% 30%"></span>` : ""}
     <span class="newtag">${behind} new</span><span class="enum">E${n}</span>${ep ? `<span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="Play">${ico("play")}</span>` : ""}</div>
     <h3>${esc(e.title)}</h3><small>${ep ? (streamEp(ep) ? "online" : "disk") : ""}</small></div>`;
@@ -1459,7 +1459,7 @@ function plMenuRows(all, ref, q, just) {
   if (ql && !all.some((p) => p.name.trim().toLowerCase() === ql)) rows.push(`<button class="mi plmk" data-a="plmake"><span class="plmt">${ico("plus")}</span><span class="ml">Make “${esc(q.trim())}” and add</span><kbd class="kb">↵</kbd></button>`);
   const on = all.filter((p) => plHolds(p, ref)).length;
   const note = !all.length && !ql ? "No playlists yet. Type a name to make one." : "";
-  return { rows: rows.join(""), note, foot: on ? `on ${on} playlist${on === 1 ? "" : "s"}` : all.length ? "on no playlist yet" : "" };
+  return { rows: rows.join(""), note, foot: on ? `on ${on} playlist${on === 1 ? "" : "s"}` : all.length ? "Not on a playlist" : "" };
 }
 /* @pl:end */
 function plWall() {
@@ -1624,77 +1624,141 @@ async function plDragEnd(keep) {
 /* The add menu, in the episode-menu box (mockup A, 2026-11-09): the show's
    poster and name on top, a box that finds a playlist or makes one, a tick
    per playlist. It stays open, so one show goes on several lists in one go. */
-function plMenu(item, x, y) {
+/* Roll the Add-to-playlist footer count cleanly (out + in) like a real odometer. */
+function cmRollFoot(f, foot, cnt, roll) {
+  if (!f) return;
+  const prevEl = f.querySelector(".plmcnt"), prevCnt = prevEl ? +(prevEl.dataset.c ?? -1) : -1, prevTxt = prevEl?.textContent || "";
+  if (roll && !reduceMotion() && prevCnt >= 0 && cnt !== prevCnt && prevTxt !== foot) {
+    const dir = cnt > prevCnt ? "up" : "dn";
+    f.innerHTML = `<span class="plmcnt-w"><span class="plmcnt out roll-${dir}" aria-hidden="true">${esc(prevTxt)}</span><span class="plmcnt in roll-${dir}" data-c="${cnt}">${esc(foot)}</span></span>`;
+    return;
+  }
+  f.innerHTML = `<span class="plmcnt" data-c="${cnt}">${esc(foot)}</span>`;
+}
+function plMenu(item, x, y, targetEl = null, exactPos = false, from = null) {
   S.plItem = item; S.plMq = ""; S.plJust = null;
   const m = $("#cm");
   m.innerHTML = `<div class="plmh">${item.poster ? `<img src="${esc(pic(item.poster))}" alt="">` : `<span class="plmph">${ico("list")}</span>`}<div><small>Add to playlist</small><b>${esc(item.title)}</b></div></div>
   <label class="plmq">${ico("search")}<input id="plmq" type="text" autocomplete="off" spellcheck="false" maxlength="60" placeholder="${(S.data.playlists || []).length ? "Find or make a playlist" : "Name a new playlist"}" aria-label="Find or make a playlist"></label>
-  <div class="plml" id="plml" role="menu"></div><div class="plmf" id="plmf"></div>`;
-  plMenuPaint();
-  cmShow(m, x, y);
+  <div class="plml" id="plml" role="menu"><span class="cmhl" aria-hidden="true"></span><div class="plml-in" id="plml-in"></div></div><div class="plmf" id="plmf"></div>`;
+  plMenuPaint(false, true);
+  cmShow(m, x, y, targetEl, cmAccent(item.color), exactPos, from);
   m.querySelector(".mi.sel")?.classList.remove("sel"); // nothing looks picked before a key or the mouse says so
-  $("#plmq").addEventListener("input", (e) => { S.plMq = e.target.value; plMenuPaint(); });
+  $("#plmq").addEventListener("input", (e) => { S.plMq = e.target.value; plMenuPaint(false); });
   if (!mq("(pointer:coarse)")) $("#plmq").focus({ preventScroll: true });
 }
 const plPicking = () => $("#cm").style.display === "block" && !!$("#cm .plmh");
-/* Repaint the rows in place (the typed box keeps its focus); while typing,
-   the first row is the one Enter takes. */
-function plMenuPaint() {
-  const it = S.plItem, l = $("#plml"), f = $("#plmf");
-  if (!it || !l) return;
-  const keep = l.querySelector(".mi.sel")?.dataset.v, r = plMenuRows(S.data.playlists || [], it.ref, S.plMq || "", S.plJust);
-  l.innerHTML = r.rows + (r.note ? `<div class="plme">${r.note}</div>` : "");
-  f.innerHTML = `<span>${r.foot}</span><span class="plmk2">${mq("(pointer:coarse)") ? "" : "↑↓ ↵ toggles · esc"}</span>`;
-  const sel = (S.plMq || "").trim() ? l.querySelector(".mi") : keep && l.querySelector(`.mi[data-v="${keep}"]`);
-  sel?.classList.add("sel");
+/* Update one toggled playlist row in place so the SVG tick draws/undraws cleanly,
+   the gliding highlight never flickers, and scrollTop stays put. */
+function plMenuPatchRow(pid) {
+  const it = S.plItem, l = $("#plml"), f = $("#plmf"), p = (S.data.playlists || []).find((x) => x.id === +pid);
+  const btn = l?.querySelector(`.mi.plmi[data-v="${pid}"]`);
+  if (!it || !l || !p || !btn) { plMenuPaint(true); return; }
+  const on = plHolds(p, it.ref), now = on && S.plJust === p.id;
+  btn.classList.toggle("on", on);
+  btn.classList.toggle("just", now);
+  btn.setAttribute("aria-checked", String(on));
+  const sm = btn.querySelector(".ml small");
+  if (sm) sm.innerHTML = `${now ? "<i>Added · </i>" : ""}${plCount(p.items.length)}`;
+  const all = S.data.playlists || [], cnt = all.filter((x) => plHolds(x, it.ref)).length;
+  const foot = cnt ? `on ${cnt} playlist${cnt === 1 ? "" : "s"}` : all.length ? "Not on a playlist" : "";
+  cmRollFoot(f, foot, cnt, true);
+  if (btn.classList.contains("sel")) cmMoveHl(btn);
+}
+/* Repaint the rows in place (the typed box keeps its focus and .cmhl persists
+   so filtering glides smoothly without flashing); while typing, Enter takes row 1. */
+function plMenuPaint(roll = true, first = false) {
+  const it = S.plItem, l = $("#plml"), inn = $("#plml-in"), f = $("#plmf");
+  if (!it || !l || !inn) return;
+  const keep = l.querySelector(".mi.sel")?.dataset.v, sc = l.scrollTop, m = $("#cm"), h0 = first ? 0 : m.offsetHeight;
+  const r = plMenuRows(S.data.playlists || [], it.ref, S.plMq || "", S.plJust);
+  const cnt = (S.data.playlists || []).filter((x) => plHolds(x, it.ref)).length;
+  l.classList.toggle("pl-live", !first);
+  inn.innerHTML = r.rows + (r.note ? `<div class="plme">${r.note}</div>` : "");
+  inn.querySelectorAll(".mi").forEach((x, i) => { x.id = "cmi-" + i; });
+  l.scrollTop = sc;
+  /* Filtering resizes the box smoothly instead of in one frame (taste: one shape through the sizes in between). */
+  const h1 = h0 && m.offsetHeight;
+  if (h0 && h1 !== h0 && !isPhone() && !reduceMotion()) {
+    cmMenuGrow.a?.cancel();
+    const a = cmMenuGrow.a = m.animate([{ height: h0 + "px" }, { height: h1 + "px" }], { duration: 170, easing: "cubic-bezier(.22,1,.36,1)" });
+    m.style.overflow = "hidden"; a.onfinish = a.oncancel = () => { if (cmMenuGrow.a === a) m.style.overflow = ""; };
+  }
+  cmRollFoot(f, r.foot, cnt, roll);
+  const sel = (S.plMq || "").trim() ? inn.querySelector(".mi") : keep && inn.querySelector(`.mi[data-v="${keep}"]`);
+  if (sel) { sel.classList.add("sel"); cmMoveHl(sel); $("#cm")?.setAttribute("aria-activedescendant", sel.id); }
+  else { cmClearHl(); $("#cm")?.removeAttribute("aria-activedescendant"); }
 }
 /* Right-click on a playlist box: open, edit, pin, delete. */
-function plBoxMenu(id, x, y, home, open = false) {
+function plBoxMenu(id, x, y, home, open = false, targetEl = null) {
   const p = plById(id);
   if (!p) return;
   const m = $("#cm");
-  m.innerHTML = `<div class="cap plcapm" style="--plc:${esc(plColor(p))}">${plIcon(p)}${esc(p.name)}</div>${open ? "" : cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open")}${cmRow("pledit", p.id, "edit", "Edit")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home")}<div class="sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "", "", 'data-danger="1"')}`;
-  cmShow(m, x, y);
+  const ey = [plCount(p.items.length), p.pinned ? "on Home" : ""].filter(Boolean).join(" · ");
+  const head = cmHead({ eyebrow: ey, title: p.name, fact: p.note || "", kind: "pl", icon: p.icon && LUCIDE[p.icon] ? lu(p.icon) : ico("list") });
+  const rows = `${open ? "" : cmRow(home ? "plgoto" : "plgo", p.id, "arrowr", "Open", "↵")}${cmRow("pledit", p.id, "edit", "Edit", "E")}${cmRow("plpin", p.id, "pin", p.pinned ? "Take off Home" : "Pin to Home", "P")}<div class="sep danger-sep"></div>${cmRow("pldelete", p.id, "trash", "Delete", "Del", "", 'data-danger="1"')}`;
+  m.innerHTML = cmWrap(head, rows);
+  cmShow(m, x, y, targetEl, hexAccent(p.color) || "");
 }
 /* Layout (Elias, 2026-11-11): each playlist picks its top and how its shows
    look; the page changes behind the menu, which stays open. */
-function plLayoutMenu(x, y) {
+function plLayoutMenu(x, y, targetEl = null) {
   const p = plCurrent();
   if (!p) return;
-  const seg = (key, opts) => `<div class="plseg" role="radiogroup">${opts.map(([v, l, ic]) => `<button class="${p[key] === v ? "on" : ""}" data-a="plset" data-v="${key}:${v}" role="radio" aria-checked="${p[key] === v}">${ico(ic)}${l}</button>`).join("")}</div>`;
+  const seg = (key, opts) => {
+    const idx = Math.max(0, opts.findIndex(([v]) => p[key] === v));
+    return `<div class="plseg" role="radiogroup" style="--si:${idx}"><i class="plseg-gl" aria-hidden="true"></i>${opts.map(([v, l, ic]) => `<button class="${p[key] === v ? "on" : ""}" data-a="plset" data-v="${key}:${v}" role="radio" aria-checked="${p[key] === v}">${ico(ic)}${l}</button>`).join("")}</div>`;
+  };
   const m = $("#cm");
-  m.innerHTML = `<div class="pllay" style="--plc:${esc(plColor(p))}"><div class="cap">Layout of ${esc(p.name)}</div>${isPhone() ? "" : `<small>Top</small>${seg("head", [["banner", "Banner", "banner"], ["cover", "Cover", "cover"]])}`}<small>Shows</small>${seg("view", [["list", "List", "list"], ["posters", "Posters", "grid"]])}
-    <button class="pltog" data-a="plset" data-v="dim" role="switch" aria-checked="${!!p.dim}"><span>Grey out finished shows</span><i class="switch" aria-checked="${!!p.dim}"></i></button></div>`;
-  cmShow(m, x, y);
+  m.innerHTML = `<div class="pllay" aria-label="Layout" style="--plc:${esc(plColor(p))}">${isPhone() ? "" : `<small>Top</small>${seg("head", [["banner", "Banner", "banner"], ["cover", "Cover", "cover"]])}`}<small>Shows</small>${seg("view", [["list", "List", "list"], ["posters", "Posters", "grid"]])}
+    <div class="sep"></div><button class="pltog" data-a="plset" data-v="dim" role="switch" aria-checked="${!!p.dim}"><span>Grey out finished shows</span><i class="switch" aria-checked="${!!p.dim}"></i></button></div>`;
+  cmShow(m, x, y, targetEl, hexAccent(p.color) || "");
+  if (!isPhone()) m.querySelector(".plseg button.on, .pltog")?.focus({ preventScroll: true });
 }
 /* A row on an open playlist (⋯ or right-click): open or play it, put it on
    another playlist, take it off this one. */
-function plRowMenu(ref, x, y) {
+function plRowMenu(ref, x, y, targetEl = null) {
   const p = plCurrent(), it = p?.items.find((q) => q.ref === ref);
   if (!it) return;
   /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
   const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
   const again = st.fin || t?.kind === "rewatch";
-  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`) : "";
+  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`, "↵") : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
-  m.innerHTML = `<div class="cap">${esc(it.title)}</div>${play}${cmRow("plopen", ref, "arrowr", "Open show")}${cmRow("pladd", ref, "list", "Add to another playlist", "", "", `data-r="${esc(ref)}" data-t="${esc(it.title)}" data-p="${esc(it.poster || "")}"`)}${move}<div class="sep"></div>${cmRow("plremove", ref, "close", "Remove from this playlist", "", "", 'data-danger="1"')}`;
-  cmShow(m, x, y);
+  const art = st.entry?.poster || st.show?.poster || it.poster, col = st.entry?.color || p.color || "";
+  const prog = st.tot ? `${st.done} / ${st.tot}` : st.done ? `${st.done} seen` : "";
+  const fact = [prog, st.status ? statusLabel(st.status) : ""].filter(Boolean).join(" · ");
+  const head = cmHead({ eyebrow: `#${at + 1} in ${p.name}`, title: st.entry?.title || st.show?.title || it.title, fact, art, kind: "poster" });
+  const rows = `${play}${cmRow("plopen", ref, "arrowr", "Open show", play ? "O" : "↵")}${cmRow("pladd", ref, "list", "Add to another playlist", "L", "", `data-r="${esc(ref)}" data-t="${esc(it.title)}" data-p="${esc(art || "")}" data-c="${esc(col)}"`)}${move}<div class="sep danger-sep"></div>${cmRow("plremove", ref, "close", "Remove from this playlist", "Del", "", 'data-danger="1"')}`;
+  m.innerHTML = cmWrap(head, rows);
+  cmShow(m, x, y, targetEl, cmAccent(col));
 }
 /* Right-click (long-press on touch) a show in Home's Continue watching or its
    big card: play, open, or take it off until it plays again (Decision 81). */
 function playMenu(b, x, y) {
   const id = b.dataset.v, ctx = findEpContext(id), m = $("#cm");
-  const cap = ctx ? `${ctx.s.title} · ${epCode(ctx.sea, ctx.ep)}` : b.textContent.trim() || "Episode";
-  m.innerHTML = `<div class="cap">${esc(cap)}</div>${cmRow(b.dataset.a, id, "play", ctx && resumable(ctx.ep) ? "Resume" : "Play", "↵")}${cmOther(id)}`;
-  cmShow(m, x, y);
+  const ep = ctx?.ep, art = ctx ? (epThumbOf(ctx.sea.thumbs, ep) || ctx.s.banner || ctx.s.poster) : null;
+  const pct = ep?.duration && resumable(ep) ? (100 * ep.position) / ep.duration : 0;
+  const head = cmHead({ eyebrow: ctx ? epCode(ctx.sea, ep) : "Episode", title: ctx ? ctx.s.title : b.textContent.trim() || "Episode", fact: ep && resumable(ep) ? `${fmtLeft(ep.duration, ep.position)} left` : "", art, kind: "still", pct });
+  const rows = `${cmRow(b.dataset.a, id, "play", ctx && resumable(ctx.ep) ? "Resume" : "Play", "↵")}${cmOther(id)}`;
+  m.innerHTML = cmWrap(head, rows);
+  cmShow(m, x, y, b, ctx ? accentHex(ctx.s) || "" : "");
 }
-function contMenu(id, epId, x, y) {
+function contMenu(id, epId, x, y, targetEl = null) {
   const s = showById(id), ctx = epId && findEpContext(epId);
   if (!s) return;
   const ep = ctx?.ep, m = $("#cm");
-  m.innerHTML = `<div class="cap">${esc(s.title)}</div>${ep ? cmRow("play", ep.id, "play", `${resumable(ep) ? "Resume" : "Play"} ${esc(epCode(ctx.sea, ep))}`, "↵") + cmOther(ep.id) : ""}${cmRow("open", s.id, "arrowr", "Open show", "O")}<div class="sep"></div>${cmRow("cwhide", s.id, "close", "Remove from Home", "R")}`;
-  cmShow(m, x, y);
+  const rt = ctx ? epThumbOf(ctx.sea.thumbs, ep) : null, art = rt || s.banner || s.poster;
+  const pos = rt ? "50% 50%" : !s.banner && s.poster ? "50% 22%" : "50% 50%";
+  const part = ep && resumable(ep), pct = part && ep.duration ? (100 * ep.position) / ep.duration : 0;
+  const src = ep ? (isStream(s) ? "online" : "disk") : "";
+  const ey = ep ? [epCode(ctx.sea, ep), src].filter(Boolean).join(" · ") : "Continue watching";
+  const fact = ep && part ? `${fmtLeft(ep.duration, ep.position)} left` : "";
+  const head = cmHead({ eyebrow: ey, title: s.title, fact, art, kind: "still", pos, pct });
+  const rows = `${ep ? cmRow("play", ep.id, "play", `${part ? "Resume" : "Play"} ${esc(epCode(ctx.sea, ep))}`, "↵") + cmOther(ep.id) : ""}${cmRow("open", s.id, "arrowr", "Open show", "O")}<div class="sep danger-sep"></div>${cmRow("cwhide", s.id, "close", "Remove from Home", "Del", "", 'data-danger="1"')}`;
+  m.innerHTML = cmWrap(head, rows);
+  cmShow(m, x, y, targetEl, accentHex(s) || "");
 }
 async function contHide(id, hide) {
   const r = await api("/api/continue-hide", { show_id: id, hide }).catch(() => null);
@@ -2921,26 +2985,29 @@ function frOrder(p, e) {
   return `<section class="hsec ford"><div class="sh"><h2>Watch order</h2><span class="mut" title="Follows AniList's links">pick a part to see its episodes</span><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder">${rows.map(tile).join("")}</div></section>`;
 }
 /* ⋯ on the show page: the rare actions, in the episode-menu box. */
-function frMore(x0, y0) {
+function frMore(x0, y0, targetEl = null) {
   const e = frEntry(), p = S.fr?.page;
   if (!e) return;
   const folders = [...new Map(e.slots.filter((x) => x.local).map((x) => [x.local.show_id + "|" + x.local.season, x.local])).values()];
   const ready = !!S.data.stream_ready, picking = S.sel?.show === frSelKey();
-  const m = $("#cm");
-  clearTimeout(cmHide.t); m.classList.remove("closing");
-  m.innerHTML = `<div class="cap">${esc(e.title || p.title)}</div>
-    <button class="mi" data-a="pladd" data-r="aid:${e.id}" data-t="${esc(e.title || p.title)}" data-p="${esc(e.poster || p.poster || "")}">${ico("list")}Add to playlist</button>
-    ${e.slots.some((x) => playableSlot(e, x)) ? `<button class="mi" data-a="selmode">${ico("checkc")}${picking ? "Stop selecting" : "Select episodes"}</button>` : ""}
-    ${folders.length ? `<button class="mi" data-a="folder" data-v="${esc(folders[0].show_id)}">${ico("folder")}Open the folder</button>` : ""}
-    ${folders.map((l) => `<button class="mi" data-a="pinopen" data-s="${esc(l.show_id)}" data-k="${esc(l.season)}" data-l="${esc(l.folder + " · " + l.season_label)}">${ico("tv")}Wrong season? <small>${esc(l.season_label)}</small></button>`).join("")}
-    ${ready && e.online.linked ? `<button class="mi" data-a="srcfix">${ico("search")}Wrong online episodes?</button>` : ""}
-    <a class="mi" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}">${ico("ext")}Open on AniList</a>`;
-  /* Phones: a sheet with a grab bar. Download, mark all watched and the
-     entry buttons sit in the row under the title (TODO 177, Show C). */
-  if (isPhone()) m.insertAdjacentHTML("afterbegin", grab);
-  m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
-  const z = zoomGet() / 100;
-  m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:${Math.min(x0 / z, innerWidth / z - 270)}px;top:${Math.min(y0 / z, innerHeight / z - 280)}px`;
+  const m = $("#cm"), art = e.poster || p.poster, col = e.color || p.color || "";
+  const localN = e.slots.filter((x) => x.local).length, tot = e.slots.length;
+  const title = e.title || p.title, showLbl = e.label && !title.toLowerCase().includes(e.label.toLowerCase()) ? e.label : "";
+  const ey = showLbl || [fmtName(e.format), e.year].filter(Boolean).join(" · ");
+  const fact = [localN ? (localN === tot ? `all ${localN} on disk` : `${localN} on disk`) : tot ? `${tot} episodes` : ""].filter(Boolean).join(" · ");
+  const main = [
+    cmRow("pladd", "", "list", "Add to playlist", "L", "", `data-r="aid:${e.id}" data-t="${esc(title)}" data-p="${esc(art || "")}" data-c="${esc(col)}"`),
+    e.slots.some((x) => playableSlot(e, x)) ? cmRow("selmode", "", "checkc", picking ? "Stop selecting" : "Select episodes", "S") : "",
+    folders.length ? cmRow("folder", folders[0].show_id, "folder", "Open the folder", "F") : "",
+  ].filter(Boolean);
+  const fix = [
+    ...folders.map((l) => cmRow("pinopen", "", "tv", `Wrong season? <small>${esc(l.season_label)}</small>`, "", "", `data-s="${esc(l.show_id)}" data-k="${esc(l.season)}" data-l="${esc(l.folder + " · " + l.season_label)}"`)),
+    ready && e.online.linked ? cmRow("srcfix", "", "search", "Wrong online episodes?") : "",
+    `<a class="mi" role="menuitem" href="${alUrl(e.id)}" data-a="ext" data-v="${alUrl(e.id)}">${ico("ext", "cm-i-ext")}<span class="ml">Open on AniList</span><kbd class="kb">N</kbd></a>`,
+  ].filter(Boolean);
+  m.innerHTML = cmWrap("", [main, fix].filter((g) => g.length).map((g) => g.join("")).join('<div class="sep"></div>')); // the hero right above names the show: no card (say it once)
+  cmShow(m, x0, y0, targetEl, cmAccent(col));
+  m.setAttribute("aria-label", title);
 }
 /* "Wrong season?": say which entry a folder season is (or none of them),
    or hand it back to the automatic mapping. */
@@ -2952,31 +3019,196 @@ function PinDlg() {
       + `<div class="msg">${esc(m.err || "")}</div>`)
     + dlFoot("", escBtn() + `<button class="btn pri" data-a="pinsave" ${m.pick && !m.busy ? "" : "disabled"}>Save${kb("↵")}</button>`);
 }
+/* Shared Context Card header + gliding-highlight list wrapper for #cm. */
+function cmHead({ eyebrow = "", title = "", fact = "", art = null, kind = "still", pos = "", pct = 0, spoil = false, icon = "" }) {
+  const thumb = kind === "pl"
+    ? `<span class="cmha pl">${icon || ico("list")}</span>`
+    : art ? `<span class="cmha ${kind}${spoil ? " spoil" : ""}"><img src="${esc(pic(art))}" alt=""${pos ? ` style="object-position:${pos}"` : ""}>${pct ? `<i class="cmhp"><i style="width:${Math.min(100, Math.round(pct))}%"></i></i>` : ""}</span>`
+    : `<span class="cmha ${kind} ph">${icon || ico(kind === "still" ? "play" : "tv")}</span>`;
+  return `<div class="cmh">${thumb}<div class="cmht">${eyebrow ? `<small class="cmhe">${esc(eyebrow)}</small>` : ""}<b>${esc(title)}</b>${fact ? `<span class="cmhf">${esc(fact)}</span>` : ""}</div></div>`;
+}
+const cmWrap = (head, rows) => `${head}<div class="cml">${rows ? '<span class="cmhl" aria-hidden="true"></span>' : ""}${rows}</div>`;
 /* The episode menu (right-click or ⋯, Decision 38): play / resume at the
    saved time / from the start / the other language · watched · reset ·
    download with the VPN state · wrong episode. Letter keys work while open. */
 function cmRow(a, v, icon, label, key, extra = "", attrs = "") {
-  return `<button class="mi" data-a="${a}" data-v="${esc(v)}" ${attrs}>${ico(icon)}<span class="ml">${label}</span>${extra}${key ? `<kbd class="kb">${key}</kbd>` : ""}</button>`;
+  const pri = key === "↵" || attrs.includes('data-pri="1"') ? " pri-row" : "";
+  return `<button class="mi${pri}" role="menuitem" data-a="${a}" data-v="${esc(v)}" ${attrs}>${ico(icon, "cm-i-" + icon)}<span class="ml">${label}</span>${extra}${key ? `<kbd class="kb">${key}</kbd>` : ""}</button>`;
 }
-/* The menu closes with a slide down on phones (it used to vanish). */
-function cmHide() {
-  const m = $("#cm");
-  if (m.style.display !== "block" || m.classList.contains("closing")) return;
+function cmMoveHl(row) {
+  if (!row || isPhone()) return;
+  const list = row.closest(".cml, #plml"), hl = list?.querySelector(".cmhl");
+  if (!hl) return;
+  const y = row.offsetTop, h = row.offsetHeight;
+  hl.style.setProperty("--hl-y", y + "px");
+  if (!hl.classList.contains("on")) {
+    hl.style.transition = "none";
+    hl.style.height = `${h}px`;
+    void hl.offsetWidth;
+    hl.style.transition = "";
+  }
+  hl.style.height = `${h}px`;
+  hl.classList.toggle("danger", row.hasAttribute("data-danger"));
+  hl.classList.toggle("warn", row.hasAttribute("data-warn"));
+  hl.classList.toggle("pri", row.classList.contains("pri-row"));
+  hl.classList.add("on");
+}
+function cmClearHl() {
+  const hl = $("#cm .cmhl");
+  if (hl) hl.classList.remove("on", "press");
+}
+/* Show-specific menu accent: honours a user-picked fixed accent in Settings. */
+const cmAccent = (hex) => (accentGet() !== "follow" ? "" : hexAccent(hex) || "");
+let cmBusy = false, cmEat = 0, cmLastRow = null, cmPtrAt = 0;
+const cmMenuGrow = { a: null };
+const CM_NAV_ACTIONS = new Set(["play", "playep", "playstart", "playmode", "playon", "open", "plgo", "plgoto", "plopen", "ext"]);
+/* Fire a #cm action once (immediately so there's zero lag, with a crisp 70ms
+   confirm beat before folding closed; never double-fires on double-click or kbd). */
+function cmFire(t, e) {
+  if (!t || cmBusy) return;
+  const a = t.dataset.a;
+  if (!a) return;
+  if (t.tagName === "A" && e && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)) {
+    cmHide(); ovClosed("cm");
+    return;
+  }
+  if (e) e.preventDefault();
+  if (a === "pladd") {
+    if (!t.disabled && A[a]) A[a](t.dataset.v, t, e);
+    return;
+  }
+  if (plPicking() || $("#cm .pllay")) {
+    if (!t.disabled && !isField(t) && A[a]) A[a](t.dataset.v, t, e);
+    return;
+  }
+  clearTimeout(cmFire.t);
+  cmBusy = true;
+  if (!isPhone() && !reduceMotion()) { cmMoveHl(t); t.classList.add("cm-hit"); }
+  const viewBefore = S.view, modalBefore = S.modal;
+  if (!t.disabled && !isField(t) && A[a]) A[a](t.dataset.v, t, e);
+  const refocus = !S.modal && S.modal === modalBefore && S.view === viewBefore && !CM_NAV_ACTIONS.has(a);
+  if (isPhone() || reduceMotion()) { cmBusy = false; cmHide(false, refocus); ovClosed("cm"); }
+  else cmFire.t = setTimeout(() => { cmBusy = false; cmHide(false, refocus); ovClosed("cm"); }, 70);
+}
+/* The menu folds smoothly back toward its click corner (or slides down on phones). */
+function cmHide(instant = false, restoreFocus = false) {
+  clearTimeout(cmFire.t);
+  const m = $("#cm"), tg = cmShow.target, op = cmShow.opener;
+  cmBusy = false; cmLastRow = null;
+  cmShow.target = null; cmShow.opener = null;
+  m.removeAttribute("aria-activedescendant");
+  /* Focus goes back to the tile only when a key opened the menu: after a right-click
+     it drew a new square ring around the tile the mouse had just left (round 4 critic). */
+  if (restoreFocus && cmShow.kb) {
+    const dest = (tg?.matches?.("[tabindex],button,a") ? tg : tg?.querySelector?.("button,a,[tabindex]")) || op;
+    if (dest?.isConnected && dest !== document.body) try { dest.focus({ preventScroll: true }); } catch {}
+  }
+  if (m.style.display !== "block" || m.classList.contains("closing")) {
+    if (tg) tg.classList.remove("cm-target", "cm-target-out");
+    if (!cmShow.target) document.documentElement.style.removeProperty("--cm-ring");
+    return;
+  }
   cmHide.at = Date.now(); cmHide.was = m.querySelector(".pllay") ? "pllay" : "";
-  if (!isPhone() || reduceMotion()) { m.style.display = "none"; return; }
+  if (instant || reduceMotion()) {
+    if (tg) tg.classList.remove("cm-target", "cm-target-out");
+    document.documentElement.style.removeProperty("--cm-ring");
+    m.style.display = "none"; m.style.bottom = ""; m.classList.remove("closing", "cm-gl");
+    return;
+  }
+  if (tg) tg.classList.add("cm-target-out");
   m.classList.add("closing");
-  cmHide.t = setTimeout(() => { m.classList.remove("closing"); m.style.display = "none"; }, 190);
+  /* Hide when the fold-away has really finished (a same-length timer cut its last frames into a blink). */
+  const done = () => {
+    clearTimeout(cmHide.t); m.removeEventListener("animationend", onEnd);
+    if (!m.classList.contains("closing")) return;
+    if (tg) tg.classList.remove("cm-target", "cm-target-out");
+    if (!cmShow.target) document.documentElement.style.removeProperty("--cm-ring");
+    m.classList.remove("closing", "cm-gl");
+    m.style.bottom = "";
+    m.style.display = "none";
+  };
+  const onEnd = (ev) => { if (ev.target === m) done(); };
+  m.addEventListener("animationend", onEnd);
+  cmHide.t = setTimeout(done, isPhone() ? 260 : 200);
 }
-function cmShow(m, x, y) {
-  clearTimeout(cmHide.t); m.classList.remove("closing");
+function cmShow(m, x, y, targetEl = null, accent = "", exactPos = false, from = null) {
+  clearTimeout(cmHide.t); clearTimeout(cmFire.t); m.classList.remove("closing"); cmBusy = false; cmLastRow = null;
+  $$(".cm-target, .cm-target-out").forEach((el) => { if (el !== targetEl) el.classList.remove("cm-target", "cm-target-out"); });
+  cmShow.target = null;
+  cmShow.opener = document.activeElement && !m.contains(document.activeElement) ? document.activeElement : cmShow.opener;
+  if (accent) { m.style.setProperty("--cm-ac", accent); document.documentElement.style.setProperty("--cm-ring", accent); }
+  else { m.style.removeProperty("--cm-ac"); document.documentElement.style.removeProperty("--cm-ring"); }
+  if (m.querySelector(".pllay, .plmh")) m.setAttribute("role", "dialog");
+  else m.setAttribute("role", "menu");
+  const titleTxt = m.querySelector(".cmht b, .plmh b")?.textContent?.trim();
+  if (titleTxt) m.setAttribute("aria-label", titleTxt); else m.removeAttribute("aria-label");
   if (isPhone() && !m.querySelector(".grabber")) m.insertAdjacentHTML("afterbegin", grab);
-  m.style.animation = "none"; void m.offsetWidth; m.style.animation = "";
+  m.classList.toggle("cm-gl", !isPhone() && !!m.querySelector(".cmhl"));
   const z = zoomGet() / 100;
-  m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:0;top:0`;
-  const w = m.offsetWidth, h = m.offsetHeight;
-  m.style.left = Math.max(8, Math.min(x / z, innerWidth / z - w - 8)) + "px";
-  m.style.top = Math.max(8, Math.min(y / z, innerHeight / z - h - 8)) + "px";
-  if (ddPtr !== "touch") m.querySelector(".mi")?.classList.add("sel"); // a finger gets no picked row: it lit a row the thumb wasn't on
+  /* Opened by a key (menu key, Enter on ⋯) or by a pointer: only a keyboard
+     opening lights a row; the mouse sees nothing picked until it moves (Enter still takes the ↵ row). */
+  const kb = Date.now() - cmPtrAt > 700;
+  cmShow.kb = kb; cmShow.still = !kb; cmShow.at = { x, y };
+  m.style.zIndex = !isPhone() && !S.modal ? "61" : ""; // above the Undo toast; below every dialog
+  m.style.cssText += (isPhone() && ovOpen("cm", () => { cmHide(); }), "") + `;display:block;left:0;top:0;bottom:auto`;
+  const vw = innerWidth / z, vh = innerHeight / z, px = x / z, py = y / z;
+  const navR = !isPhone() && $("#nav")?.getBoundingClientRect(), stR = !isPhone() && $("#status")?.getBoundingClientRect();
+  const topMin = navR && navR.height ? navR.bottom / z + 6 : 8;
+  const botMax = stR && stR.height && stR.top < innerHeight ? stR.top / z - 6 : vh - 8;
+  let w = m.offsetWidth, h = m.offsetHeight;
+  const gap = exactPos ? 0 : 2;
+  /* The menu's corner sits at the pointer, as on every desktop (Elias tried the
+     first row at the pointer with the card above it: it read as a jump). */
+  const flipX = !exactPos && px + gap + w > vw - 8 && px - gap - w >= 8;
+  const flipY = !exactPos && py + gap + h > botMax && py - gap - h >= topMin;
+  const plml = !isPhone() && m.querySelector("#plml");
+  if (plml) {
+    const rest = h - plml.offsetHeight;
+    const room = flipY ? py - 8 - topMin - rest : botMax - py - gap - rest;
+    plml.style.maxHeight = Math.max(120, Math.min(340, Math.floor(room))) + "px";
+    h = m.offsetHeight;
+  }
+  const yGap = exactPos ? 0 : flipY ? 8 : 2;
+  const mis = [...m.querySelectorAll(".mi")];
+  mis.forEach((r, i) => {
+    r.style.setProperty("--i", Math.min(flipY ? mis.length - 1 - i : i, 6));
+    if (!r.id) r.id = "cmi-" + i;
+  });
+  const left = Math.max(8, Math.min(flipX ? px - w - gap : px + gap, vw - w - 8));
+  const top = Math.max(topMin, Math.min(flipY ? py - h - yGap : py + yGap, botMax - h));
+  m.style.left = left + "px";
+  if (flipY && !isPhone()) {
+    m.style.top = "";
+    m.style.bottom = Math.max(vh - botMax, vh - (py - yGap)) + "px";
+  } else {
+    m.style.bottom = "";
+    m.style.top = top + "px";
+  }
+  const ox = flipX ? "100%" : px > left + 8 && px < left + w - 8 ? `${Math.round(px - left)}px` : "0%";
+  const oy = flipY ? "100%" : `${Math.round(Math.max(0, Math.min(h, py - top)))}px`;
+  m.style.setProperty("--cm-ox", ox);
+  m.style.setProperty("--cm-oy", oy);
+  m.style.setProperty("--cm-dy", flipY ? "4px" : "-4px");
+  if (from && from.width && !isPhone() && !reduceMotion()) {
+    /* Add to another playlist: the row menu grows into the add menu, one box (taste: never a second box appearing). */
+    m.style.animation = "none";
+    const fy = flipY ? vh - parseFloat(m.style.bottom) - h : top;
+    m.style.overflow = "hidden";
+    m.animate([{ left: from.left / z + "px", top: from.top / z + "px", width: from.width / z + "px", height: from.height / z + "px" },
+      { left: left + "px", top: fy + "px", width: w + "px", height: h + "px" }],
+    { duration: 210, easing: "cubic-bezier(.22,1,.36,1)" }).onfinish = () => { m.style.overflow = ""; };
+    [...m.children].forEach((c) => c.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 150, delay: 60, easing: "ease-out", fill: "backwards" }));
+  } else { m.style.animation = "none"; void m.offsetWidth; m.style.animation = ""; }
+  if (!isPhone() && targetEl && targetEl.isConnected) {
+    cmShow.target = targetEl;
+    targetEl.classList.remove("cm-target-out"); targetEl.classList.add("cm-target");
+  }
+  if (!isPhone() && !plPicking()) { m.tabIndex = -1; m.focus({ preventScroll: true }); }
+  if (ddPtr !== "touch" && kb) m.querySelector(".mi")?.classList.add("sel"); // a finger gets no picked row: it lit a row the thumb wasn't on
+  if (ddPtr !== "touch" && kb && !isPhone() && !plPicking()) {
+    const first = m.querySelector(".mi.sel");
+    if (first) { cmMoveHl(first); m.setAttribute("aria-activedescendant", first.id); }
+  }
 }
 /* A phone with a set Play button: every menu that starts an episode also
    offers the other place (Elias, 2026-11-10; Decision 71). "" elsewhere. */
@@ -2990,31 +3222,40 @@ function cmItems({ id, ep, files, verId, online, onlineId, other, local, dl, fix
   const vpn = S.data?.vpn, vpnTag = !vpn?.known ? "" : vpn.active ? '<span class="v ok">vpn ✓</span>' : '<span class="v warn">no vpn</span>';
   const res = resumable(ep), rows = [];
   if (playable) rows.push(cmRow("playep", id, "play", res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"));
-  if (playable && res) rows.push(cmRow("playstart", id, "undo", "Play from the start"));
+  if (playable && res) rows.push(cmRow("playstart", id, "undo", "Play from the start", "B"));
   if (playable) rows.push(cmOther(id));
   if (files.length > 1) files.forEach((fl, i) => rows.push(cmRow("playep", verId, "play", `Play ${esc(fl.label)}`, "", "", `data-ver="${i}"`)));
-  if (local && online) rows.push(cmRow("playep", onlineId, "play", "Play online"));
-  if (online) rows.push(cmRow("playmode", onlineId, "play", `Play ${other === "dub" ? "dubbed" : "subbed"}`, "A", "", `data-m="${other}"`));
+  if (local && online) rows.push(cmRow("playep", onlineId, "radio", "Play online", "O"));
+  if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${other === "dub" ? "dubbed" : "subbed"}`, "A", "", `data-m="${other}"`));
   const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}"`)];
-  if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress"));
-  /* Right-click → Select (Elias, 2026-11-06): same multi-select as the ⋯ / Select button, starting with this episode. */
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
+  if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
   const end = [];
   if (dl) end.push(cmRow("dlep", onlineId, "download", "Download", "D", vpnTag));
-  if (fix) end.push(cmRow("srcfix", "", "search", "Wrong episode? Find it"));
+  if (fix) end.push(cmRow("srcfix", "", "search", "Wrong episode?"));
   return [rows, mid, end].filter((g) => g.length).map((g) => g.join("")).join('<div class="sep"></div>');
 }
-function frCm(id, x0, y0) {
+function frCm(id, x0, y0, targetEl = null) {
   const f = frFind(id);
   if (!f) return false;
-  const { e, x } = f, m = $("#cm"), files = x.local?.files || [];
+  const { e, x } = f, p = S.fr?.page, m = $("#cm"), files = x.local?.files || [];
   const online = !!(x.online && S.data.stream_ready && e.online.available);
   const mode = e.online.mode || S.settings?.stream?.mode || "sub", other = mode === "dub" ? "sub" : "dub";
   const movie = e.format === "MOVIE" && e.slots.length <= 1;
-  m.innerHTML = `<div class="cap">${esc(movie ? e.label : "E" + String(x.number).padStart(2, "0"))}${x.title && !spoils(x) ? " · " + esc(x.title) : ""}</div>`
-    + cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, other, local: !!x.local, playable: playableSlot(e, x),
-      dl: online && !x.local && !dlJob(x.online.id), fix: !!S.data.stream_ready && !!x.online });
-  cmShow(m, x0, y0);
+  const art = x.thumb || e.poster || p?.poster || e.banner;
+  const pos = x.thumb ? "50% 50%" : e.poster || p?.poster ? "50% 22%" : "50% 50%";
+  const part = resumable(x), pct = part && x.duration ? (100 * x.position) / x.duration : 0;
+  const mins = minsOf(x.duration || x.length, e.duration);
+  const src = x.local ? `disk · ${fileLangs({ files })}` : online ? `online · ${mode}` : "not available";
+  const fact = part ? `${fmtLeft(x.duration, x.position)} left · ${src}` : `${mins ? mins + " min · " : ""}${src}`;
+  const hasTitle = !!(x.title && !spoils(x));
+  const eyebrow = movie ? (hasTitle ? "Movie" : (e.year ? String(e.year) : "")) : hasTitle ? `Episode ${String(x.number).padStart(2, "0")}` : e.label || "";
+  const title = hasTitle ? x.title : movie ? (e.label || p?.title || "Movie") : `Episode ${String(x.number).padStart(2, "0")}`;
+  const head = cmHead({ eyebrow, title, fact, art, kind: "still", pos, pct, spoil: !!(x.thumb && spoils(x)) });
+  const rows = cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, other, local: !!x.local, playable: playableSlot(e, x),
+    dl: online && !x.local && !dlJob(x.online.id), fix: !!S.data.stream_ready && !!x.online });
+  m.innerHTML = cmWrap(head, rows);
+  cmShow(m, x0, y0, targetEl, cmAccent(e.color || p?.color || ""));
   return true;
 }
 
@@ -5633,13 +5874,20 @@ for (const ev of ["pointerup", "touchend", "pointercancel"]) document.addEventLi
 addEventListener("resize", () => paintRemote());
 
 /* ---------- context menu ---------- */
-function openCm(id, x, y) {
-  if (S.view === "fr" && frCm(id, x, y)) return;
+function openCm(id, x, y, targetEl = null) {
+  if (S.view === "fr" && frCm(id, x, y, targetEl)) return;
   const ctx = findEpContext(id);
   if (!ctx) return;
   const { s, ep, sea } = ctx, m = $("#cm"), title = epName(s, sea, ep);
-  m.innerHTML = `<div class="cap">${esc(epCode(sea, ep))}${title ? " · " + esc(title) : ""}</div>` + cmItems({ id, ep, files: ep.files || [], verId: id, online: false });
-  cmShow(m, x, y);
+  const rt = epThumbOf(sea.thumbs, ep), art = rt || s.poster || s.banner;
+  const pos = rt ? "50% 50%" : s.poster ? "50% 22%" : "50% 50%";
+  const part = resumable(ep), pct = part && ep.duration ? (100 * ep.position) / ep.duration : 0;
+  const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep);
+  const fact = part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}`;
+  const hasTitle = !!(title && !spoils(ep));
+  const head = cmHead({ eyebrow: hasTitle ? epCode(sea, ep) : sea.label || "", title: hasTitle ? title : `Episode ${String(ep.number).padStart(2, "0")}`, fact, art, kind: "still", pos, pct, spoil: !!(rt && spoils(ep)) });
+  m.innerHTML = cmWrap(head, cmItems({ id, ep, files: ep.files || [], verId: id, online: false }));
+  cmShow(m, x, y, targetEl, accentHex(s) || "");
 }
 
 /* ---------- overlays ---------- */
@@ -6001,7 +6249,7 @@ function paintModal(focus) {
      scroll the sheet and pop the keyboard up). */
   if (focus) mq("(pointer:coarse)") ? el.querySelector(".dialog")?.focus({ preventScroll: true }) : (el.querySelector("#plname") || el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
 }
-function openModal(m) { S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
+function openModal(m) { if ($("#cm")?.style.display === "block") { cmHide(true); ovClosed("cm"); } S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
 /* Back gesture / swipe down on a dialog: the same as tapping beside it. */
 const modalDismiss = () => (S.modal?.t === "done" ? A.dnskip() : closeModal());
 function closeModal() {
@@ -6413,7 +6661,7 @@ const VIEW_TITLE = { home: "", library: "Library", browse: "Browse", history: "J
    their scroll. Runtime state the HTML doesn't carry survives: the image
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
-const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "setin"];
+const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "cm-target", "cm-target-out", "setin"];
 const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
@@ -6683,7 +6931,10 @@ function patchShow(build = Det) {
     const el = next.get(tile.dataset.v);
     if (!el) continue;
     const art = tile.querySelector(".epimg");
+    const keepCm = tile.classList.contains("cm-target"), keepCmOut = tile.classList.contains("cm-target-out");
     tile.className = el.className;
+    if (keepCm) tile.classList.add("cm-target");
+    if (keepCmOut) tile.classList.add("cm-target-out");
     tile.innerHTML = el.innerHTML;
     if (art) tile.querySelector(".epimg")?.replaceWith(art);
   }
@@ -7598,7 +7849,7 @@ const A = {
   hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(true); }, // in place: kept bars glide to their new heights, new ones grow
   histmore: () => { S.histMax += 200; render(); },
   play: (v) => play(v), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
-  cm: (v, t, e) => openCm(v, e.clientX, e.clientY),
+  cm: (v, t, e) => openCm(v, e.clientX, e.clientY, t.closest(".ep")),
   mark: (v, t) => {
     const w = t.dataset.w === "true", f = S.view === "fr" && frFind(v);
     if (f) return frMark(f.e, [f.x.number], w);
@@ -7882,7 +8133,7 @@ const A = {
   skpno: () => { const go = S.modal?.go; closeModal(); go?.(false); },
   folder: (v) => api("/api/open-folder", { show_id: v }).then((r) => { if (!r.ok) toast(r.error || "Could not open the folder"); }).catch(() => toast("Could not open the folder — is the hub running?")),
   edit: () => { if (S.view === "fr" || S.view === "show") openModal({ t: "entry" }); },
-  frmore: (v, t) => { const r = t.getBoundingClientRect(); frMore(r.left, r.bottom + 6); },
+  frmore: (v, t) => { const r = t.getBoundingClientRect(); frMore(r.left, r.bottom + 6, t); },
   eretry: () => { const e = S.entry?.err; if (e && !e.checking) { clearInterval(entryErrTimer); loadEntry(S.entry.mid); } },
   efav: () => { if (S.entry?.f) entryPatch(undefined, !S.entry.f.favourite); },
   /* Edit on AniList or MyAnimeList (Decision 83): remembered for next time. */
@@ -8318,44 +8569,66 @@ const A = {
   },
   plmove: async (v, t) => { if (await plPost({ op: "move", id: S.lib.pl, ref: v, by: +t.dataset.d })) render(); },
   plremove: (v) => { const p = plCurrent(); if (p) plRemove(p, v); },
-  plrow: (v, t) => { const r = t.getBoundingClientRect(); plRowMenu(v, r.right - 8, r.bottom + 4); },
+  plrow: (v, t) => { const r = t.getBoundingClientRect(); plRowMenu(v, r.right - 8, r.bottom + 4, t.closest(".plit")); },
   pllayout: (v, t) => {
     if (cmHide.was === "pllay" && Date.now() - cmHide.at < 300) return; // a second click on Layout closes it (Elias); this click already did
-    const r = t.getBoundingClientRect(); plLayoutMenu(r.right - 260, r.bottom + 8);
+    const r = t.getBoundingClientRect(); plLayoutMenu(r.right, r.bottom + 6, t);
   },
   plset: async (v) => {
     const p = plCurrent(), [k, raw] = v.split(":"), val = k === "dim" ? !p?.dim : raw; // dim is a switch: each press flips it
     if (!p || p[k] === val) return;
     p[k] = val; render(true); // at once; the save follows
     $$("#cm .plseg button").forEach((b) => { const on = b.dataset.v.split(":")[0] !== k ? b.classList.contains("on") : b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+    $$("#cm .plseg").forEach((g) => { const i = [...g.querySelectorAll("button")].findIndex((b) => b.classList.contains("on")); if (i >= 0) g.style.setProperty("--si", i); });
     $$("#cm .pltog, #cm .pltog .switch").forEach((b) => b.setAttribute("aria-checked", !!p.dim));
+    if (k === "head" && !isPhone()) requestAnimationFrame(() => {
+      const btn = $('[data-a="pllayout"]'), m = $("#cm");
+      if (!btn || m.style.display !== "block" || !m.querySelector(".pllay")) return;
+      const r = btn.getBoundingClientRect(), z = zoomGet() / 100, w = m.offsetWidth, h = m.offsetHeight;
+      const vw = innerWidth / z, vh = innerHeight / z, navR = $("#nav")?.getBoundingClientRect(), stR = $("#status")?.getBoundingClientRect();
+      const topMin = navR?.height ? navR.bottom / z + 6 : 8, botMax = stR?.height && stR.top < innerHeight ? stR.top / z - 6 : vh - 8;
+      m.style.left = Math.max(8, Math.min(r.right / z - w, vw - w - 8)) + "px";
+      m.style.bottom = "";
+      m.style.top = Math.max(topMin, Math.min(r.bottom / z + 6, botMax - h)) + "px";
+      cmShow.target = btn; btn.classList.add("cm-target");
+    });
     if (!(await plPost({ op: "edit", id: p.id, [k]: val }))) refreshData().then(() => render(true));
   },
-  plmenu: (v, t) => { const r = t.getBoundingClientRect(); plBoxMenu(v, r.right - 8, r.bottom + 4, false, true); },
-  /* From the ⋯ menu the row is already hidden (no size): open where that menu was. */
+  plmenu: (v, t) => { const r = t.getBoundingClientRect(); plBoxMenu(v, r.right - 8, r.bottom + 4, false, true, t); },
+  /* From the ⋯ menu the row is already hidden (no size): open where that menu is on screen. */
   pladd: (v, t) => {
-    const r = t.getBoundingClientRect(), m = $("#cm"), z = zoomGet() / 100;
-    const [x, y] = r.width ? [r.left, r.bottom + 6] : [(parseFloat(m.style.left) || 8) * z, (parseFloat(m.style.top) || 8) * z];
-    plMenu({ ref: t.dataset.r, title: t.dataset.t, poster: t.dataset.p || null }, x, y);
+    const r = t.getBoundingClientRect(), m = $("#cm");
+    const fromMenu = !!t.closest("#cm") || !r.width;
+    const mr = fromMenu ? m.getBoundingClientRect() : null, at = fromMenu && cmShow.at;
+    /* From a menu: placed again from the same click (so it can slide up for room) and grown out of that menu. */
+    if (at && mr?.width) { plMenu({ ref: t.dataset.r, title: t.dataset.t, poster: t.dataset.p || null, color: t.dataset.c || "" }, at.x, at.y, cmShow.target, false, mr); return; }
+    const [x, y] = fromMenu ? (mr?.width ? [mr.left, mr.top] : [8, 8]) : [r.left, r.bottom + 6];
+    plMenu({ ref: t.dataset.r, title: t.dataset.t, poster: t.dataset.p || null, color: t.dataset.c || "" }, x, y, fromMenu ? cmShow.target : t, fromMenu);
   },
   /* The menu stays open: the tick and "Added" in the row are the answer; taking a show off keeps its Undo. */
   pltoggle: async (v) => {
-    const it = S.plItem, p = (S.data.playlists || []).find((x) => x.id === +v);
-    if (!it || !p) return;
-    if (plHolds(p, it.ref)) { S.plJust = null; await plRemove(p, it.ref); }
-    else if (await plPost({ op: "add", id: p.id, item: it })) { S.plJust = p.id; if (S.view === "library" || S.view === "home") render(true); }
-    if (plPicking()) plMenuPaint();
+    const it = S.plItem, p = (S.data.playlists || []).find((x) => x.id === +v), key = String(v);
+    if (!it || !p || plBusy.has(key)) return;
+    plBusy.add(key);
+    try {
+      if (plHolds(p, it.ref)) { S.plJust = null; await plRemove(p, it.ref); }
+      else if (await plPost({ op: "add", id: p.id, item: it })) { S.plJust = p.id; if (S.view === "library" || S.view === "home") render(true); }
+      if (plPicking()) plMenuPatchRow(p.id);
+    } finally { plBusy.delete(key); }
   },
   /* "Make … and add": a new playlist named as typed, with this show on it; icon and colour come later through Edit. */
   plmake: async () => {
     const it = S.plItem, name = (S.plMq || "").trim();
-    if (!it || !name) return;
-    const r = await plPost({ op: "create", name, item: it });
-    if (!r) return;
-    S.plJust = r.created; S.plMq = "";
-    const q = $("#plmq"); if (q) { q.value = ""; q.placeholder = "Find or make a playlist"; }
-    if (S.view === "library" || S.view === "home") render(true);
-    if (plPicking()) plMenuPaint();
+    if (!it || !name || plBusy.has("make")) return;
+    plBusy.add("make");
+    try {
+      const r = await plPost({ op: "create", name, item: it });
+      if (!r) return;
+      S.plJust = r.created; S.plMq = "";
+      const q = $("#plmq"); if (q) { q.value = ""; q.placeholder = "Find or make a playlist"; }
+      if (S.view === "library" || S.view === "home") render(true);
+      if (plPicking()) plMenuPaint();
+    } finally { plBusy.delete("make"); }
   },
   /* Add from the find section; a second click takes it off again. The box keeps its focus and words. */
   plfadd: async (v, t) => {
@@ -8443,13 +8716,19 @@ const A = {
 };
 Object.assign(A, BR_A); // Browse (TODO 260)
 
+const plBusy = new Set();
 /* ---------- events ---------- */
 const isField = (t) => /^(SELECT|INPUT)$/.test(t.tagName);
 document.addEventListener("click", (e) => {
-  if ($("#cm").style.display === "block" && !$("#cm").classList.contains("closing") && !((plPicking() || $("#cm .pllay")) && e.target.closest?.("#cm"))) { cmHide(); ovClosed("cm"); }
+  const cm = $("#cm"), inCm = !!e.target.closest?.("#cm");
+  const t = e.target.closest("[data-a]");
+  if (cm.style.display === "block") {
+    if (cmBusy) { e.preventDefault(); e.stopPropagation(); return; }
+    if (inCm && t) { cmFire(t, e); return; }
+    if (!inCm && !cm.classList.contains("closing")) { cmHide(); ovClosed("cm"); }
+  }
   if (S.menu && !e.target.closest(".rel,#srb,#pal .pbox")) { S.menu = null; paintNav(); }
   if (S.cal && !e.target.closest(".datef")) calClose();
-  const t = e.target.closest("[data-a]");
   if (t && !t.disabled && !isField(t) && A[t.dataset.a]) A[t.dataset.a](t.dataset.v, t, e);
 });
 document.addEventListener("keydown", (e) => {
@@ -8548,6 +8827,7 @@ document.addEventListener("mousedown", (e) => {
   sel.focus({ preventScroll: true }); ddOpen(sel);
 });
 document.addEventListener("click", (e) => {
+  if (cmEat && Date.now() - cmEat < 350 && !e.target.closest?.("#cm")) { cmEat = 0; e.preventDefault(); e.stopImmediatePropagation(); return; }
   if (ddEat && Date.now() - ddEat < 700 && !e.target.closest?.("#ddm")) { ddEat = 0; e.preventDefault(); e.stopImmediatePropagation(); return; }
   const b = e.target.closest?.("#ddm button");
   if (b) { ddPick(b.dataset.i); return; }
@@ -8577,24 +8857,98 @@ addEventListener("resize", () => ddClose(false));
 /* The episode menu's keys while it is open: ↑↓ ↵ · A W D (shown on its rows) · Esc. */
 document.addEventListener("keydown", (e) => {
   const m = $("#cm");
-  if (m.style.display !== "block" || e.ctrlKey || e.metaKey || e.altKey) return;
-  const rows = [...m.querySelectorAll(".mi")], cur = rows.findIndex((r) => r.classList.contains("sel"));
+  if (m.style.display !== "block" || m.classList.contains("closing") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (cmBusy) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  /* Playlist layout popover: Up/Down moves between control groups; Left/Right switches segments. */
+  if (m.querySelector(".pllay")) {
+    const btns = [...m.querySelectorAll(".plseg button, .pltog")];
+    const groups = [...m.querySelectorAll(".plseg, .pltog")];
+    const focusGrp = (g) => (g.matches(".pltog") ? g : (g.querySelector("button.on") || g.querySelector("button")))?.focus();
+    if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); cmHide(false, true); ovClosed("cm"); return; }
+    if (e.key === "Tab" && btns.length) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const i = btns.indexOf(document.activeElement);
+      btns[(i < 0 ? 0 : i + (e.shiftKey ? -1 : 1) + btns.length) % btns.length].focus();
+      return;
+    }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const seg = document.activeElement?.closest?.(".plseg");
+      if (seg) {
+        const sb = [...seg.querySelectorAll("button")];
+        const next = sb[sb.indexOf(document.activeElement) + (e.key === "ArrowRight" ? 1 : -1)];
+        if (next) { next.focus(); cmFire(next); }
+      }
+      return;
+    }
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && groups.length) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const gi = groups.findIndex((g) => g === document.activeElement || g.contains(document.activeElement));
+      const ng = gi < 0 ? (e.key === "ArrowDown" ? 0 : groups.length - 1) : (gi + (e.key === "ArrowDown" ? 1 : -1) + groups.length) % groups.length;
+      focusGrp(groups[ng]);
+      return;
+    }
+    if ((e.key === "Home" || e.key === "End") && groups.length) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      focusGrp(groups[e.key === "Home" ? 0 : groups.length - 1]);
+      return;
+    }
+    if (e.key === "PageUp" || e.key === "PageDown") { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    if (e.key === "Enter" || e.key === " ") {
+      const b = document.activeElement?.closest?.("#cm .plseg button, #cm .pltog");
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (b) cmFire(b);
+      return;
+    }
+    if (e.key.length === 1) { e.preventDefault(); e.stopImmediatePropagation(); }
+    return;
+  }
+  const rows = [...m.querySelectorAll(".mi:not(:disabled)")], cur = rows.findIndex((r) => r.classList.contains("sel"));
   /* The add-to-playlist menu stays open on Enter; letters go to its box. */
-  const keep = plPicking();
-  if (keep && e.key.length === 1 && e.target.id !== "plmq") { $("#plmq")?.focus({ preventScroll: true }); return; }
-  const pick = (r) => { e.preventDefault(); e.stopImmediatePropagation(); if (r) { if (!keep) m.style.display = "none"; r.click(); } };
+  const keep = plPicking(), inQ = e.target.id === "plmq";
+  const move = (n) => {
+    if (!rows.length) return;
+    const i = ((n % rows.length) + rows.length) % rows.length;
+    rows.forEach((r, k) => r.classList.toggle("sel", k === i));
+    cmMoveHl(rows[i]);
+    m.setAttribute("aria-activedescendant", rows[i].id || "");
+    rows[i]?.scrollIntoView({ block: "nearest" });
+  };
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault(); e.stopImmediatePropagation();
-    const n = (cur + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
-    rows.forEach((r, k) => r.classList.toggle("sel", k === n));
-    rows[n]?.scrollIntoView({ block: "nearest" });
-  } else if (e.key === "Enter") pick(rows[cur] || (keep ? null : rows[0]));
-  else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); m.style.display = "none"; }
-  else { const k = e.key.toUpperCase(), r = rows.find((x) => x.querySelector("kbd")?.textContent === k); if (r) pick(r); }
+    if (!rows.length) return;
+    move(cur < 0 ? (e.key === "ArrowDown" ? 0 : rows.length - 1) : cur + (e.key === "ArrowDown" ? 1 : -1));
+  } else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !inQ) { e.preventDefault(); e.stopImmediatePropagation(); }
+  else if (e.key === "PageUp" || e.key === "PageDown") { e.preventDefault(); e.stopImmediatePropagation(); }
+  else if (e.key === "Home" && !inQ) { e.preventDefault(); e.stopImmediatePropagation(); move(0); }
+  else if (e.key === "End" && !inQ) { e.preventDefault(); e.stopImmediatePropagation(); move(rows.length - 1); }
+  else if (e.key === "Enter" || (e.key === " " && !inQ)) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    const target = cur >= 0 ? rows[cur] : keep ? ((S.plMq || "").trim() ? rows[0] : null) : rows.find((r) => r.classList.contains("pri-row")) || null;
+    if (target) cmFire(target);
+  } else if (e.key === "Escape" || e.key === "Tab") { e.preventDefault(); e.stopImmediatePropagation(); cmHide(false, true); ovClosed("cm"); }
+  else if (keep && e.key.length === 1 && !inQ) {
+    const q = $("#plmq");
+    if (q) { e.preventDefault(); e.stopImmediatePropagation(); q.focus({ preventScroll: true }); q.value += e.key; S.plMq = q.value; plMenuPaint(false); }
+  } else if (!keep && !inQ) {
+    const k = e.key === "Delete" || e.key === "Backspace" ? "DEL" : e.key.toUpperCase(), r = rows.find((x) => x.querySelector("kbd")?.textContent.toUpperCase() === k);
+    if (r) { e.preventDefault(); e.stopImmediatePropagation(); cmFire(r); }
+    else if (e.key.length === 1) { e.preventDefault(); e.stopImmediatePropagation(); } // block global shortcuts (1-5, /, ?, j/k, e/d/w) while #cm is open
+  }
 }, true);
-/* A finger's tap lights its row at once and keeps it lit while the sheet slides away
-   (:active came late on phones and the menu was often gone before it showed). */
+/* Outside pointerdown closes #cm immediately (and eats the click so dismissal never
+   accidentally activates a card or re-opens a ⋯ trigger). */
 document.addEventListener("pointerdown", (e) => {
+  cmPtrAt = Date.now();
+  const m = $("#cm");
+  if (m.style.display === "block" && !m.classList.contains("closing")) {
+    if (!e.target.closest?.("#cm")) {
+      if (e.button === 0 || e.pointerType === "touch") cmEat = Date.now();
+      cmHide(); ovClosed("cm");
+    } else if (e.pointerType !== "touch" && e.button === 0 && e.target.closest?.("#cm .mi:not(:disabled)")) {
+      $("#cm .cmhl")?.classList.add("press");
+    }
+  }
   const r = e.pointerType === "touch" && e.target.closest?.("#cm .mi:not(:disabled)");
   if (!r) return;
   clearTimeout(cmPress.t); $$("#cm .mi.press").forEach((x) => x.classList.remove("press"));
@@ -8602,34 +8956,47 @@ document.addEventListener("pointerdown", (e) => {
 }, { capture: true, passive: true });
 function cmPress(on) { const a = cmPress.at; if (!a) return; cmPress.at = null; if (on) cmPress.t = setTimeout(() => a.el.classList.remove("press"), 260); else a.el.classList.remove("press"); }
 document.addEventListener("pointermove", (e) => { const a = cmPress.at; if (a && Math.hypot(e.clientX - a.x, e.clientY - a.y) > 10) cmPress(false); }, { passive: true }); // a drag, not a tap
-document.addEventListener("pointerup", () => cmPress(true), { passive: true });
-document.addEventListener("pointercancel", () => cmPress(false), { passive: true });
+document.addEventListener("pointerup", () => { $("#cm .cmhl")?.classList.remove("press"); cmPress(true); }, { passive: true });
+document.addEventListener("pointercancel", () => { $("#cm .cmhl")?.classList.remove("press"); cmPress(false); }, { passive: true });
 /* Only a mouse moves the picked row: a finger dragging over the sheet lit up every row it crossed. */
-document.addEventListener("pointerover", (e) => { const r = e.pointerType !== "touch" && e.target.closest?.("#cm .mi"); if (r) $$("#cm .mi").forEach((x) => x.classList.toggle("sel", x === r)); }, { passive: true });
+/* A mouse lights the row it is on, but only once it has moved: a row that
+   opened under a still pointer stays dark (Radix ignores the opening position too). */
+function cmHover(e) {
+  if (cmBusy) return;
+  const r = e.pointerType !== "touch" && e.target.closest?.("#cm .mi");
+  if (r && cmShow.still) { const a = cmShow.at; if (a && Math.hypot(e.clientX - a.x, e.clientY - a.y) < 4) return; cmShow.still = false; }
+  if (r && r !== cmLastRow) { cmLastRow = r; $$("#cm .mi").forEach((x) => x.classList.toggle("sel", x === r)); cmMoveHl(r); $("#cm").setAttribute("aria-activedescendant", r.id || ""); }
+}
+document.addEventListener("pointerover", cmHover, { passive: true });
+document.addEventListener("pointermove", (e) => { const r = e.target.closest?.("#cm .mi"); if (cmShow.still || (r && r !== cmLastRow)) cmHover(e); }, { passive: true });
+$("#cm").addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch" && !cmBusy) { cmLastRow = null; cmClearHl(); $$("#cm .mi.sel").forEach((x) => x.classList.remove("sel")); $("#cm").removeAttribute("aria-activedescendant"); } }, { passive: true });
+addEventListener("scroll", (e) => { if (!isPhone() && $("#cm").style.display === "block" && !e.target?.closest?.("#cm")) { cmHide(); ovClosed("cm"); } }, { capture: true, passive: true });
+addEventListener("resize", () => { if (!isPhone() && $("#cm").style.display === "block") { cmHide(true); ovClosed("cm"); } });
 /* While the phone sheet is open the page under it stays still (it scrolled with every drag on the menu). */
 new MutationObserver(() => document.body.classList.toggle("cm-open", isPhone() && $("#cm").style.display === "block")).observe($("#cm"), { attributes: true, attributeFilter: ["style"] });
 document.addEventListener("contextmenu", (e) => {
-  const ep = e.target.closest(".ep[data-a=playep]");
-  if (ep) { e.preventDefault(); openCm(ep.dataset.v, e.clientX, e.clientY); return; }
+  if (e.target.closest?.("#cm")) { e.preventDefault(); return; }
+  const ep = e.target.closest(".ep[data-a=playep], .ep[data-a=unavail]");
+  if (ep) { e.preventDefault(); openCm(ep.dataset.v, e.clientX, e.clientY, ep); return; }
   /* A show in Home's Continue watching or the big card (Decision 81). */
   const cw = e.target.closest("[data-cw]");
-  if (cw) { e.preventDefault(); contMenu(cw.dataset.cw, cw.dataset.cwep, e.clientX, e.clientY); return; }
+  if (cw) { e.preventDefault(); contMenu(cw.dataset.cw, cw.dataset.cwep, e.clientX, e.clientY, cw); return; }
   /* Any other Play button (show page, This week, …): on a phone, a long-press
      offers the other place (Elias, 2026-11-10: every screen an episode starts from). */
   const pb = e.target.closest("[data-a=play][data-v], [data-a=deckplay][data-v]");
   if (pb && cmOther(pb.dataset.v)) { e.preventDefault(); playMenu(pb, e.clientX, e.clientY); return; }
   /* A playlist box (Library or Home): its own menu (Decision 64). */
   const row = e.target.closest("#wall .plit[data-ref]");
-  if (row) { e.preventDefault(); plRowMenu(row.dataset.ref, e.clientX, e.clientY); return; }
+  if (row) { e.preventDefault(); plRowMenu(row.dataset.ref, e.clientX, e.clientY, row); return; }
   const box = e.target.closest(".plbox[data-pl]");
-  if (box) { e.preventDefault(); plBoxMenu(box.dataset.pl, e.clientX, e.clientY, box.dataset.a === "plgoto"); return; }
+  if (box) { e.preventDefault(); plBoxMenu(box.dataset.pl, e.clientX, e.clientY, box.dataset.a === "plgoto", false, box); return; }
   /* A poster in the Library: add it to a playlist (Decision 64). */
   const c = e.target.closest("#wall .card[data-a=entry], #wall .card[data-a=open]");
-  if (!c) return;
+  if (!c) { if ($("#cm").style.display === "block") { cmHide(true); ovClosed("cm"); } return; }
   const en = c.dataset.a === "entry" ? S.data.spine?.entries.find((x) => String(x.id) === c.dataset.v) : null, sh = en ? null : showById(c.dataset.v);
-  if (!en && !sh) return;
+  if (!en && !sh) { if ($("#cm").style.display === "block") { cmHide(true); ovClosed("cm"); } return; }
   e.preventDefault();
-  plMenu(en ? { ref: plEntryRef(en), title: en.title, poster: en.poster || null } : { ref: plShowRef(sh), title: sh.title, poster: sh.poster || null }, e.clientX, e.clientY);
+  plMenu(en ? { ref: plEntryRef(en), title: en.title, poster: en.poster || null, color: en.color || "" } : { ref: plShowRef(sh), title: sh.title, poster: sh.poster || null, color: accentHex(sh) || "" }, e.clientX, e.clientY, c);
 });
 /* Desktop-shell mode (the anime-hub wrapper opens the UI with ?shell=1):
    suppress the browser's own chrome so the window reads as an app, not a

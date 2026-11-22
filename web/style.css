@@ -2160,7 +2160,7 @@ body.srch #pal{display:grid}
 #cm .plmq input::placeholder{color:var(--mute)}
 #cm .plml{max-height:min(340px,46vh);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 #cm .mi.plmi{height:48px;gap:11px}
-#cm .plmi .ml small i{font-style:normal;color:var(--plk)}
+#cm .plmi .ml small i{font-style:normal;color:var(--ink);font-weight:600}
 #cm .plmi .ml b mark{background:none;color:var(--accent-hi)}
 #cm .plmi .plmc{width:22px;height:22px;border-radius:7px;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22);transition:background .2s,box-shadow .2s}
 #cm .plmi.sel .plmc{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.45)}@media (hover:hover){#cm .plmi:hover .plmc{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.45)}}
@@ -4346,3 +4346,182 @@ body.pp-open #modal{z-index:70}
 @container (max-width:1977px){.brrow>:nth-child(n+10){display:none}}
 @container (max-width:2175px){.brrow>:nth-child(n+11){display:none}}
 @container (max-width:2373px){.brrow>:nth-child(n+12){display:none}}
+
+/* ───────── Right-click menus — Tight Context Card polish (2026-11-22) ───────── */
+#cm{
+  --cm-ac:var(--accent);
+  background:radial-gradient(125% 80% at 12% 0%,color-mix(in srgb,var(--cm-ac) 14%,transparent),transparent 62%),rgba(19,20,25,.92);
+  -webkit-backdrop-filter:blur(28px) saturate(1.35);
+  backdrop-filter:blur(28px) saturate(1.35);
+  box-shadow:0 24px 60px -16px rgba(0,0,0,.82),inset 0 0 0 1px rgba(255,255,255,.11),inset 0 1px 0 rgba(255,255,255,.16);
+}
+#cm:focus{outline:0}
+@media (min-width:701px){
+  #cm{
+    z-index:35;
+    width:272px;padding:5px;border-radius:14px;
+    background:radial-gradient(120% 60% at 15% 0%,color-mix(in srgb,var(--cm-ac) 20%,transparent),transparent 70%),rgba(28,28,33,.8);
+    -webkit-backdrop-filter:blur(36px) saturate(1.7);backdrop-filter:blur(36px) saturate(1.7);
+    box-shadow:0 22px 56px -14px rgba(0,0,0,.8),inset 0 0 0 1px rgba(255,255,255,.15),inset 0 1px 0 rgba(255,255,255,.18);
+    transform-origin:var(--cm-ox,0%) var(--cm-oy,0%);
+    animation:cmIn .155s cubic-bezier(.22,1,.36,1) backwards;
+  }
+  #cm:has(.plmh){width:272px;padding:5px}
+  #cm.closing{pointer-events:none;animation:cmOut .12s cubic-bezier(.4,0,.6,1) forwards}
+  @keyframes cmIn{from{opacity:0;transform:translateY(var(--cm-dy,-4px)) scale(.945)}}
+  @keyframes cmOut{to{opacity:0;transform:translateY(var(--cm-dy,-4px)) scale(.97)}}
+  #cm .mi{
+    position:relative;z-index:1;height:34px;padding:0 9px;gap:9px;border-radius:8px;
+    font:500 13.5px var(--ui);color:#ecece9;
+    transition:color .12s,transform .08s var(--ease);
+    animation:cmRowIn .15s cubic-bezier(.22,1,.36,1) backwards;
+    animation-delay:calc(var(--i,0) * 10ms);
+  }
+  @keyframes cmRowIn{from{opacity:0}}
+  #cm.closing .mi,#cm #plml.pl-live .mi{animation:none}
+  #cm .mi:active:not(:disabled){transform:scale(.982)}
+  #cm .mi.pri-row{font-weight:600;color:#fff}
+  #cm .mi.pri-row .ico{color:var(--cm-ac)}
+  #cm .mi .ico{color:rgba(243,243,241,.66);transition:transform .16s cubic-bezier(.22,1,.36,1),color .12s}
+  #cm .mi.sel .ico,#cm .mi:focus-visible .ico{color:#f5f5f3}
+  #cm .mi.pri-row.sel .ico{color:color-mix(in srgb,var(--cm-ac) 80%,#fff)}
+  /* UI font (not mono) so O and 0 look distinct (Decision 84) */
+  #cm .mi kbd{
+    min-width:0;height:auto;padding:0;border-radius:0;
+    font:500 12px/1 var(--ui);color:rgba(243,243,241,.38);
+    background:none;box-shadow:none;
+    transition:background .12s,color .12s,transform .12s var(--ease);
+  }
+  #cm .mi.sel kbd{color:rgba(243,243,241,.75);background:none}
+  #cm .mi.cm-hit{transform:scale(.982)}
+  #cm .mi.cm-hit kbd{transform:scale(.86);color:var(--cm-ac)}
+  #cm .sep{margin:4px 8px}
+  #cm .sep.danger-sep{margin:5px 8px}
+  /* Gliding highlight owns the hover/select fill on desktop (restores smooth press-scale over legacy transition:none) */
+  #cm.cm-gl .mi.sel,#cm.cm-gl .mi:focus-visible{background:transparent;transition:color .12s,transform .08s var(--ease)}
+  #cm.cm-gl .mi:focus-visible{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--cm-ac) 70%,transparent)}
+  #cm.cm-gl .cml,#cm.cm-gl #plml{position:relative}
+  #cm .cmhl{
+    position:absolute;left:0;right:0;top:0;height:34px;border-radius:8px;
+    background:rgba(255,255,255,.1);
+    pointer-events:none;z-index:0;opacity:0;
+    transform:translateY(var(--hl-y,0px));
+    transition:transform .15s cubic-bezier(.22,1,.36,1),height .15s cubic-bezier(.22,1,.36,1),opacity .11s ease,background-color .1s ease .07s,box-shadow .1s ease .07s;
+  }
+  #cm .cmhl.on{opacity:1}
+  #cm .cmhl.press{transform:translateY(var(--hl-y,0px)) scale(.986);background:rgba(255,255,255,.16);transition-duration:.07s}
+  #cm .cmhl.warn{background:rgba(255,196,107,.10);box-shadow:inset 0 0 0 1px rgba(255,196,107,.16)}
+  #cm .cmhl.danger{background:rgba(239,138,143,.16);box-shadow:inset 0 0 0 1px rgba(239,138,143,.24)}
+  /* Very subtle: a 1px nudge in the icon's own direction, no spins or tilts */
+  #cm .mi.sel .cm-i-play{transform:translateX(1px)}
+  #cm .mi.sel .cm-i-arrowr{transform:translateX(1.5px)}
+  #cm .mi.sel .cm-i-ext{transform:translate(1px,-1px)}
+  #cm .mi.sel .cm-i-download{transform:translateY(1px)}
+  /* Accent ring matching --cm-ring on :root (survives morphAttrs and never overrides card transitions) */
+  @keyframes cmRingIn{from{outline-color:transparent}}
+  @keyframes cmRingOut{to{outline-color:transparent}}
+  .cm-target{outline:2px solid color-mix(in srgb,var(--cm-ring,var(--accent)) 78%,transparent);outline-offset:2px;animation:cmRingIn .14s var(--ease)}
+  .cm-target.cm-target-out{animation:cmRingOut .105s var(--ease) forwards}
+  .ep.cm-target .epa,.hc.cm-target .epa,.card.cm-target .pw,.plpost.cm-target .plpi,.plbox.cm-target .plcard[data-pos="0"]{outline:2px solid color-mix(in srgb,var(--cm-ring,var(--accent)) 82%,transparent);outline-offset:2px;animation:cmRingIn .14s var(--ease)}
+  .eps.strip .ep.cm-target .epa{outline-offset:-1px}
+  .ep.cm-target.cm-target-out .epa,.hc.cm-target.cm-target-out .epa,.card.cm-target.cm-target-out .pw,.plpost.cm-target.cm-target-out .plpi,.plbox.cm-target.cm-target-out .plcard[data-pos="0"]{animation:cmRingOut .105s var(--ease) forwards}
+  .ep.cm-target,.hc.cm-target,.card.cm-target,.plpost.cm-target,.plbox.cm-target{outline:none;animation:none}
+  #cm .mi .ml small{display:inline;margin-left:6px;font:500 12px var(--ui);color:rgba(243,243,241,.62)}
+  /* Desktop menu triggers >= 32px target */
+  .dots{width:32px;height:32px}
+  .plmore{width:32px;height:36px}
+  .plpost .plmore{width:32px;height:32px;margin:-8px 0 -8px 2px}
+}
+@media (min-width:701px) and (hover:hover){
+  #cm.cm-gl .mi:hover:not(:disabled){background:transparent}
+  #cm .mi:hover:not(:disabled) .ico{color:#f5f5f3}
+  #cm .mi.pri-row:hover:not(:disabled) .ico{color:color-mix(in srgb,var(--cm-ac) 80%,#fff)}
+  #cm .mi:hover:not(:disabled) kbd{color:rgba(243,243,241,.75);background:none}
+}
+@media (max-width:700px){#cm .cmhl{display:none}}
+
+/* Context Card artwork header */
+#cm .cmh{display:flex;align-items:center;gap:11px;padding:4px 5px 9px;margin-bottom:5px;border-bottom:1px solid rgba(255,255,255,.08)}
+#cm .cmha{position:relative;flex:none;overflow:hidden;border-radius:7px;background:var(--s3);box-shadow:0 6px 14px -6px rgba(0,0,0,.85),inset 0 0 0 1px rgba(255,255,255,.13)}
+#cm .cmha.still{width:80px;height:45px}
+#cm .cmha.poster{width:30px;height:45px;border-radius:6px}
+#cm .cmha.pl{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--cm-ac);background:color-mix(in srgb,var(--cm-ac) 18%,rgba(255,255,255,.04));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cm-ac) 34%,transparent)}
+#cm .cmha.pl .ico{width:17px;height:17px;color:inherit;stroke-width:2}
+#cm .cmha.ph{display:grid;place-items:center;color:var(--mute)}#cm .cmha.ph .ico{width:14px;height:14px}
+#cm .cmha img{width:100%;height:100%;object-fit:cover;display:block}
+#cm .cmha.spoil img{filter:blur(7px) saturate(.7);transform:scale(1.12)}
+#cm .cmhp{position:absolute;left:0;right:0;bottom:0;height:2.5px;background:rgba(0,0,0,.48)}
+#cm .cmhp i{display:block;height:100%;background:var(--cm-ac)}
+#cm .cmht{min-width:0;flex:1}
+#cm .cmhe{display:block;font:650 10.5px/1.2 var(--ui);letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--cm-ac) 85%,#fff);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cm .cmht b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font:650 15px/1.2 var(--ui);color:var(--ink);overflow-wrap:anywhere;text-wrap:balance}
+#cm .cmhf{display:block;font:500 12px/1.25 var(--ui);color:rgba(243,243,241,.55);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cm .cml{position:relative;display:flex;flex-direction:column;gap:1px}
+
+/* Danger & warning rows */
+#cm .mi[data-danger]{color:#f2a4a8}
+#cm .mi[data-danger] .ico{color:#ef8a8f}
+#cm .mi[data-danger].sel{color:#ffd4d6}#cm .mi[data-danger].sel .ico{color:#ffb4b8}
+@media (hover:hover){#cm .mi[data-danger]:hover{color:#ffd4d6}#cm .mi[data-danger]:hover .ico{color:#ffb4b8}}
+#cm .mi[data-warn].sel{color:#f0cf93}#cm .mi[data-warn].sel .ico{color:var(--warn)}
+@media (hover:hover){#cm .mi[data-warn]:hover{color:#f0cf93}#cm .mi[data-warn]:hover .ico{color:var(--warn)}}
+
+/* VPN tag crisp pill (explicit padding beats legacy #cm .mi .v.warn padding-left:0) */
+#cm .mi .v{font:600 11px/1 var(--ui);padding:3px 7px;border-radius:999px;background:rgba(127,212,154,.15);color:#a6e6ba}
+#cm .mi .v.warn{padding:3px 7px;font-size:11px;background:rgba(255,196,107,.16);color:var(--warn)}
+
+/* Layout popover unified inside #cm with gliding segment pill */
+#cm .pllay{padding:2px 4px 4px;min-width:0}
+#cm .pllay>small{margin:10px 6px 5px;font-size:11px;color:rgba(243,243,241,.58)}
+#cm .pllay>small:first-child{margin-top:4px}
+#cm .plseg{position:relative;gap:0;padding:3px;border-radius:11px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+#cm .plseg-gl{position:absolute;top:3px;left:3px;bottom:3px;width:calc(50% - 3px);border-radius:8px;background:color-mix(in srgb,var(--cm-ac) 30%,rgba(255,255,255,.11));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cm-ac) 38%,rgba(255,255,255,.08));transform:translateX(calc(var(--si,0) * 100%));transition:transform .2s cubic-bezier(.22,1,.36,1);pointer-events:none;z-index:0}
+#cm .plseg button{position:relative;z-index:1;height:32px;border-radius:8px;background:none;color:rgba(243,243,241,.68);transition:color .16s,transform .08s var(--ease)}
+#cm .plseg button.on{background:none;color:#fff;font-weight:600}
+#cm .plseg button:active{transform:scale(.97)}
+#cm .plseg button:focus-visible,#cm .pltog:focus-visible{outline:0;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--cm-ac) 75%,transparent)}
+#cm .pllay .sep{margin:8px 2px 4px}
+#cm .pltog{margin-top:0;border-top:0;padding:7px 6px;border-radius:9px;transition:background .14s}
+#cm .pltog .switch[aria-checked=true]{background:var(--cm-ac);border-color:var(--cm-ac)}
+@media (hover:hover){#cm .pltog:hover{background:rgba(255,255,255,.08)}}
+
+/* Add-to-playlist unified alignment, drawn tick stroke (no bounce) & real rolling count */
+@media (min-width:701px){
+  #cm .plmh{padding:4px 5px 9px;gap:11px;margin-bottom:5px;border-bottom:1px solid rgba(255,255,255,.08)}
+  #cm .plmh img,#cm .plmph{width:30px;height:45px;border-radius:6px}
+  #cm .plmh small{font:650 10.5px/1.2 var(--ui);letter-spacing:.08em;color:color-mix(in srgb,var(--cm-ac) 85%,#fff);margin-bottom:3px}
+  #cm .plmh b{font:650 15px/1.2 var(--ui);text-wrap:balance}
+  #cm .plmq{height:34px;padding:0 9px;margin-bottom:4px;gap:9px}
+  #cm .plmq .ico{width:28px;height:15px}
+  #cm .mi.plmi{height:40px;gap:9px;padding:0 9px}
+  #cm .plmi .plmt{width:26px;height:26px;border-radius:7px}
+  #cm .plmi .ml small{color:rgba(243,243,241,.62);margin-left:0} /* the count lines up under the name */
+  #cm .mi.plmk{height:34px;gap:9px;padding:0 9px}
+  #cm .plmk .plmt{width:26px;height:26px;border-radius:7px}
+  #cm .plmi .plmc{width:18px;height:18px;border-radius:5px}
+  #cm .plmf{padding:6px 9px 3px;margin-top:4px;color:rgba(243,243,241,.62);font-size:11.5px}
+}
+#cm .plmi.just .plmc{animation:cmRing .36s cubic-bezier(.22,1,.36,1)}
+@keyframes cmRing{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--plk) 55%,transparent)}100%{box-shadow:0 0 0 4px color-mix(in srgb,var(--plk) 20%,transparent)}}
+#cm .plmi .plmc .ico{opacity:0;transition:opacity .12s ease}
+#cm .plmi.on .plmc .ico{opacity:1;transition:opacity .06s ease}
+#cm .plmi .plmc .ico path{stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .18s ease-in}
+#cm .plmi.on .plmc .ico path{stroke-dashoffset:0;transition:stroke-dashoffset .24s cubic-bezier(.22,1,.36,1) .04s}
+#cm .plmcnt-w{position:relative;display:inline-grid;overflow:hidden;vertical-align:top}
+#cm .plmcnt-w .plmcnt{grid-area:1/1}
+#cm .plmcnt.out.roll-up{animation:cmRollOutUp .22s cubic-bezier(.22,1,.36,1) forwards}
+#cm .plmcnt.in.roll-up{animation:cmRollInUp .24s cubic-bezier(.22,1,.36,1) both}
+#cm .plmcnt.out.roll-dn{animation:cmRollOutDn .22s cubic-bezier(.22,1,.36,1) forwards}
+#cm .plmcnt.in.roll-dn{animation:cmRollInDn .24s cubic-bezier(.22,1,.36,1) both}
+@keyframes cmRollOutUp{to{opacity:0;transform:translateY(-8px)}}
+@keyframes cmRollInUp{from{opacity:0;transform:translateY(8px)}}
+@keyframes cmRollOutDn{to{opacity:0;transform:translateY(8px)}}
+@keyframes cmRollInDn{from{opacity:0;transform:translateY(-8px)}}
+
+/* Reduced motion honors system & setting */
+@media (prefers-reduced-motion:reduce){
+  :root:not([data-motion=always]) #cm{animation:none!important}
+  :root:not([data-motion=always]) #cm .mi,:root:not([data-motion=always]) #cm .cmhl,:root:not([data-motion=always]) #cm .plseg-gl,:root:not([data-motion=always]) #cm .plmcnt,:root:not([data-motion=always]) .cm-target,:root:not([data-motion=always]) .cm-target *{animation:none!important;transition:none!important}
+}
+:root[data-motion=calm] #cm .mi{animation:none}
+
