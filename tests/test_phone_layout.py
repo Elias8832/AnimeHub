@@ -285,7 +285,7 @@ class PhonePolish(unittest.TestCase):
     def test_bars_above_the_dock_are_their_own_pills(self):
         # Elias, TODO 239: joined to the dock as one block they "looked bad"
         self.assertIn("--bar-at:calc(22px + var(--dock) + env(safe-area-inset-bottom))", CSS)  # 10 px above the dock
-        self.assertIn(".rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:60px;padding:0 8px 0 9px;border-radius:26px;", CSS)
+        self.assertIn(".rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:62px;padding:0 8px;gap:8px;border-radius:31px;", CSS)
         self.assertIn(".pbar{display:flex;gap:8px;padding:7px;border-radius:31px;background:var(--dockbg);box-shadow:var(--pill-sh)", CSS)
         self.assertIn("border-radius:26px;background:var(--dockbg);box-shadow:var(--pill-sh);transition:bottom .3s var(--ease)}", CSS)  # #selbar
         self.assertNotIn("0 0 26px 26px", CSS)  # the dock is never flattened to join a bar
@@ -588,9 +588,14 @@ class PlayOnTheOtherSide(unittest.TestCase):
         self.assertIn('if (S.settings?.android) return pcPlay(id, fromStart, mode);', APP)  # "On the PC" goes through the app's hub, Sub/Dub too
 
     def test_one_floating_player_at_a_time(self):
-        # TODO 263 (Elias: "two pills"): with the remote's bar up, the show page's Play stays in the page.
+        # TODO 263 (Elias: "two pills", round 4: Play strip look): with the remote's
+        # bar up, Play + ⋯ sit in the page as a pair and the bar wears the strip's round still.
         self.assertIn('if (isPhone() && (S.view === "show" || S.view === "fr") && !document.body.classList.contains("rmt-on")) {', APP)
         self.assertIn('if (!document.body.classList.contains("rmt-on")) { document.body.classList.add("rmt-on"); paintPortals(); }', APP)
+        self.assertIn('<button class="btn ic ctamore" aria-label="More" data-a="frmore">${ico("dots")}</button>', APP)
+        self.assertIn("body.rmt-on .sp2.frpage .hero .cta:has(>.btn.pri){display:grid!important;grid-template-columns:1fr 48px;", CSS)
+        self.assertIn("const still = ctx ? epThumbOf(ctx.sea.thumbs, ctx.ep) : null, tsrc = still || s?.poster;", APP)
+        self.assertIn(".rbar img,.rbar .rph{width:46px;height:46px;border-radius:50%;box-shadow:var(--edge)}", CSS)
 
     def test_every_place_an_episode_starts(self):
         # Episode menus, Home's Continue watching, and every other Play button.

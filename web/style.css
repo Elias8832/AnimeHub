@@ -738,6 +738,7 @@ span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgb
 .ahead .lnk .ico{width:13px;height:13px;transition:transform .2s var(--ease)}.ahead .lnk:hover .ico{transform:translateX(2px)}
 /* Play + the action pill */
 .sp2 .cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px;align-items:center}
+.cta>.ctamore{display:none} /* the phone's ⋯ beside Play while the remote's bar floats (TODO 263) */
 .sp2 .cta .btn.big{height:48px;font-size:15px;padding:0 26px 0 22px}
 .sp2 .cta .btn.loading{opacity:.85}
 .sp2 .grp{height:48px;display:inline-flex;align-items:center;gap:2px;padding:0 5px;border-radius:999px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(14px)}
@@ -2517,9 +2518,14 @@ body.has-side #app{padding-left:340px}
   #status{display:none}
   body{padding-bottom:110px}
   body.rmt-on{padding-bottom:170px}
-  .rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:60px;padding:0 8px 0 9px;border-radius:26px;background:var(--dockbg);box-shadow:var(--pill-sh);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
-  .rbar img,.rbar .rph{width:40px;height:40px;border-radius:11px}
-  .rbar .rprog{left:18px;right:18px}
+  .rbar{left:12px;right:12px;bottom:calc(22px + var(--dock) + env(safe-area-inset-bottom));height:62px;padding:0 8px;gap:8px;border-radius:31px;background:var(--dockbg);box-shadow:var(--pill-sh);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6)}
+  /* The show page's Play strip look (Elias, TODO 263 round 4): a round still that follows the pill's end, the strip's sizes. */
+  .rbar img,.rbar .rph{width:46px;height:46px;border-radius:50%;box-shadow:var(--edge)}
+  .rbar img.rpo{object-position:50% 22%}
+  .rbar .rt{margin-left:3px}
+  .rbar .rt b{font-size:14.5px}
+  .rbar .rp{width:46px;height:46px}
+  .rbar .rprog{left:30px;right:30px}
   .rbar{z-index:32} /* above the dock's fade */
   /* Home */
   .home2.phone .hello{margin:14px 0 18px}
@@ -3472,9 +3478,11 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .hero .grp>*,.sp2.frpage .hero #entryacts>*{flex:1 1 0}
   .sp2.frpage .hero #entryacts{display:contents}
   .sp2.frpage .hero .gsep,.sp2.frpage .hero .grp [data-a=frmore]{display:none} /* ⋯ lives in the dock (Elias) */
-  /* The remote's bar is the one floating player (TODO 263): Play and ⋯ come back into the page. */
-  body.rmt-on .sp2.frpage .hero .cta>.btn.pri{display:flex;width:100%;justify-content:center;margin:0 0 14px}
-  body.rmt-on .sp2.frpage .hero .grp [data-a=frmore]{display:flex}
+  /* The strip's own pair, in the page: Play, then ⋯ round beside it (Elias, round 4: not a fourth action under it). */
+  body.rmt-on .sp2.frpage .hero .cta:has(>.btn.pri){display:grid!important;grid-template-columns:1fr 48px;gap:14px 8px;align-items:center}
+  body.rmt-on .sp2.frpage .hero .cta>.btn.pri{display:flex;grid-column:1;height:48px;justify-content:center;margin:0}
+  body.rmt-on .sp2.frpage .hero .cta>.ctamore{display:flex;grid-column:2;width:48px;height:48px;padding:0;border-radius:50%;background:rgba(255,255,255,.08);box-shadow:var(--edge)}
+  body.rmt-on .sp2.frpage .hero .cta>.grp{grid-column:1/-1}
   .sp2.frpage .hero .gb{flex-direction:column;gap:6px;height:auto;min-width:0;padding:8px 2px;border-radius:14px;font:600 11.5px var(--ui);color:var(--ink-2);white-space:normal;text-align:center;line-height:1.2}
   .sp2.frpage .hero .gb .ico{width:21px;height:21px;color:var(--ink)}
   .sp2.frpage .hero .gb:active{background:rgba(255,255,255,.07)}

@@ -2750,7 +2750,7 @@ function Fran() {
     <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
     ${e.overview ? `<p class="desc" data-a="descx">${esc(e.overview)}</p>` : ""}
     <div class="stats2" id="entrystats"></div>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button><button class="btn ic ctamore" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
   <div class="eps-head"><div class="tabs2">${tabs || (byOrder ? frPick(p, e) : `<h2>${esc(movie ? "Movie" : "Episodes")}</h2>`)}</div><span class="srcl">${esc(srcLine)}</span><div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
@@ -5204,7 +5204,7 @@ function paintPortals() {
   if (!el) return;
   let html = "";
   /* One floating player at a time (TODO 263, Elias: "two pills"): while the remote's
-     bar is up, the show page keeps its Play button in the page, not as a strip. */
+     bar is up, the show page keeps Play and ⋯ in the page (.ctamore), not as a strip. */
   if (isPhone() && (S.view === "show" || S.view === "fr") && !document.body.classList.contains("rmt-on")) {
     const b = $("#app .sp2 .cta .btn.pri"), more = $("#app .frpage .cta [data-a=frmore]");
     const tile = b?.dataset.v && $(`#app .eps .ep[data-v="${CSS.escape(b.dataset.v)}"]`);
@@ -5501,14 +5501,16 @@ function paintRemote() {
   }
   const { ctx, s } = rmtCtx(now), l = S.live || {}, tr = l.tracks || { audio: [], sub: [] };
   const hasNext = !!now.next && (now.next.source === "local" || now.next.source === "online");
-  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, S.rmtRow]);
+  const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, ctx && epThumbOf(ctx.sea.thumbs, ctx.ep), S.rmtRow]);
   if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
     rmtSig = sig;
     if (!document.body.classList.contains("rmt-on")) { document.body.classList.add("rmt-on"); paintPortals(); } // the show page's Play strip steps back into the page
     const paused = !!l.paused, busy = now.loading ? "disabled" : "", epNo = ctx ? "E" + String(ctx.ep.number).padStart(2, "0") : now.label;
     const pp = (c) => `<button class="btn pri ic ${c}" data-a="rmt" data-v="toggle" aria-label="${paused ? "Play" : "Pause"}" ${busy}>${ico(paused ? "play" : "pause")}</button>`;
     const skip = (c) => `<button class="btn ${c}" data-a="rmt" data-v="skip" hidden>${ico("next")}<span>Skip opening</span></button>`;
-    const thumb = s?.poster ? `<img alt="" src="${esc(pic(s.poster))}">` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
+    /* The bar wears the show page's Play strip look (Elias, TODO 263 round 4): the episode's still in a circle, the poster only without one. */
+    const still = ctx ? epThumbOf(ctx.sea.thumbs, ctx.ep) : null, tsrc = still || s?.poster;
+    const thumb = tsrc ? `<img alt="" src="${esc(pic(tsrc))}"${still ? "" : ' class="rpo"'}>` : `<i class="rph" style="--h:${hueOf(now.show)}"></i>`;
     const seg = (k, opts, label) => `<span class="seg" role="group" aria-label="${label}">${opts.map(([v, t, on]) => `<button class="${on ? "on" : ""}" aria-pressed="${!!on}" data-a="rmttrack" data-k="${k}" data-v="${v}">${esc(t)}</button>`).join("")}</span>`;
     const subOn = tr.sub.some((t) => t.selected), delay = Number(l.sub_delay || 0), speed = Number(l.speed || 1);
     /* The remote (TODO 177, Elias picked B): the show's art fills the top, big −10 · Play · +10
