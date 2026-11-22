@@ -193,6 +193,26 @@ class View(unittest.TestCase):
         self.assertTrue(menu and all(x["id"].startswith("stream:") and x["online"] for x in menu))
         self.assertIn(disk[2]["id"], [x["id"] for x in player.episode_menu(disk[1]["id"])])
 
+    def test_resume_follows_latest_source_across_disk_and_online(self):
+        """A slot's stop point from online playback resumes when playing the
+        disk file (and vice versa), matching the Resume at label on the menu."""
+        show = support.folder(self.scan, "The Apothecary Diaries")
+        local_id = support.season(show, "Season 2")["episodes"][1]["id"]
+        online_id = "stream:176301:2"
+        with database.db() as c:
+            c.execute("INSERT OR REPLACE INTO episodes(id,watched,position,duration,last_played) VALUES(?,?,?,?,?)",
+                      (local_id, 1, 0, 1440, "2026-11-20T10:00:00Z"))
+            c.execute("INSERT OR REPLACE INTO episodes(id,watched,position,duration,last_played) VALUES(?,?,?,?,?)",
+                      (online_id, 0, 945, 1485, "2026-11-22T22:00:00Z"))
+        self.assertEqual(player.resume_seconds(local_id), 945)
+        self.assertEqual(player.resume_seconds(online_id), 945)
+        self.assertEqual(player.resume_seconds(local_id, from_start=True), 0)
+        # Newer disk stop point takes over for online playback too.
+        with database.db() as c:
+            c.execute("UPDATE episodes SET position=?, duration=?, last_played=? WHERE id=?",
+                      (1100, 1440, "2026-11-22T23:00:00Z", local_id))
+        self.assertEqual(player.resume_seconds(online_id), 1100)
+
     def test_autoplay_never_skips_ahead(self):
         """Without ani-cli, Season 2's missing episodes can't play: the
         chain stops instead of jumping to whatever comes next on disk."""

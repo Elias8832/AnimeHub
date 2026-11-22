@@ -639,8 +639,39 @@ class Polish(unittest.TestCase):
     def test_episode_menu(self):
         self.assertIn('res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"', APP)
         self.assertIn('cmRow("playstart", id, "undo", "Play from the start", "B")', APP)
-        self.assertIn('cmRow("srcfix", "", "search", "Wrong episode?")', APP)
+        self.assertIn('cmRow("srcfix", "", "search", local ? "Wrong online episodes?" : "Wrong episode?")', APP)
         self.assertIn("if (fromStart) body.from_start = true;", APP)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_episode_menu_disk_and_online_labels(self):
+        """A slot on disk + online names the language on both online rows and
+        clarifies that Wrong online episodes? fixes the online match, not disk."""
+        cm_items = re.search(r"function cmItems\([^)]*\) \{.*?\n\}\n", APP, re.S).group(0)
+        out = run_js("""
+            const S = { data: {}, sel: null, settings: {} };
+            const resumable = (ep) => !!ep.duration && ep.position / ep.duration > 0.01 && (!ep.watched || ep.position / ep.duration < 0.92);
+            const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+            const esc = (s) => String(s);
+            const selKey = () => "fr:1";
+            const cmOther = () => "";
+            const cmRow = (a, v, icon, label, key = "", extra = "", attrs = "") => ({ a, v, icon, label, key, attrs });
+        """ + cm_items.replace('.map((g) => g.join("")).join(\'<div class="sep"></div>\')', '.flat().filter((r) => typeof r === "object")') + """
+            const ep = { watched: true, position: 945, duration: 1485 };
+            return {
+                diskDub: cmItems({ id: "loc:11", ep, files: [{ label: "default" }], verId: "loc:11", online: true, onlineId: "stream:1:11", mode: "dub", other: "sub", local: true, dl: false, fix: true }),
+                diskSub: cmItems({ id: "loc:11", ep, files: [{ label: "default" }], verId: "loc:11", online: true, onlineId: "stream:1:11", mode: "sub", other: "dub", local: true, dl: false, fix: true }),
+                onlineOnly: cmItems({ id: "stream:1:11", ep, files: [], verId: null, online: true, onlineId: "stream:1:11", mode: "dub", other: "sub", local: false, dl: true, fix: true }),
+            };
+        """)
+        labels = lambda rows: [(r["label"], r["key"], r["a"], r["attrs"]) for r in rows]
+        self.assertIn(("Play dubbed online", "O", "playmode", 'data-m="dub"'), labels(out["diskDub"]))
+        self.assertIn(("Play subbed online", "A", "playmode", 'data-m="sub"'), labels(out["diskDub"]))
+        self.assertIn(("Wrong online episodes?", "", "srcfix", ""), labels(out["diskDub"]))
+        self.assertIn(("Play subbed online", "O", "playmode", 'data-m="sub"'), labels(out["diskSub"]))
+        self.assertIn(("Play dubbed online", "A", "playmode", 'data-m="dub"'), labels(out["diskSub"]))
+        self.assertNotIn("Play online", [r["label"] for r in out["diskDub"]])
+        self.assertIn(("Play subbed", "A", "playmode", 'data-m="sub"'), labels(out["onlineOnly"]))
+        self.assertIn(("Wrong episode?", "", "srcfix", ""), labels(out["onlineOnly"]))
 
     def test_rewatch_tiles_show_the_stop_point(self):
         self.assertIn("(!ep.watched || ep.position / ep.duration < 0.92)", APP)  # mirrors player.resume_args
