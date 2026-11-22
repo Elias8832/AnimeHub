@@ -4643,8 +4643,10 @@ body.pp-open #modal{z-index:70}
   #ddm:not(.sheet) button.dd-just .ddck .ico path{animation:ddCkDraw .17s cubic-bezier(.22,1,.36,1) both}
   @keyframes ddCkDraw{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
 
-  /* Settings .pkdd: left-aligned, centered under ‹ value ›, clean title-font preview scale */
-  #ddm.pkdd:not(.sheet) button{justify-content:flex-start;padding:0 10px 0 11px;font-size:14px}
+  /* Settings .pkdd: centered under ‹ value ›, each value centred like the value it sets; the check sits at the right edge so it doesn't push the label */
+  #ddm.pkdd:not(.sheet) button{justify-content:center;padding:0 30px;font-size:14px}
+  #ddm.pkdd:not(.sheet) button .ddlbl{flex:0 1 auto}
+  #ddm.pkdd:not(.sheet) button .ddck{position:absolute;right:10px;top:0;bottom:0;margin:auto 0}
   #ddm.pkdd:not(.sheet) button .ico{position:static}
   #ddm.ttl:not(.sheet) button{height:38px}
   #ddm.ttl:not(.sheet) button .ddlbl{font-size:17px;line-height:1.25;font-weight:700;text-transform:uppercase;letter-spacing:.01em}
