@@ -941,7 +941,7 @@ function brHero(x, st) {
   return `<div class="upn brhero${size}" data-a="bopen" data-v="${x.id}" data-k="hero" style="--h:${hueOf(x.title)};--art:${esc(cssUrl(x.banner || x.poster))}"><i class="upa"></i><div class="upc">
     <div class="eye"><i class="mdot"></i>trending now · #1${st.get(x.id) ? ` · <span class="ok">${esc(statusLabel(st.get(x.id)).toLowerCase())}</span>` : ""}</div>
     <h1>${esc(x.title)}</h1><div class="facts">${facts}</div>
-    <div class="cta">${add || S.brAdded?.has(x.id) ? `<button class="btn pri big bhadd${S.brAdded?.has(x.id) ? " done" : ""}" data-a="badd" data-v="${x.id}">${S.brAdded?.has(x.id) ? ico("check") + "<span>Planning</span>" : ico("plus") + "<span>Planning</span>"}</button>` : ""}<button class="btn big" data-a="bopen" data-v="${x.id}">Open show</button></div></div></div>`;
+    ${add || S.brAdded?.has(x.id) ? `<div class="cta"><button class="btn pri big bhadd${S.brAdded?.has(x.id) ? " done" : ""}" data-a="badd" data-v="${x.id}">${S.brAdded?.has(x.id) ? ico("check") + "<span>Planning</span>" : ico("plus") + "<span>Planning</span>"}</button></div>` : ""}</div></div>`; // no Open show (Elias): the whole banner opens it
 }
 const brErr = (msg, a = "bretry") => `<div class="emptyx brerr"><div class="eico">${ico("refresh")}</div><b>Couldn't reach AniList</b><span>${esc(msg)}</span><button class="btn" data-a="${a}">Try again</button></div>`;
 function brOverHTML(st) {
