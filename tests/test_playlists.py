@@ -28,7 +28,7 @@ class Storage(unittest.TestCase):
     def test_create_with_a_first_show(self):
         pid = playlists.create("  Winter   nights ", show())
         self.assertEqual(playlists.all_playlists(), [{"id": pid, "name": "Winter nights", "color": None, "note": "",
-                                                      "icon": "", "pinned": False, "head": "banner", "view": "list", "dim": False,
+                                                      "icon": "", "pinned": False, "head": "banner", "view": "posters", "dim": False,
                                                       "items": [show()]}])
 
     def test_a_bad_first_show_makes_no_playlist(self):
@@ -92,9 +92,9 @@ class Storage(unittest.TestCase):
 
     def test_each_playlist_keeps_its_own_layout(self):
         a, b = playlists.create("a"), playlists.create("b")
-        playlists.edit(a, {"head": "cover", "view": "posters"})
+        playlists.edit(a, {"head": "cover", "view": "list"})
         got = {p["id"]: (p["head"], p["view"]) for p in playlists.all_playlists()}
-        self.assertEqual(got, {a: ("cover", "posters"), b: ("banner", "list")})
+        self.assertEqual(got, {a: ("cover", "list"), b: ("banner", "posters")})
         for bad in ({"head": "big"}, {"view": None}, {"view": 1}, {"dim": 1}, {"dim": "yes"}):
             with self.assertRaises(playlists.PlaylistError):
                 playlists.edit(a, bad)

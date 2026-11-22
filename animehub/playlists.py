@@ -21,7 +21,7 @@ REF_RE = re.compile(r"^(aid:[0-9]+|sid:.+)$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 ICON_RE = re.compile(r"^[a-z0-9-]{1,32}$")
 NAME_MAX, NOTE_MAX = 60, 140
-HEADS, VIEWS = ("banner", "cover"), ("list", "posters")  # the first is the default
+HEADS, VIEWS = ("banner", "cover"), ("posters", "list")  # the first is the default
 
 
 class PlaylistError(ValueError):
