@@ -481,8 +481,8 @@ class LibrarySideList(unittest.TestCase):
         self.assertIn(".lib2 .filters>.fdrop .fpanel{display:none;position:absolute;", CSS)
         self.assertIn('data-a="fpick" data-k="${k}"', APP)
         self.assertIn('<button class="fopt${on ? " on" : ""}"', APP)  # one option per row, not pills
-        # the drop-down list: a caption, a check on the picked one, hung from a right-hand chip's right edge
-        self.assertIn('`<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>`', APP)
+        # the drop-down list: unified glass card (no redundant ddcap header), hung from a right-hand chip's right edge
+        self.assertNotIn('<div class="ddcap">', APP)
         self.assertIn('if (right && !first) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px";', APP)
         self.assertIn(".fdrop,.fpanel{display:contents}", block)  # the phone sheet shows the sliders themselves
 
@@ -1312,3 +1312,54 @@ class ContextMenuPolish(unittest.TestCase):
         self.assertNotIn("#cm .cmhl.pri{", CSS)
 
 
+class DropdownMenuPolish(unittest.TestCase):
+    """Unified Glass Card across every desktop #ddm dropdown (2026-11-22)."""
+
+    def test_glass_card_gliding_highlight_and_scroll_fades(self):
+        for fn in ("function ddScrollFade(", "function ddMoveHl(", "function ddOpen(", "function ddClose(", "function ddPick("):
+            self.assertIn(fn, APP)
+        # Matches #cm glass surface, tight 34px rows, capped width, thin scrollbar & deep fades, no left bar
+        self.assertIn("max-width:min(320px,calc(100vw - 20px));", CSS)
+        self.assertIn("#ddm:not(.sheet) .ddhl{", CSS)
+        self.assertIn("#ddm:not(.sheet) .ddl.fade-b{", CSS)
+        self.assertIn("scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent", CSS)
+        self.assertIn("#ddm:not(.sheet) .ddl::-webkit-scrollbar{width:4px}", CSS)
+        self.assertNotIn("#ddm:not(.sheet) button.on::before{", CSS)
+        self.assertIn("@keyframes ddCardIn{", CSS)
+        self.assertIn("@keyframes ddCardOut{", CSS)
+        self.assertIn("@keyframes ddCkDraw{", CSS)
+        self.assertIn("@keyframes ddChevBack{", CSS)
+        # Active season keeps its episode count alongside the check; Settings parent row stays lit & matches .pkm width
+        self.assertIn('<small class="r">${esc(o.dataset.r)}</small>', APP)
+        self.assertIn('<span class="ddck" aria-hidden="true">${ico("check")}</span>', APP)
+        self.assertIn("#ddm.pkdd:not(.sheet) button{justify-content:flex-start;", CSS)
+        self.assertIn(".set2 .srow:is(:hover,:focus-within,:has(.pk.ddon))", CSS)
+        self.assertIn("pk?.querySelector(\".pkm\")", APP)
+        # Commits at 0ms, restores focus across async render(), keeps zoompick animation, cleans ddEat on pointerup
+        self.assertIn("function ddReattach()", APP)
+        self.assertIn("if (e.button === 0 || ddPtr !== \"mouse\") ddEat = Date.now(); ddClose(false);", APP)
+        self.assertIn("ddToggledFl = sel.closest(\"label.fl\")", APP)
+        self.assertIn('document.addEventListener("pointerup", ddClearPress, true);', APP)
+        self.assertIn("Math.hypot(e.clientX - ddPtr0.x, e.clientY - ddPtr0.y) < 4", APP)
+        # Narrow-desktop .fdrop filter popovers match with gliding highlight & keyboard nav
+        self.assertIn("function fdropMoveHl(", APP)
+        self.assertIn(".lib2 .filters>.fdrop .fdhl{", CSS)
+        # Keyboard: blocks ArrowLeft/Right & PageUp/Down, first/repeated type-ahead cycles immediately, mouse open starts unhighlighted
+        self.assertIn("ddKb = !!kb; ddStill = !kb;", APP)
+        self.assertIn('e.key === "ArrowLeft" || e.key === "ArrowRight"', APP)
+        self.assertIn('e.key === "PageDown" || e.key === "PageUp"', APP)
+        self.assertIn("lbl.scrollWidth > lbl.clientWidth + 1", APP)
+        # Close waits on animationend, measures real #nav/#status, and .fl chevron rotates while open
+        self.assertIn('m.addEventListener("animationend", ddClose.end);', APP)
+        self.assertIn(".lib2 .fl.ddon:has(select)::after{transform:rotate(180deg)}", CSS)
+        self.assertIn('"ddon"', APP.split("const LIVE_CLASSES", 1)[1].split("\n", 1)[0])
+        # Sonnet R1: chip width glides on pick, chip lists keep one width, arrows stop at the ends, focus ring, aria-expanded
+        self.assertIn('trig.animate([{ width: w0 / z + "px", overflow: "hidden" }', APP)
+        self.assertIn("ddRestore.w0", APP)
+        self.assertIn('sel.closest(".fl") ? 0 : p.width', APP)
+        self.assertIn('const libChip = sel.dataset.a === "filt" && sel.closest(".fl");', APP)
+        self.assertIn('m.style.minWidth = (libChip ? box.width / z :', APP)
+        self.assertNotIn("#ddm:not(.sheet) button.on{color:#fff;font-weight:600}", CSS)
+        self.assertNotIn("% bs.length]", APP)
+        self.assertIn(".lib2 .fl:has(select:focus-visible),.pk .pkm:has(select:focus-visible){", CSS)
+        self.assertIn('sel.setAttribute("aria-expanded", "true");', APP)

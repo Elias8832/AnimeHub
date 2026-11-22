@@ -1964,9 +1964,9 @@ body.srch #pal{display:grid}
   .set2 .srow>.sline{display:block;grid-column:2;grid-row:1;height:1px;background:rgba(255,255,255,.1);transition:background .25s}
   .set2 .srow>.ctl{grid-column:3;grid-row:1/3;align-self:start;justify-content:flex-end;flex-wrap:nowrap;gap:14px;min-height:27px;margin-top:-4px}
   .set2 .srow:has(>.ctl:empty)>.sline{display:none}
-  .set2 .srow:is(:hover,:focus-within)>div:first-child>b{color:var(--ink)}
-  .set2 .srow:is(:hover,:focus-within)>.sline{background:color-mix(in srgb,var(--accent) 70%,transparent)}
-  .set2 .srow:is(:hover,:focus-within) .pka:not(:disabled){color:var(--accent)}
+  .set2 .srow:is(:hover,:focus-within,:has(.pk.ddon))>div:first-child>b{color:var(--ink)}
+  .set2 .srow:is(:hover,:focus-within,:has(.pk.ddon))>.sline{background:color-mix(in srgb,var(--accent) 70%,transparent)}
+  .set2 .srow:is(:hover,:focus-within,:has(.pk.ddon)) .pka:not(:disabled){color:var(--accent)}
   .set2 .srow.wide>.ctl{grid-column:1/-1;grid-row:3;justify-content:flex-start;margin:8px 0 0}
   .set2 .srow.wide>.sline{grid-column:2/-1}
   .set2 .srow.prev>.pkprev{display:block;grid-column:1/3;grid-row:3;width:max-content;max-width:300px;margin:12px 0 4px;padding:0;border-radius:14px;overflow:hidden;pointer-events:none;background:none;box-shadow:none}
@@ -4524,4 +4524,145 @@ body.pp-open #modal{z-index:70}
   :root:not([data-motion=always]) #cm .mi,:root:not([data-motion=always]) #cm .cmhl,:root:not([data-motion=always]) #cm .plseg-gl,:root:not([data-motion=always]) #cm .plmcnt,:root:not([data-motion=always]) .cm-target,:root:not([data-motion=always]) .cm-target *{animation:none!important;transition:none!important}
 }
 :root[data-motion=calm] #cm .mi{animation:none}
+
+/* ───────── Dropdown menus (#ddm) — Unified Glass Card polish (2026-11-22) ───────── */
+#ddm:focus{outline:0}
+@media (min-width:701px){
+  /* Matches #cm Decision 105: lighter glow glass, 36px blur, 14px radius, tight 34px rows */
+  #ddm:not(.sheet){
+    padding:5px;border-radius:14px;overflow:visible;max-height:none!important;
+    max-width:min(320px,calc(100vw - 20px));
+    background:radial-gradient(120% 60% at 15% 0%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%),rgba(28,28,33,.8);
+    -webkit-backdrop-filter:blur(36px) saturate(1.7);backdrop-filter:blur(36px) saturate(1.7);
+    box-shadow:0 22px 56px -14px rgba(0,0,0,.8),inset 0 0 0 1px rgba(255,255,255,.15),inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  #ddm:not(.sheet).open{animation:ddCardIn .155s cubic-bezier(.22,1,.36,1) backwards}
+  #ddm:not(.sheet).closing{pointer-events:none;animation:ddCardOut .115s cubic-bezier(.4,0,.6,1) forwards}
+  @keyframes ddCardIn{from{opacity:0;transform:translateY(var(--dd-dy,-4px)) scale(.95)}}
+  @keyframes ddCardOut{to{opacity:0;transform:translateY(var(--dd-dy,-4px)) scale(.97)}}
+
+  #ddm:not(.sheet) .ddl{
+    position:relative;display:flex;flex-direction:column;gap:1px;
+    max-height:var(--dd-mh,340px);overflow-y:auto;overscroll-behavior:contain;
+  }
+  @supports not selector(::-webkit-scrollbar){
+    #ddm:not(.sheet) .ddl{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
+  }
+  #ddm:not(.sheet) .ddl::-webkit-scrollbar{width:4px}
+  #ddm:not(.sheet) .ddl::-webkit-scrollbar-track{background:transparent}
+  #ddm:not(.sheet) .ddl::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border:0;border-radius:99px}
+  #ddm:not(.sheet) .ddl::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.36)}
+  #ddm:not(.sheet) .ddl.has-sb{padding-right:2px}
+  #ddm:not(.sheet) .ddl.fade-b{-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(180deg,#000 calc(100% - 44px),transparent)}
+  #ddm:not(.sheet) .ddl.fade-t{-webkit-mask-image:linear-gradient(0deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(0deg,#000 calc(100% - 36px),transparent)}
+  #ddm:not(.sheet) .ddl.fade-t.fade-b{-webkit-mask-image:linear-gradient(180deg,transparent,#000 36px,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(180deg,transparent,#000 36px,#000 calc(100% - 44px),transparent)}
+
+  /* Single gliding highlight shared by pointer & keyboard (eliminates double hover+focus) */
+  #ddm:not(.sheet) .ddhl{
+    position:absolute;left:0;right:0;top:0;height:34px;border-radius:8px;
+    background:rgba(255,255,255,.1);pointer-events:none;z-index:0;opacity:0;
+    transform:translateY(var(--hl-y,0px));
+    transition:transform .15s cubic-bezier(.22,1,.36,1),height .15s cubic-bezier(.22,1,.36,1),opacity .11s ease,background-color .1s ease;
+  }
+  #ddm:not(.sheet) .ddhl.on{opacity:1}
+  #ddm:not(.sheet) .ddhl.press{transform:translateY(var(--hl-y,0px)) scale(.986);background:rgba(255,255,255,.16);transition-duration:.07s}
+
+  #ddm:not(.sheet) button{
+    position:relative;z-index:1;height:34px;padding:0 9px 0 10px;gap:9px;border-radius:8px;
+    font:500 13.5px var(--ui);color:#dcdcd9;text-align:left;justify-content:flex-start;
+    background:transparent;transition:color .12s,transform .08s var(--ease);
+    animation:ddRowIn .14s cubic-bezier(.22,1,.36,1) backwards;
+    animation-delay:calc(var(--i,0) * 10ms);
+  }
+  @keyframes ddRowIn{from{opacity:0}}
+  #ddm:not(.sheet).closing button{animation:none}
+  #ddm:not(.sheet).dd-gl button:hover,#ddm:not(.sheet).dd-gl button:focus-visible{background:transparent}
+  #ddm:not(.sheet) button.sel{color:#fff}
+  #ddm:not(.sheet) button:active:not(:disabled),#ddm:not(.sheet) button.dd-hit{transform:scale(.982)}
+  #ddm:not(.sheet) button.on{color:#fff} /* no bolder weight: the picked row must not widen the card */
+  #ddm:not(.sheet) button .ddlbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #ddm:not(.sheet) button .pkdot{margin-right:0;width:12px;height:12px}
+  #ddm:not(.sheet) button .r{margin-left:0;padding-left:6px;flex:none;font:500 11.5px var(--ui);color:rgba(243,243,241,.5);font-variant-numeric:tabular-nums}
+  #ddm:not(.sheet) button.on .r{color:rgba(243,243,241,.72)}
+
+  /* Drawn checkmark stroke (zero bounce) */
+  #ddm:not(.sheet) button .ddck{flex:none;width:15px;height:15px;display:grid;place-items:center;margin-left:auto;font-size:14px;text-transform:none}
+  #ddm:not(.sheet) .ddl.has-r button .ddck{margin-left:2px}
+  #ddm:not(.sheet) button .ddck .ico{position:static;margin:0;width:14px;height:14px;stroke-width:2.5;color:var(--accent-hi);opacity:0;transition:opacity .08s}
+  #ddm:not(.sheet) button .ddck .ico path{stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .14s ease-in}
+  #ddm:not(.sheet) button.on .ddck .ico{opacity:1}
+  #ddm:not(.sheet) button.on .ddck .ico path{stroke-dashoffset:0;transition:stroke-dashoffset .17s cubic-bezier(.22,1,.36,1) .02s}
+  #ddm:not(.sheet) button.dd-just .ddck .ico path{animation:ddCkDraw .17s cubic-bezier(.22,1,.36,1) both}
+  @keyframes ddCkDraw{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
+
+  /* Settings .pkdd: left-aligned, centered under ‹ value ›, clean title-font preview scale */
+  #ddm.pkdd:not(.sheet) button{justify-content:flex-start;padding:0 10px 0 11px;font-size:14px}
+  #ddm.pkdd:not(.sheet) button .ico{position:static}
+  #ddm.ttl:not(.sheet) button{height:38px}
+  #ddm.ttl:not(.sheet) button .ddlbl{font-size:17px;line-height:1.25;font-weight:700;text-transform:uppercase;letter-spacing:.01em}
+
+  /* Trigger micro-interactions: rotating chevron on Library/Browse .fl, unified .pkm pill, tactile press & pick pulse */
+  .lib2 .fl:has(select){position:relative;transition:background .18s,transform .08s var(--ease)}
+  .lib2 .fl:has(select):active{transform:scale(.975)}
+  .lib2 .fl select{background-image:none}
+  .lib2 .fl:has(select)::after{
+    content:"";position:absolute;right:10px;top:50%;width:12px;height:12px;margin-top:-6px;pointer-events:none;
+    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23b0b0b4' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center/12px no-repeat;
+    transition:transform .22s cubic-bezier(.22,1,.36,1),opacity .15s;
+  }
+  .lib2 .fl.ddon:has(select)::after{transform:rotate(180deg)}
+  .lib2 .fl:has(select:disabled)::after{opacity:0}
+  .lib2 .filters .fl.ddon{background:rgba(255,255,255,.09)}
+  .lib2 .filters .fl.ddon select{color:var(--ink)}
+  .lib2 .fl:has(select:focus-visible),.pk .pkm:has(select:focus-visible){background-color:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 70%,transparent)}
+  .frpick{transition:background .15s,transform .08s var(--ease)}
+  .frpick:active{transform:scale(.975)}
+  /* Settings .pkm wraps both .pkdot and select.pkv as one unified pill target */
+  .pk .pkm{border-radius:10px;padding:0 6px;transition:background-color .16s,transform .08s var(--ease);cursor:pointer}
+  .pk .pkm:has(select:not(:disabled)):hover{background-color:rgba(255,255,255,.06)}
+  .pk .pkm:has(select:not(:disabled)):active{transform:scale(.975)}
+  .pk.ddon .pkm{background-color:rgba(255,255,255,.09)}
+  .pk .pkm select.pkv{padding:0 4px;background-color:transparent!important}
+  .pk .pkm .pkdot{cursor:pointer}
+  @keyframes ddPicked{0%{background-color:color-mix(in srgb,var(--accent) 18%,rgba(255,255,255,.08))}100%{}}
+  @keyframes ddValIn{0%{opacity:.45;transform:translateY(3px)}100%{opacity:1;transform:none}}
+  @keyframes ddChevBack{0%{transform:rotate(180deg)}100%{transform:rotate(0deg)}}
+  .lib2 .filters .fl.dd-picked,.frpick.dd-picked,.pk.dd-picked .pkm{animation:ddPicked .34s cubic-bezier(.22,1,.36,1)}
+  .pk.dd-picked .pkm select.pkv,.frpick.dd-picked>span,.lib2 .filters .fl.dd-picked select{animation:ddValIn .2s cubic-bezier(.22,1,.36,1)}
+  .frpick.dd-back .ico,.lib2 .fl.dd-back::after{animation:ddChevBack .22s cubic-bezier(.22,1,.36,1)}
+
+  /* Narrow-desktop filter popovers (.fdrop .fpanel) wear the exact same glass card + gliding highlight + drawn checkmarks */
+  .lib2 .filters>.fdrop .fdb{transition:background .18s,transform .08s var(--ease)}
+  .lib2 .filters>.fdrop .fdb:active{transform:scale(.975)}
+  .lib2 .filters>.fdrop .fpanel{
+    padding:5px;border-radius:14px;transform-origin:top left;
+    background:radial-gradient(120% 60% at 15% 0%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%),rgba(28,28,33,.8);
+    -webkit-backdrop-filter:blur(36px) saturate(1.7);backdrop-filter:blur(36px) saturate(1.7);
+    box-shadow:0 22px 56px -14px rgba(0,0,0,.8),inset 0 0 0 1px rgba(255,255,255,.15),inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .lib2 .filters>.fdrop.fd-up .fpanel{top:auto;bottom:42px;transform-origin:bottom left;--dd-dy:4px}
+  .lib2 .filters>.fdrop.open .fpanel{animation:ddCardIn .155s cubic-bezier(.22,1,.36,1) backwards}
+  .lib2 .filters>.fdrop.closing .fpanel{display:block;pointer-events:none;animation:ddCardOut .115s cubic-bezier(.4,0,.6,1) forwards}
+  .lib2 .filters>.fdrop .fchips{position:relative}
+  .lib2 .filters>.fdrop .fdhl{
+    position:absolute;left:0;right:0;top:0;height:34px;border-radius:8px;
+    background:rgba(255,255,255,.1);pointer-events:none;z-index:0;opacity:0;
+    transform:translateY(var(--hl-y,0px));
+    transition:transform .15s cubic-bezier(.22,1,.36,1),height .15s cubic-bezier(.22,1,.36,1),opacity .11s ease,background-color .1s ease;
+  }
+  .lib2 .filters>.fdrop .fdhl.on{opacity:1}
+  .lib2 .filters>.fdrop .fdhl.press{transform:translateY(var(--hl-y,0px)) scale(.986);background:rgba(255,255,255,.16);transition-duration:.07s}
+  .lib2 .filters>.fdrop .fopt{position:relative;z-index:1;height:34px;border-radius:8px;padding:0 10px;color:#dcdcd9;background:transparent!important;transition:color .12s,transform .08s var(--ease)}
+  .lib2 .filters>.fdrop .fopt:hover,.lib2 .filters>.fdrop .fopt:focus-visible{color:#fff;outline:0}
+  .lib2 .filters>.fdrop .fopt:active{transform:scale(.982)}
+  .lib2 .filters>.fdrop .fopt .ico{opacity:0;transition:opacity .08s}
+  .lib2 .filters>.fdrop .fopt .ico path{stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .14s ease-in}
+  .lib2 .filters>.fdrop .fopt.on .ico{opacity:1}
+  .lib2 .filters>.fdrop .fopt.on .ico path{stroke-dashoffset:0;transition:stroke-dashoffset .18s cubic-bezier(.22,1,.36,1) .02s}
+}
+@media (prefers-reduced-motion:reduce){
+  :root:not([data-motion=always]) #ddm:not(.sheet){animation:none!important}
+  :root:not([data-motion=always]) #ddm:not(.sheet) button,:root:not([data-motion=always]) #ddm:not(.sheet) .ddhl,:root:not([data-motion=always]) #ddm:not(.sheet) .ddck .ico path,:root:not([data-motion=always]) .lib2 .fl,:root:not([data-motion=always]) .lib2 .fl::after,:root:not([data-motion=always]) .frpick,:root:not([data-motion=always]) .frpick .ico,:root:not([data-motion=always]) .pk .pkm,:root:not([data-motion=always]) .dd-picked,:root:not([data-motion=always]) .dd-picked *,:root:not([data-motion=always]) .dd-back::after,:root:not([data-motion=always]) .dd-back .ico,:root:not([data-motion=always]) .lib2 .filters>.fdrop .fpanel,:root:not([data-motion=always]) .lib2 .filters>.fdrop .fdhl,:root:not([data-motion=always]) .lib2 .filters>.fdrop .fopt,:root:not([data-motion=always]) .lib2 .filters>.fdrop .fopt .ico path{animation:none!important;transition:none!important}
+}
+:root[data-motion=calm] #ddm:not(.sheet) button{animation:none}
 

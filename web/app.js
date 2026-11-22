@@ -872,7 +872,7 @@ function loadRecs(tries = 0) {
 const BR_LISTS = [["over", "Overview"], ["all", "All anime"], ["trending", "Trending now"], ["season", "This season"], ["next", "Next season"]];
 const BR_SORT0 = { trending: "trending" }; // the rest: most popular first
 const BR_SEASONS = ["WINTER", "SPRING", "SUMMER", "FALL"];
-const BR_SORTS = [["trending", "trending"], ["popularity", "popularity"], ["score", "average score"], ["newest", "newest"], ["title", "title"]];
+const BR_SORTS = [["trending", "Trending"], ["popularity", "Popularity"], ["score", "Average score"], ["newest", "Newest"], ["title", "Title"]];
 const BR_FMT = [["TV", "TV"], ["MOVIE", "Movie"], ["ONA", "ONA"], ["OVA", "OVA"], ["SPECIAL", "Special"], ["TV_SHORT", "TV short"]];
 const brF0 = () => ({ genres: [], fyear: "all", fseason: "", format: "", score: "all" });
 S.br = { list: "over", sea: null, sort: "", f: brF0(), ...lsGet("br", {}) };
@@ -2047,10 +2047,89 @@ function fchoice(k, label, opts, locked) {
   }).join("")}</div>`, multi ? fval(k, opts) : cur[1], multi ? p.length > 0 : !locked && cur[0] !== "all", locked);
 }
 function fdropClose(except) {
-  for (const d of $$(".fdrop.open")) if (d !== except) { d.classList.toggle("open", false); d.querySelector(".fdb")?.setAttribute("aria-expanded", "false"); }
+  let closed = false;
+  for (const d of $$(".fdrop.open")) {
+    if (d === except) continue;
+    closed = true;
+    d.classList.toggle("open", false);
+    d.querySelector(".fdb")?.setAttribute("aria-expanded", "false");
+    d.querySelector(".fdhl")?.classList.remove("on", "press");
+    if (d.closest(".lib2 .filters") && !reduceMotion()) {
+      clearTimeout(d._ct);
+      d.classList.add("closing");
+      d._ct = setTimeout(() => d.classList.remove("closing", "fd-up"), 120);
+    } else d.classList.remove("closing", "fd-up");
+  }
+  return closed;
 }
-document.addEventListener("mousedown", (e) => { if (!e.target.closest?.(".fdrop.open")) fdropClose(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".fdrop.open")) { e.stopImmediatePropagation(); const d = $(".fdrop.open"); fdropClose(); d.querySelector(".fdb")?.focus(); } }, true);
+function fdropMoveHl(d, btn, instant) {
+  const chips = d?.querySelector(".fchips"), hl = chips?.querySelector(".fdhl");
+  if (!chips || !hl) return;
+  chips.querySelectorAll(".fopt.sel").forEach((b) => b.classList.remove("sel"));
+  if (!btn) { hl.classList.remove("on", "press"); return; }
+  btn.classList.add("sel");
+  if (instant) hl.style.transition = "none";
+  hl.style.setProperty("--hl-y", btn.offsetTop + "px");
+  hl.style.height = btn.offsetHeight + "px";
+  hl.classList.add("on");
+  if (instant) { void hl.offsetWidth; hl.style.transition = ""; }
+}
+function fdropPlace(d) {
+  const p = d?.querySelector(".fpanel");
+  if (!p || !d.closest(".lib2 .filters")) return;
+  p.style.left = ""; p.style.right = ""; p.style.top = ""; p.style.bottom = "";
+  const z = zoomGet() / 100, br = d.getBoundingClientRect(), pw = p.offsetWidth, ph = p.offsetHeight;
+  const stR = $("#status")?.getBoundingClientRect(), stT = stR && stR.height && stR.top < innerHeight ? stR.top : innerHeight;
+  const navR = $("#nav")?.getBoundingClientRect(), navB = navR && navR.height ? navR.bottom : 0;
+  const up = (stT - br.bottom) / z - 12 < ph && (br.top - navB) / z > (stT - br.bottom) / z;
+  d.classList.toggle("fd-up", up);
+  if (br.left / z + pw > innerWidth / z - 10) { p.style.left = "auto"; p.style.right = "0"; }
+}
+document.addEventListener("mousedown", (e) => {
+  if (!e.target.closest?.(".fdrop.open")) {
+    if (fdropClose() && (e.button === 0 || ddPtr !== "mouse")) ddEat = Date.now();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  const open = $(".fdrop.open");
+  if (!open) return;
+  if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); fdropClose(); open.querySelector(".fdb")?.focus(); return; }
+  if (!open.closest(".lib2 .filters")) return;
+  const bs = [...open.querySelectorAll(".fopt:not(:disabled)")];
+  if (!bs.length) return;
+  const cur = open.querySelector(".fopt.sel") || (bs.includes(document.activeElement) ? document.activeElement : open.querySelector(".fopt.on")) || bs[0];
+  const i = bs.indexOf(cur);
+  const go = (next) => {
+    if (!next) return;
+    fdropMoveHl(open, next, !open.querySelector(".fdhl.on"));
+    next.focus({ preventScroll: true });
+  };
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopImmediatePropagation(); go(bs[Math.max(0, Math.min(bs.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]); }
+  else if (e.key === "Home" || e.key === "End") { e.preventDefault(); e.stopImmediatePropagation(); go(bs[e.key === "Home" ? 0 : bs.length - 1]); }
+  else if (e.key === "PageDown" || e.key === "PageUp") { e.preventDefault(); e.stopImmediatePropagation(); go(bs[Math.max(0, Math.min(bs.length - 1, i + (e.key === "PageDown" ? 5 : -5)))]); }
+  else if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); e.stopImmediatePropagation(); }
+  else if (e.key === "Tab") { fdropClose(); }
+  else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    const ch = e.key.toLowerCase(), ordered = [...bs.slice(i + 1), ...bs.slice(0, i + 1)];
+    const hit = ordered.find((b) => b.textContent.trim().toLowerCase().startsWith(ch));
+    if (hit) go(hit);
+  }
+}, true);
+document.addEventListener("pointermove", (e) => {
+  const f = e.target.closest?.(".lib2 .filters > .fdrop.open");
+  if (!f) return;
+  const b = e.target.closest(".fopt:not(:disabled)");
+  if (b && !b.classList.contains("sel")) fdropMoveHl(f, b, !f.querySelector(".fdhl.on"));
+});
+document.addEventListener("pointerdown", (e) => {
+  const f = e.target.closest?.(".lib2 .filters > .fdrop.open");
+  if (!f) return;
+  const b = e.target.closest(".fopt:not(:disabled)");
+  if (b) { fdropMoveHl(f, b, !f.querySelector(".fdhl.on")); f.querySelector(".fdhl")?.classList.add("press"); }
+});
+document.addEventListener("pointerup", () => { $$(".fdhl.press").forEach((h) => h.classList.remove("press")); }, true);
+document.addEventListener("pointercancel", () => { $$(".fdhl.press").forEach((h) => h.classList.remove("press")); }, true);
 let rngFrame = 0;
 /* Every filter change replays the cards' rise-in (Elias, TODO 210); a range
    does it once, when it's let go, not on every step of the drag. */
@@ -2161,7 +2240,7 @@ function Lib() {
     const filters = (m.cold || isUn) ? "" : ph ? '<div class="filters"></div>' /* the sheet itself is built in paintPortals */ : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", [["updated", "recently updated"], ["score", "my score"], ["average", "average score"], ["year", "year"], ["title", "title"]])}${fsel("group", "show", [["all", "each show"], ["fr", "franchises"]])}
+      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]])}${fsel("group", "show", [["all", "Each show"], ["fr", "Franchises"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
     /* Phones: sort, filter and the view live in the bar above the dock (libBar). */
     const fltb = !filters || ph ? "" : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
@@ -2349,8 +2428,9 @@ function libTitleWatch() {
 }
 /* The filter controls; on the PC they live in the side list (Elias,
    2026-11-06: "most of them could easily be in the left panel"). */
+const capUp = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
 const FOPTS = () => ({
-  src: [["all", "any"], ["installed", "disk"], ["partial", "partial"], ["online", "online"], ["none", capLabel("none")]],
+  src: [["all", "any"], ["installed", "Disk"], ["partial", "Partial"], ["online", "Online"], ["none", capUp(capLabel("none"))]],
   fmt: [["all", "any"], ["TV", "TV"], ["MOVIE", "Movie"], ["OVA", "OVA"], ["ONA", "ONA"], ["SPECIAL", "Special"]],
   air: [["all", "any"], ...Object.entries(AIR)] });
 const filterCtl = (cap = (t) => t) => { const o = FOPTS(); return `${fchoice("src", cap("source"), o.src, srcLocked())}
@@ -6248,6 +6328,7 @@ function paintModal(focus) {
   /* Touch: open at the top with nothing focused (focusing a field would
      scroll the sheet and pop the keyboard up). */
   if (focus) mq("(pointer:coarse)") ? el.querySelector(".dialog")?.focus({ preventScroll: true }) : (el.querySelector("#plname") || el.querySelector(".pri") || el.querySelector("input") || el.querySelector(".dialog")).focus();
+  ddReattach();
 }
 function openModal(m) { if ($("#cm")?.style.display === "block") { cmHide(true); ovClosed("cm"); } S.menu = null; S.opener = document.activeElement; S.modal = m; if (isPhone() && m.t !== "tour") ovOpen("modal", () => { if (S.modal) modalDismiss(); }); paintNav(); paintModal(true); }
 /* Back gesture / swipe down on a dialog: the same as tapping beside it. */
@@ -6661,7 +6742,7 @@ const VIEW_TITLE = { home: "", library: "Library", browse: "Browse", history: "J
    their scroll. Runtime state the HTML doesn't carry survives: the image
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
-const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "cm-target", "cm-target-out", "setin"];
+const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "cm-target", "cm-target-out", "ddon", "dd-picked", "dd-back", "setin"];
 const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
@@ -6783,6 +6864,7 @@ function render(inPlace = false) {
   paintSel();
   if (S.view === "stats" || S.view === "history") loadAlData();
   applyFocus();
+  ddReattach();
   paintPortals();
   pagerStale();
 }
@@ -7775,7 +7857,19 @@ const A = {
     for (const b of d.querySelectorAll(".fopt")) { const bv = b.dataset.v, on = multi ? (bv === "all" ? S.lib[k] === "all" : fpicked(k).includes(bv)) : b === t; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
     d.classList.toggle("set", S.lib[k] !== "all"); d.querySelector(".fdb b").textContent = multi ? fval(k, opts) : t.querySelector("span").textContent;
   },
-  fdrop: (v, t) => { const d = t.closest(".fdrop"), open = !d.classList.contains("open"); fdropClose(d); d.classList.toggle("open", open); t.setAttribute("aria-expanded", open); if (open) d.querySelector(".fpanel input, .fpanel .fopt.on")?.focus({ preventScroll: true }); },
+  fdrop: (v, t) => {
+    const d = t.closest(".fdrop"), open = !d.classList.contains("open");
+    fdropClose(d); d.classList.remove("closing"); d.classList.toggle("open", open); t.setAttribute("aria-expanded", open);
+    if (open) {
+      if (d.closest(".lib2 .filters")) {
+        const chips = d.querySelector(".fchips");
+        if (chips && !chips.querySelector(".fdhl")) chips.insertAdjacentHTML("afterbegin", '<span class="fdhl" aria-hidden="true"></span>');
+        fdropPlace(d);
+        const first = d.querySelector(".fopt.on") || d.querySelector(".fopt");
+        if (first) { fdropMoveHl(d, first, true); first.focus({ preventScroll: true }); }
+      } else d.querySelector(".fpanel input, .fpanel .fopt.on")?.focus({ preventScroll: true });
+    }
+  },
   totop: () => scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }),
   genre: (v, t) => {
     const on = !S.lib.genres.includes(v);
@@ -8754,106 +8848,350 @@ document.addEventListener("change", (e) => {
   const t = e.target.closest("[data-a]");
   if (t && isField(t) && A[t.dataset.a]) A[t.dataset.a](t.value, t, e);
 });
-/* Dropdowns (Decision 38): a mouse click opens the app's own list instead of
-   the browser's grey one; the <select> stays the real control (value, change
-   event, keyboard), so every action keeps working. Touch keeps the phone's picker. */
-let ddPtr = "mouse", ddSel = null;
+/* Dropdowns (Decision 38, overhauled to match #cm Tight Context Card): a mouse
+   click opens the app's own glass card instead of the browser's grey list; the
+   <select> stays the real control (value, change event, keyboard), so every
+   action keeps working. Touch keeps the phone's picker / sheet. */
+let ddPtr = "mouse", ddSel = null, ddKb = false, ddStill = false, ddBusy = false, ddType = "", ddCycle = "", ddTypeT = 0, ddPtr0 = null, ddToggledFl = null, ddRestore = null, ddBackPend = null;
 document.addEventListener("pointerdown", (e) => { ddPtr = e.pointerType; }, { capture: true, passive: true });
-let ddEat = 0; // a tap that closed a settings sheet must not land on the row under it
-function ddClose(refocus) {
+let ddEat = 0; // a press that closed a dropdown/sheet must not activate UI under it
+function ddLiveSel(act, dk) { return act ? $(`select[data-a="${act}"]${dk ? `[data-k="${dk}"]` : ""}`) : null; }
+function ddPulseTrig(sel, back = false, w0 = 0) {
+  if (!sel || reduceMotion()) return;
+  const trig = sel.closest(".fl") || sel.closest(".frpick") || sel.closest(".pk");
+  if (!trig?.isConnected) return;
+  const w1 = trig.getBoundingClientRect().width, z = zoomGet() / 100;
+  const tween = w0 && !trig.classList.contains("pk") && Math.abs(w1 - w0) > 1;
+  if (tween) // the chip glides to its new width instead of jumping
+    trig.animate([{ width: w0 / z + "px", overflow: "hidden" }, { width: w1 / z + "px", overflow: "hidden" }], { duration: 200, easing: "cubic-bezier(.22,1,.36,1)" });
+  trig.classList.remove("dd-picked"); void trig.offsetWidth; trig.classList.add("dd-picked");
+  setTimeout(() => trig.classList.remove("dd-picked"), 360);
+  if (back && (trig.classList.contains("frpick") || trig.classList.contains("fl"))) {
+    trig.classList.remove("dd-back"); void trig.offsetWidth; trig.classList.add("dd-back");
+    setTimeout(() => trig.classList.remove("dd-back"), 260);
+  }
+  return tween;
+}
+function ddReattach() {
+  if (ddSel && !ddSel.isConnected) {
+    const live = ddLiveSel(ddSel.dataset.a, ddSel.dataset.k);
+    if (live) { ddSel = live; if (!ddBusy) live.closest(".pk,.fl,.frpick")?.classList.add("ddon"); ddPos(live, $("#ddm")); }
+  }
+  if (!ddRestore) return;
+  if (Date.now() > ddRestore.until) { ddRestore = null; return; }
+  const live = ddLiveSel(ddRestore.act, ddRestore.dk);
+  if (!live?.isConnected) return;
+  if (ddRestore.pulse) { ddRestore.pulse = false; ddPulseTrig(live, false, ddRestore.w0); }
+  if (!ddBusy && ddRestore.kb) { live.focus({ preventScroll: true }); ddRestore = null; }
+  else if (!ddBusy) ddRestore = null;
+}
+function ddScrollFade(list) {
+  if (!list) return;
+  const max = list.scrollHeight - list.clientHeight;
+  list.classList.toggle("has-sb", max > 2);
+  list.classList.toggle("fade-t", max > 4 && list.scrollTop > 4);
+  list.classList.toggle("fade-b", max > 4 && list.scrollTop < max - 4);
+}
+function ddMoveHl(btn, instant) {
+  const m = $("#ddm"), list = m?.querySelector(".ddl"), hl = list?.querySelector(".ddhl");
+  if (!list || !hl) return;
+  list.querySelectorAll("button.sel").forEach((b) => b.classList.remove("sel"));
+  if (!btn || btn.disabled) { hl.classList.remove("on", "press"); m.removeAttribute("aria-activedescendant"); return; }
+  btn.classList.add("sel");
+  if (btn.id) m.setAttribute("aria-activedescendant", btn.id);
+  if (instant) hl.style.transition = "none";
+  hl.style.setProperty("--hl-y", btn.offsetTop + "px");
+  hl.style.height = btn.offsetHeight + "px";
+  hl.classList.add("on");
+  if (instant) { void hl.offsetWidth; hl.style.transition = ""; }
+}
+function ddClose(refocus, instant = false) {
   const m = $("#ddm");
   if (!m || !ddSel) return;
-  clearTimeout(ddClose.t); m.classList.remove("out");
-  if (m.classList.contains("sheet")) {
+  const sel = ddSel, wasKb = ddKb, isSheet = m.classList.contains("sheet");
+  clearTimeout(ddClose.t); clearTimeout(ddPick.t); clearTimeout(ddTypeT);
+  if (ddClose.end) { m.removeEventListener("animationend", ddClose.end); ddClose.end = null; }
+  m.classList.remove("out", "closing");
+  m.removeAttribute("aria-activedescendant");
+  sel.setAttribute("aria-expanded", "false");
+  ddSel = null; ddBusy = false; ddStill = false; ddType = ""; ddCycle = ""; ddPtr0 = null;
+  sel.closest(".fl")?.classList.toggle("ddon", false);
+  sel.closest(".frpick")?.classList.remove("ddon");
+  sel.closest(".pk")?.classList.remove("ddon");
+  if (ddBackPend) {
+    const bLive = ddLiveSel(ddBackPend.act, ddBackPend.dk);
+    ddBackPend = null;
+    const bTrig = bLive?.closest(".frpick, .fl");
+    if (bTrig?.isConnected && !reduceMotion()) {
+      bTrig.classList.remove("dd-back"); void bTrig.offsetWidth; bTrig.classList.add("dd-back");
+      setTimeout(() => bTrig.classList.remove("dd-back"), 260);
+    }
+  }
+  if (isSheet) {
     ovClosed("dd");
-    if (!reduceMotion()) { // the sheet slides back down before it goes (Decision 94)
+    if (!instant && !reduceMotion()) { // the sheet slides back down before it goes (Decision 94)
       m.classList.add("out");
-      ddClose.t = setTimeout(() => { m.classList.remove("open", "sheet", "out"); m.innerHTML = ""; }, 200);
-    } else { m.classList.remove("open", "sheet"); m.innerHTML = ""; }
-  } else { m.classList.remove("open", "sheet"); m.innerHTML = ""; }
-  ddSel.closest(".fl")?.classList.toggle("ddon", false);
-  ddSel.closest(".frpick")?.classList.remove("ddon");
-  if (refocus) ddSel.focus({ preventScroll: true });
-  ddSel = null;
+      ddClose.t = setTimeout(() => { m.classList.remove("open", "sheet", "out", "dd-gl", "dd-up"); m.innerHTML = ""; }, 200);
+    } else { m.classList.remove("open", "sheet", "dd-gl", "dd-up"); m.innerHTML = ""; }
+  } else if (!instant && !reduceMotion() && m.classList.contains("open")) {
+    m.classList.add("closing");
+    const done = () => {
+      clearTimeout(ddClose.t);
+      if (ddClose.end) { m.removeEventListener("animationend", ddClose.end); ddClose.end = null; }
+      if (!m.classList.contains("closing")) return;
+      m.classList.remove("open", "closing", "sheet", "dd-gl", "dd-up");
+      m.innerHTML = "";
+    };
+    ddClose.end = (ev) => { if (ev.target === m) done(); };
+    m.addEventListener("animationend", ddClose.end);
+    ddClose.t = setTimeout(done, 180);
+  } else {
+    m.classList.remove("open", "closing", "sheet", "dd-gl", "dd-up");
+    m.innerHTML = "";
+  }
+  if (refocus && wasKb && sel.isConnected) sel.focus({ preventScroll: true });
 }
 /* Puts the open list under (or over) its select; also on every scroll, so
-   the list rides along with the page instead of closing (Elias, 2026-11-08). */
+   the list rides along with the page instead of closing (Elias, 2026-11-08).
+   Measures real #nav and #status so it never overlaps bars or floats off-screen. */
 function ddPos(sel, m, first) {
   if (m.classList.contains("sheet")) return { p: { top: null }, right: false }; // a sheet sits at the bottom (CSS)
-  const box = (sel.closest(".fl") || sel.closest(".pk") || sel).getBoundingClientRect(), z = zoomGet() / 100, p = ddPlace(box, z, innerWidth, innerHeight);
-  if (first) m.style.minWidth = p.width + "px";
-  m.style.left = p.left + "px"; m.style.maxHeight = p.maxHeight + "px";
-  m.style.top = p.top === null ? "" : p.top + "px"; m.style.bottom = p.bottom === null ? "" : p.bottom + "px";
+  const box = (sel.closest(".fl") || sel.closest(".pk") || sel).getBoundingClientRect(), pk = sel.closest(".pk"), z = zoomGet() / 100;
+  const navR = $("#nav")?.getBoundingClientRect(), stR = $("#status")?.getBoundingClientRect();
+  const navB = navR && navR.height ? navR.bottom : 0, stT = stR && stR.height && stR.top < innerHeight ? stR.top : innerHeight;
+  /* Close cleanly if scrolling pushed the trigger behind the top or bottom bar. */
+  if (!first && (box.bottom <= navB + 2 || box.top >= stT - 2)) { ddClose(false, true); return { p: { top: null }, right: false }; }
+  const p = ddPlace(box, z, innerWidth, innerHeight);
+  const topMin = navB ? navB / z + 8 : 8, botMax = stT / z - 8;
+  const roomBelow = botMax - box.bottom / z - 16, roomAbove = box.top / z - topMin - 16; // 6px gap + 10px card vertical padding
+  const want = Math.min(340, (sel.options.length || 1) * 35);
+  const up = roomBelow < Math.min(want, 260) && roomAbove > roomBelow;
+  const mh = Math.min(340, Math.max(40, Math.floor(up ? roomAbove : roomBelow)));
+  const top = up ? null : box.bottom / z + 6;
+  const bottom = up ? (innerHeight - box.top) / z + 6 : null;
+  const pkmW = pk?.querySelector(".pkm")?.getBoundingClientRect().width;
+  /* Library sort/show (Elias, 2026-11-22): the list is exactly as wide as the chip it grows from, wider only when an option wouldn't fit. */
+  const libChip = sel.dataset.a === "filt" && sel.closest(".fl");
+  if (first) m.style.minWidth = (libChip ? box.width / z : Math.max(pk ? Math.ceil((pkmW || 182) / z) : sel.closest(".fl") ? 0 : p.width, 152)) + "px";
+  m.style.left = p.left + "px"; m.style.maxHeight = mh + "px";
+  m.style.setProperty("--dd-mh", mh + "px");
+  m.style.top = top === null ? "" : top + "px"; m.style.bottom = bottom === null ? "" : bottom + "px";
+  m.style.setProperty("--dd-dy", up ? "4px" : "-4px");
+  m.classList.toggle("dd-up", up);
   const right = box.left + box.width / 2 > innerWidth / 2;
-  if (right && !first) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px"; // a chip on the right: the list hangs from its right edge
-  return { p, right };
+  if (pk && !first) m.style.left = Math.max(10, Math.min((box.left + box.width / 2) / z - m.offsetWidth / 2, innerWidth / z - m.offsetWidth - 10)) + "px";
+  else if (right && !first) m.style.left = Math.max(10, box.right / z - m.offsetWidth) + "px"; // a chip on the right: the list hangs from its right edge
+  else if (!first) m.style.left = Math.max(10, Math.min(p.left, innerWidth / z - m.offsetWidth - 10)) + "px";
+  m.style.transformOrigin = `${up ? "bottom" : "top"} ${pk ? "center" : right ? "right" : "left"}`;
+  if (!first) ddScrollFade(m.querySelector(".ddl"));
+  return { p: { ...p, top, bottom, maxHeight: mh }, right, up };
 }
-function ddOpen(sel) {
+function ddOpen(sel, kb = false, pt = null) {
   const m = $("#ddm");
   clearTimeout(ddClose.t); m.classList.remove("out"); // a sheet still sliding away
-  ddSel = sel;
+  clearTimeout(ddPick.t); clearTimeout(ddTypeT);
+  if (ddClose.end) { m.removeEventListener("animationend", ddClose.end); ddClose.end = null; }
+  m.classList.remove("closing");
+  if (ddSel && ddSel !== sel) {
+    ddSel.closest(".fl")?.classList.toggle("ddon", false);
+    ddSel.closest(".frpick")?.classList.remove("ddon");
+    ddSel.closest(".pk")?.classList.remove("ddon");
+  }
+  ddSel?.setAttribute("aria-expanded", "false"); sel.setAttribute("aria-expanded", "true");
+  ddSel = sel; ddKb = !!kb; ddStill = !kb; ddBusy = false; ddType = ""; ddCycle = ""; ddPtr0 = pt; ddToggledFl = null; ddRestore = null; ddBackPend = null;
   sel.closest(".fl")?.classList.add("ddon"); // its chip stays lit while the list is open
   sel.closest(".frpick")?.classList.add("ddon"); // the season heading too
-  m.classList.toggle("pkdd", !!sel.closest(".pk")); // a setting's list: as wide as its ‹ value ›, centred (Decision 73)
+  sel.closest(".pk")?.classList.add("ddon"); // Settings ‹ value › too (keeps parent row lit)
+  m.classList.toggle("pkdd", !!sel.closest(".pk"));
   m.classList.toggle("ttl", !!sel.closest(".pkfont.title"));
   const sheet = !!sel.closest(".pklist"); // Settings on a phone (Decision 94): every choice rises from the bottom
   m.classList.toggle("sheet", sheet);
+  m.classList.toggle("dd-gl", !sheet && !isPhone());
   if (sheet) { ["left", "top", "bottom", "maxHeight", "minWidth"].forEach((x) => { m.style[x] = ""; }); ovOpen("dd", () => ddClose(false)); }
-  const cap = (sel.closest(".fl")?.firstChild?.nodeType === 3 ? sel.closest(".fl").firstChild.textContent : "").trim();
-  m.innerHTML = (sheet ? `<i class="grabber" aria-hidden="true"></i><h4 class="ddhd">${esc(sel.closest(".srow")?.querySelector("b")?.textContent || sel.getAttribute("aria-label") || "")}</h4>` : "")
-    + (cap ? `<div class="ddcap">${esc(cap === "sort" ? "sort by" : cap)}</div>` : "") + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}>${o.dataset.dot ? `<i class="pkdot" style="background:${esc(o.dataset.dot)}"></i>` : ""}<span${o.dataset.f ? ` style="font-family:${esc(o.dataset.f)}"` : ""}>${esc(o.textContent)}</span>${o.selected ? ico("check") : o.dataset.r ? `<small class="r">${esc(o.dataset.r)}</small>` : ""}</button>`).join("");
+  if (sheet) {
+    m.innerHTML = `<i class="grabber" aria-hidden="true"></i><h4 class="ddhd">${esc(sel.closest(".srow")?.querySelector("b")?.textContent || sel.getAttribute("aria-label") || "")}</h4>`
+      + [...sel.options].map((o, i) => `<button type="button" class="${o.selected ? "on" : ""}" data-i="${i}" ${o.disabled ? "disabled" : ""}>${o.dataset.dot ? `<i class="pkdot" style="background:${esc(o.dataset.dot)}"></i>` : ""}<span${o.dataset.f ? ` style="font-family:${esc(o.dataset.f)}"` : ""}>${esc(o.textContent)}</span>${o.selected ? ico("check") : o.dataset.r ? `<small class="r">${esc(o.dataset.r)}</small>` : ""}</button>`).join("");
+  } else {
+    const opts = [...sel.options];
+    const hasR = opts.some((o) => o.dataset.r);
+    const rows = opts.map((o, i) => `<button type="button" id="ddi-${i}" role="option" aria-selected="${o.selected ? "true" : "false"}" class="${o.selected ? "on" : ""}" style="--i:${Math.min(i, 6)}" data-i="${i}" ${o.disabled ? "disabled" : ""}>${o.dataset.dot ? `<i class="pkdot" style="background:${esc(o.dataset.dot)}"></i>` : ""}<span class="ddlbl"${o.dataset.f ? ` style="font-family:${esc(o.dataset.f)}"` : ""}>${esc(o.textContent)}</span>${o.dataset.r ? `<small class="r">${esc(o.dataset.r)}</small>` : ""}<span class="ddck" aria-hidden="true">${ico("check")}</span></button>`).join("");
+    m.innerHTML = `<div class="ddl${hasR ? " has-r" : ""}"><span class="ddhl" aria-hidden="true"></span>${rows}</div>`;
+  }
   ddPos(sel, m, true);
   m.classList.remove("open"); void m.offsetWidth; m.classList.add("open");
-  const { p, right } = ddPos(sel, m); // measured once shown
-  const on = m.querySelector("button.on"); // a long list opens at the current row
-  if (on && on.offsetTop + on.offsetHeight > m.clientHeight) m.scrollTop = on.offsetTop - m.clientHeight / 2 + on.offsetHeight / 2;
-  m.style.transformOrigin = `${p.top === null ? "bottom" : "top"} ${right ? "right" : "left"}`;
-  (m.querySelector("button.on") || m.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true });
+  const { up } = ddPos(sel, m); // measured once shown
+  const scroller = m.querySelector(".ddl") || m;
+  if (!sheet && up) { // opening upward: stagger cascades from the bottom edge nearest the trigger
+    const bs = [...scroller.querySelectorAll("button")];
+    bs.forEach((b, i) => b.style.setProperty("--i", Math.min(bs.length - 1 - i, 6)));
+  }
+  const on = scroller.querySelector("button.on"); // a long list opens at the current row
+  if (on && scroller.scrollHeight > scroller.clientHeight) scroller.scrollTop = Math.max(0, on.offsetTop - scroller.clientHeight / 2 + on.offsetHeight / 2);
+  if (!sheet) {
+    for (const lbl of scroller.querySelectorAll(".ddlbl")) if (lbl.scrollWidth > lbl.clientWidth + 1) lbl.title = lbl.textContent;
+    ddScrollFade(scroller);
+    scroller.addEventListener("scroll", () => ddScrollFade(scroller), { passive: true });
+    m.tabIndex = -1;
+    m.focus({ preventScroll: true });
+    if (kb) ddMoveHl(on || scroller.querySelector("button:not(:disabled)"), true);
+  } else {
+    m.style.transformOrigin = "bottom center";
+    (on || m.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true });
+  }
 }
-function ddPick(i) {
-  const sel = ddSel;
-  ddClose(true);
-  if (!sel || sel.selectedIndex === +i) return;
-  sel.selectedIndex = +i;
-  sel.dispatchEvent(new Event("change", { bubbles: true }));
+function ddPick(i, btnEl) {
+  const sel = ddSel, m = $("#ddm");
+  if (!sel || ddBusy) return;
+  const idx = +i, changed = sel.selectedIndex !== idx, sheet = m?.classList.contains("sheet");
+  const wasKb = ddKb, act = sel.dataset.a, dk = sel.dataset.k;
+  const w0 = changed ? sel.closest(".fl, .frpick")?.getBoundingClientRect().width || 0 : 0;
+  /* Commit at 0ms so fast outside clicks or switching dropdowns never lose a pick. */
+  if (changed) {
+    sel.selectedIndex = idx;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  const replaced = !sel.isConnected;
+  const liveSel = !replaced ? sel : ddLiveSel(act, dk);
+  if (liveSel && liveSel !== ddSel) ddSel = liveSel;
+  if (changed && !reduceMotion()) {
+    const tweened = liveSel ? ddPulseTrig(liveSel, false, w0) : false;
+    if (replaced) ddBackPend = { act, dk };
+    ddRestore = { act, dk, kb: wasKb, until: Date.now() + 900, pulse: true, w0: tweened ? 0 : w0 }; // an async re-render still glides the width
+  } else if (wasKb) {
+    ddRestore = { act, dk, kb: true, until: Date.now() + 900, pulse: false };
+  }
+  if (!sheet && !reduceMotion() && changed && btnEl) {
+    ddBusy = true;
+    m.querySelectorAll("button.on").forEach((b) => { b.classList.remove("on", "dd-just", "dd-hit"); b.setAttribute("aria-selected", "false"); });
+    btnEl.classList.add("on", "dd-just", "dd-hit");
+    btnEl.setAttribute("aria-selected", "true");
+    setTimeout(() => btnEl.classList.remove("dd-hit"), 85);
+    ddPick.t = setTimeout(() => {
+      ddBusy = false;
+      ddClose(false, false);
+      const curSel = ddLiveSel(act, dk) || liveSel;
+      if (wasKb && curSel?.isConnected) { curSel.focus({ preventScroll: true }); ddRestore = null; }
+    }, 155);
+    return;
+  }
+  ddClose(false, false);
+  if (wasKb && liveSel?.isConnected) { liveSel.focus({ preventScroll: true }); ddRestore = null; }
 }
+$("#ddm")?.addEventListener("pointermove", (e) => {
+  const m = $("#ddm");
+  if (!ddSel || ddBusy || !m.classList.contains("dd-gl")) return;
+  if (ddStill && ddPtr0 && Math.hypot(e.clientX - ddPtr0.x, e.clientY - ddPtr0.y) < 4) return; // 4px jitter guard
+  const b = e.target.closest("button:not(:disabled)");
+  if (!b) return;
+  const first = ddStill || !m.querySelector(".ddhl.on");
+  ddStill = false;
+  if (!b.classList.contains("sel")) ddMoveHl(b, first);
+});
+$("#ddm")?.addEventListener("pointerdown", (e) => {
+  const m = $("#ddm");
+  if (!ddSel || ddBusy || !m.classList.contains("dd-gl")) return;
+  const b = e.target.closest("button:not(:disabled)");
+  if (b) { ddStill = false; ddMoveHl(b, !m.querySelector(".ddhl.on")); m.querySelector(".ddhl")?.classList.add("press"); }
+});
+$("#ddm")?.addEventListener("pointerleave", () => {
+  const m = $("#ddm");
+  if (!ddSel || ddBusy || !m.classList.contains("dd-gl")) return;
+  m.querySelector(".ddhl")?.classList.remove("press");
+  if (!ddKb) ddMoveHl(null);
+});
+const ddClearPress = (e) => {
+  $("#ddm .ddhl.press")?.classList.remove("press");
+  if (ddEat) setTimeout(() => { ddEat = 0; }, 80); // never linger after drag-in or cancelled press
+  if (ddToggledFl && !e.target.closest?.("label.fl")) ddToggledFl = null;
+};
+document.addEventListener("pointerup", ddClearPress, true);
+document.addEventListener("pointercancel", ddClearPress, true);
 document.addEventListener("mousedown", (e) => {
-  const sel = e.target.closest?.("select") || e.target.closest?.("label.fl")?.querySelector("select"); // the chip's label opens it too
-  /* Outside clicks close on the press: the click that follows a press on a
-     chip's label would otherwise shut the list that press just opened. */
-  if (!sel || sel.disabled || ddPtr !== "mouse" || e.button !== 0) { if (ddSel && !e.target.closest?.("#ddm")) { if ($("#ddm").classList.contains("sheet")) ddEat = Date.now(); ddClose(false); } return; }
+  const sel = e.target.closest?.("select") || e.target.closest?.("label.fl, .pkm")?.querySelector("select"); // chip label & Settings colour dot open it too
+  /* Outside presses close #ddm and eat the trailing left-click so nothing behind
+     #ddm fires (poster navigation, mpv launch, modal dismiss). */
+  if (!sel || sel.disabled || ddPtr !== "mouse" || e.button !== 0) { if (ddSel && !e.target.closest?.("#ddm")) { if (e.button === 0 || ddPtr !== "mouse") ddEat = Date.now(); ddClose(false); } return; }
   e.preventDefault();
-  if (ddSel === sel) return ddClose(true);
-  sel.focus({ preventScroll: true }); ddOpen(sel);
+  if (ddSel === sel) { ddToggledFl = sel.closest("label.fl"); return ddClose(false); }
+  ddOpen(sel, false, { x: e.clientX, y: e.clientY });
 });
 document.addEventListener("click", (e) => {
   if (cmEat && Date.now() - cmEat < 350 && !e.target.closest?.("#cm")) { cmEat = 0; e.preventDefault(); e.stopImmediatePropagation(); return; }
   if (ddEat && Date.now() - ddEat < 700 && !e.target.closest?.("#ddm")) { ddEat = 0; e.preventDefault(); e.stopImmediatePropagation(); return; }
+  if (ddToggledFl && e.target.closest?.("label.fl") === ddToggledFl) { ddToggledFl = null; e.preventDefault(); return; }
   const b = e.target.closest?.("#ddm button");
-  if (b) { ddPick(b.dataset.i); return; }
+  if (b && !b.disabled) { ddPick(b.dataset.i, b); return; }
   /* Settings on a phone: the whole row is the target. A switch flips, a list opens. */
   const row = !ddSel && e.target.closest?.(".set2 .srow:has(.pksw,.pklist)");
   if (row && !e.target.closest("button,a,input,label,textarea")) {
     const sw = row.querySelector(".pksw .switch:not(:disabled)"), sel = row.querySelector(".pklist select:not(:disabled)");
-    if (sw) sw.click(); else if (sel) ddOpen(sel);
+    if (sw) sw.click(); else if (sel) ddOpen(sel, false);
     return;
   }
   if (ddSel && e.target.closest?.("label.fl")) e.preventDefault(); // the label would pull focus off the open list
 }, true);
 document.addEventListener("keydown", (e) => {
-  const t = e.target;
-  if (ddSel && t.closest?.("#ddm")) {
-    const bs = $$("#ddm button:not(:disabled)"), i = bs.indexOf(t);
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); bs[(i + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length]?.focus(); }
-    else if (e.key === "Home" || e.key === "End") { e.preventDefault(); bs[e.key === "Home" ? 0 : bs.length - 1]?.focus(); }
-    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ddPick(t.dataset.i); }
-    else if (e.key === "Escape" || e.key === "Tab") { e.preventDefault(); e.stopImmediatePropagation(); ddClose(true); }
+  const t = e.target, m = $("#ddm");
+  if (ddSel && (t === m || t.closest?.("#ddm"))) {
+    if (ddBusy) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    const sheet = m.classList.contains("sheet");
+    const bs = $$("#ddm button:not(:disabled)");
+    const curBtn = sheet ? (bs.includes(t) ? t : bs.find((b) => b.classList.contains("on"))) : (m.querySelector("button.sel") || m.querySelector("button.on"));
+    const i = bs.indexOf(curBtn);
+    const go = (next) => {
+      if (!next) return;
+      ddKb = true;
+      if (sheet) next.focus();
+      else { ddStill = false; ddMoveHl(next, !m.querySelector(".ddhl.on")); next.scrollIntoView({ block: "nearest" }); ddScrollFade(m.querySelector(".ddl")); }
+    };
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); e.stopImmediatePropagation();
+      go(bs[i < 0 ? (e.key === "ArrowDown" ? 0 : bs.length - 1) : Math.max(0, Math.min(bs.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]); // stops at the ends, like the platform's own list
+    } else if (e.key === "PageDown" || e.key === "PageUp") {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const base = i < 0 ? 0 : i, d = e.key === "PageDown" ? 5 : -5;
+      go(bs[Math.max(0, Math.min(bs.length - 1, base + d))]);
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault(); e.stopImmediatePropagation(); // never leak to background card navigation
+    } else if (e.key === "Home" || e.key === "End") {
+      e.preventDefault(); e.stopImmediatePropagation();
+      go(bs[e.key === "Home" ? 0 : bs.length - 1]);
+    } else if (e.key === "Enter" || (e.key === " " && !ddType && !ddCycle)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (curBtn) ddPick(curBtn.dataset.i, curBtn);
+    } else if (e.key === "Escape") {
+      e.preventDefault(); e.stopImmediatePropagation();
+      ddClose(true);
+    } else if (e.key === "Tab") {
+      // Close and restore select synchronously so Tab advances cleanly to the next/prev control
+      const sel = ddSel;
+      ddClose(false, true);
+      if (sel?.isConnected) sel.focus({ preventScroll: true });
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      clearTimeout(ddTypeT);
+      const ch = e.key.toLowerCase();
+      const txt = (b) => (b.querySelector(".ddlbl") || b).textContent.trim().toLowerCase();
+      if (!ddType && (!ddCycle || ddCycle === ch)) {
+        ddCycle = ch;
+        const start = i < 0 ? 0 : i + 1;
+        const ordered = [...bs.slice(start), ...bs.slice(0, start)];
+        const hit = ordered.find((b) => txt(b).startsWith(ch));
+        if (hit) go(hit);
+      } else {
+        ddType = (ddCycle || ddType) + ch;
+        ddCycle = "";
+        const hit = bs.find((b) => txt(b).startsWith(ddType)) || bs.find((b) => txt(b).includes(ddType));
+        if (hit) go(hit);
+      }
+      ddTypeT = setTimeout(() => { ddType = ""; ddCycle = ""; }, 650);
+    }
     return;
   }
-  if (t.tagName === "SELECT" && !t.disabled && (e.key === "Enter" || e.key === " " || (e.altKey && e.key === "ArrowDown"))) { e.preventDefault(); ddOpen(t); }
+  if (t.tagName === "SELECT" && !t.disabled && (e.key === "Enter" || e.key === " " || (e.altKey && e.key === "ArrowDown"))) { e.preventDefault(); ddOpen(t, true); }
 }, true);
 addEventListener("scroll", (e) => { if (ddSel && !e.target.closest?.("#ddm")) { if (ddSel.isConnected) ddPos(ddSel, $("#ddm")); else ddClose(false); } }, { capture: true, passive: true });
-addEventListener("resize", () => ddClose(false));
+addEventListener("resize", () => ddClose(false, true));
 /* The episode menu's keys while it is open: ↑↓ ↵ · A W D (shown on its rows) · Esc. */
 document.addEventListener("keydown", (e) => {
   const m = $("#cm");
@@ -9031,7 +9369,7 @@ function applyFonts() {
   lsSet("fontCss", ui || display ? { ui, display, css } : null);
 }
 function applyZoom() { document.documentElement.style.zoom = zoomGet() / 100; }
-function zoomSet(z) { lsSet("hubZoom", z); applyZoom(); const el = $("#zoomval"); if (el) el.textContent = z + "%"; }
+function zoomSet(z) { lsSet("hubZoom", z); applyZoom(); const el = $("#zoomval"); if (el) el.textContent = z + "%"; if (ddSel?.isConnected) ddPos(ddSel, $("#ddm")); }
 if (SHELL) {
   /* Browser zoom stays suppressed; it does not drive the setting. */
   addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
