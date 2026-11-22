@@ -638,8 +638,8 @@ class Polish(unittest.TestCase):
 
     def test_episode_menu(self):
         self.assertIn('res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"', APP)
-        self.assertIn('cmRow("playstart", id, "undo", "Play from the start")', APP)
-        self.assertIn('cmRow("srcfix", "", "search", "Wrong episode? Find it")', APP)
+        self.assertIn('cmRow("playstart", id, "undo", "Play from the start", "B")', APP)
+        self.assertIn('cmRow("srcfix", "", "search", "Wrong episode?")', APP)
         self.assertIn("if (fromStart) body.from_start = true;", APP)
 
     def test_rewatch_tiles_show_the_stop_point(self):
@@ -1258,4 +1258,57 @@ class PopupFrame(unittest.TestCase):
         self.assertIn(':is(.dl2,.match,.entry) .actions .btn.pri', CSS)
         self.assertNotIn('<span class="cap">your entry</span>', APP)
         self.assertNotIn("AniList has nothing under that name", APP)  # the field and the footer say it
+
+
+class ContextMenuPolish(unittest.TestCase):
+    """Tight Context Card across every right-click & #cm menu (2026-11-22)."""
+
+    def test_shared_card_header_and_gliding_highlight(self):
+        for fn in ("function cmHead(", "function cmMoveHl(", "function cmFire(", "function plMenuPatchRow(", "function cmRollFoot("):
+            self.assertIn(fn, APP)
+        # Every menu routes through cmShow with ARIA roles, UI-font keycaps, and backwards-only row entrance
+        self.assertIn('m.setAttribute("role", "menu")', APP)
+        self.assertIn('m.setAttribute("role", "dialog")', APP)
+        self.assertIn('role="menuitem"', APP)
+        self.assertIn("font:500 12px/1 var(--ui);color:rgba(243,243,241,.38)", CSS)  # plain letters in the UI font: O and 0 stay distinct
+        self.assertIn("animation:cmRowIn .15s cubic-bezier(.22,1,.36,1) backwards", CSS)  # never blocks :active scale
+        self.assertIn("z-index:35;", CSS)  # desktop #cm sits below modal .overlay (40); 61 only while no dialog is open (above the toast)
+        self.assertIn("#cm .plseg-gl{", CSS)  # gliding segment pill in Layout popover
+        self.assertIn('<div class="plml-in" id="plml-in"></div>', APP)  # persistent .cmhl across filter keystrokes
+        self.assertIn('"cm-target"', APP.split("const LIVE_CLASSES", 1)[1].split("\n", 1)[0])
+        self.assertIn('.ep[data-a=playep], .ep[data-a=unavail]', APP)  # unavailable episodes right-click too
+
+    def test_option_3_thumbnail_card(self):
+        # Elias picked mockup 3 (2026-11-22): the first A's thumbnail card, sized for a mouse
+        self.assertIn("#cm .cmha.still{width:80px;height:45px}", CSS)
+        self.assertIn("position:relative;z-index:1;height:34px;padding:0 9px;gap:9px;border-radius:8px;", CSS)  # 30px felt small (feel panel)
+        self.assertIn("font:650 15px/1.2 var(--ui);color:var(--ink)", CSS)  # header title
+        self.assertIn("width:272px;padding:5px;border-radius:14px;", CSS)
+        self.assertIn("background:none;box-shadow:none;", CSS)  # keys are plain letters, no boxes
+
+    def test_tight_for_mouse_and_keyboard(self):
+        # The menu's corner sits at the pointer, as on every desktop (Elias, feel panel 2026-11-22)
+        self.assertIn("Math.min(flipY ? py - h - yGap : py + yGap, botMax - h)", APP)
+        self.assertNotIn("hOff", APP)
+        self.assertNotIn("cmlab", APP + CSS)  # the temporary feel panel is gone
+        # Only a keyboard opening lights a row; a mouse lights one after it moves
+        self.assertIn('if (ddPtr !== "touch" && kb) m.querySelector(".mi")?.classList.add("sel");', APP)
+        self.assertIn("if (r && cmShow.still)", APP)
+        # Esc puts focus back on the tile only after a keyboard opening
+        self.assertIn("if (restoreFocus && cmShow.kb) {", APP)
+        # Close waits for its animation instead of a same-length timer
+        self.assertIn('m.addEventListener("animationend", onEnd);', APP)
+        # Destructive rows answer Delete / Backspace
+        self.assertIn('e.key === "Delete" || e.key === "Backspace" ? "DEL"', APP)
+        self.assertIn('"Remove from Home", "Del"', APP)
+        # Add to another playlist grows out of the row menu; filtering resizes smoothly
+        self.assertIn("cmShow(m, x, y, targetEl, cmAccent(item.color), exactPos, from);", APP)
+        self.assertIn("cmMenuGrow.a = m.animate(", APP)
+        # Layout switch never wraps; no repeated card on Layout or the show page ⋯
+        self.assertIn("if (next) { next.focus(); cmFire(next); }", APP)
+        self.assertNotIn('eyebrow: "Layout"', APP)
+        # Very subtle: no icon spins or tilts, no accent fill on the primary highlight
+        self.assertNotIn(".cm-i-close{transform:rotate", CSS)
+        self.assertNotIn("#cm .cmhl.pri{", CSS)
+
 
