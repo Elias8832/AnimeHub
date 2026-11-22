@@ -964,7 +964,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/play":
             if "slot" in body and "id" not in body:
                 # Additive (TODO 263): the Android app starts an episode here by its AniList slot.
-                eid = peersync.episode_for_slot(body["slot"])
+                eid = peersync.episode_for_slot(body["slot"], online=body.get("mode") in anicli.STREAM_MODES)
                 if not eid:
                     self._bad("'slot' must look like \"<AniList id>:<episode>\"")
                     return
@@ -1139,10 +1139,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(peersync.status())
                 elif op == "play":
                     # Additive (TODO 263): Play on the PC from the app.
-                    if not isinstance(body.get("id"), str) or not isinstance(body.get("from_start", False), bool):
-                        self._bad("'id' must be a string and 'from_start' a boolean")
+                    if not isinstance(body.get("id"), str) or not isinstance(body.get("from_start", False), bool) \
+                            or body.get("mode") not in (None, *anicli.STREAM_MODES):
+                        self._bad("'id' must be a string, 'from_start' a boolean, 'mode' one of: %s" % ", ".join(anicli.STREAM_MODES))
                         return
-                    r = peersync.pc_play(body["id"], body.get("from_start", False))
+                    r = peersync.pc_play(body["id"], body.get("from_start", False), body.get("mode"))
                     self.send_json(r, 400 if r.get("error") else 200)
                 elif op == "control":
                     # Additive (TODO 263): the app's remote for the PC hands a button on.

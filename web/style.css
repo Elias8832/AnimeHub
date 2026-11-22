@@ -3472,6 +3472,9 @@ body.pp-open #modal{z-index:70}
   .sp2.frpage .hero .grp>*,.sp2.frpage .hero #entryacts>*{flex:1 1 0}
   .sp2.frpage .hero #entryacts{display:contents}
   .sp2.frpage .hero .gsep,.sp2.frpage .hero .grp [data-a=frmore]{display:none} /* ⋯ lives in the dock (Elias) */
+  /* The remote's bar is the one floating player (TODO 263): Play and ⋯ come back into the page. */
+  body.rmt-on .sp2.frpage .hero .cta>.btn.pri{display:flex;width:100%;justify-content:center;margin:0 0 14px}
+  body.rmt-on .sp2.frpage .hero .grp [data-a=frmore]{display:flex}
   .sp2.frpage .hero .gb{flex-direction:column;gap:6px;height:auto;min-width:0;padding:8px 2px;border-radius:14px;font:600 11.5px var(--ui);color:var(--ink-2);white-space:normal;text-align:center;line-height:1.2}
   .sp2.frpage .hero .gb .ico{width:21px;height:21px;color:var(--ink)}
   .sp2.frpage .hero .gb:active{background:rgba(255,255,255,.07)}

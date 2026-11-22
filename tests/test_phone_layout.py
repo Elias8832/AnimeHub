@@ -585,7 +585,12 @@ class PlayOnTheOtherSide(unittest.TestCase):
         # until the app is paired with one (TODO 263, Decision 104): then as in the browser.
         self.assertIn('const playWhere = () => { if (S.settings?.android && !S.pcPaired) return "phone";', APP)
         self.assertIn("const here = awayDevice() && (!S.settings?.android || S.pcPaired) ? ", APP)
-        self.assertIn('if (S.settings?.android) return pcPlay(id, fromStart);', APP)  # "On the PC" goes through the app's hub
+        self.assertIn('if (S.settings?.android) return pcPlay(id, fromStart, mode);', APP)  # "On the PC" goes through the app's hub, Sub/Dub too
+
+    def test_one_floating_player_at_a_time(self):
+        # TODO 263 (Elias: "two pills"): with the remote's bar up, the show page's Play stays in the page.
+        self.assertIn('if (isPhone() && (S.view === "show" || S.view === "fr") && !document.body.classList.contains("rmt-on")) {', APP)
+        self.assertIn('if (!document.body.classList.contains("rmt-on")) { document.body.classList.add("rmt-on"); paintPortals(); }', APP)
 
     def test_every_place_an_episode_starts(self):
         # Episode menus, Home's Continue watching, and every other Play button.

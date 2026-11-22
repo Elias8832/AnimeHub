@@ -5203,7 +5203,9 @@ function paintPortals() {
   const el = $("#portal");
   if (!el) return;
   let html = "";
-  if (isPhone() && (S.view === "show" || S.view === "fr")) {
+  /* One floating player at a time (TODO 263, Elias: "two pills"): while the remote's
+     bar is up, the show page keeps its Play button in the page, not as a strip. */
+  if (isPhone() && (S.view === "show" || S.view === "fr") && !document.body.classList.contains("rmt-on")) {
     const b = $("#app .sp2 .cta .btn.pri"), more = $("#app .frpage .cta [data-a=frmore]");
     const tile = b?.dataset.v && $(`#app .eps .ep[data-v="${CSS.escape(b.dataset.v)}"]`);
     if (b) html += tile ? playStrip(b, tile, more) : `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
@@ -5493,7 +5495,7 @@ function rmtEpisodes(ctx, nowId, pc) {
 function paintRemote() {
   const el = $("#rmt"), now = rmtNow();
   if (!now || !phoneUI()) {
-    if (rmtSig) { el.innerHTML = ""; rmtSig = ""; document.body.classList.remove("rmt-on", "rmt-open"); if (S.rmtOpen) { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } }
+    if (rmtSig) { el.innerHTML = ""; rmtSig = ""; document.body.classList.remove("rmt-on", "rmt-open"); paintPortals(); if (S.rmtOpen) { S.rmtOpen = false; paintCanvas(); ovClosed("rmt"); } }
     S.rmtOpen = false;
     return;
   }
@@ -5502,7 +5504,7 @@ function paintRemote() {
   const sig = JSON.stringify([now.episode_id, now.show, now.label, !!now.loading, !!l.paused, Math.round(l.duration || 0), l.volume, tr, l.speed, l.sub_delay, !!l.stop_after, l.segments, S.rmtOpen, hasNext, s?.poster, S.rmtRow]);
   if (sig !== rmtSig && !S.rmtDrag) { // a held slider keeps its place; the next tick redraws
     rmtSig = sig;
-    document.body.classList.add("rmt-on");
+    if (!document.body.classList.contains("rmt-on")) { document.body.classList.add("rmt-on"); paintPortals(); } // the show page's Play strip steps back into the page
     const paused = !!l.paused, busy = now.loading ? "disabled" : "", epNo = ctx ? "E" + String(ctx.ep.number).padStart(2, "0") : now.label;
     const pp = (c) => `<button class="btn pri ic ${c}" data-a="rmt" data-v="toggle" aria-label="${paused ? "Play" : "Pause"}" ${busy}>${ico(paused ? "play" : "pause")}</button>`;
     const skip = (c) => `<button class="btn ${c}" data-a="rmt" data-v="skip" hidden>${ico("next")}<span>Skip opening</span></button>`;
@@ -7398,7 +7400,7 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
       return phonePlay(id, version, fromStart, mode, skipOk);
     }
   }
-  if (S.settings?.android) return pcPlay(id, fromStart); // the app's "On the PC" (TODO 263)
+  if (S.settings?.android) return pcPlay(id, fromStart, mode); // the app's "On the PC" (TODO 263)
   if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk, where) });
   if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
   if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
@@ -7418,12 +7420,14 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   pollSoon(600);
 }
 /* The Android app starts an episode on its paired PC: the app's hub finds it
-   there by its AniList slot (TODO 263). The PC plays it its own way (its
-   Sub/Dub, VPN and skip settings); the bar for it shows within a second or two. */
-async function pcPlay(id, fromStart) {
+   there by its AniList slot (TODO 263). Play: the PC's own pick (its file
+   first, its Sub/Dub, VPN and skip settings); a Sub/Dub pick from the menu
+   plays online in that language. The bar for it shows within a second or two. */
+async function pcPlay(id, fromStart, mode) {
   const ctx = findEpContext(id);
   toast(`Starting ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"} on the PC…`, "busy");
-  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart }).catch(() => ({ error: "Could not reach the PC." }));
+  /* Play dubbed / Play subbed picks online in that language there, even when the PC has the file. */
+  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart, ...(mode ? { mode } : {}) }).catch(() => ({ error: "Could not reach the PC." }));
   if (r.error) toast(r.error, "err");
   else toast("Playing on the PC");
   pollSoon(300);

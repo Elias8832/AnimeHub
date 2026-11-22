@@ -865,19 +865,23 @@ def now_extra(ep_id):
     return out
 
 
-def episode_for_slot(slot):
+def episode_for_slot(slot, online=False):
     """The PC's side of "Play on the PC" from the app: its own episode for an
     AniList slot. A file on disk first, then its online episode; an entry it
-    has neither of plays online (ani-cli links it on the way)."""
+    has neither of plays online (ani-cli links it on the way). online: the
+    online episode even when a file is there (a Sub/Dub pick)."""
     if not isinstance(slot, str) or not SLOT_RE.match(slot):
         return None
+    if online:
+        return "stream:" + slot
     ids = slot_map().get(slot, [])
     return next((i for i in ids if not i.startswith("stream:")), None) or (ids[0] if ids else "stream:" + slot)
 
 
-def pc_play(ep_id, from_start=False):
+def pc_play(ep_id, from_start=False, mode=None):
     """POST /api/peer {op: "play"}: start this phone's episode on the paired
-    PC, found there by its AniList slot."""
+    PC, found there by its AniList slot. mode ("sub"/"dub"): online in that
+    language, as the menu's Play dubbed / Play subbed."""
     p = peer()
     if not p:
         return {"error": "Not paired with a PC."}
@@ -886,7 +890,8 @@ def pc_play(ep_id, from_start=False):
         return {"error": "This show isn't matched to AniList, so the PC can't find it."}
     _pc["at"] = 0.0
     try:
-        got, _ = _call(p["address"], "/api/play", p["token"], {"slot": slot, "from_start": bool(from_start)}, timeout=15)
+        got, _ = _call(p["address"], "/api/play", p["token"],
+                       {"slot": slot, "from_start": bool(from_start), **({"mode": mode} if mode else {})}, timeout=15)
     except SyncError as e:
         if "'id'" in str(e):  # a PC from before "slot"
             return {"error": "Update Anime Hub on the PC to start episodes there from the app."}

@@ -691,6 +691,11 @@ class Pairing(unittest.TestCase):
             self.assertEqual(peersync.pc_play("stream:21:4", True), {"ok": True})
             self.assertIn("isn't matched to AniList", peersync.pc_play("12345")["error"])
         self.assertEqual(started, [("stream:21:4", True)])  # nothing of it on the PC: it plays online
+        # Play dubbed / subbed from the app's menu: online in that language, file or not.
+        streamed = []
+        with patch.object(streaming, "start_stream", lambda eid, mode=None, from_start=False: streamed.append((eid, mode)) or {"ok": True}):
+            self.assertEqual(peersync.pc_play("stream:21:5", False, "dub"), {"ok": True})
+        self.assertEqual(streamed, [("stream:21:5", "dub")])
         with database.db() as c:  # the PC went away: nothing plays, quickly
             c.execute("UPDATE sync_peer SET address='http://127.0.0.1:9'")
         peersync._pc["at"] = 0.0
@@ -700,6 +705,7 @@ class Pairing(unittest.TestCase):
     def test_the_pc_picks_its_file_before_its_online_episode(self):
         with patch.object(peersync, "slot_map", lambda: {"21:3": ["stream:21:3", "f9"], "21:4": ["stream:21:4"]}):
             self.assertEqual(peersync.episode_for_slot("21:3"), "f9")
+            self.assertEqual(peersync.episode_for_slot("21:3", online=True), "stream:21:3")  # a Sub/Dub pick
             self.assertEqual(peersync.episode_for_slot("21:4"), "stream:21:4")
             self.assertEqual(peersync.episode_for_slot("21:5"), "stream:21:5")
             for bad in ("21", "0:1", "a:1", None, "21:3:1"):
