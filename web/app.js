@@ -1017,7 +1017,11 @@ function brGridHTML(st) {
   /* The app's own round arrows, before the title: they stay under the pointer as you step (no pills naming the
      neighbours, Elias: "this looks bad"); the season they go to is their tooltip. */
   const nb = (n) => esc(brSeaLabel(brStep(sea, n)));
-  const steps = sea ? `<span class="brsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}" title="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}" title="${nb(1)}">${ico("chevr")}</button><h2 class="lh">${esc(title)}</h2></span>` : "";
+  const age = S.br.stepDir ? performance.now() - (S.br.stepAt || 0) : 999;
+  const scls = age < 220 ? (S.br.stepDir > 0 ? " step-r" : " step-l") : "";
+  const ssty = scls && age > 8 ? ` style="animation-delay:${-Math.round(age)}ms"` : "";
+  if (age >= 220) S.br.stepDir = 0;
+  const steps = sea ? `<span class="brsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}" title="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}" title="${nb(1)}">${ico("chevr")}</button><h2 class="lh${scls}"${ssty}>${esc(title)}</h2></span>` : "";
   const sort = `<label class="fl">sort<select data-a="bsort">${BR_SORTS.map(([k, l]) => `<option value="${k}"${brSort() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
   const span = (r) => r[0] === r[1] ? String(r[0]) : r.join("–");
   const f = S.br.f, fx = [...f.genres, Array.isArray(f.fyear) && !sea ? span(f.fyear) : "", f.fseason && !sea ? f.fseason[0] + f.fseason.slice(1).toLowerCase() : "", f.format ? fmtName(f.format) : "", Array.isArray(f.score) ? `average ${span(f.score)}` : ""].filter(Boolean);
@@ -1095,7 +1099,7 @@ const BR_A = {
   bretry: () => { delete S.brc[brKey(brSpec())]; brPaint(); },
   bretryo: () => { S.brOver = null; brPaint(); },
   bmore: () => { const c = S.brc[brKey(brSpec())]; if (c) c.err = null; brLoad(true); brPaint(); },
-  bstep: (v) => { S.br.sea = brStep(brSea(), +v); brPaint(true); navKeep(); },
+  bstep: (v) => { S.br.stepDir = +v; S.br.stepAt = performance.now(); S.br.sea = brStep(brSea(), +v); brPaint(true); navKeep(); },
   bsort: (v) => { S.br.sort = v === (BR_SORT0[S.br.list] || "popularity") ? "" : v; brSave(); brPaint(true); navKeep(); },
   bclear: () => { S.br.f = brF0(); fdropClose(); brFiltered(); },
   bpick: (v, t) => {
@@ -3922,7 +3926,7 @@ function pick(label, act, k, opts, cur, o = {}) {
     if (n <= 3 && !o.dot && !opts.some((x) => x[2]) && opts.reduce((t, x) => t + x[1].length, 0) <= 17)
       return `<span class="${cls} pkseg" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => `<button class="${v === curV ? "on" : ""}" aria-pressed="${v === curV}" data-a="${act}"${dk} data-v="${esc(v)}"${dis}>${esc(l)}</button>`).join("")}</span>`;
   }
-  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(opts[(i + d + n) % n][0])}" aria-label="${esc(label)}: ${word}"${dis}>${ico(icon)}</button>`;
+  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(opts[(i + d + n) % n][0])}" aria-label="${esc(label)}: ${word}" data-d="${d}"${dis}>${ico(icon)}</button>`;
   const font = opts[i][2] ? ` style="font-family:${esc(opts[i][2])}"` : "";
   return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}${pickTouch ? " pklist" : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
 }
@@ -5391,10 +5395,12 @@ function CalDesk() {
   /* Hidden copies of every month's title share the title's grid cell, so it
      is always as wide as the widest one and the arrows don't move. */
   const mons = Array.from({ length: 12 }, (_, i) => new Date(c.y, i, 28));
-  const sizers = mons.map((d) => `<span aria-hidden="true">${week ? `${esc(md(d))} <span>– ${esc(md(d))}</span>` : `${esc(monthName(d))} <span>${c.y}</span>`}</span>`).join("");
+  const sizers = mons.map((d) => `<span aria-hidden="true">${week ? `${esc(md(d))} <span>– ${esc(md(d))}</span>` : `${esc(monthName(d))} <span>8888</span>`}</span>`).join("");
   const rel = c.sel === tk ? "Today" : c.sel === airKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)) ? "Tomorrow" : "";
   const panel = `<aside class="airside"><p class="airsel">${esc(monthName(sel))}${rel ? ` · <b>${rel}</b>` : ""}</p><h2>${esc(sel.toLocaleDateString(undefined, { weekday: "long" }))} ${sel.getDate()}</h2>${picked.length ? picked.map((x) => airCard(x, facts, now)).join("") : `<p class="sub">Nothing airs this day.</p>${next.length ? `<h3>Next up</h3>${next.map((x) => airCard(x, facts, now)).join("")}` : ""}`}</aside>`;
-  return `<div class="airp2"><div class="airhead"><h1 class="hd"><span>${title}</span>${sizers}</h1>
+  const asd = c.stepDir; c.stepDir = 0;
+  const acls = asd ? (asd > 0 ? " step-r" : " step-l") : "";
+  return `<div class="airp2"><div class="airhead${acls}"><h1 class="hd"><span>${title}</span>${sizers}</h1>
     <span class="airnav"><button class="i" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button data-a="airtoday">Today</button><button class="i" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button></span>
     ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
     <span class="airtabs" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><i class="airdiv"></i><span class="airtabs" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
@@ -6695,7 +6701,7 @@ const VIEW_TITLE = { home: "", library: "Library", browse: "Browse", history: "J
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
 const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "cm-target", "cm-target-out", "setin"];
-const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
+const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.classList?.contains("pka") ? "pka|" + n.dataset.d : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
   for (const { name } of [...a.attributes]) if (name !== "style" && !b.hasAttribute(name)) a.removeAttribute(name);
@@ -7796,11 +7802,19 @@ const A = {
   fclear: () => { clearFilters(); saveLib(); if ($(".fsheet .filters")) return fltRepaint(); S.fadeNext = true; render(); },
   airgo: (v) => {
     const c = S.airCal;
+    c.stepDir = +v;
     if (c.mode === "week") { const d = new Date(`${c.sel}T00:00:00`); d.setDate(d.getDate() + 7 * v); c.sel = airKey(d); c.y = d.getFullYear(); c.m = d.getMonth(); }
     else { const d = new Date(c.y, c.m + +v, 1); c.y = d.getFullYear(); c.m = d.getMonth(); }
     render(true);
   },
-  airtoday: () => { const d = new Date(); Object.assign(S.airCal, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) }); render(true); },
+  airtoday: () => {
+    const d = new Date(), c = S.airCal;
+    const cur = c.mode === "week" ? new Date(`${c.sel}T00:00:00`).getTime() : new Date(c.y, c.m, 1).getTime();
+    const tgt = c.mode === "week" ? new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() : new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    c.stepDir = tgt === cur ? 0 : tgt > cur ? 1 : -1;
+    Object.assign(c, { y: d.getFullYear(), m: d.getMonth(), sel: airKey(d) });
+    render(true);
+  },
   airday: (v) => { S.airCal.sel = v; render(true); },
   airscope: (v) => { S.airCal.scope = v; render(true); },
   /* The phone's day strip: to that day, or the next one something airs. */
@@ -8074,7 +8088,24 @@ const A = {
     S.cal = { k: v, y: +cur[0] || now.getFullYear(), m: cur[1] ? +cur[1] - 1 : cur[0] ? 0 : now.getMonth() };
     if (S.entry?.f) entryPaint(S.entry.f, false);
   },
-  calnav: (v) => { if (!S.cal) return; const d = new Date(S.cal.y, S.cal.m + +v, 1); S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); entryPaint(S.entry.f, false); },
+  calnav: (v) => {
+    if (!S.cal) return;
+    const dir = +v, d = new Date(S.cal.y, S.cal.m + dir, 1);
+    S.cal.y = d.getFullYear(); S.cal.m = d.getMonth();
+    const cal = $("#entrybox .cal");
+    if (!cal) return entryPaint(S.entry.f, false);
+    const t = document.createElement("template");
+    t.innerHTML = calHTML(S.cal, S.entry?.f?.[S.cal.k]);
+    const nxt = t.content.firstElementChild;
+    const hd = cal.querySelector(".cal-h b"), nhd = nxt?.querySelector(".cal-h b");
+    if (hd && nhd) {
+      hd.textContent = nhd.textContent;
+      hd.classList.remove("step-r", "step-l");
+      if (!reduceMotion()) { void hd.offsetWidth; hd.classList.add(dir > 0 ? "step-r" : "step-l"); }
+    }
+    const g = cal.querySelector(".cal-g"), ng = nxt?.querySelector(".cal-g");
+    if (g && ng) g.innerHTML = ng.innerHTML;
+  },
   calday: (v) => { const k = S.cal?.k; S.cal = null; if (k && v !== (S.entry?.f?.[k] || "")) entryPatch({ [k]: v }); else calClose(); },
   escore: (v, t) => {
     const n = Math.round(+v * 10) / 10, had = document.activeElement === t;
