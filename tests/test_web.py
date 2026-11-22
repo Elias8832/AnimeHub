@@ -1312,3 +1312,41 @@ class ContextMenuPolish(unittest.TestCase):
         self.assertNotIn("#cm .cmhl.pri{", CSS)
 
 
+class ScrollbarPolish(unittest.TestCase):
+    """Floating overlay scrollbar on desktop and arrow-free inner scrollbars."""
+
+    def test_chromium_webkit_scrollbars_are_not_overridden_by_standard_thin(self):
+        # In Chromium 121+, scrollbar-width:thin disables ::-webkit-scrollbar and draws native arrows.
+        # Every scrollbar-width:thin must stay inside the Firefox-only @supports block.
+        without_supports = re.sub(r"@supports not selector\(::-webkit-scrollbar\)\{[^}]*\{[^}]*\}\}", "", CSS)
+        self.assertNotIn("scrollbar-width:thin", without_supports)
+        self.assertIn("@supports not selector(::-webkit-scrollbar){", CSS)
+        self.assertIn("::-webkit-scrollbar-button{display:none;width:0;height:0}", CSS)
+        self.assertIn("background-clip:content-box", CSS)
+
+    def test_desktop_overlay_scrollbar_markup_and_rules(self):
+        self.assertIn('<div id="sbar" aria-hidden="true"><i></i></div>', HTML)
+        self.assertIn("@media not (pointer:coarse){", CSS)
+        self.assertIn("html{scrollbar-width:none}html::-webkit-scrollbar{display:none}", CSS)
+        self.assertIn("#sbar{display:block;position:fixed;right:0;top:74px;bottom:48px;", CSS)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_overlay_scrollbar_metrics(self):
+        fn = re.search(r"function sbarMetrics\([^)]*\) \{.*?\n\}\n", APP, re.S).group(0)
+        out = run_js(fn + """return [
+            sbarMetrics(900, 900, 0, 800),
+            sbarMetrics(2000, 1000, 0, 800),
+            sbarMetrics(2000, 1000, 500, 800),
+            sbarMetrics(2000, 1000, 1000, 800),
+            sbarMetrics(50000, 1000, 49000, 800),
+            sbarMetrics(2000, 1000, 0, 20),
+        ];""")
+        self.assertEqual(out[0], {"show": False, "h": 0, "y": 0})
+        self.assertEqual(out[1], {"show": True, "h": 400, "y": 0})
+        self.assertEqual(out[2], {"show": True, "h": 400, "y": 200})
+        self.assertEqual(out[3], {"show": True, "h": 400, "y": 400})
+        self.assertEqual(out[4], {"show": True, "h": 36, "y": 764})  # min thumb height clamped
+        self.assertEqual(out[5], {"show": True, "h": 20, "y": 0})    # never taller than track
+
+
+

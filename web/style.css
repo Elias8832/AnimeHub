@@ -40,11 +40,27 @@
 
 /* ───────── base ───────── */
 *{box-sizing:border-box}
-html{scrollbar-width:thin;scrollbar-color:#2e3238 transparent;transition:--amb .45s ease}
+html{transition:--amb .45s ease}
 html.amb-now{transition:none}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--ui);letter-spacing:-.003em;padding-top:72px;padding-bottom:46px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 ::selection{background:color-mix(in srgb,var(--accent) 42%,transparent)}
-::-webkit-scrollbar{width:11px;height:11px}::-webkit-scrollbar-thumb{background:#2c3036;border-radius:8px;border:3px solid var(--bg)}::-webkit-scrollbar-thumb:hover{background:#3a3f46}::-webkit-scrollbar-track{background:transparent}
+/* Scrollbars: Firefox uses standard scrollbar-width/color; Chromium 121+ disables ::-webkit-scrollbar whenever those are set, so gate them to browsers without ::-webkit-scrollbar. On desktop mice, hide the opaque root gutter so #canvas, #nav and #status reach the edge and float #sbar over the page instead. */
+@supports not selector(::-webkit-scrollbar){html,.plicons,.pal2 .plist,#ddm,#cm .plml,#tside .tsl,.flist,.mlist{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent}}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-button{display:none;width:0;height:0}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:999px;border:2px solid transparent;background-clip:content-box}::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.24);border:2px solid transparent;background-clip:content-box}::-webkit-scrollbar-thumb:active{background:rgba(255,255,255,.36);border:2px solid transparent;background-clip:content-box}
+#sbar{display:none}
+@media not (pointer:coarse){
+  html{scrollbar-width:none}html::-webkit-scrollbar{display:none}
+  #sbar{display:block;position:fixed;right:0;top:74px;bottom:48px;width:16px;z-index:8;touch-action:none;opacity:0;transition:opacity .32s ease}
+  #sbar.none{visibility:hidden;pointer-events:none;opacity:0}
+  :root[data-bar=island] #sbar{top:10px}
+  #sbar.on,#sbar:hover,#sbar.drag{opacity:1;transition:opacity .12s ease}
+  #sbar i{position:absolute;top:0;right:4px;width:3px;min-height:36px;border-radius:999px;background:rgba(255,255,255,.18);will-change:transform;transition:width .16s var(--ease),right .16s var(--ease),background .16s ease}
+  #sbar:hover i,#sbar.drag i{width:5px;right:3px;background:rgba(255,255,255,.34)}
+  #sbar.drag i{background:rgba(255,255,255,.48)}
+  body.srch #sbar,body.rmt-open #sbar,body.deck-open #sbar{opacity:0;pointer-events:none}
+  body.sb-drag{user-select:none}
+}
+@media (max-width:760px) and (not (pointer:coarse)){#sbar{bottom:10px}}
 h1,h2,h3,p{margin:0}h1,h2{text-wrap:balance}p{text-wrap:pretty}
 button,select,input{font:inherit;color:inherit;letter-spacing:inherit}
 button{cursor:pointer;background:none;border:0;padding:0;transition:transform .14s var(--ease),background .18s,color .18s,border-color .18s,box-shadow .2s,opacity .2s}
@@ -1645,7 +1661,7 @@ html.pldragging,html.pldragging *{cursor:grabbing!important;user-select:none}
   .plpage .plpcap{padding-left:40px}
 }
 /* The edit dialog */
-.plicons{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:264px;overflow-y:auto;padding:2px;scrollbar-width:thin}
+.plicons{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:264px;overflow-y:auto;padding:2px}
 .plicons .pich{grid-column:1/-1;margin:8px 2px 0;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}.plicons .pich:first-child{margin-top:0}
 .plicons .pic{height:38px;border-radius:11px;display:grid;place-items:center;color:var(--plk,var(--ink-2));background:var(--s2);transition:transform .15s,background .15s,color .25s,box-shadow .25s}
 .plicons .pic .ico{width:19px;height:19px;stroke-width:2}
@@ -1793,7 +1809,7 @@ body.srch #pal{display:grid}
 #sr{flex:1;min-height:0;display:flex}
 #sr .pal2{flex:1;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:minmax(0,1fr) auto}
 @keyframes palin{from{opacity:0;transform:translateY(-8px) scale(.98)}}
-.pal2 .plist{overflow-y:auto;padding:8px 10px;border-right:1px solid rgba(255,255,255,.08);scrollbar-width:thin}
+.pal2 .plist{overflow-y:auto;padding:8px 10px;border-right:1px solid rgba(255,255,255,.08)}
 .pal2 .psec{font:600 12px var(--ui);color:var(--mute);padding:12px 12px 6px;display:flex;gap:8px;align-items:center}
 .pal2 .psec .link-btn{margin-left:auto;padding:0 8px;font:inherit}
 .pal2 .mi{display:flex;align-items:center;gap:12px;padding:7px 12px;border-radius:12px;font-size:14px;cursor:pointer}
@@ -2124,7 +2140,7 @@ body.srch #pal{display:grid}
 
 /* Dropdown list (replaces the browser's own for mouse clicks) */
 /* The drop-down list (Library polish round 4, Elias: "overhaul the pop up"): a quiet caption, roomy rows, a check on the picked one. */
-#ddm{position:fixed;z-index:80;display:none;flex-direction:column;gap:1px;max-height:340px;overflow-y:auto;padding:6px;border-radius:18px;background:rgba(20,21,25,.94);box-shadow:0 24px 60px -12px rgba(0,0,0,.75),0 2px 8px rgba(0,0,0,.3),var(--edge);backdrop-filter:blur(30px) saturate(1.3);scrollbar-width:thin}
+#ddm{position:fixed;z-index:80;display:none;flex-direction:column;gap:1px;max-height:340px;overflow-y:auto;padding:6px;border-radius:18px;background:rgba(20,21,25,.94);box-shadow:0 24px 60px -12px rgba(0,0,0,.75),0 2px 8px rgba(0,0,0,.3),var(--edge);backdrop-filter:blur(30px) saturate(1.3)}
 #ddm.open{display:flex;overscroll-behavior:contain;animation:ddIn .2s var(--ease) both}
 @keyframes ddIn{from{opacity:0;transform:translateY(-4px) scale(.96)}}
 #ddm .ddcap{padding:8px 12px 6px;font:600 11px var(--ui);letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
@@ -2159,7 +2175,7 @@ body.srch #pal{display:grid}
 #cm .plmq:focus-within .ico{color:var(--ink-2)}
 #cm .plmq input,#cm .plmq input:hover:not(:disabled),#cm .plmq input:focus-visible{flex:1;min-width:0;height:100%;border:0;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;outline:0;color:var(--ink);caret-color:var(--accent);font:500 14px var(--ui);padding:0}
 #cm .plmq input::placeholder{color:var(--mute)}
-#cm .plml{max-height:min(340px,46vh);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+#cm .plml{max-height:min(340px,46vh);overflow-y:auto;overscroll-behavior:contain}
 #cm .mi.plmi{height:48px;gap:11px}
 #cm .plmi .ml small i{font-style:normal;color:var(--ink);font-weight:600}
 #cm .plmi .ml b mark{background:none;color:var(--accent-hi)}
@@ -2478,7 +2494,7 @@ body.deck-open:not(.peek) #canvas,body.deck-open:not(.peek) #app,body.deck-open:
 /* tablet landscape: your lists beside the show page */
 #tside{position:fixed;left:0;top:68px;bottom:42px;width:340px;z-index:8;display:flex;flex-direction:column;border-right:1px solid var(--line);background:rgba(10,11,13,.5);backdrop-filter:blur(22px)}
 #tside .tsh{padding:14px 16px 8px}
-#tside .tsl{flex:1;overflow-y:auto;padding:0 10px 20px;scrollbar-width:thin}
+#tside .tsl{flex:1;overflow-y:auto;padding:0 10px 20px}
 #tside .prow{padding:8px;border-bottom:0;border-radius:14px}
 body.has-side #app{padding-left:340px}
 
@@ -3049,7 +3065,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
 .fq{display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:var(--edge);margin-bottom:12px;color:var(--mute)}
 .fq .ico{width:16px;height:16px;flex-shrink:0}.fq input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:15px}
 .fq:focus-within{box-shadow:inset 0 0 0 1.5px var(--accent)}
-.flist{display:grid;align-content:start;gap:2px;height:min(420px,52vh);overflow:auto;margin:0 -8px 18px;padding:0 8px;scrollbar-width:thin}
+.flist{display:grid;align-content:start;gap:2px;height:min(420px,52vh);overflow:auto;margin:0 -8px 18px;padding:0 8px}
 .flist .dim{padding:20px 12px;color:var(--mute)}
 .frow{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 12px;border-radius:12px;text-align:left;transition:background .15s}
 .frow:hover:not(:disabled){background:rgba(255,255,255,.06)}
@@ -3814,7 +3830,7 @@ body.pp-open #modal{z-index:70}
 .mres:empty{display:none}
 .mcaph{display:flex;align-items:baseline;gap:14px;margin:0 0 12px}.mcaph .cap{margin:0;font:600 12px var(--ui);color:var(--mute)}
 .mcaph .link-btn{display:inline-flex;align-items:center;gap:6px;font:600 12px var(--ui);color:var(--mute);background:none;border:0;padding:0}.mcaph .link-btn:hover{color:var(--ink)}.mcaph .link-btn .ico{width:12px;height:12px}
-.mlist{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto;margin:0 -10px;padding:0 10px;scrollbar-width:thin}
+.mlist{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto;margin:0 -10px;padding:0 10px}
 .mhit{display:flex;align-items:center;gap:14px;width:100%;padding:8px 12px 8px 8px;border:0;border-radius:14px;background:none;text-align:left;color:var(--ink);transition:background .15s}
 .mhit:hover{background:rgba(255,255,255,.05)}.mhit.on{background:rgba(255,255,255,.09);box-shadow:var(--edge)}
 .mhit .poster.t{width:40px;border-radius:8px}
