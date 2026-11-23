@@ -161,6 +161,13 @@ class ApiValidationTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("integer", payload["error"])
 
+    def test_play_on_the_pc_answers_must_be_booleans(self):
+        """TODO 274: the app's answers to the PC's VPN questions."""
+        for k in ("vpn_ok", "aniskip"):
+            status, payload = self.post("/api/peer", json.dumps({"op": "play", "id": "stream:21:4", k: "yes"}).encode())
+            self.assertEqual(status, 400)
+            self.assertIn(f"'{k}'", payload["error"])
+
     def test_reset_with_empty_id_is_rejected(self):
         status, payload = self.post("/api/reset", b'{"id":""}')
         self.assertEqual(status, 400)

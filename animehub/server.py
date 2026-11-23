@@ -969,6 +969,17 @@ class Handler(BaseHTTPRequestHandler):
                     self._bad("'slot' must look like \"<AniList id>:<episode>\"")
                     return
                 body = {**body, "id": eid}
+                # Additive: the PC asks its own VPN questions first, as its page does (TODO 274).
+                vpn_ok = body.get("vpn_ok")  # the app's "Continue anyway"
+                skp = body.get("aniskip") is None and player.aniskip_question(eid)
+                if vpn_ok is not True and eid.startswith("stream:") and not settings.site_ok():
+                    self.send_json({"ask": "vpn", "aniskip": skp, "vpn": settings.vpn_status(),
+                                    "error": "No VPN on the PC. Turn one on there, then try again."})
+                    return
+                if skp:
+                    self.send_json({"ask": "aniskip", "vpn": settings.vpn_status(),
+                                    "error": "No VPN on the PC, so AniSkip would see its IP address."})
+                    return
             if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
                 start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
@@ -1140,10 +1151,14 @@ class Handler(BaseHTTPRequestHandler):
                 elif op == "play":
                     # Additive (TODO 263): Play on the PC from the app.
                     if not isinstance(body.get("id"), str) or not isinstance(body.get("from_start", False), bool) \
-                            or body.get("mode") not in (None, *anicli.STREAM_MODES):
-                        self._bad("'id' must be a string, 'from_start' a boolean, 'mode' one of: %s" % ", ".join(anicli.STREAM_MODES))
+                            or body.get("mode") not in (None, *anicli.STREAM_MODES) \
+                            or any(body.get(k) not in (None, True, False) for k in ("vpn_ok", "aniskip")):
+                        self._bad("'id' must be a string, 'from_start', 'vpn_ok' and 'aniskip' booleans, 'mode' one of: %s"
+                                  % ", ".join(anicli.STREAM_MODES))
                         return
-                    r = peersync.pc_play(body["id"], body.get("from_start", False), body.get("mode"))
+                    # vpn_ok / aniskip (additive, TODO 274): the answers to the PC's VPN questions.
+                    r = peersync.pc_play(body["id"], body.get("from_start", False), body.get("mode"),
+                                         vpn_ok=body.get("vpn_ok"), aniskip=body.get("aniskip"))
                     self.send_json(r, 400 if r.get("error") else 200)
                 elif op == "control":
                     # Additive (TODO 263): the app's remote for the PC hands a button on.

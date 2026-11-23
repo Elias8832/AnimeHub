@@ -4941,7 +4941,7 @@ function vpnGate(go, skp = false) {
    The server only uses AniSkip then if the play says yes (`aniskip`). */
 /* Who would see the IP address without a VPN: the streaming site
    (ani-cli fetches online episodes and downloads), AniSkip, or both. */
-const ipLine = (online, skp) => `Without a VPN, ${online && skp ? "the streaming site and AniSkip see" : online ? "the streaming site sees" : "AniSkip sees"} your IP address.`;
+const ipLine = (online, skp, pc) => `Without a VPN, ${online && skp ? "the streaming site and AniSkip see" : online ? "the streaming site sees" : "AniSkip sees"} ${pc ? "the PC's" : "your"} IP address.`;
 /* Use AniSkip / Without AniSkip in place of one Continue button. */
 const skpBtns = (yes, no, key = "") => `<button class="btn" data-a="${no}">Without AniSkip</button><button class="btn pri" data-a="${yes}">Use AniSkip${key}</button>`;
 const escBtn = (a = "close", l = "Cancel") => `<button class="btn" data-a="${a}">${l}${kb("Esc")}</button>`;
@@ -4958,8 +4958,9 @@ function UpDlg() {
     + dlFoot("", '<button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button>', "three");
 }
 function SkpDlg() {
-  return dlHead("No VPN on") + dlBody(vpnRow(S.data?.vpn, ipLine(false, true)))
-    + dlFoot(setLink("privacy", "AniSkip", "Privacy & VPN"), escBtn() + skpBtns("skpgo", "skpno"), "three");
+  const pc = S.modal.pc;
+  return dlHead(pc ? "No VPN on the PC" : "No VPN on") + dlBody(pc ? pcVpnRow(ipLine(false, true, true)) : vpnRow(S.data?.vpn, ipLine(false, true)))
+    + dlFoot(pc ? "" : setLink("privacy", "AniSkip", "Privacy & VPN"), escBtn() + skpBtns("skpgo", "skpno"), "three");
 }
 /* A shield with a line through it: no VPN (the "More episodes are out" tile, TODO 183). */
 const SHIELD_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.7 14a7 7 0 0 0 .3-2V6l-8-3-3.2 1.2"/><path d="M4.7 4.7 4 5v6c0 6 8 10 8 10a20 20 0 0 0 5.4-4.6"/><path d="m2 2 20 20"/></svg>';
@@ -4967,10 +4968,12 @@ const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stro
 /* The VPN as a Settings row: amber while the hub waits for one, green once it's up. */
 const vpnRow = (v = S.data?.vpn, who = "") => v?.active ? srow("VPN", v.iface ? `Through ${esc(v.iface)}.` : "", pkdo(dotTxt("On")))
   : srow("VPN", `${who ? who + " " : ""}Turn one on and this starts by itself.`, pkdo(dotTxt("Off", "live")));
+/* The paired PC's VPN in the app (TODO 274): it doesn't start by itself, Play again does. */
+const pcVpnRow = (who) => srow("VPN", who, pkdo(dotTxt("Off", "warn")));
 function VpnDlg() {
-  const skp = S.modal.skp;
-  return dlHead("No VPN on") + dlBody(vpnRow(S.data?.vpn, ipLine(true, skp)))
-    + dlFoot(setLink("privacy", "Online episodes and downloads", "Privacy & VPN"), escBtn() + (skp ? skpBtns("vpngo", "vpnno") : `<button class="btn pri" data-a="vpngo">Continue anyway${kb("↵")}</button>`), skp ? "three" : "");
+  const skp = S.modal.skp, pc = S.modal.pc;
+  return dlHead(pc ? "No VPN on the PC" : "No VPN on") + dlBody(pc ? pcVpnRow(ipLine(true, skp, true)) : vpnRow(S.data?.vpn, ipLine(true, skp)))
+    + dlFoot(pc ? "" : setLink("privacy", "Online episodes and downloads", "Privacy & VPN"), escBtn() + (skp ? skpBtns("vpngo", "vpnno") : `<button class="btn pri" data-a="vpngo">Continue anyway${kb("↵")}</button>`), skp ? "three" : "");
 }
 /* Next-episode prompt (TODO 10): the last file finished and the next
    episode is online only — autoplay waits for Continue / Stop here. */
@@ -7184,8 +7187,8 @@ async function pollNow() {
       if (vpnMoved && S.modal?.t === "nxt") paintModal(); // the row and the buttons follow the VPN
       /* "Turn it on and this starts by itself": a VPN coming up continues what waited for it. */
       if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();
-      else if (vpnMoved && now.vpn.active && S.modal?.t === "vpn") A.vpngo();
-      else if (vpnMoved && now.vpn.active && S.modal?.t === "skp") A.skpgo();
+      else if (vpnMoved && now.vpn.active && S.modal?.t === "vpn" && !S.modal.pc) A.vpngo();
+      else if (vpnMoved && now.vpn.active && S.modal?.t === "skp" && !S.modal.pc) A.skpgo();
       /* A show page waiting on one ("More episodes are out", TODO 183) asks again: the hub now loads them. */
       else if (vpnMoved && now.vpn.active && S.view === "fr" && S.fr && (S.fr.page?.vpn_held || []).includes(S.fr.eid)) frLoad(S.fr.eid);
     }
@@ -7827,11 +7830,18 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
    there by its AniList slot (TODO 263). Play: the PC's own pick (its file
    first, its Sub/Dub, VPN and skip settings); a Sub/Dub pick from the menu
    plays online in that language. The bar for it shows within a second or two. */
-async function pcPlay(id, fromStart, mode) {
+async function pcPlay(id, fromStart, mode, ans = {}) {
   const ctx = findEpContext(id);
   toast(`Starting ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"} on the PC…`, "busy");
   /* Play dubbed / Play subbed picks online in that language there, even when the PC has the file. */
-  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart, ...(mode ? { mode } : {}) }).catch(() => ({ error: "Could not reach the PC." }));
+  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart, ...(mode ? { mode } : {}), ...ans }).catch(() => ({ error: "Could not reach the PC." }));
+  /* No VPN on the PC (TODO 274): its own questions, with its VPN, before anything plays there. */
+  if (r.ask === "vpn" || r.ask === "aniskip") {
+    toastDone();
+    const skp = r.ask === "aniskip" || !!r.aniskip;
+    const go = (ok) => pcPlay(id, fromStart, mode, { ...ans, ...(r.ask === "vpn" ? { vpn_ok: true } : {}), ...(skp ? { aniskip: !!ok } : {}) });
+    return openModal({ t: r.ask === "vpn" ? "vpn" : "skp", go, skp, pc: r.vpn || {} });
+  }
   if (r.error) toast(r.error, "err");
   else toast("Playing on the PC");
   pollSoon(300);

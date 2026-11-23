@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import database, library, peersync, player, playlists, remote, server, streaming
+from animehub import database, library, peersync, player, playlists, remote, server, settings, streaming
 from animehub.config import config
 
 PC_DB = support.TMP / "peersync-pc.db"
@@ -687,13 +687,14 @@ class Pairing(unittest.TestCase):
         self.assertIn("must be true or false", peersync.pc_control("stop_after", "x")["error"])
         # Play on the PC: the phone's episode, found on the PC by its slot.
         started = []
-        with patch.object(player, "start_play", lambda eid, version=0, from_start=False: started.append((eid, from_start)) or {"ok": True}):
+        with patch.object(settings, "site_ok", lambda: True), patch.object(player, "start_play", lambda eid, version=0, from_start=False: started.append((eid, from_start)) or {"ok": True}):
             self.assertEqual(peersync.pc_play("stream:21:4", True), {"ok": True})
             self.assertIn("isn't matched to AniList", peersync.pc_play("12345")["error"])
         self.assertEqual(started, [("stream:21:4", True)])  # nothing of it on the PC: it plays online
         # Play dubbed / subbed from the app's menu: online in that language, file or not.
         streamed = []
-        with patch.object(streaming, "start_stream", lambda eid, mode=None, from_start=False: streamed.append((eid, mode)) or {"ok": True}):
+        with patch.object(settings, "site_ok", lambda: True), \
+                patch.object(streaming, "start_stream", lambda eid, mode=None, from_start=False: streamed.append((eid, mode)) or {"ok": True}):
             self.assertEqual(peersync.pc_play("stream:21:5", False, "dub"), {"ok": True})
         self.assertEqual(streamed, [("stream:21:5", "dub")])
         with database.db() as c:  # the PC went away: nothing plays, quickly
@@ -701,6 +702,35 @@ class Pairing(unittest.TestCase):
         peersync._pc["at"] = 0.0
         self.assertEqual(peersync.pc_now(), {"now": None, "paired": True})
         self.assertIn("Can't reach the PC", peersync.pc_control("toggle")["error"])
+
+    def test_play_on_the_pc_asks_about_the_pcs_vpn(self):
+        """TODO 274: the app's Play on the PC went online there without a VPN
+        and without asking. The PC now asks its own questions first."""
+        code = remote.new_code()
+        with patch.object(peersync, "soon", lambda *a: None):
+            peersync.pair(self.addr, code)
+        off = {"active": False, "iface": None, "known": True}
+        self.addCleanup(settings.set_automation, "aniskip", False)
+        started = []
+        with patch.object(settings, "vpn_status", lambda: off), \
+                patch.object(peersync, "slot_map", lambda: {"21:3": ["stream:21:3", "f9"]}), \
+                patch.object(player, "start_play", lambda eid, version=0, from_start=False: started.append(eid) or {"ok": True}):
+            r = peersync.pc_play("stream:21:4")
+            self.assertEqual((r["ask"], r["aniskip"], r["vpn"]), ("vpn", False, off))
+            self.assertIn("No VPN on the PC", r["error"])  # an app from before the dialog says why
+            self.assertEqual(started, [])  # nothing reached the site
+            self.assertEqual(peersync.pc_play("stream:21:4", vpn_ok=True), {"ok": True})  # Continue anyway
+            self.assertEqual(peersync.pc_play("stream:21:3"), {"ok": True})  # the PC's file needs no VPN
+            self.assertEqual(started, ["stream:21:4", "f9"])
+            # AniSkip on: one dialog asks both, then each answer travels.
+            settings.set_automation("aniskip", True)
+            self.assertEqual(peersync.pc_play("stream:21:4")["aniskip"], True)
+            self.assertEqual(peersync.pc_play("stream:21:3")["ask"], "aniskip")  # a file asks AniSkip only
+            self.assertEqual(peersync.pc_play("stream:21:4", vpn_ok=True, aniskip=False), {"ok": True})
+            self.assertFalse(player.aniskip_allowed("stream:21:4"))
+            self.assertEqual(peersync.pc_play("stream:21:3", aniskip=True), {"ok": True})
+            self.assertTrue(player.aniskip_allowed("f9"))
+        self.assertEqual(started, ["stream:21:4", "f9", "stream:21:4", "f9"])
 
     def test_the_pc_picks_its_file_before_its_online_episode(self):
         with patch.object(peersync, "slot_map", lambda: {"21:3": ["stream:21:3", "f9"], "21:4": ["stream:21:4"]}):
