@@ -103,6 +103,17 @@ class PhoneLayout(unittest.TestCase):
         self.assertIn('const isPhone = () => mq("(max-width:700px)");', APP)
         self.assertRegex(APP, re.escape('const isTabletL = () => mq("(min-width:901px) and (max-width:1400px) and (pointer:coarse)'))
 
+    def test_toast_uses_full_width_not_half_viewport(self):
+        # position:fixed;left:50% capped shrink-to-fit width to 50vw on phones, turning long toasts into tall narrow columns
+        toast_rule = re.search(r"#toast\{[^}]+\}", CSS).group(0)
+        self.assertNotIn("left:50%", toast_rule)
+        self.assertIn("left:0;right:0;", toast_rule)
+        self.assertIn("width:fit-content;", toast_rule)
+        self.assertIn("#toast .tm{min-width:0;", CSS)
+        self.assertIn("#toast .tact{flex:none;white-space:nowrap;", CSS)
+        self.assertIn('toastUndo(s?.title || "Show", () => contHide(v, false), "Removed until you play it again")', APP)
+        self.assertIn('toastUndo(item.title, async () => { if (await plPost({ op: "add", id: p.id, item, at })) render(true); }, `Removed from ${p.name}`)', APP)
+
 
 class TouchSmoothness(unittest.TestCase):
     """Touch screens skip the costly effects (measured: page changes spent

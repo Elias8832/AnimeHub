@@ -633,13 +633,15 @@ async function api(path, body) {
   const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
   try { return await res.json(); } catch { throw new Error(`HTTP ${res.status} from ${path}`); }
 }
-/* The bottom popup. kind "busy" stays with a spinner until toastDone or the next popup. */
-function toast(m, kind) {
-  if (document.body.classList.contains("pp-open") && typeof ppNote === "function") ppNote(m, kind); // full screen hides the page's toast
+/* The bottom popup. kind "busy" stays with a spinner until toastDone or the next popup.
+   sub shows a quieter second line under a single-line title so long show names stay compact. */
+function toast(m, kind, sub) {
+  if (document.body.classList.contains("pp-open") && typeof ppNote === "function") ppNote(sub ? `${m} — ${sub}` : m, kind); // full screen hides the page's toast
   const t = $("#toast"), k = kind || (/could not|couldn't|failed|error|can't|cannot|not accessible|unreachable|went wrong/i.test(m) ? "err" : "ok");
   t.dataset.k = k; t.classList.remove("act");
-  t.innerHTML = `<span class="ti">${k === "busy" ? '<i class="tsp"></i>' : ico(k === "err" ? "close" : "check")}</span><span class="tm"></span>`;
-  t.querySelector(".tm").textContent = m;
+  t.innerHTML = `<span class="ti">${k === "busy" ? '<i class="tsp"></i>' : ico(k === "err" ? "close" : "check")}</span><span class="tm">${sub ? "<b></b><small></small>" : ""}</span>`;
+  if (sub) { t.querySelector(".tm b").textContent = m; t.querySelector(".tm small").textContent = sub; }
+  else t.querySelector(".tm").textContent = m;
   t.classList.add("on");
   clearTimeout(toast.h);
   if (k !== "busy") toast.h = setTimeout(() => t.classList.remove("on"), 2800);
@@ -1556,8 +1558,8 @@ document.addEventListener("wheel", (e) => {
   w.acc = 0; w.flip = now;
 }, { passive: false });
 /* A popup with an Undo button (Elias picked it: removing a show or deleting a playlist). */
-function toastUndo(m, undo) {
-  toast(m);
+function toastUndo(m, undo, sub) {
+  toast(m, undefined, sub);
   const t = $("#toast");
   t.classList.add("act");
   t.insertAdjacentHTML("beforeend", '<button class="tact" data-a="undo">Undo</button>');
@@ -1569,7 +1571,7 @@ async function plRemove(p, ref) {
   const at = p.items.findIndex((x) => x.ref === ref), item = p.items[at];
   if (!item || !(await plPost({ op: "remove", id: p.id, ref }))) return;
   if (S.view === "library") render(true);
-  toastUndo(`Removed ${item.title} from ${p.name}`, async () => { if (await plPost({ op: "add", id: p.id, item, at })) render(true); });
+  toastUndo(item.title, async () => { if (await plPost({ op: "add", id: p.id, item, at })) render(true); }, `Removed from ${p.name}`);
 }
 const plPost = (body) => api("/api/playlists", body).then((r) => {
   if (r.error) { toast(r.error, "err"); return null; }
@@ -8865,7 +8867,7 @@ const A = {
     if (typing) $("#plq")?.focus({ preventScroll: true });
   },
   plflip: (v, t) => { const st = t.closest(".plstack"); if (st) plFlip(st, 1); },
-  cwhide: async (v) => { const s = showById(v); if (await contHide(v, true)) toastUndo(`${s?.title || "Show"} removed until you play it again`, () => contHide(v, false)); },
+  cwhide: async (v) => { const s = showById(v); if (await contHide(v, true)) toastUndo(s?.title || "Show", () => contHide(v, false), "Removed until you play it again"); },
   plpin: async (v) => {
     const p = plById(v) || plCurrent();
     if (p && await plPost({ op: "edit", id: p.id, pinned: !p.pinned })) { render(true); toast(p.pinned ? "Taken off Home" : "Pinned to Home"); }
