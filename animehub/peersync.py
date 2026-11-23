@@ -463,13 +463,13 @@ def merge_playlists(mine, theirs):
     gone_them = {u: ts for u, ts in gone.items() if u not in theirs["gone"] or theirs["gone"][u] < ts}
     for uid in set(mine_l) | set(theirs_l):
         m, t = mine_l.get(uid), theirs_l.get(uid)
-        if m and t and m["changed"] == t["changed"] and uid not in renames.values():
-            continue  # unchanged since the last sync (pictures may differ: each keeps its own)
         newest = max(x["changed"] for x in (m, t) if x)
         if uid in gone and gone[uid] >= newest:
             continue  # deleted after its last change: gone everywhere
-        gone_me.pop(uid, None)
+        gone_me.pop(uid, None)  # an older delete never takes the list off either side (TODO 276)
         gone_them.pop(uid, None)
+        if m and t and m["changed"] == t["changed"] and uid not in renames.values():
+            continue  # unchanged since the last sync (pictures may differ: each keeps its own)
         win = t if not m or (t and t["changed"] > m["changed"]) else m
         if win is not m or uid in renames.values():
             for_me[uid] = win

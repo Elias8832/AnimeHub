@@ -489,6 +489,19 @@ class ANewPc(unittest.TestCase):
                 self.assertEqual(self.hidden(PC_DB), [])
                 self.assertEqual(self.hidden(APP_DB), ["aid:5"])
 
+    def test_an_old_delete_on_the_pc_never_takes_the_list_off_the_phone(self):
+        """TODO 276: an older app sent the phone's old delete to the PC; the
+        list came back after it. The PC's old delete flipped the phone's copy
+        off and on, one sync each."""
+        with device(PC_DB), database.db() as c:
+            c.execute("INSERT INTO sync_gone(kind, key, ts) VALUES('playlist', ?, '2026-11-14 23:41:26')",
+                      (c.execute("SELECT uid FROM playlists").fetchone()[0],))
+        for _ in range(3):
+            sync()
+            for path in (PC_DB, APP_DB):
+                with device(path):
+                    self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Interested"], path.name)
+
     def test_marks_made_since_pairing_still_travel(self):
         sync()
         with device(APP_DB):
