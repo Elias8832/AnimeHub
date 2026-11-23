@@ -848,6 +848,9 @@ def full_library():
             # Additive (Decision 81): show id -> when it was taken off Continue
             # watching; the UI hides it until something of it plays after that.
             "continue_hidden": hidden,
+            # Additive (TODO 275): entry id -> the next one on its main story,
+            # so a finished season hands Home to the next season you have.
+            "story_next": franchise.story_next(),
             "hide_spoilers": settings.automation_enabled("hide_spoilers"),  # additive (Decision 57): the first paint needs it
             "vpn": settings.vpn_status(),
             # Legacy fields kept as empty lists since the streaming strip

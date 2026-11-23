@@ -87,6 +87,15 @@ class Storage(unittest.TestCase):
     def test_unknown_entry(self):
         self.assertIsNone(franchise.franchise_of(161645))
 
+    def test_story_next_follows_the_main_story(self):
+        """TODO 275: Home goes from a finished season to the next one on the
+        main story; a franchise stored again is read again."""
+        self.assertEqual(franchise.story_next(), {})
+        franchise.store_franchise([entry(1, 2), entry(2, 3, year=2021), entry(3, year=2023)])
+        self.assertEqual(franchise.story_next(), {1: 2, 2: 3})
+        franchise.store_franchise([entry(1, 2), entry(2, 4, year=2021), entry(3, year=2023), entry(4, year=2022)])
+        self.assertEqual(franchise.story_next(), {1: 2, 2: 4})
+
     def test_rebuild_moves_entries(self):
         """AniList relinks entry 2 from franchise 1 to franchise 3: it is on
         exactly one page afterwards, and an emptied franchise disappears."""
