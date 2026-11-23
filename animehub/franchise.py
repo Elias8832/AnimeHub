@@ -225,6 +225,31 @@ def tag_franchises(cards):
     return cards
 
 
+_story_memo = {"sig": None, "next": {}}
+
+
+def story_next():
+    """{entry id: the next entry on its franchise's main story}
+    (pages.story_line), for every stored franchise: Home follows it from a
+    finished season to the next one you have (TODO 275). Database only;
+    worked out again when a franchise is stored."""
+    with database.db() as c:
+        sig = tuple(c.execute("SELECT COUNT(*), MAX(ts) FROM franchises").fetchone())
+        if sig == _story_memo["sig"]:
+            return _story_memo["next"]
+        rows = c.execute("""SELECT f.franchise_id, m.data FROM franchise_members f
+                            JOIN media m ON m.id = f.media_id ORDER BY f.franchise_id, f.pos""").fetchall()
+    groups = {}
+    for fid, data in rows:
+        groups.setdefault(fid, []).append(json.loads(data))
+    nxt = {}
+    for entries in groups.values():
+        line = pages.story_line(entries)
+        nxt.update((a["id"], b["id"]) for a, b in zip(line, line[1:]))
+    _story_memo.update(sig=sig, next=nxt)
+    return nxt
+
+
 def franchise_of(mid):
     """(franchise id, entries in page order) for one entry, from the
     database only. None until the franchise has been built."""

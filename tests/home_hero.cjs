@@ -295,3 +295,30 @@ test("online ticks count on every season of a folder, and back (TODO 265)", () =
   assert.equal(app.slotSeen(release, ep("stray", 0)), false); // no number, no slot
   assert.equal(app.showKey(folder), app.showKey(release)); // and one tile on Home
 });
+
+test("a finished season hands Home to the next season you have (TODO 275)", () => {
+  const plain = (v) => JSON.parse(JSON.stringify(v)); // the vm's arrays
+  const ep = (id, number, watched, played = null) => ({ ...episode(id, played, watched, 0), number });
+  const stream = (mid, title, eps) => ({ ...show(title, []), id: "aid:" + mid, kind: "stream", meta: { anilist_id: mid },
+    seasons: [{ key: 1, season: 1, label: "Episodes", episodes: eps, releases: [{ id: mid, first_ep: 1, last_ep: null, offset: 0 }] }] });
+  const s1 = stream(140960, "SPY x FAMILY", [ep("stream:140960:11", 11, true, earlier), ep("stream:140960:12", 12, true, latest)]);
+  const cour2 = stream(142838, "SPY x FAMILY Cour 2", [ep("stream:142838:1", 1, true)]); // marked done, never played here
+  const s2 = stream(158927, "SPY x FAMILY Season 2", [ep("stream:158927:1", 1, false), ep("stream:158927:2", 2, false)]);
+  const other = show("Other", [episode("o1", "2026-10-13 10:00:00")]);
+  const data = { shows: [other], streams: [s1, cour2, s2], continue: [], history: [s1.seasons[0].episodes[1], s1.seasons[0].episodes[0], other.seasons[0].episodes[0]],
+    story_next: { 140960: 142838, 142838: 158927, 158927: 177937 } };
+  let app = homepage(data);
+  const up = app.nextUpInfo();
+  assert.equal(up.s.id, "aid:158927"); // Cour 2 is done too: Season 2 E1
+  assert.equal(up.ep.id, "stream:158927:1");
+  assert.equal(up.label, "Up next");
+  assert.deepEqual(plain(app.keepWatching().map((x) => [x.s.id, x.t.ep.id])), [["aid:158927", "stream:158927:1"], ["Other", "o1"]]);
+  assert.deepEqual(plain(app.keepWatching(up.s.id).map((x) => x.s.id)), ["Other"]); // not twice beside the banner
+  // Season 2 not here (not on disk, not linked): no tile, the old rewatch rule
+  app = homepage({ ...data, streams: [s1, cour2] });
+  assert.deepEqual(plain(app.keepWatching().map((x) => x.s.id)), ["Other"]);
+  assert.equal(app.nextUpInfo().s.id, "Other");
+  // no story known yet (franchise not built): as before
+  app = homepage({ ...data, story_next: undefined });
+  assert.deepEqual(plain(app.keepWatching().map((x) => x.s.id)), ["Other"]);
+});

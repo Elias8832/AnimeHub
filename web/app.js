@@ -456,6 +456,26 @@ function showKey(s) {
   return twinIdx.find(s.id);
 }
 const keyOfId = (id) => { const s = id && showById(id); return s ? showKey(s) : id; };
+/* Every episode of a show seen: the next season on its main story that's
+   here to play, on disk or linked online (TODO 275: Spy x Family's Season 2
+   after Season 1 and Cour 2, both done). A season you have and finished is
+   passed over; one that isn't here ends the walk. { s, t } as pickTarget. */
+function sequelTarget(s) {
+  const nx = S.data?.story_next, k = showKey(s);
+  if (!nx || !twinIdx) return null;
+  const own = allShows().filter((x) => showKey(x) === k);
+  const mids = own.flatMap((x) => [x.meta?.anilist_id, ...x.seasons.flatMap((sea) => [sea.media_id, ...(sea.releases || []).map((r) => r.id)])]).filter(Boolean);
+  let cur = mids.map((m) => nx[m]).find((m) => m && !mids.includes(m));
+  for (let hops = 0; cur && hops < 40; hops++, cur = nx[cur]) {
+    const ck = twinIdx.find("aid:" + cur);
+    if (ck === k) continue;
+    const have = allShows().filter((x) => showKey(x) === ck);
+    if (!have.length) return null;
+    const t = have.map((x) => ({ s: x, t: pickTarget(x) })).find((x) => x.t && x.t.kind !== "rewatch");
+    if (t) return t;
+  }
+  return null;
+}
 /* Taken off Continue watching (Decision 81): only until something of the
    show plays after that, then it's back. Its folder and online copy go and
    come back together (TODO 265). */
@@ -483,6 +503,9 @@ function nextUpInfo() {
   if (after) return { s: ctx.s, sea: ctx.sea, ep: after, label: "Up next" };
   if (anyUn) return { s: ctx.s, sea: anyUn.sea, ep: anyUn.ep, label: "Up next" };
   if (resumable(ctx.ep)) return { ...ctx, label: "Continue watching", ep: ctx.ep };
+  /* All seen: the next season you have (TODO 275). */
+  const q = sequelTarget(ctx.s);
+  if (q && !contHidden(q.s)) return { s: q.s, sea: q.t.sea, ep: q.t.ep, label: q.t.kind === "resume" ? "Continue watching" : "Up next" };
   /* A Rewatch banner only when nothing else is in progress: else the newest
      show from Continue watching leads instead. */
   const other = keepWatching()[0];
@@ -709,8 +732,15 @@ function keepWatching(skipId) {
     if (seen.has(k)) continue;
     seen.add(k);
     if (contHidden(x.ctx.s)) continue;
-    const t = pickTarget(x.ctx.s);
-    if (t && t.kind !== "rewatch") out.push({ s: x.ctx.s, t });
+    let s = x.ctx.s, t = pickTarget(s);
+    if (t && t.kind === "rewatch") {
+      /* all seen: its next season takes the tile, once (TODO 275) */
+      const q = sequelTarget(s);
+      if (!q || seen.has(showKey(q.s)) || contHidden(q.s)) continue;
+      seen.add(showKey(q.s));
+      ({ s, t } = q);
+    }
+    if (t && t.kind !== "rewatch") out.push({ s, t });
     if (out.length >= 8) break;
   }
   return out;
