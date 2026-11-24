@@ -3300,26 +3300,17 @@ function cmHide(instant = false, restoreFocus = false) {
     const dest = (tg?.matches?.("[tabindex],button,a") ? tg : tg?.querySelector?.("button,a,[tabindex]")) || op;
     if (dest?.isConnected && dest !== document.body) try { dest.focus({ preventScroll: true }); } catch {}
   }
-  if (m.style.display !== "block" || m.classList.contains("closing")) {
-    if (tg) tg.classList.remove("cm-target", "cm-target-out");
-    if (!cmShow.target) document.documentElement.style.removeProperty("--cm-ring");
-    return;
-  }
+  if (m.style.display !== "block" || m.classList.contains("closing")) return;
   cmHide.at = Date.now(); cmHide.was = m.querySelector(".pllay") ? "pllay" : "";
   if (instant || reduceMotion()) {
-    if (tg) tg.classList.remove("cm-target", "cm-target-out");
-    document.documentElement.style.removeProperty("--cm-ring");
     m.style.display = "none"; m.style.bottom = ""; m.classList.remove("closing", "cm-gl");
     return;
   }
-  if (tg) tg.classList.add("cm-target-out");
   m.classList.add("closing");
   /* Hide when the fold-away has really finished (a same-length timer cut its last frames into a blink). */
   const done = () => {
     clearTimeout(cmHide.t); m.removeEventListener("animationend", onEnd);
     if (!m.classList.contains("closing")) return;
-    if (tg) tg.classList.remove("cm-target", "cm-target-out");
-    if (!cmShow.target) document.documentElement.style.removeProperty("--cm-ring");
     m.classList.remove("closing", "cm-gl");
     m.style.bottom = "";
     m.style.display = "none";
@@ -3330,11 +3321,10 @@ function cmHide(instant = false, restoreFocus = false) {
 }
 function cmShow(m, x, y, targetEl = null, accent = "", exactPos = false, from = null) {
   clearTimeout(cmHide.t); clearTimeout(cmFire.t); m.classList.remove("closing"); cmBusy = false; cmLastRow = null;
-  $$(".cm-target, .cm-target-out").forEach((el) => { if (el !== targetEl) el.classList.remove("cm-target", "cm-target-out"); });
   cmShow.target = null;
   cmShow.opener = document.activeElement && !m.contains(document.activeElement) ? document.activeElement : cmShow.opener;
-  if (accent) { m.style.setProperty("--cm-ac", accent); document.documentElement.style.setProperty("--cm-ring", accent); }
-  else { m.style.removeProperty("--cm-ac"); document.documentElement.style.removeProperty("--cm-ring"); }
+  if (accent) m.style.setProperty("--cm-ac", accent);
+  else m.style.removeProperty("--cm-ac");
   if (m.querySelector(".pllay, .plmh")) m.setAttribute("role", "dialog");
   else m.setAttribute("role", "menu");
   const titleTxt = m.querySelector(".cmht b, .plmh b")?.textContent?.trim();
@@ -3396,10 +3386,7 @@ function cmShow(m, x, y, targetEl = null, accent = "", exactPos = false, from = 
     { duration: 210, easing: "cubic-bezier(.22,1,.36,1)" }).onfinish = () => { m.style.overflow = ""; };
     [...m.children].forEach((c) => c.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 150, delay: 60, easing: "ease-out", fill: "backwards" }));
   } else { m.style.animation = "none"; void m.offsetWidth; m.style.animation = ""; }
-  if (!isPhone() && targetEl && targetEl.isConnected) {
-    cmShow.target = targetEl;
-    targetEl.classList.remove("cm-target-out"); targetEl.classList.add("cm-target");
-  }
+  if (!isPhone() && targetEl && targetEl.isConnected) cmShow.target = targetEl;
   if (!isPhone() && !plPicking()) { m.tabIndex = -1; m.focus({ preventScroll: true }); }
   if (ddPtr !== "touch" && kb) m.querySelector(".mi")?.classList.add("sel"); // a finger gets no picked row: it lit a row the thumb wasn't on
   if (ddPtr !== "touch" && kb && !isPhone() && !plPicking()) {
@@ -6905,7 +6892,7 @@ const VIEW_TITLE = { home: "", library: "Library", browse: "Browse", history: "J
    their scroll. Runtime state the HTML doesn't carry survives: the image
    "ready" classes, applied tile art, sheen/tilt styles, glide indicators,
    and the boxes the page fills itself (#entrybox, #infobox, #airline, #wall). */
-const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "cm-target", "cm-target-out", "ddon", "dd-picked", "dd-back", "setin"];
+const LIVE_CLASSES = ["ready", "focused", "tilting", "ml", "mr", "shoff", "ddon", "dd-picked", "dd-back", "setin"];
 const morphKey = (n) => (n.nodeType !== 1 ? null : n.id ? "#" + n.id : n.classList?.contains("pka") ? "pka|" + n.dataset.d : n.dataset?.a && n.dataset.v != null ? n.dataset.a + "|" + n.dataset.v : null);
 const liveOnly = (n) => n.nodeType === 1 && (n.classList.contains("glide") || n.classList.contains("rpl"));
 function morphAttrs(a, b) {
@@ -7176,10 +7163,7 @@ function patchShow(build = Det) {
     const el = next.get(tile.dataset.v);
     if (!el) continue;
     const art = tile.querySelector(".epimg");
-    const keepCm = tile.classList.contains("cm-target"), keepCmOut = tile.classList.contains("cm-target-out");
     tile.className = el.className;
-    if (keepCm) tile.classList.add("cm-target");
-    if (keepCmOut) tile.classList.add("cm-target-out");
     tile.innerHTML = el.innerHTML;
     if (art) tile.querySelector(".epimg")?.replaceWith(art);
   }
@@ -8947,7 +8931,7 @@ const A = {
       m.style.left = Math.max(8, Math.min(r.right / z - w, vw - w - 8)) + "px";
       m.style.bottom = "";
       m.style.top = Math.max(topMin, Math.min(r.bottom / z + 6, botMax - h)) + "px";
-      cmShow.target = btn; btn.classList.add("cm-target");
+      cmShow.target = btn;
     });
     if (!(await plPost({ op: "edit", id: p.id, [k]: val }))) refreshData().then(() => render(true));
   },
