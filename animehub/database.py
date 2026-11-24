@@ -382,11 +382,22 @@ def migration_31(c):
         updated_at TEXT NOT NULL)""")
 
 
+def migration_32(c):
+    """Data sync switch and "Only from now on" baseline on sync_peer
+    (Decision 98 amended): sync=0 pairs for PC controls only; baseline holds
+    what differed on each side when starting "Only from now on"."""
+    have = {r[1] for r in c.execute("PRAGMA table_info(sync_peer)")}
+    if "sync" not in have:
+        c.execute("ALTER TABLE sync_peer ADD COLUMN sync INTEGER NOT NULL DEFAULT 1")
+    if "baseline" not in have:
+        c.execute("ALTER TABLE sync_peer ADD COLUMN baseline TEXT")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
               migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
-              migration_26, migration_27, migration_28, migration_29, migration_30, migration_31]
+              migration_26, migration_27, migration_28, migration_29, migration_30, migration_31, migration_32]
 
 
 def snapshot_before(target_version):

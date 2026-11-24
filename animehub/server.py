@@ -11,6 +11,7 @@ import mimetypes
 import traceback
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -1147,8 +1148,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_json(peersync.apply_payload(body))
         elif route == "/api/peer":
-            # Settings → PC in the Android app: {op: "pair", address, code, take} / "now" / "forget".
-            # take (additive, Decision 98): the first sync "combine"s (the default) or uses the PC's ("pc").
+            # Settings → PC in the Android app: {op: "pair", address, code, take} / "now" / "forget" / "sync".
+            # take (additive, Decision 98): "combine" (default), "pc", "phone", "new", or "none" (PC controls only).
             op = body.get("op")
             try:
                 if op == "pair":
@@ -1167,6 +1168,12 @@ class Handler(BaseHTTPRequestHandler):
                 elif op == "forget":
                     peersync.forget()
                     self.send_json(peersync.status())
+                elif op == "sync":
+                    # Additive (Decision 98 amended): pause or resume data sync without unpairing.
+                    if not isinstance(body.get("on"), bool):
+                        self._bad("'on' must be a boolean")
+                        return
+                    self.send_json(peersync.set_sync(body["on"], body.get("take") or "combine"))
                 elif op == "play":
                     # Additive (TODO 263): Play on the PC from the app.
                     if not isinstance(body.get("id"), str) or not isinstance(body.get("from_start", False), bool) \
@@ -1189,7 +1196,7 @@ class Handler(BaseHTTPRequestHandler):
                     r = peersync.pc_control(body["action"], body.get("value"))
                     self.send_json(r, 400 if r.get("error") and r["error"] != "nothing is playing" else 200)
                 else:
-                    self._bad("'op' is one of: pair, now, soon, away, forget, control, play")
+                    self._bad("'op' is one of: pair, now, soon, away, forget, sync, control, play")
             except peersync.SyncError as e:
                 self.send_json({**peersync.status(), "error": str(e)}, 400)
         elif route == "/api/remote":
@@ -1820,7 +1827,7 @@ class RemoteHandler(Handler):
     def paired(self, token, location=None):
         """Hand the phone its cookie: a redirect into the app (QR link) or
         a JSON ok (typed code)."""
-        body = b"" if location else json.dumps({"ok": True}).encode()
+        body = b"" if location else json.dumps({"ok": True, "name": socket.gethostname()}).encode()
         self.send_response(302 if location else 200)
         self.send_header("Set-Cookie", remote.cookie_header(token))
         if location:

@@ -4594,15 +4594,17 @@ const syncAgo = (t) => { if (!t) return ""; const m = Math.round((Date.now() - n
 function syncGroup() {
   const p = S.peer;
   if (!p) { api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}); return '<div class="group"><h3>Sync with your PC</h3><p class="sub">Loading…</p></div>'; }
-  if (!p.paired) return `<div class="group"><h3>Sync with your PC</h3><p class="sub">Keeps what you watched and your playlists the same on both.</p>
+  if (!p.paired) return `<div class="group"><h3>Sync with your PC</h3><p class="sub">Sync your watching and playlists, or pair for PC controls.</p>
     ${srow("1. On the PC", "Settings → Phone → Pair a phone.", "")}
     ${srow("2. Here", "Scan its QR code with the camera and pick Open in the app, or type the address and code.", `<div class="row peerform"><input id="peeraddr" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="192.168.1.20:8788" aria-label="The PC's address" value="${esc(S.peerAddr || "")}"><input id="peercode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Pairing code" value="${esc(S.peerCode || "")}"><button class="btn pri" data-a="peerpair"${S.peerBusy ? " disabled" : ""}>${S.peerBusy ? "Pairing…" : "Pair"}</button></div>`, "wide")}
     ${p.error ? `<p class="note">${swarn(esc(p.error))}</p>` : ""}</div>`;
-  const err = p.error && (!p.last_ok || (p.last_try || "") > p.last_ok) ? p.error : "";
+  const syncOn = p.sync !== false;
+  const err = syncOn && p.error && (!p.last_ok || (p.last_try || "") > p.last_ok) ? p.error : "";
   const last = p.last_ok ? `Last synced ${syncAgo(p.last_ok)}.` : "Not synced yet.";
   return `<div class="group"><h3>Sync with your PC</h3>
     ${srow(esc(p.pc || "Your PC"), "", pkdo('<button class="btn" data-a="peerforget">Unpair</button>'))}
-    ${srow(`Sync${err ? swarn(p.vpn_blocked ? "VPN" : "Waiting") : ""}`, esc(err ? `${err} ${last}` : last), pkdo(`<button class="btn" data-a="peernow"${S.peerBusy || p.running ? " disabled" : ""}>${S.peerBusy || p.running ? "Syncing…" : "Sync now"}</button>`))}</div>`;
+    ${srow("Sync data", syncOn ? "Watching, playlists and list edits stay the same on both." : "Paired for PC controls and Play on the PC only.", pick("Sync data", "peersync", null, [["on", "On"], ["off", "Off"]], syncOn ? "on" : "off", { off: !!S.peerBusy }))}
+    ${syncOn ? srow(`Sync${err ? swarn(p.vpn_blocked ? "VPN" : "Waiting") : ""}`, esc(err ? `${err} ${last}` : last), pkdo(`<button class="btn" data-a="peernow"${S.peerBusy || p.running ? " disabled" : ""}>${S.peerBusy || p.running ? "Syncing…" : "Sync now"}</button>`)) : ""}</div>`;
 }
 /* The PC's QR page, "Open in the app": the app hands over the address and
    code; Pair stays a tap (a link from anywhere else can't pair on its own). */
@@ -4622,7 +4624,7 @@ async function peerDo(body, done) {
   S.peerBusy = true; render(true);
   try {
     const r = await api("/api/peer", body);
-    S.peer = r;
+    S.peer = r; S.pcPaired = !!r?.paired;
     if (r.error) toast(r.error, "err"); else if (done) toast(done(r));
   } catch { toast("Could not reach the hub.", "err"); }
   S.peerBusy = false; render(true);
@@ -5913,7 +5915,7 @@ function setSummary(k, s) {
     library: s.library_root || "no folder chosen yet",
     privacy: S.data?.vpn?.active ? "a VPN is on" : "no VPN right now",
     anilist: ani.connected ? `${acct()} · ${ani.user || "you"}` : "not connected",
-    phone: s.android ? (S.peer?.paired ? `synced with ${S.peer.pc || "your PC"}` : "keep this phone and your PC the same") : "pair a phone with a QR code",
+    phone: s.android ? (S.peer?.paired ? `${S.peer.sync === false ? "paired" : "synced"} with ${S.peer.pc || "your PC"}` : "keep this phone and your PC the same") : "pair a phone with a QR code",
     data: "updates, tools, files",
   }[k] || "";
 }
@@ -7397,15 +7399,21 @@ function accentHex(show) {
 const awayDevice = () => !!S.settings?.phone || (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) && matchMedia("(pointer:coarse)").matches && matchMedia("(hover:none)").matches);
 const playWhere = () => { if (S.settings?.android && !S.pcPaired) return "phone"; const v = lsGet("playWhere", null); return v === "phone" || v === "pc" ? v : null; }; // the Android app: a PC only once paired (Decision 88, TODO 263)
 const PP = { id: null, ended: false, seeking: false, seekTo: 0, version: 0, segs: [], skipped: new Set(), tick: 0, next: null, cd: 0, hideT: 0, closing: false };
-/* Pairing the app with a PC (Decision 98): what the first sync does. Two
-   choices like the Library's filter sheet (tap one, a tick), then Pair. */
-const PEER_TAKE = [["combine", "Combine both", "What you watched on either ends up on both."],
-  ["pc", "Use the PC's", "This phone's watching, playlists and list edits are replaced by the PC's."]];
+/* Pairing the app with a PC (Decision 98): what the first sync does. Choices
+   like the Library's filter sheet (tap one, a tick), then Pair / Start syncing. */
+const PEER_TAKE = [
+  ["combine", "Combine both", "What you watched on either ends up on both."],
+  ["pc", "Use the PC's", "This phone's watching, playlists and list edits are replaced by the PC's."],
+  ["phone", "Use the phone's", "The PC's watching, playlists and list edits are replaced by this phone's."],
+  ["new", "Only from now on", "Keep what's already on each device; only sync changes made after this."],
+  ["none", "Keep them separate", "Don't sync data. Pair only for PC controls and Play on the PC."],
+];
 function PeerDlg() {
+  const mode = S.modal.mode, opts = mode === "sync" ? PEER_TAKE.filter(([v]) => v !== "none") : PEER_TAKE;
   const on = S.modal.take || "combine";
-  return dlHead("Sync with the PC") + `<div class="dlb pkb"><div class="pkopts">${PEER_TAKE.map(([v, l, d]) =>
+  return dlHead("Sync with the PC") + `<div class="dlb pkb"><div class="pkopts">${opts.map(([v, l, d]) =>
     `<button class="pko${v === on ? " on" : ""}" aria-pressed="${v === on}" data-a="peerpick" data-v="${v}"><span><b>${l}</b><small>${d}</small></span>${ico("check")}</button>`).join("")}</div>
-    <div class="pkfoot"><button class="btn pri" data-a="peertake">Pair</button></div></div>`;
+    <div class="pkfoot"><button class="btn pri" data-a="peertake">${mode === "sync" ? "Start syncing" : "Pair"}</button></div></div>`;
 }
 function WhereDlg() {
   return dlHead("Play where?") + (S.settings?.android ? "" : dlBody(`<p class="sub">Online episodes come through the PC either way.</p>`))
@@ -8605,7 +8613,18 @@ const A = {
   },
   peerpair: () => { S.peerAddr = $("#peeraddr")?.value || ""; S.peerCode = $("#peercode")?.value || ""; openModal({ t: "peer" }); },
   peerpick: (v) => { S.modal.take = v; for (const b of document.querySelectorAll("#modal .pko")) { const on = b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); } }, // in place: the pop-up doesn't redraw
-  peertake: () => { const v = S.modal?.take || "combine"; closeModal(); peerDo({ op: "pair", address: S.peerAddr, code: S.peerCode, take: v }, () => { S.peerCode = ""; return "Paired. Syncing with the PC…"; }).then(() => setTimeout(() => api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}), 4000)); },
+  peersync: (v) => {
+    if (v === "off") return peerDo({ op: "sync", on: false }, () => "Data sync off. PC controls still work.");
+    render(true);
+    openModal({ t: "peer", mode: "sync" });
+  },
+  peertake: () => {
+    const v = S.modal?.take || "combine", mode = S.modal?.mode;
+    closeModal();
+    const refresh = () => v !== "none" && setTimeout(() => api("/api/peer").then((x) => { S.peer = x; if (S.view === "settings") render(true); }).catch(() => {}), 4000);
+    if (mode === "sync") return peerDo({ op: "sync", on: true, take: v }, () => "Syncing with the PC…").then(refresh);
+    peerDo({ op: "pair", address: S.peerAddr, code: S.peerCode, take: v }, () => { S.peerCode = ""; return v === "none" ? "Paired for PC controls." : "Paired. Syncing with the PC…"; }).then(refresh);
+  },
   peernow: () => peerDo({ op: "now" }, (r) => r.last && (r.last.pulled || r.last.pushed) ? "Synced with the PC" : "Already the same as the PC"),
   peerforget: () => peerDo({ op: "forget" }, () => "Unpaired. Remove it on the PC too: Settings → Phone."),
   rmtopen: () => { if (S.rmtOpen) return; S.rmtOpen = true; ovOpen("rmt", () => A.rmtclose()); paintRemote(); paintCanvas(); pollSoon(300); $("#rmt .rview")?.scrollTo(0, 0); $("#rmt .rview .rpp")?.focus({ preventScroll: true }); },

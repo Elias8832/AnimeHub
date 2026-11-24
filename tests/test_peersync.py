@@ -330,7 +330,189 @@ class UseThePcs(unittest.TestCase):
 
     def test_an_unknown_choice_is_refused(self):
         with self.assertRaises(peersync.SyncError):
-            peersync.pair("192.168.1.20:8789", "123456", "phone")
+            peersync.pair("192.168.1.20:8789", "123456", "bogus")
+        with device(APP_DB), self.assertRaises(peersync.SyncError):
+            peersync.set_sync(True, "none")
+
+
+class UseThePhones(unittest.TestCase):
+    """Pairing with "Use the phone's" (Decision 98 amended): the first sync
+    makes the PC look like the phone and leaves the phone untouched; later
+    syncs merge both ways."""
+
+    def setUp(self):
+        fresh()
+        paired()
+        with device(APP_DB), database.db() as c:
+            c.execute("UPDATE sync_peer SET take='phone'")
+
+    def test_the_pc_gives_way_and_the_phone_is_untouched(self):
+        ep(APP_DB, "stream:5:1", 1, 0, 1420, "2026-11-10 20:00:00")
+        ep(APP_DB, "stream:5:2", 0, 300, 1420, "2026-11-09 20:00:00")
+        ep(PC_DB, "stream:5:2", 1, 0, 1420, "2026-11-12 20:00:00")   # further along on PC, still phone wins
+        ep(PC_DB, "stream:9:3", 0, 812, 1400, "2026-11-11 08:00:00")  # only on PC: cleared
+        with device(APP_DB):
+            playlists.create("Phone list", {"ref": "aid:1", "title": "Frieren"})
+        with device(PC_DB):
+            playlists.create("PC only", {"ref": "aid:7", "title": "Test"})
+        for path, status in ((APP_DB, "COMPLETED"), (PC_DB, "CURRENT")):
+            with device(path), database.db() as c:
+                c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('aid:5', ?, '2026-11-01 10:00:00')", (status,))
+        with device(PC_DB), database.db() as c:
+            c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('aid:8', 'PLANNING', '2026-11-13 10:00:00')")
+            c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('sid:local', 'CURRENT', '2026-11-13 10:00:00')")
+        with device(APP_DB):
+            library.hide_continue("aid:11", True)
+        with device(PC_DB):
+            library.hide_continue("aid:12", True)
+        res = sync()
+        self.assertEqual(res["pulled"], 0)
+        self.assertGreater(res["pushed"], 0)
+        self.assertEqual(row(PC_DB, "stream:5:1"), (True, 0, 1420, "2026-11-10 20:00:00"))
+        self.assertEqual(row(PC_DB, "stream:5:2"), (False, 300, 1420, "2026-11-09 20:00:00"))
+        self.assertEqual(row(PC_DB, "stream:9:3"), (False, 0, 1400, None))  # its length stays
+        self.assertIsNone(row(APP_DB, "stream:9:3"))
+        with device(PC_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Phone list"])
+            with database.db() as c:
+                self.assertEqual(c.execute("SELECT ref, status FROM curation ORDER BY ref").fetchall(),
+                                 [("aid:5", "COMPLETED"), ("sid:local", "CURRENT")])
+                self.assertEqual([r[0] for r in c.execute("SELECT show_id FROM continue_hidden")], ["aid:11"])
+        with device(APP_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Phone list"])
+            self.assertIsNone(peersync.peer()["take"])
+            with database.db() as c:
+                self.assertEqual([r[0] for r in c.execute("SELECT show_id FROM continue_hidden")], ["aid:11"])
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+        # From now on it merges both ways.
+        ep(PC_DB, "stream:5:3", 0, 90, 1420, "2026-11-14 20:00:00")
+        sync()
+        self.assertEqual(row(APP_DB, "stream:5:3"), (False, 90, 1420, "2026-11-14 20:00:00"))
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+
+    def test_stale_delete_on_pc_does_not_wipe_phones_playlist(self):
+        with device(APP_DB):
+            playlists.create("Keep me", {"ref": "aid:1", "title": "Frieren"})
+            with database.db() as c:
+                uid = c.execute("SELECT uid FROM playlists").fetchone()[0]
+                c.execute("UPDATE playlists SET changed='2026-11-10 10:00:00'")
+        with device(PC_DB), database.db() as c:
+            c.execute("INSERT INTO sync_gone(kind, key, ts) VALUES('playlist', ?, '2026-11-20 10:00:00')", (uid,))
+        sync()
+        sync()
+        for path in (PC_DB, APP_DB):
+            with device(path):
+                self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Keep me"])
+
+    def test_drop_curation_shape_is_checked(self):
+        self.assertIsNone(peersync.check_apply({"drop_curation": ["aid:5"]}))
+        for bad in ("aid:5", ["sid:5"], [5]):
+            self.assertIsNotNone(peersync.check_apply({"drop_curation": bad}), bad)
+
+
+class OnlyFromNowOn(unittest.TestCase):
+    """Pairing with "Only from now on" (Decision 98 amended): existing data
+    stays separate on each device; only changes made after pairing sync."""
+
+    def setUp(self):
+        fresh()
+        paired()
+        with device(APP_DB), database.db() as c:
+            c.execute("UPDATE sync_peer SET take='new'")
+
+    def test_existing_stays_separate_and_new_changes_sync(self):
+        ep(PC_DB, "stream:1:1", 1, 0, 1400, "2026-11-10 20:00:00")
+        ep(APP_DB, "stream:2:1", 1, 0, 1400, "2026-11-11 20:00:00")
+        with device(PC_DB):
+            pc_pl = playlists.create("PC list", {"ref": "aid:1", "title": "One"})
+            library.hide_continue("aid:10", True)
+            with database.db() as c:
+                c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('aid:10', 'COMPLETED', '2026-11-10 10:00:00')")
+        with device(APP_DB):
+            app_pl = playlists.create("Phone list", {"ref": "aid:2", "title": "Two"})
+            library.hide_continue("aid:20", True)
+            with database.db() as c:
+                c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('aid:20', 'PLANNING', '2026-11-11 10:00:00')")
+        # First sync baselines both sides without changing either.
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+        self.assertIsNone(row(APP_DB, "stream:1:1"))
+        self.assertIsNone(row(PC_DB, "stream:2:1"))
+        with device(APP_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Phone list"])
+            self.assertIsNone(peersync.peer()["take"])
+            self.assertIsNotNone(peersync.peer()["baseline"])
+        with device(PC_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["PC list"])
+        # New changes after pairing travel both ways while old items stay separate.
+        ep(APP_DB, "stream:3:1", 0, 420, 1400, "2026-11-24 10:00:00")
+        ep(PC_DB, "stream:4:1", 1, 0, 1400, "2026-11-24 10:05:00")
+        with device(APP_DB):
+            playlists.create("Shared", {"ref": "aid:3", "title": "Three"})
+            library.hide_continue("aid:30", True)
+            with database.db() as c:
+                c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('aid:30', 'CURRENT', '2026-11-24 10:00:00')")
+        sync()
+        self.assertEqual(row(PC_DB, "stream:3:1"), (False, 420, 1400, "2026-11-24 10:00:00"))
+        self.assertEqual(row(APP_DB, "stream:4:1"), (True, 0, 1400, "2026-11-24 10:05:00"))
+        self.assertIsNone(row(APP_DB, "stream:1:1"))  # pre-existing PC episode still untouched
+        self.assertIsNone(row(PC_DB, "stream:2:1"))   # pre-existing phone episode still untouched
+        with device(PC_DB):
+            self.assertEqual([p["name"] for p in playlists.all_playlists()], ["PC list", "Shared"])
+            with database.db() as c:
+                self.assertEqual(c.execute("SELECT status FROM curation WHERE ref='aid:30'").fetchone()[0], "CURRENT")
+                self.assertIsNone(c.execute("SELECT 1 FROM curation WHERE ref='aid:20'").fetchone())
+                self.assertEqual(set(r[0] for r in c.execute("SELECT show_id FROM continue_hidden")), {"aid:10", "aid:30"})
+        # Editing a pre-existing item after pairing syncs that item too.
+        with device(APP_DB):
+            playlists.rename(app_pl, "Phone list 2")
+        ep(PC_DB, "stream:1:1", 1, 150, 1400, "2026-11-24 11:00:00")
+        sync()
+        self.assertEqual(row(APP_DB, "stream:1:1"), (True, 150, 1400, "2026-11-24 11:00:00"))
+        with device(PC_DB):
+            self.assertIn("Phone list 2", [p["name"] for p in playlists.all_playlists()])
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+
+
+class KeepSeparateAndToggle(unittest.TestCase):
+    """Pairing with "Keep them separate" ("none") and toggling data sync
+    off and back on without unpairing."""
+
+    def setUp(self):
+        fresh()
+        paired()
+
+    def test_sync_off_blocks_sync_and_toggle_back_on_uses_choice(self):
+        ep(PC_DB, "stream:5:1", 1, 0, 1420, "2026-11-10 20:00:00")
+        ep(APP_DB, "stream:9:1", 1, 0, 1400, "2026-11-11 20:00:00")
+        with device(APP_DB):
+            st = peersync.set_sync(False)
+            self.assertTrue(st["paired"])
+            self.assertFalse(st["sync"])
+            with self.assertRaises(peersync.SyncError):
+                peersync.sync_once()
+        self.assertIsNone(row(APP_DB, "stream:5:1"))
+        self.assertIsNone(row(PC_DB, "stream:9:1"))
+        # Turning sync back on with "phone" pushes the phone's data to the PC.
+        with device(APP_DB), patch.object(peersync, "soon", lambda *a: None):
+            st = peersync.set_sync(True, "phone")
+            self.assertTrue(st["sync"])
+            self.assertEqual(peersync.peer()["take"], "phone")
+        sync()
+        self.assertEqual(row(PC_DB, "stream:9:1"), (True, 0, 1400, "2026-11-11 20:00:00"))
+        self.assertEqual(row(PC_DB, "stream:5:1"), (False, 0, 1420, None))
+        self.assertIsNone(row(APP_DB, "stream:5:1"))
+
+    def test_watch_skips_when_sync_is_off(self):
+        calls = []
+        wake = patch.dict(peersync._watch, {"away": False, "wake": type("W", (), {
+            "wait": lambda self_, t=None: (_ for _ in ()).throw(Watch.Stop()),
+            "clear": lambda self_: None, "set": lambda self_: None})()})
+        with patch.object(peersync, "_call", lambda *a: calls.append(a)), \
+                patch.object(peersync, "peer", lambda: {"address": "http://pc:1", "token": "t", "sync": False}), wake:
+            with self.assertRaises(Watch.Stop):
+                peersync.watch()
+        self.assertEqual(calls, [])
 
 
 class HomeShowsWhatCameOver(unittest.TestCase):
@@ -636,6 +818,19 @@ class Pairing(unittest.TestCase):
         with self.assertRaises(peersync.SyncError) as e:
             peersync._call("http://" + self.addr, "/api/peer", peersync.peer()["token"], {"op": "forget"})
         self.assertIn("can't change", str(e.exception))
+
+    def test_pair_keep_separate_still_controls_pc(self):
+        code = remote.new_code()
+        soons = []
+        with patch.object(peersync, "soon", soons.append):
+            st = peersync.pair(self.addr, code, "none")
+        self.assertTrue(st["paired"])
+        self.assertFalse(st["sync"])
+        self.assertTrue(st["pc"])  # hostname returned by /api/remote/pair even without syncing
+        self.assertEqual(soons, [])  # no sync scheduled
+        self.assertEqual(peersync.pc_now()["paired"], True)
+        with self.assertRaises(peersync.SyncError):
+            peersync.sync_once()
 
     def test_wrong_code_and_a_forgotten_phone(self):
         remote.new_code()
