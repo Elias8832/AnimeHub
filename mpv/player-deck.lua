@@ -17,7 +17,8 @@ local UI, TITLE, MONO, HIDE_AFTER = "Hanken Grotesk", "Barlow Condensed", "JetBr
 local EDGE = "\\bord1\\3c&HFFFFFF&\\3a&HE6&"
 
 local st = {
-    w = 1280, scale = 1, mouse = { x = 0, y = 0 }, seen = false,
+    w = 1280, scale = 1, mouse = { x = 0, y = 0, hover = false }, raw_mouse = nil,
+    mouse_active = false, had_hover = false, seen = false,
     slide = 0, want = false,               -- 0 hidden, 1 fully up
     glide = { x = 0, a = 0, target = nil },-- the moving highlight
     hits = {}, menu = nil, drag = nil, remaining = false,
@@ -1015,8 +1016,13 @@ local function lift(on)
     end
 end
 
-local tick, hide_timer
+local tick, hide_timer, rebind
 local FRAME = 0.008 -- no more than 120 redraws a second
+
+local function rescale_mouse()
+    if not st.raw_mouse then return end
+    st.mouse = { x = st.raw_mouse.x / st.scale, y = st.raw_mouse.y / st.scale, hover = st.raw_mouse.hover }
+end
 
 -- The dock rides the same curve as the skip tab, timed by the clock.
 local slide = { from = 0, to = 0, t0 = -10, dur = 0.35 }
@@ -1033,6 +1039,7 @@ local function step()
         screen:remove()
         st.hits = {}
         tab_sync()
+        rebind()
         return
     end
     st.last_draw = now
@@ -1051,10 +1058,8 @@ end
 
 local function stays()
     return st.menu or st.drag or mp.get_property_bool("pause")
-        or (st.mouse.hover ~= false and st.mouse.y >= H - DOCK)
+        or (st.mouse_active and st.mouse.hover ~= false and st.mouse.y >= H - DOCK)
 end
-
-local rebind
 
 local function poke()
     st.want = true
@@ -1112,11 +1117,17 @@ local function release()
 end
 
 local function on_click(e)
-    if e.event == "down" or e.event == "press" then press() end
+    if e.event == "down" or e.event == "press" then
+        st.mouse_active = true
+        if st.slide > 0 then poke() end
+        press()
+    end
     if e.event == "up" or e.event == "press" then release() end
 end
 
 local function wheel(by)
+    st.mouse_active = true
+    poke()
     local h = top_hit()
     if h and h.wheel then
         h.wheel(by)
@@ -1217,7 +1228,8 @@ local bound = false
 rebind = function()
     -- Only on the dock or with a menu open, so everywhere else the picture
     -- does what the user's settings and input.conf say.
-    local on = (st.slide > 0 and (st.menu ~= nil or st.drag ~= nil or st.mouse.y >= H - DOCK)) or tab_over() and true or false
+    local on = (st.slide > 0 and (st.menu ~= nil or st.drag ~= nil
+        or (st.mouse.hover ~= false and st.mouse.y >= H - DOCK))) or tab_over() and true or false
     if on ~= bound then
     bound = on
     if on then
@@ -1262,21 +1274,35 @@ end
 
 mp.observe_property("mouse-pos", "native", function(_, m)
     if type(m) ~= "table" or not m.x then return end
+    local prev_raw = st.raw_mouse
+    local prev_hover = st.mouse.hover
+    local hover = m.hover ~= false
+    local raw_moved = prev_raw ~= nil and (m.x ~= prev_raw.x or m.y ~= prev_raw.y)
+    st.raw_mouse = { x = m.x, y = m.y, hover = m.hover }
     local x, y = m.x / st.scale, m.y / st.scale
     local moved = x ~= st.mouse.x or y ~= st.mouse.y
     st.mouse = { x = x, y = y, hover = m.hover }
+    if hover then
+        -- First hover on a new window is the window appearing under a resting
+        -- cursor, not the user moving onto the dock.
+        if st.had_hover and (raw_moved or not prev_hover) then
+            st.mouse_active = true
+        end
+        st.had_hover = true
+    end
     if st.drag then st.drag.drag(x) end
     if moved and st.menu then
         st.menu.kbd = false
         if st.menu.child then st.menu.child.kbd = false end
         st.menu.in_child = false
     end
-    if moved then tab_wake() end
+    if hover and moved then tab_wake() end
     if not tab_timer then tab_draw() end
-    if m.hover == false and not stays() then
+    if not hover and not stays() then
+        if hide_timer then hide_timer:kill() hide_timer = nil end
         st.want = false
         lift(false)
-    elseif moved then
+    elseif hover and (moved or (st.mouse_active and not prev_hover)) then
         poke()
     end
     rebind()
@@ -1334,6 +1360,9 @@ end)
 mp.observe_property("osd-dimensions", "native", function(_, d)
     if type(d) == "table" and d.h and d.h > 0 then
         st.w, st.scale = math.floor(H * d.w / d.h), d.h / H
+        rescale_mouse()
+        rebind()
+        if not tab_timer then tab_draw() end
         redraw()
     end
 end)
@@ -1348,7 +1377,7 @@ mp.observe_property("time-pos", "number", function(_, t)
 end)
 
 mp.observe_property("pause", "bool", function(_, paused)
-    if paused then poke() else redraw() end
+    if paused or (st.want and not hide_timer) then poke() else redraw() end
 end)
 
 for _, name in ipairs({ "volume", "mute", "track-list", "chapter-list", "duration", "speed", "sub-delay", "audio-delay" }) do

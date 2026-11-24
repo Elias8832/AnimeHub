@@ -99,7 +99,7 @@ local ZONE, HIT, INSET, FRAME = 110, 56, 22, 0.008
 local close = { v = 0, from = 0, to = 0, t0 = -10, dur = 0.26, hot = 0 }
 local layer = mp.create_osd_overlay("ass-events")
 layer.z = 30
-local screen = { w = 1280, scale = 1, x = 0, y = 0, hover = false }
+local screen = { w = 1280, scale = 1, x = 0, y = 0, hover = false, raw_x = nil, raw_y = nil }
 local timer
 
 local function curve_x(t) return 3 * (1 - t) ^ 2 * t * 0.32 + t ^ 3 end
@@ -184,11 +184,15 @@ end
 mp.observe_property("osd-dimensions", "native", function(_, d)
     if type(d) == "table" and d.h and d.h > 0 then
         screen.w, screen.scale = 720 * d.w / d.h, d.h / 720
+        if screen.raw_x then
+            screen.x, screen.y = screen.raw_x / screen.scale, screen.raw_y / screen.scale
+        end
         update()
     end
 end)
 mp.observe_property("mouse-pos", "native", function(_, m)
-    if type(m) == "table" then
+    if type(m) == "table" and m.x then
+        screen.raw_x, screen.raw_y = m.x, m.y
         screen.x, screen.y, screen.hover = m.x / screen.scale, m.y / screen.scale, m.hover ~= false
         update()
     end

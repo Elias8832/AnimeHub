@@ -18,7 +18,8 @@ local MENU_ROWS = 9
 
 local info = {}                   -- what the hub said about this episode
 local segments = {}               -- { {kind, start, stop} }
-local ui = { w = 1280, scale = 1, opacity = 0, hit = {}, menu = nil, mouse = { x = 0, y = 0 } }
+local ui = { w = 1280, scale = 1, opacity = 0, hit = {}, menu = nil,
+    mouse = { x = 0, y = 0, hover = false }, raw_mouse = nil, mouse_active = false, had_hover = false }
 local back, front, hover_layer
 local thumb = nil                 -- thumbfast's size, when the user has it
 
@@ -1189,8 +1190,10 @@ local function tab_draw()
     if tab.to == 0 and not moving then
         tab.hit = nil
         tab_layer:remove()
-        ui.tab_left, ui.tab_v = nil, nil
-        ui.tab_redraw()
+        if ui.tab_left ~= nil or ui.tab_v ~= nil then
+            ui.tab_left, ui.tab_v = nil, nil
+            ui.tab_redraw()
+        end
         return false
     end
     local full = 36 + #tab.text * 6.2 + (tab.click and 22 or 0)
@@ -1288,9 +1291,14 @@ end
 local fade_timer, hide_timer
 local want = false
 
+local function rescale_mouse()
+    if not ui.raw_mouse then return end
+    ui.mouse = { x = ui.raw_mouse.x / ui.scale, y = ui.raw_mouse.y / ui.scale, hover = ui.raw_mouse.hover }
+end
+
 local function must_stay()
     return ui.menu or ui.drag_to or ui.slide or ui.menu_drag or mp.get_property_bool("pause")
-        or (ui.mouse.hover ~= false and ui.mouse.y >= ZONE_Y - tab_lift())
+        or (ui.mouse_active and ui.mouse.hover ~= false and ui.mouse.y >= ZONE_Y - tab_lift())
 end
 
 local set_bindings -- defined below
@@ -1332,6 +1340,7 @@ local function lift_subs(on)
 end
 
 local function set_visible(on)
+    if not on and hide_timer then hide_timer:kill() hide_timer = nil end
     if want == on and (on or ui.opacity == 0) then return end
     want = on
     lift_subs(on)
@@ -1419,6 +1428,8 @@ end
 
 local function on_click(event)
     if event.event == "down" or event.event == "press" then
+        ui.mouse_active = true
+        if ui.opacity > 0 then poke() end
         on_press()
         set_bindings() -- a menu may have opened: its keys work right away
     end
@@ -1430,6 +1441,8 @@ local function on_click(event)
 end
 
 local function on_wheel(step)
+    ui.mouse_active = true
+    poke()
     for n = #ui.hit, 1, -1 do
         local h = ui.hit[n]
         if h.wheel and inside(h.x, h.y, h.w, h.h) then
@@ -1537,7 +1550,8 @@ local bound = false
 set_bindings = function()
     -- Only while the mouse is on the controls (or a menu is open), so a click
     -- on the picture still does what the user's input.conf says.
-    local on = (ui.opacity > 0 and (ui.menu ~= nil or ui.dragging or ui.slide or ui.mouse.y >= ZONE_Y - tab_lift())) or tab_over() and true or false
+    local on = (ui.opacity > 0 and (ui.menu ~= nil or ui.dragging or ui.slide
+        or (ui.mouse.hover ~= false and ui.mouse.y >= ZONE_Y - tab_lift()))) or tab_over() and true or false
     if on ~= bound then
     bound = on
     -- A held button on the controls must not grab the window instead: the
@@ -1586,19 +1600,32 @@ end
 
 mp.observe_property("mouse-pos", "native", function(_, m)
     if type(m) ~= "table" or not m.x then return end
+    local prev_raw = ui.raw_mouse
+    local prev_hover = ui.mouse.hover
+    local hover = m.hover ~= false
+    local raw_moved = prev_raw ~= nil and (m.x ~= prev_raw.x or m.y ~= prev_raw.y)
+    ui.raw_mouse = { x = m.x, y = m.y, hover = m.hover }
     local x, y = m.x / ui.scale, m.y / ui.scale
     local moved = x ~= ui.mouse.x or y ~= ui.mouse.y
     ui.mouse = { x = x, y = y, hover = m.hover }
-    if m.hover == false and not must_stay() then
+    if hover then
+        -- First hover on a new window is the window appearing under a resting
+        -- cursor, not the user moving onto the controls.
+        if ui.had_hover and (raw_moved or not prev_hover) then
+            ui.mouse_active = true
+        end
+        ui.had_hover = true
+    end
+    if not hover and not must_stay() then
         set_visible(false)
-    elseif moved then
+    elseif hover and (moved or (ui.mouse_active and not prev_hover)) then
         poke()
     end
     if ui.dragging then seek_to(x) end
     if ui.slide then set_level(x) end
     if ui.menu_drag then ui.menu_drag(x) end
     set_bindings()
-    if moved then tab_wake() end
+    if hover and moved then tab_wake() end
     if not tab_timer then tab_draw() end
     if moved and ui.menu then
         ui.menu.kbd, ui.menu.in_child = false, false
@@ -1612,6 +1639,9 @@ end)
 mp.observe_property("osd-dimensions", "native", function(_, d)
     if type(d) ~= "table" or not d.h or d.h <= 0 then return end
     ui.w, ui.scale = math.floor(RES_Y * d.w / d.h), d.h / RES_Y
+    rescale_mouse()
+    set_bindings()
+    if not tab_timer then tab_draw() end
     if ui.opacity > 0 then
         draw_back()
         redraw()
@@ -1627,7 +1657,7 @@ mp.observe_property("time-pos", "number", function(_, t)
 end)
 
 mp.observe_property("pause", "bool", function(_, paused)
-    if paused then poke() end
+    if paused or (want and not hide_timer) then poke() end
     redraw()
 end)
 
