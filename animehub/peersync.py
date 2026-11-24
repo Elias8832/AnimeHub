@@ -203,6 +203,7 @@ def apply_playlists(lists, gone):
                 c.execute("DELETE FROM playlist_items WHERE playlist_id=?", (row[0],))
                 c.execute("DELETE FROM playlists WHERE id=?", (row[0],))
         for uid, pl in lists.items():
+            c.execute("DELETE FROM sync_gone WHERE kind='playlist' AND key=?", (uid,))
             row = c.execute("SELECT id FROM playlists WHERE uid=?", (uid,)).fetchone()
             if row:
                 pid = row[0]
@@ -246,6 +247,16 @@ def apply_curation(rows):
             ",".join(cols), ",".join("?" * len(cols)), ", ".join(f"{k}=excluded.{k}" for k in cols[1:])),
             [(ref, r["updated_at"], *(r.get(k) for k in CUR_FIELDS)) for ref, r in rows.items()])
     changed()
+
+
+def drop_curation(refs):
+    """Remove "aid:<id>" list entries (first sync with "Use the phone's")."""
+    if not refs:
+        return
+    with database.db() as c:
+        n = c.executemany("DELETE FROM curation WHERE ref=?", [(r,) for r in refs]).rowcount
+    if n:
+        changed()
 
 
 # --- rewatch runs -------------------------------------------------------------
@@ -300,6 +311,16 @@ def apply_rewatches(rows):
              for ref, r in rows.items()],
         )
     changed()
+
+
+def drop_rewatches(refs):
+    """Remove "aid:<id>" rewatch runs (first sync with "Use the phone's")."""
+    if not refs:
+        return
+    with database.db() as c:
+        n = c.executemany("DELETE FROM rewatches WHERE ref=?", [(r,) for r in refs]).rowcount
+    if n:
+        changed()
 
 
 # --- "Remove from Home" -----------------------------------------------------
@@ -435,10 +456,16 @@ def check_apply(body):
                                             and all(_scalar(v.get(f)) for f in CUR_FIELDS)
                                             for k, v in cur.items()):
         return "'curation' must map 'aid:<id>' to an entry"
+    drop_cur = body.get("drop_curation", [])
+    if not isinstance(drop_cur, list) or not all(isinstance(r, str) and re.match(r"^aid:[0-9]+$", r) for r in drop_cur):
+        return "'drop_curation' must be a list of 'aid:<id>' refs"
     if check_hidden(body.get("home_hidden", {"hidden": {}, "shown": {}})):
         return "'home_hidden' must hold 'hidden' and 'shown', each mapping an AniList id to when"
     if check_rewatches(body.get("rewatches", {})):
         return "'rewatches' must map 'aid:<id>' to {started_at, done, updated_at}"
+    drop_rw = body.get("drop_rewatches", [])
+    if not isinstance(drop_rw, list) or not all(isinstance(r, str) and AID_RE.match(r) for r in drop_rw):
+        return "'drop_rewatches' must be a list of 'aid:<id>' refs"
     return None
 
 
@@ -456,8 +483,10 @@ def apply_payload(body):
     done = apply_episodes(body.get("episodes") or {})
     apply_playlists(body.get("playlists") or {}, body.get("gone") or {})
     apply_curation(body.get("curation") or {})
+    drop_curation(body.get("drop_curation") or [])
     apply_hidden(body.get("home_hidden"))
     apply_rewatches(body.get("rewatches") or {})
+    drop_rewatches(body.get("drop_rewatches") or [])
     return {"ok": True, "applied": done}
 
 
@@ -578,16 +607,91 @@ def since_pairing(lists, hidden, paired):
 
 
 def take_their_playlists(mine, theirs):
-    """(lists for me, gone for me) with "Use the PC's": the PC's lists as
-    they are; this device's other lists go."""
+    """(lists for me, gone for me) when overwriting `mine` with `theirs`:
+    `theirs`'s lists as they are; `mine`'s other lists go."""
     lists = {u: p for u, p in theirs["lists"].items()
-             if u not in mine["lists"] or mine["lists"][u]["changed"] != p["changed"]}
-    gone = {u: ts for u, ts in theirs["gone"].items() if mine["gone"].get(u, "") < ts}
+             if u not in mine["lists"] or mine["lists"][u]["changed"] != p["changed"] or u in mine["gone"]}
+    gone = {u: ts for u, ts in theirs["gone"].items() if u not in theirs["lists"] and mine["gone"].get(u, "") < ts}
     now = util.utc_stamp()
     for u in mine["lists"]:
         if u not in theirs["lists"]:
             gone[u] = max(now, gone.get(u, ""))
     return lists, gone
+
+
+def take_their_hidden(target, source):
+    """{"hidden": ..., "shown": ...} to make target's Remove from Home match source."""
+    out = {"hidden": {}, "shown": {}}
+    now = util.utc_stamp()
+    for mid in set(target["hidden"]) | set(target["shown"]) | set(source["hidden"]) | set(source["shown"]):
+        s, t = _home_state(source, mid), _home_state(target, mid)
+        if s and s[1] == 0:
+            if not t or t[1] == 1 or t[0] < s[0]:
+                out["hidden"][mid] = max(s[0], t[0] if t else "")
+        elif t and t[1] == 0:
+            out["shown"][mid] = max(now, t[0])
+    return out if (out["hidden"] or out["shown"]) else {}
+
+
+def _make_baseline(mine, theirs_eps, my_lists, theirs_lists, own_cur, theirs_cur, my_hidden, theirs_hid,
+                   own_rw=None, theirs_rw=None):
+    """First sync for "Only from now on": nothing changes on either side.
+    Slots that already match go into the normal snapshot; everything that
+    differs is recorded per-side in `baseline` so only later changes travel."""
+    snap, ep_base = {}, {}
+    for key in set(mine) | set(theirs_eps):
+        m, t = mine.get(key, EMPTY), theirs_eps.get(key, EMPTY)
+        if m == t:
+            if _meaningful(m):
+                snap[key] = list(m)
+        else:
+            ep_base[key] = [list(m), list(t)]
+    pl_m, pl_t = {}, {}
+    ml, tl = my_lists["lists"], theirs_lists["lists"]
+    for uid in set(ml) | set(tl):
+        m, t = ml.get(uid), tl.get(uid)
+        if m and t and m["changed"] == t["changed"]:
+            continue
+        if m:
+            pl_m[uid] = m["changed"]
+        if t:
+            pl_t[uid] = t["changed"]
+    cur_m, cur_t = {}, {}
+    for ref in set(own_cur) | set(theirs_cur):
+        if own_cur.get(ref) == theirs_cur.get(ref):
+            continue
+        if ref in own_cur:
+            cur_m[ref] = own_cur[ref]["updated_at"]
+        if ref in theirs_cur:
+            cur_t[ref] = theirs_cur[ref]["updated_at"]
+    hid_m, hid_t = {}, {}
+    if theirs_hid is not None:
+        for mid in set(my_hidden["hidden"]) | set(my_hidden["shown"]) | set(theirs_hid["hidden"]) | set(theirs_hid["shown"]):
+            m, t = _home_state(my_hidden, mid), _home_state(theirs_hid, mid)
+            if m != t:
+                if m:
+                    hid_m[mid] = list(m)
+                if t:
+                    hid_t[mid] = list(t)
+    rw_m, rw_t = {}, {}
+    if theirs_rw is not None and own_rw is not None:
+        for ref in set(own_rw) | set(theirs_rw):
+            if own_rw.get(ref) == theirs_rw.get(ref):
+                continue
+            if ref in own_rw:
+                rw_m[ref] = own_rw[ref]["updated_at"]
+            if ref in theirs_rw:
+                rw_t[ref] = theirs_rw[ref]["updated_at"]
+    if not (ep_base or pl_m or pl_t or cur_m or cur_t or hid_m or hid_t or rw_m or rw_t):
+        return snap, None
+    return snap, {
+        "since": util.utc_stamp(),
+        "episodes": ep_base,
+        "playlists": {"mine": pl_m, "theirs": pl_t},
+        "curation": {"mine": cur_m, "theirs": cur_t},
+        "hidden": {"mine": hid_m, "theirs": hid_t},
+        "rewatches": {"mine": rw_m, "theirs": rw_t},
+    }
 
 
 def merge_curation(mine, theirs):
@@ -600,13 +704,13 @@ def merge_curation(mine, theirs):
 
 def peer():
     with database.db() as c:
-        r = c.execute("SELECT address, token, pc, paired, snapshot, last_ok, last_try, last_error, take "
+        r = c.execute("SELECT address, token, pc, paired, snapshot, last_ok, last_try, last_error, take, sync, baseline "
                       "FROM sync_peer WHERE id=1").fetchone()
     if not r:
         return None
     return {"address": r[0], "token": r[1], "pc": r[2], "paired": r[3],
             "snapshot": json.loads(r[4]) if r[4] else None, "last_ok": r[5], "last_try": r[6], "last_error": r[7],
-            "take": r[8]}
+            "take": r[8], "sync": bool(r[9]), "baseline": json.loads(r[10]) if r[10] else None}
 
 
 def _note(**kw):
@@ -621,7 +725,8 @@ def status():
         return {"paired": False, "running": _state["running"]}
     return {"paired": True, "address": p["address"], "pc": p["pc"], "since": p["paired"],
             "last_ok": p["last_ok"], "last_try": p["last_try"], "error": p["last_error"],
-            "running": _state["running"], "last": _state["last"], "vpn_blocked": p["last_error"] == VPN_BLOCKS}
+            "running": _state["running"], "last": _state["last"], "vpn_blocked": p["last_error"] == VPN_BLOCKS,
+            "sync": p["sync"]}
 
 
 def normal_address(raw):
@@ -713,22 +818,24 @@ def _call(address, path, token=None, body=None, timeout=TIMEOUT):
     return answer, cookies
 
 
-TAKES = ("combine", "pc")
+SYNC_TAKES = ("combine", "pc", "phone", "new")
+TAKES = SYNC_TAKES + ("none",)
 
 
 def pair(address, code, take="combine"):
     """POST /api/peer {op: "pair"}: trade the PC's pairing code for a token,
-    then sync at once. take: the first sync "combine"s both sides, or takes
-    the PC's ("pc": this device's own watching, playlists and list entries
-    give way to the PC's; Decision 98)."""
+    then sync at once (unless take="none"). take (Decision 98 amended):
+    "combine" merges both sides, "pc" takes the PC's, "phone" pushes this
+    phone's to the PC, "new" leaves existing data alone and syncs changes
+    after pairing, "none" pairs for PC controls only."""
     if take not in TAKES:
-        raise SyncError("Pick Combine both or Use the PC's.")
+        raise SyncError("Pick how to sync with the PC.")
     address = normal_address(address)
     code = re.sub(r"[^0-9]", "", code) if isinstance(code, str) else ""  # spaces, dashes, a pasted "123 456"
     if len(code) != 6:
         raise SyncError("Type the 6-digit code from the PC (under its QR code).")
     try:
-        _, cookies = _call(address, "/api/remote/pair", body={"code": code})
+        ans, cookies = _call(address, "/api/remote/pair", body={"code": code})
     except SyncError as e:
         if "answered 400" in str(e) or "code" in str(e).lower():
             raise SyncError("Wrong or expired code. Show a new one on the PC.")
@@ -744,12 +851,37 @@ def pair(address, code, take="combine"):
             token = jar["animehub_remote"].value
     if not token:
         raise SyncError("The PC didn't hand over a key. Try again.")
+    pc_name = ans.get("name") if isinstance(ans, dict) and isinstance(ans.get("name"), str) else None
+    sync_on = take != "none"
     with database.db() as c:
         c.execute("DELETE FROM sync_peer")
-        c.execute("INSERT INTO sync_peer(id, address, token, paired, take) VALUES(1, ?, ?, ?, ?)",
-                  (address, token, util.utc_stamp(), take))
+        c.execute("INSERT INTO sync_peer(id, address, token, pc, paired, take, sync, baseline) VALUES(1, ?, ?, ?, ?, ?, ?, NULL)",
+                  (address, token, pc_name, util.utc_stamp(), take if sync_on else None, int(sync_on)))
+    _state["last"] = None
+    if sync_on:
+        soon(0)
+        _watch["wake"].set()  # start waiting on the PC now, not at the next idle check
+    return status()
+
+
+def set_sync(on, take="combine"):
+    """POST /api/peer {op: "sync"}: pause or resume data sync without unpairing."""
+    p = peer()
+    if not p:
+        raise SyncError("Not paired with a PC.")
+    if not on:
+        with database.db() as c:
+            c.execute("UPDATE sync_peer SET sync=0, take=NULL, snapshot=NULL, baseline=NULL, last_error=NULL WHERE id=1")
+        _state["last"] = None
+        _watch["wake"].set()
+        return status()
+    if take not in SYNC_TAKES:
+        raise SyncError("Pick how to sync with the PC.")
+    with database.db() as c:
+        c.execute("UPDATE sync_peer SET sync=1, take=?, snapshot=NULL, baseline=NULL, last_error=NULL WHERE id=1", (take,))
+    _state["last"] = None
     soon(0)
-    _watch["wake"].set()  # start waiting on the PC now, not at the next idle check
+    _watch["wake"].set()
     return status()
 
 
@@ -792,6 +924,8 @@ def sync_once():
     p = peer()
     if not p:
         raise SyncError("Not paired with a PC.")
+    if not p["sync"]:
+        raise SyncError("Data sync is off.")
     with _run_lock:
         _state["running"] = True
         _note(last_try=util.utc_stamp())
@@ -802,12 +936,36 @@ def sync_once():
             slots = slot_map()
             mine = episode_facts(slots)
             base = p["snapshot"]
+            baseline = p["baseline"]
             every = bool(theirs.get("every_slot"))
-            take_pc = base is None and p.get("take") == "pc"
-            drop_cur = []
+            take = p.get("take") if base is None and baseline is None else None
+            take_pc = take == "pc"
+            take_phone = take == "phone"
+            take_new = take == "new"
             my_lists, my_hidden = since_pairing(playlist_facts(), hidden_facts(), p["paired"])
+            theirs_hid = theirs.get("home_hidden")
+            if theirs_hid is not None and check_hidden(theirs_hid):
+                theirs_hid = None
+            theirs_rw = theirs.get("rewatches")
+            if theirs_rw is not None and check_rewatches(theirs_rw):
+                theirs_rw = None
+            own_rw = rewatch_facts()
+            if take_new:
+                snap, next_baseline = _make_baseline(
+                    mine, theirs["episodes"], my_lists, theirs["playlists"],
+                    curation_facts(), theirs["curation"], my_hidden, theirs_hid, own_rw, theirs_rw)
+                _state["last"] = {"pulled": 0, "pushed": 0}
+                with database.db() as c:
+                    c.execute("UPDATE sync_peer SET snapshot=?, baseline=?, last_ok=?, last_error=NULL, pc=?, take=NULL WHERE id=1",
+                              (json.dumps(snap), json.dumps(next_baseline) if next_baseline else None,
+                               util.utc_stamp(), theirs.get("name") or p["pc"]))
+                return _state["last"]
+            drop_cur, drop_cur_them = [], []
+            keep_ep_base, pending_ep_base = {}, {}
+            next_baseline = None
             if take_pc:  # the first sync, "Use the PC's": nothing goes to the PC
                 result = take_theirs(mine, theirs["episodes"])
+                to_me = episode_writes(mine, True, base, result)
                 to_them = {}
                 lists_me, gone_me = take_their_playlists(my_lists, theirs["playlists"])
                 lists_them, gone_them, renames = {}, {}, {}
@@ -815,40 +973,177 @@ def sync_once():
                 cur_me = {r: v for r, v in theirs["curation"].items() if own.get(r) != v}
                 cur_them = {}
                 drop_cur = [r for r in own if r not in theirs["curation"]]
+                hid_me, _ = merge_hidden(my_hidden, theirs_hid) if theirs_hid is not None else ({}, {})
+                hid_them = {}
+            elif take_phone:  # the first sync, "Use the phone's": nothing changes on this phone
+                result = take_theirs(theirs["episodes"], mine)
+                to_me = {}
+                to_them = episode_writes(theirs["episodes"], every, None, result)
+                lists_me, gone_me = {}, {}
+                lists_them, gone_them = take_their_playlists(theirs["playlists"], my_lists)
+                renames = {}
+                own = curation_facts()
+                cur_me = {}
+                cur_them = {r: v for r, v in own.items() if theirs["curation"].get(r) != v}
+                drop_cur_them = [r for r in theirs["curation"] if r not in own]
+                hid_me = {}
+                hid_them = take_their_hidden(theirs_hid, my_hidden) if theirs_hid is not None else {}
+            elif baseline:
+                ep_base = dict(baseline.get("episodes") or {})
+                split = set(ep_base)
+                mine_plain = {k: v for k, v in mine.items() if k not in split}
+                theirs_plain = {k: v for k, v in theirs["episodes"].items() if k not in split}
+                result = merge_episodes(mine_plain, theirs_plain, base, every)
+                to_me = episode_writes(mine_plain, True, base, result)
+                to_them = episode_writes(theirs_plain, every, base, result)
+                for key, (bm, bt) in ep_base.items():
+                    m = mine[key] if key in mine else bm
+                    t = theirs["episodes"][key] if key in theirs["episodes"] else (bt if every else EMPTY)
+                    if m == t:
+                        result[key] = m
+                    elif m == bm and t == bt:
+                        keep_ep_base[key] = [bm, bt]
+                    else:
+                        win = m if (m != bm and t == bt) else t if (t != bt and m == bm) else further(m, t)
+                        result[key] = win
+                        if key in mine:
+                            if mine[key] != win:
+                                to_me[key] = [mine[key], win]
+                        elif _meaningful(win):
+                            to_me[key] = [list(EMPTY), win]
+                        if key in theirs["episodes"]:
+                            if theirs["episodes"][key] != win:
+                                to_them[key] = [theirs["episodes"][key], win]
+                        elif _meaningful(win):
+                            to_them[key] = [list(EMPTY), win]
+                        pending_ep_base[key] = [bm, bt]
+                pl_bm = dict((baseline.get("playlists") or {}).get("mine") or {})
+                pl_bt = dict((baseline.get("playlists") or {}).get("theirs") or {})
+                since = baseline.get("since") or ""
+                m_gone = {u: ts for u, ts in my_lists["gone"].items() if ts >= since}
+                t_gone = {u: ts for u, ts in theirs["playlists"]["gone"].items() if ts >= since}
+                skip_pl = set()
+                for uid in set(pl_bm) | set(pl_bt):
+                    m_cur, t_cur = my_lists["lists"].get(uid), theirs["playlists"]["lists"].get(uid)
+                    m_ok = (uid in pl_bm and m_cur is not None and m_cur["changed"] == pl_bm[uid] and uid not in m_gone) \
+                        or (uid not in pl_bm and m_cur is None and uid not in m_gone)
+                    t_ok = (uid in pl_bt and t_cur is not None and t_cur["changed"] == pl_bt[uid] and uid not in t_gone) \
+                        or (uid not in pl_bt and t_cur is None and uid not in t_gone)
+                    if m_ok and t_ok:
+                        skip_pl.add(uid)
+                    else:
+                        pl_bm.pop(uid, None)
+                        pl_bt.pop(uid, None)
+                lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(
+                    {"lists": {u: p for u, p in my_lists["lists"].items() if u not in skip_pl}, "gone": m_gone},
+                    {"lists": {u: p for u, p in theirs["playlists"]["lists"].items() if u not in skip_pl}, "gone": t_gone})
+                cur_bm = dict((baseline.get("curation") or {}).get("mine") or {})
+                cur_bt = dict((baseline.get("curation") or {}).get("theirs") or {})
+                own, t_cur = curation_facts(), theirs["curation"]
+                own_in, t_cur_in = dict(own), dict(t_cur)
+                cur_me, cur_them = {}, {}
+                for ref in set(cur_bm) | set(cur_bt):
+                    m_c, t_c = own.get(ref), t_cur.get(ref)
+                    m_ok = (ref in cur_bm and m_c is not None and m_c["updated_at"] == cur_bm[ref]) or (ref not in cur_bm and m_c is None)
+                    t_ok = (ref in cur_bt and t_c is not None and t_c["updated_at"] == cur_bt[ref]) or (ref not in cur_bt and t_c is None)
+                    if m_ok and t_ok:
+                        own_in.pop(ref, None)
+                        t_cur_in.pop(ref, None)
+                    else:
+                        cur_bm.pop(ref, None)
+                        cur_bt.pop(ref, None)
+                        if not m_ok and t_ok and m_c is not None:
+                            cur_them[ref] = m_c
+                            own_in.pop(ref, None)
+                            t_cur_in.pop(ref, None)
+                        elif not t_ok and m_ok and t_c is not None:
+                            cur_me[ref] = t_c
+                            own_in.pop(ref, None)
+                            t_cur_in.pop(ref, None)
+                m2, t2 = merge_curation(own_in, t_cur_in)
+                cur_me.update(m2)
+                cur_them.update(t2)
+                hid_bm = dict((baseline.get("hidden") or {}).get("mine") or {})
+                hid_bt = dict((baseline.get("hidden") or {}).get("theirs") or {})
+                if theirs_hid is not None:
+                    m_h = {"hidden": dict(my_hidden["hidden"]), "shown": dict(my_hidden["shown"])}
+                    t_h = {"hidden": dict(theirs_hid["hidden"]), "shown": dict(theirs_hid["shown"])}
+                    for mid in set(hid_bm) | set(hid_bt):
+                        m_st, t_st = _home_state(my_hidden, mid), _home_state(theirs_hid, mid)
+                        bm_st = tuple(hid_bm[mid]) if mid in hid_bm else None
+                        bt_st = tuple(hid_bt[mid]) if mid in hid_bt else None
+                        if m_st == bm_st and t_st == bt_st:
+                            m_h["hidden"].pop(mid, None)
+                            m_h["shown"].pop(mid, None)
+                            t_h["hidden"].pop(mid, None)
+                            t_h["shown"].pop(mid, None)
+                        else:
+                            hid_bm.pop(mid, None)
+                            hid_bt.pop(mid, None)
+                    hid_me, hid_them = merge_hidden(m_h, t_h)
+                else:
+                    hid_me, hid_them = {}, {}
             else:
                 result = merge_episodes(mine, theirs["episodes"], base, every)
+                to_me = episode_writes(mine, True, base, result)
                 to_them = episode_writes(theirs["episodes"], every, base, result)
                 lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(my_lists, theirs["playlists"])
                 cur_me, cur_them = merge_curation(curation_facts(), theirs["curation"])
-            theirs_hid = theirs.get("home_hidden")
-            if theirs_hid is not None and check_hidden(theirs_hid):
-                theirs_hid = None
-            hid_me, hid_them = merge_hidden(my_hidden, theirs_hid) if theirs_hid is not None else ({}, {})
-            if take_pc or theirs_hid is None or not (hid_them["hidden"] or hid_them["shown"]):
-                hid_them = {}  # "Use the PC's" sends nothing; an older PC has no "Remove from Home"
+                hid_me, hid_them = merge_hidden(my_hidden, theirs_hid) if theirs_hid is not None else ({}, {})
+            if theirs_hid is None or not (hid_them.get("hidden") or hid_them.get("shown")):
+                hid_them = {}  # an older PC has no "Remove from Home"
             n_hid_me = len(hid_me.get("hidden", {})) + len(hid_me.get("shown", {}))
-            theirs_rw = theirs.get("rewatches")
-            if theirs_rw is not None and check_rewatches(theirs_rw):
-                theirs_rw = None
-            own_rw = rewatch_facts()
-            drop_rw = []
+            drop_rw, drop_rw_them = [], []
+            rw_bm = dict((baseline.get("rewatches") or {}).get("mine") or {}) if baseline else {}
+            rw_bt = dict((baseline.get("rewatches") or {}).get("theirs") or {}) if baseline else {}
             if theirs_rw is None:
                 rw_me, rw_them = {}, {}
             elif take_pc:
                 rw_me = {r: v for r, v in theirs_rw.items() if own_rw.get(r) != v}
                 rw_them = {}
                 drop_rw = [r for r in own_rw if r not in theirs_rw]
+            elif take_phone:
+                rw_me = {}
+                rw_them = {r: v for r, v in own_rw.items() if theirs_rw.get(r) != v}
+                drop_rw_them = [r for r in theirs_rw if r not in own_rw]
+            elif baseline and (rw_bm or rw_bt):
+                own_rw_in, t_rw_in = dict(own_rw), dict(theirs_rw)
+                rw_me, rw_them = {}, {}
+                for ref in set(rw_bm) | set(rw_bt):
+                    m_r, t_r = own_rw.get(ref), theirs_rw.get(ref)
+                    m_ok = (ref in rw_bm and m_r is not None and m_r["updated_at"] == rw_bm[ref]) or (ref not in rw_bm and m_r is None)
+                    t_ok = (ref in rw_bt and t_r is not None and t_r["updated_at"] == rw_bt[ref]) or (ref not in rw_bt and t_r is None)
+                    if m_ok and t_ok:
+                        own_rw_in.pop(ref, None)
+                        t_rw_in.pop(ref, None)
+                    else:
+                        rw_bm.pop(ref, None)
+                        rw_bt.pop(ref, None)
+                        if not m_ok and t_ok and m_r is not None:
+                            rw_them[ref] = m_r
+                            own_rw_in.pop(ref, None)
+                            t_rw_in.pop(ref, None)
+                        elif not t_ok and m_ok and t_r is not None:
+                            rw_me[ref] = t_r
+                            own_rw_in.pop(ref, None)
+                            t_rw_in.pop(ref, None)
+                rm2, rt2 = merge_rewatches(own_rw_in, t_rw_in)
+                rw_me.update(rm2)
+                rw_them.update(rt2)
             else:
                 rw_me, rw_them = merge_rewatches(own_rw, theirs_rw)
-            to_me = episode_writes(mine, True, base, result)
             if renames:
                 with database.db() as c:
                     c.executemany("UPDATE playlists SET uid=? WHERE uid=?", [(new, old) for old, new in renames.items()])
             sent = {"episodes": to_them, "playlists": lists_them, "gone": gone_them, "curation": cur_them}
+            if drop_cur_them:
+                sent["drop_curation"] = drop_cur_them
             if hid_them:
                 sent["home_hidden"] = hid_them
             if rw_them:
                 sent["rewatches"] = rw_them
+            if drop_rw_them:
+                sent["drop_rewatches"] = drop_rw_them
             got = _call(p["address"], "/api/sync/apply", p["token"], sent)[0] if any(sent.values()) else {"applied": []}
             there = set(got.get("applied") or [])
             here = set(apply_episodes(to_me, slots))
@@ -857,27 +1152,46 @@ def sync_once():
             if n_hid_me:
                 apply_hidden(hid_me)
             apply_rewatches(rw_me)
+            if take_phone and gone_them:
+                with database.db() as c:
+                    c.executemany("INSERT INTO sync_gone(kind, key, ts) VALUES('playlist', ?, ?) "
+                                  "ON CONFLICT(kind, key) DO UPDATE SET ts=MAX(ts, excluded.ts)",
+                                  list(gone_them.items()))
+            if take_phone and hid_them.get("shown"):
+                with database.db() as c:
+                    c.executemany("INSERT INTO sync_gone(kind, key, ts) VALUES('continue', ?, ?) "
+                                  "ON CONFLICT(kind, key) DO UPDATE SET ts=MAX(ts, excluded.ts)",
+                                  [(f"aid:{mid}", ts) for mid, ts in hid_them["shown"].items()])
             if drop_cur:
-                with database.db() as c:
-                    c.executemany("DELETE FROM curation WHERE ref=?", [(r,) for r in drop_cur])
-                changed()
+                drop_curation(drop_cur)
             if drop_rw:
-                with database.db() as c:
-                    c.executemany("DELETE FROM rewatches WHERE ref=?", [(r,) for r in drop_rw])
-                changed()
+                drop_rewatches(drop_rw)
             _link_in_progress({k: v[1] for k, v in to_me.items() if k in here}, slots)
             snap = {}
             for k, v in result.items():
                 held = (k in to_them and k not in there) or (k in to_me and k not in here)
+                if held and k in pending_ep_base:
+                    keep_ep_base[k] = pending_ep_base[k]
+                    continue
                 keep = (base or {}).get(k) if held else v
                 if keep and _meaningful(keep):
                     snap[k] = keep
+            if baseline and (keep_ep_base or pl_bm or pl_bt or cur_bm or cur_bt or hid_bm or hid_bt or rw_bm or rw_bt):
+                next_baseline = {
+                    "since": baseline.get("since") or "",
+                    "episodes": keep_ep_base,
+                    "playlists": {"mine": pl_bm, "theirs": pl_bt},
+                    "curation": {"mine": cur_bm, "theirs": cur_bt},
+                    "hidden": {"mine": hid_bm, "theirs": hid_bt},
+                    "rewatches": {"mine": rw_bm, "theirs": rw_bt},
+                }
             pulled = len(here) + len(lists_me) + len(gone_me) + len(cur_me) + len(drop_cur) + n_hid_me + len(rw_me) + len(drop_rw)
-            pushed = len(there) + len(lists_them) + len(gone_them) + len(cur_them) + sum(map(len, hid_them.values())) + len(rw_them)
+            pushed = len(there) + len(lists_them) + len(gone_them) + len(cur_them) + len(drop_cur_them) + sum(map(len, hid_them.values())) + len(rw_them) + len(drop_rw_them)
             _state["last"] = {"pulled": pulled, "pushed": pushed}
             with database.db() as c:
-                c.execute("UPDATE sync_peer SET snapshot=?, last_ok=?, last_error=NULL, pc=?, take=NULL WHERE id=1",
-                          (json.dumps(snap), util.utc_stamp(), theirs.get("name") or p["pc"]))
+                c.execute("UPDATE sync_peer SET snapshot=?, baseline=?, last_ok=?, last_error=NULL, pc=?, take=NULL WHERE id=1",
+                          (json.dumps(snap), json.dumps(next_baseline) if next_baseline else None,
+                           util.utc_stamp(), theirs.get("name") or p["pc"]))
             return _state["last"]
         except SyncError as e:
             _note(last_error=str(e))
@@ -1056,7 +1370,7 @@ def watch():
     mark = None
     while True:
         p = peer()
-        if not p or _watch["away"]:
+        if not p or not p.get("sync", True) or _watch["away"]:
             mark = None
             _watch["wake"].wait(30)
             _watch["wake"].clear()
@@ -1094,7 +1408,8 @@ def loop():
         if time.time() < _state["due"]:
             continue
         _state["due"] = time.time() + EVERY
-        if not peer():
+        p = peer()
+        if not p or not p.get("sync", True):
             continue
         try:
             sync_once()

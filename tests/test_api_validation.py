@@ -233,6 +233,12 @@ class ApiValidationTests(unittest.TestCase):
     def test_the_phone_door_lets_idle_connections_go(self):
         self.assertEqual(server.RemoteHandler.timeout, 60)
 
+    def test_peer_sync_toggle_requires_boolean_on(self):
+        for bad in (b'{"op":"sync"}', b'{"op":"sync","on":"yes"}', b'{"op":"sync","on":1}'):
+            status, payload = self.post("/api/peer", bad)
+            self.assertEqual(status, 400)
+            self.assertIn("'on'", payload["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

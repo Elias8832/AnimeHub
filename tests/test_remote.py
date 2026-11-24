@@ -196,7 +196,9 @@ class Listener(unittest.TestCase):
         self.assertIsNotNone(remote.code_info())  # not used up
         # The browser button pairs with the same code.
         st, h, body = self.req("POST", "/api/remote/pair", {"code": code}, ua=android)
-        self.assertEqual((st, json.loads(body)), (200, {"ok": True}))
+        got = json.loads(body)
+        self.assertEqual((st, got.get("ok")), (200, True))
+        self.assertTrue(isinstance(got.get("name"), str) and got["name"])
         self.assertEqual(remote.devices()[-1]["name"], "Android phone")
         # Used now: the link only says so.
         st, _, body = self.req("GET", f"/pair?c={code}", ua=android)
@@ -225,7 +227,9 @@ class Listener(unittest.TestCase):
         st, _, body = self.req("POST", "/api/remote/pair", {"code": "000000" if code != "000000" else "111111"})
         self.assertEqual(st, 400)
         st, h, body = self.req("POST", "/api/remote/pair", {"code": code})
-        self.assertEqual((st, json.loads(body)), (200, {"ok": True}))
+        got = json.loads(body)
+        self.assertEqual((st, got.get("ok")), (200, True))
+        self.assertTrue(isinstance(got.get("name"), str) and got["name"])
         self.assertTrue(h["Set-Cookie"].startswith(remote.COOKIE + "="))
 
     def test_main_server_has_no_pairing_back_door(self):
