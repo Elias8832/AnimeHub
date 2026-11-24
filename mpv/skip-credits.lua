@@ -134,7 +134,16 @@ show = function(label, key, seconds)
     hide_timer = mp.add_timeout(seconds, expire)
 end
 
-mp.observe_property("osd-dimensions", "native", function() draw() end)
+mp.observe_property("osd-dimensions", "native", function()
+    draw()
+    if not look and shown and shown.key then
+        local hover = inside(mp.get_property_native("mouse-pos"))
+        if hover ~= shown.hover then
+            shown.hover = hover
+            draw()
+        end
+    end
+end)
 
 mp.observe_property("mouse-pos", "native", function(_, m)
     -- A look tracks the hover itself (anime-hub-skip-hover): no rect here.
