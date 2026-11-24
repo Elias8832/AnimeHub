@@ -676,6 +676,46 @@ class Polish(unittest.TestCase):
     def test_rewatch_tiles_show_the_stop_point(self):
         self.assertIn("(!ep.watched || ep.position / ep.duration < 0.92)", APP)  # mirrors player.resume_args
         self.assertIn("watched: x.watched && !part", APP)
+        self.assertIn('x.watched && !part ? "watched" : ""', APP)
+        self.assertIn('ep.watched && !part ? "watched" : ""', APP)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_episode_menu_watched_and_progress_states(self):
+        """A watched episode paused halfway behaves as in-progress in the menu:
+        Mark as watched (clears the stop point back to watched) + Reset progress
+        (unwatches), never Mark as unwatched; a finished episode hides Reset progress."""
+        cm_items = re.search(r"function cmItems\([^)]*\) \{.*?\n\}\n", APP, re.S).group(0)
+        out = run_js("""
+            const S = { data: {}, sel: null, settings: {} };
+            const resumable = (ep) => !!ep.duration && ep.position / ep.duration > 0.01 && (!ep.watched || ep.position / ep.duration < 0.92);
+            const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+            const esc = (s) => String(s);
+            const selKey = () => "fr:1";
+            const cmOther = () => "";
+            const cmRow = (a, v, icon, label, key = "", extra = "", attrs = "") => ({ a, v, icon, label, key, attrs });
+        """ + cm_items.replace('.map((g) => g.join("")).join(\'<div class="sep"></div>\')', '.flat().filter((r) => typeof r === "object")') + """
+            const call = (ep) => cmItems({ id: "loc:1", ep, files: [{ label: "default" }], verId: "loc:1", online: false, onlineId: null, mode: "sub", other: "dub", local: true, dl: false, fix: false });
+            return {
+                watchedHalf: call({ watched: true, position: 685, duration: 1485 }),
+                watchedDone: call({ watched: true, position: 1485, duration: 1485 }),
+                watchedZero: call({ watched: true, position: 0, duration: 1485 }),
+                unwatchedHalf: call({ watched: false, position: 685, duration: 1485 }),
+                unwatchedZero: call({ watched: false, position: 0, duration: 1485 }),
+            };
+        """)
+        labels = lambda rows: [(r["label"], r["a"], r["attrs"]) for r in rows]
+        self.assertIn(("Resume at 11:25", "playep", ""), labels(out["watchedHalf"]))
+        self.assertIn(("Mark as watched", "mark", 'data-w="true" data-warn="1"'), labels(out["watchedHalf"]))
+        self.assertIn(("Reset progress", "reset", 'data-warn="1"'), labels(out["watchedHalf"]))
+        self.assertNotIn("Mark as unwatched", [r["label"] for r in out["watchedHalf"]])
+        for key in ("watchedDone", "watchedZero"):
+            self.assertIn(("Mark as unwatched", "mark", 'data-w="false" data-warn="1"'), labels(out[key]))
+            self.assertNotIn("Reset progress", [r["label"] for r in out[key]])
+            self.assertNotIn("Mark as watched", [r["label"] for r in out[key]])
+        self.assertIn(("Mark as watched", "mark", 'data-w="true" data-warn="1"'), labels(out["unwatchedHalf"]))
+        self.assertIn(("Reset progress", "reset", 'data-warn="1"'), labels(out["unwatchedHalf"]))
+        self.assertIn(("Mark as watched", "mark", 'data-w="true" data-warn="1"'), labels(out["unwatchedZero"]))
+        self.assertNotIn("Reset progress", [r["label"] for r in out["unwatchedZero"]])
 
     def test_downloads_list(self):
         self.assertIn('j.status === "queued" ? "waiting · next in line"', APP)
@@ -1369,7 +1409,7 @@ class ArrowButtonsPolish(unittest.TestCase):
         # No bare .warn callout rule leaking a curved border-left onto #cm .cmhl.warn
         self.assertNotRegex(CSS, r"(?m)^\.warn\{")
         # Caution hover applies consistently to state-clearing/unpinning rows too
-        self.assertIn('data-w="${!ep.watched}" data-warn="1"', APP)
+        self.assertIn('data-w="${!done}" data-warn="1"', APP)
         self.assertIn('p.pinned ? \'data-warn="1"\' : ""', APP)
 
 

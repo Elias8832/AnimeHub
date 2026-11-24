@@ -704,7 +704,7 @@ function prepareHero(ep) {
 function heroHTML(up, wide = false) {
   prepareHero(up.ep);
   const s = up.s, ep = up.ep, sea = up.sea, art = safeThumb(sea, ep) && !s.banner ? safeThumb(sea, ep) : s.banner || s.poster;
-  const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = pct >= 1 && !ep.watched;
+  const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = resumable(ep);
   const len = ep.duration || ep.length, left = started ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
   const src = streamEp(ep) ? "online" : "on disk";
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
@@ -749,12 +749,12 @@ function keepWatching(skipId) {
 }
 /* The caption is only what's left and where (TODO 236): the episode's name was cut off at this width. */
 function contCard({ s, t }, k) {
-  const ep = t.ep, p = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
+  const ep = t.ep, part = resumable(ep), p = part ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
   const art = safeThumb(t.sea, ep) || s.banner || s.poster;
-  const meta = [p > 1 && !ep.watched ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
+  const meta = [part ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
   return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0">
     <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:${safeThumb(t.sea, ep) ? "50% 50%" : "50% 30%"}"></span>` : ""}
-    <span class="enum">${esc(epCode(t.sea, ep))}</span>${p > 1 && !ep.watched ? `<i class="eprog"><i style="width:${p}%"></i></i>` : ""}
+    <span class="enum">${esc(epCode(t.sea, ep))}</span>${part ? `<i class="eprog"><i style="width:${p}%"></i></i>` : ""}
     <span class="eplay" data-a="play" data-v="${esc(ep.id)}" title="${esc(KIND_WORD[t.kind])}">${ico("play")}</span></div>
     <h3>${esc(s.title)}</h3><small>${esc(meta)}</small></div>`;
 }
@@ -1785,7 +1785,7 @@ function plRowMenu(ref, x, y, targetEl = null) {
   if (!it) return;
   /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
   const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
-  const again = st.fin || t?.kind === "rewatch";
+  const again = (st.fin && t?.kind !== "resume") || t?.kind === "rewatch";
   const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`, "↵") : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
@@ -2661,7 +2661,7 @@ function epTile(s, sea, ep, tgId, i = 0) {
   const part = resumable(ep);
   const files = ep.files || [], loading = epLoading(ep.id);
   const picking = S.sel?.show === s.id, picked = picking && S.sel.ids.has(ep.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", ep.watched ? "watched" : "", ep.id === tgId && resumable(ep) ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", ep.watched && !part ? "watched" : "", ep.id === tgId && part ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
   const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep);
   const meta = loading ? "loading…" : part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}${files.length > 1 ? ` · ${files.length} versions` : ""}`;
   return tileHTML({ cls, a: "playep", v: ep.id, i, art, pos, num: "E" + String(ep.number).padStart(2, "0"), pct: part ? pct : 0, loading, watched: ep.watched && !part,
@@ -2900,7 +2900,7 @@ function slotTile(p, e, x, tgId, i = 0) {
   const pct = x.duration ? Math.min(100, (100 * x.position) / x.duration) : 0, part = resumable(x);
   const ok = playableSlot(e, x), loading = slotIds(x).some(epLoading), job = x.online && !x.local && dlJob(x.online.id);
   const picking = S.sel?.show === frSelKey(), picked = picking && S.sel.ids.has(x.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", x.watched ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", x.watched && !part ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
   const files = x.local?.files || [], mins = minsOf(x.duration || x.length, e.duration);
   const src = x.local ? `disk · ${fileLangs({ files })}` : ok ? `online · ${e.online.mode || S.settings?.stream?.mode || "sub"}` : "not available";
   const meta = loading ? "loading…" : job ? (job.status === "running" ? `downloading · ${Math.floor(job.percent)}%` : "waiting to download")
@@ -3371,9 +3371,10 @@ function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, d
   const modeWord = (m) => (m === "dub" ? "dubbed" : "subbed");
   if (local && online) rows.push(cmRow("playmode", onlineId, "radio", `Play ${modeWord(mode)} online`, "O", "", `data-m="${mode}"`));
   if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${modeWord(other)}${local ? " online" : ""}`, "A", "", `data-m="${other}"`));
-  const mid = [cmRow("mark", id, ep.watched ? "undo" : "check", ep.watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!ep.watched}" data-warn="1"`)];
+  const done = ep.watched && !res;
+  const mid = [cmRow("mark", id, done ? "undo" : "check", done ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!done}" data-warn="1"`)];
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
-  if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
+  if (res) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
   const end = [];
   if (dl) end.push(cmRow("dlep", onlineId, "download", "Download", "D", vpnTag));
   if (fix) end.push(cmRow("srcfix", "", "search", local ? "Wrong online episodes?" : "Wrong episode?"));
@@ -5232,7 +5233,7 @@ function upHero(up) {
   const s = up.s, ep = up.ep, sea = up.sea, art = s.poster || safeThumb(sea, ep) || s.banner; // a tall hero: the poster fits it, a wide banner would show a sliver
   const { seen, tot } = seasonBar(s, sea);
   /* like the PC's banner (Decision 96): this episode's bar once it's started, nothing before (TODO 236) */
-  const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = pct >= 1 && !ep.watched;
+  const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = resumable(ep);
   const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
   const code = epCode(sea, ep), nm = epName(s, sea, ep); // a nameless episode said once: "Episode 1", not "E1 · Episode 1" (Decision 96)
   return `<div class="uph" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
