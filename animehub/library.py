@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import alpics, anicli, anilist, database, franchise, lengths, mapping, metadata, player, playlists, settings, streaming, util
+from . import alpics, anicli, anilist, database, franchise, lengths, mapping, metadata, player, playlists, progress, settings, streaming, util
 from .config import config
 
 
@@ -851,6 +851,8 @@ def full_library():
             # Additive (TODO 275): entry id -> the next one on its main story,
             # so a finished season hands Home to the next season you have.
             "story_next": franchise.story_next(),
+            # Additive: active rewatch runs (ref -> {started_at, done, updated_at}).
+            "rewatches": progress.rewatches_all(),
             "hide_spoilers": settings.automation_enabled("hide_spoilers"),  # additive (Decision 57): the first paint needs it
             "vpn": settings.vpn_status(),
             # Legacy fields kept as empty lists since the streaming strip

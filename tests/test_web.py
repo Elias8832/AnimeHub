@@ -675,7 +675,7 @@ class Polish(unittest.TestCase):
 
     def test_rewatch_tiles_show_the_stop_point(self):
         self.assertIn("(!ep.watched || ep.position / ep.duration < 0.92)", APP)  # mirrors player.resume_args
-        self.assertIn("watched: x.watched && !part", APP)
+        self.assertIn("watched: done && !part", APP)
 
     def test_downloads_list(self):
         self.assertIn('j.status === "queued" ? "waiting · next in line"', APP)
@@ -1369,7 +1369,7 @@ class ArrowButtonsPolish(unittest.TestCase):
         # No bare .warn callout rule leaking a curved border-left onto #cm .cmhl.warn
         self.assertNotRegex(CSS, r"(?m)^\.warn\{")
         # Caution hover applies consistently to state-clearing/unpinning rows too
-        self.assertIn('data-w="${!ep.watched}" data-warn="1"', APP)
+        self.assertIn('data-w="${!watched}" data-warn="1"', APP)
         self.assertIn('p.pinned ? \'data-warn="1"\' : ""', APP)
 
 
