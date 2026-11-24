@@ -4471,15 +4471,6 @@ body.pp-open #modal{z-index:70}
   #cm .mi.sel .cm-i-arrowr{transform:translateX(1.5px)}
   #cm .mi.sel .cm-i-ext{transform:translate(1px,-1px)}
   #cm .mi.sel .cm-i-download{transform:translateY(1px)}
-  /* Accent ring matching --cm-ring on :root (survives morphAttrs and never overrides card transitions) */
-  @keyframes cmRingIn{from{outline-color:transparent}}
-  @keyframes cmRingOut{to{outline-color:transparent}}
-  .cm-target{outline:2px solid color-mix(in srgb,var(--cm-ring,var(--accent)) 78%,transparent);outline-offset:2px;animation:cmRingIn .14s var(--ease)}
-  .cm-target.cm-target-out{animation:cmRingOut .105s var(--ease) forwards}
-  .ep.cm-target .epa,.hc.cm-target .epa,.card.cm-target .pw,.plpost.cm-target .plpi,.plbox.cm-target .plcard[data-pos="0"]{outline:2px solid color-mix(in srgb,var(--cm-ring,var(--accent)) 82%,transparent);outline-offset:2px;animation:cmRingIn .14s var(--ease)}
-  .eps.strip .ep.cm-target .epa{outline-offset:-1px}
-  .ep.cm-target.cm-target-out .epa,.hc.cm-target.cm-target-out .epa,.card.cm-target.cm-target-out .pw,.plpost.cm-target.cm-target-out .plpi,.plbox.cm-target.cm-target-out .plcard[data-pos="0"]{animation:cmRingOut .105s var(--ease) forwards}
-  .ep.cm-target,.hc.cm-target,.card.cm-target,.plpost.cm-target,.plbox.cm-target{outline:none;animation:none}
   #cm .mi .ml small{display:inline;margin-left:6px;font:500 12px var(--ui);color:rgba(243,243,241,.62)}
   /* Desktop menu triggers >= 32px target */
   .dots{width:32px;height:32px}
@@ -4575,7 +4566,7 @@ body.pp-open #modal{z-index:70}
 /* Reduced motion honors system & setting */
 @media (prefers-reduced-motion:reduce){
   :root:not([data-motion=always]) #cm{animation:none!important}
-  :root:not([data-motion=always]) #cm .mi,:root:not([data-motion=always]) #cm .cmhl,:root:not([data-motion=always]) #cm .plseg-gl,:root:not([data-motion=always]) #cm .plmcnt,:root:not([data-motion=always]) .cm-target,:root:not([data-motion=always]) .cm-target *{animation:none!important;transition:none!important}
+  :root:not([data-motion=always]) #cm .mi,:root:not([data-motion=always]) #cm .cmhl,:root:not([data-motion=always]) #cm .plseg-gl,:root:not([data-motion=always]) #cm .plmcnt{animation:none!important;transition:none!important}
 }
 :root[data-motion=calm] #cm .mi{animation:none}
 

@@ -1306,7 +1306,8 @@ class ContextMenuPolish(unittest.TestCase):
         self.assertIn("z-index:35;", CSS)  # desktop #cm sits below modal .overlay (40); 61 only while no dialog is open (above the toast)
         self.assertIn("#cm .plseg-gl{", CSS)  # gliding segment pill in Layout popover
         self.assertIn('<div class="plml-in" id="plml-in"></div>', APP)  # persistent .cmhl across filter keystrokes
-        self.assertIn('"cm-target"', APP.split("const LIVE_CLASSES", 1)[1].split("\n", 1)[0])
+        self.assertNotIn("cm-target", CSS + APP)  # no accent ring outline on menu triggers or right-clicked tiles
+        self.assertNotIn("--cm-ring", CSS + APP)
         self.assertIn('.ep[data-a=playep], .ep[data-a=unavail]', APP)  # unavailable episodes right-click too
 
     def test_option_3_thumbnail_card(self):
