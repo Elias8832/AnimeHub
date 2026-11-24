@@ -151,18 +151,16 @@ class EntryRoute(Isolated, ServerMixin):
 
 class Limiter(unittest.TestCase):
     def setUp(self):
-        self.times = list(anilist._al_times)
-        self.last = anilist._last_foreground
+        self.was = {k: (list(v) if isinstance(v, list) else v) for k, v in anilist._mem.items()}
         self.addCleanup(self.restore)
 
     def restore(self):
-        anilist._al_times[:] = self.times
-        anilist._last_foreground = self.last
+        anilist._mem.update(self.was)
         anilist._al_ctx.background = False
         anilist._al_ctx.deadline = None
 
     def test_a_page_read_waits_seconds_not_a_minute(self):
-        anilist._al_times[:] = [time.time()] * anilist.ANILIST_PER_MIN  # the window is full
+        anilist._mem["t"] = [time.time()] * anilist.ANILIST_PER_MIN  # the window is full
         start = time.time()
         with patch.object(anilist, "QUICK_WAIT", 0.3), anilist.quick(), \
                 self.assertRaises(anilist.AniListTransientError) as e:
@@ -172,19 +170,17 @@ class Limiter(unittest.TestCase):
         self.assertIsNone(anilist._al_ctx.deadline)
 
     def test_background_work_yields_to_the_user(self):
-        anilist._al_times[:] = []
-        anilist._last_foreground = time.time()
+        anilist._mem.update(t=[], fg=time.time(), pause=0.0)
         anilist._al_ctx.background = True
         slept = []
-        with patch.object(anilist.time, "sleep", side_effect=lambda s: (slept.append(s), setattr(anilist, "_last_foreground", 0))):
+        with patch.object(anilist.time, "sleep", side_effect=lambda s: (slept.append(s), anilist._mem.update(fg=0))):
             anilist._anilist_slot()
         self.assertTrue(slept, "background work went ahead while the user was clicking")
 
     def test_the_user_marks_the_window(self):
-        anilist._al_times[:] = []
-        anilist._last_foreground = 0
+        anilist._mem.update(t=[], fg=0, pause=0.0)
         anilist._anilist_slot()
-        self.assertGreater(anilist._last_foreground, time.time() - 5)
+        self.assertGreater(anilist._mem["fg"], time.time() - 5)
 
 
 class Payload(Isolated, ServerMixin):

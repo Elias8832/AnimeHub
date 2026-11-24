@@ -948,7 +948,7 @@ function brLoad(more) {
     if (r.error) throw r;
     const have = new Set(c.items.map((x) => x.id));
     c.items.push(...(r.items || []).filter((x) => !have.has(x.id))); c.page = r.page; c.has_next = !!r.has_next;
-  }).catch((e) => { c.err = e?.error || "AniList didn't answer — try again."; c.retry = e?.retry_in; })
+  }).catch((e) => brFail(c, e))
     .finally(() => { c.busy = false; if (S.view === "browse") brPaint(); });
   return c;
 }
@@ -957,8 +957,25 @@ function brLoadOver() {
   if (o?.busy || (o?.err && !o.data) || (o?.data && Date.now() - o.at < 10 * 60e3)) return;
   S.brOver = { ...(o || {}), busy: true, err: null };
   api("/api/catalog").then((r) => { if (r.error) throw r; S.brOver = { data: r, at: Date.now() }; })
-    .catch((e) => { S.brOver = { ...(S.brOver || {}), busy: false, err: e?.error || "AniList didn't answer — try again." }; })
+    .catch((e) => { S.brOver = { ...(S.brOver || {}), busy: false }; brFail(S.brOver, e); })
     .finally(() => { if (S.brOver) S.brOver.busy = false; if (S.view === "browse") brPaint(); });
+}
+/* A list AniList couldn't give heals itself (Decision 77): when the hub names a wait (AniList's Retry-After or the
+   rate gate every hub on the computer shares, TODO 279) the page counts it down and asks again. */
+function brFail(o, e) {
+  o.err = e?.error || "AniList didn't answer — try again."; o.why = e?.why;
+  o.due = e?.retry_in ? Date.now() + e.retry_in * 1000 : 0;
+}
+let brTimer = 0;
+const brTickOn = () => { brTimer ||= setInterval(brTick, 1000); };
+const brLeft = (due) => Math.max(1, Math.ceil((due - Date.now()) / 1000));
+const brWhen = (o) => `<span class="brcd" data-due="${o.due}">trying again in ${brLeft(o.due)} s</span>`;
+function brTick() {
+  const over = S.br.list === "over", o = S.brOver, c = over ? null : S.brc[brKey(brSpec())];
+  const w = over ? (o?.err && !o.data ? o : null) : c?.err ? c : null; // the failure on screen
+  if (S.view !== "browse" || !w?.due) { clearInterval(brTimer); brTimer = 0; return; } // the next paint starts it again
+  if (Date.now() < w.due) { for (const el of $$(".brw .brcd")) el.textContent = `trying again in ${brLeft(+el.dataset.due)} s`; return; }
+  if (over) BR_A.bretryo(); else if (c.items.length) BR_A.bmore(); else BR_A.bretry();
 }
 function brLoadGenres() {
   if (S.brGenres || S.brGenresBusy || S.brGenresTried > Date.now() - 60e3) return;
@@ -1037,10 +1054,13 @@ function brHero(x, st) {
     <h1>${esc(x.title)}</h1><div class="facts">${facts}</div>
     ${add || S.brAdded?.has(x.id) ? `<div class="cta"><button class="btn pri big bhadd${S.brAdded?.has(x.id) ? " done" : ""}" data-a="badd" data-v="${x.id}">${S.brAdded?.has(x.id) ? ico("check") + "<span>Planning</span>" : ico("plus") + "<span>Planning</span>"}</button></div>` : ""}</div></div>`; // no Open show (Elias): the whole banner opens it
 }
-const brErr = (msg, a = "bretry") => `<div class="emptyx brerr"><div class="eico">${ico("refresh")}</div><b>Couldn't reach AniList</b><span>${esc(msg)}</span><button class="btn" data-a="${a}">Try again</button></div>`;
+function brErr(o, a = "bretry") {
+  if (o.due) brTickOn();
+  return `<div class="emptyx brerr"><div class="eico">${ico("refresh")}</div><b>${o.why === "busy" ? "AniList is busy" : "Couldn't reach AniList"}</b>${o.due ? brWhen(o) : `<span>${esc(o.err)}</span>`}<button class="btn" data-a="${a}">Try now</button></div>`;
+}
 function brOverHTML(st) {
   const o = S.brOver;
-  if (!o?.data) return o?.err ? brErr(o.err, "bretryo") : `<div class="brwait"><i class="brph"></i><div class="brrow">${BR_PH.repeat(9)}</div></div>`;
+  if (!o?.data) return o?.err ? brErr(o, "bretryo") : `<div class="brwait"><i class="brph"></i><div class="brrow">${BR_PH.repeat(9)}</div></div>`;
   const R = o.data.rows, seas = o.data.seasons, hero = (R.trending || []).find((x) => x.banner);
   /* See all: Trending now and This season are lists; Top rated is All anime, best rated first. */
   const see = { trending: "trending", season: "season", top: "all:score" };
@@ -1066,10 +1086,10 @@ function brGridHTML(st) {
   const f = S.br.f, fx = [...f.genres, Array.isArray(f.fyear) && !sea ? span(f.fyear) : "", f.fseason && !sea ? f.fseason[0] + f.fseason.slice(1).toLowerCase() : "", f.format ? fmtName(f.format) : "", Array.isArray(f.score) ? `average ${span(f.score)}` : ""].filter(Boolean);
   const head = `<div class="filters brhd${sea ? " sea" : ""}">${steps || `<h2 class="lh">${esc(title)}</h2>`}${fx.length ? `<span class="brfx">${fx.map(esc).join(" · ")}</span>` : ""}<span class="fill"></span>${sort}</div>`;
   let body;
-  if (!c.items.length && c.err) body = brErr(c.err);
+  if (!c.items.length && c.err) body = brErr(c);
   else if (!c.items.length && !c.busy && c.page) body = `<div class="emptyx brnone"><div class="eico">${ico("search")}</div><b>Nothing matches</b><span>No show on AniList has all of these.</span><button class="btn" data-a="bclear">Clear filters</button></div>`;
   else body = `<div class="wall brwall">${c.items.map((x, i) => brCard(x, i, { st, rank: ranked ? i + 1 : 0, noYear: !!sea })).join("")}${c.busy ? BR_PH.repeat(c.items.length ? 7 : 21) : ""}</div>
-    ${c.has_next && c.items.length ? `<div class="brmore"><button class="btn" data-a="bmore">${c.busy ? "Loading…" : "Show more"}</button></div>` : ""}${c.err && c.items.length ? `<p class="brnote">${esc(c.err)} <button class="link-btn" data-a="bmore">Try again</button></p>` : ""}`;
+    ${c.has_next && c.items.length ? `<div class="brmore"><button class="btn" data-a="bmore">${c.busy ? "Loading…" : "Show more"}</button></div>` : ""}${c.err && c.items.length ? `<p class="brnote">${c.due ? (brTickOn(), `AniList is busy — ${brWhen(c)}`) : esc(c.err)} <button class="link-btn" data-a="bmore">Try now</button></p>` : ""}`;
   return head + body;
 }
 function brMainHTML() {
