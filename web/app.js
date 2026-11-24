@@ -1811,7 +1811,7 @@ function plRowMenu(ref, x, y, targetEl = null) {
   if (!it) return;
   /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
   const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
-  const again = st.fin || t?.kind === "rewatch";
+  const again = (st.fin && t?.kind !== "resume") || t?.kind === "rewatch";
   const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`, "↵", "", again ? 'data-rw="1"' : "") : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
@@ -2688,7 +2688,7 @@ function epTile(s, sea, ep, tgId, i = 0) {
   const part = resumable(ep);
   const files = ep.files || [], loading = epLoading(ep.id), done = slotSeen(s, ep);
   const picking = S.sel?.show === s.id, picked = picking && S.sel.ids.has(ep.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done ? "watched" : "", ep.id === tgId && resumable(ep) ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done && !part ? "watched" : "", ep.id === tgId && part ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
   const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep);
   const meta = loading ? "loading…" : part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}${files.length > 1 ? ` · ${files.length} versions` : ""}`;
   return tileHTML({ cls, a: "playep", v: ep.id, i, art, pos, num: "E" + String(ep.number).padStart(2, "0"), pct: part ? pct : 0, loading, watched: done && !part,
@@ -2950,7 +2950,7 @@ function slotTile(p, e, x, tgId, i = 0) {
   const pct = x.duration ? Math.min(100, (100 * x.position) / x.duration) : 0, part = resumable(x), done = slotDone(e, x);
   const ok = playableSlot(e, x), loading = slotIds(x).some(epLoading), job = x.online && !x.local && dlJob(x.online.id);
   const picking = S.sel?.show === frSelKey(), picked = picking && S.sel.ids.has(x.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done && !part ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
   const files = x.local?.files || [], mins = minsOf(x.duration || x.length, e.duration);
   const src = x.local ? `disk · ${fileLangs({ files })}` : ok ? `online · ${e.online.mode || S.settings?.stream?.mode || "sub"}` : "not available";
   const meta = loading ? "loading…" : job ? (job.status === "running" ? `downloading · ${Math.floor(job.percent)}%` : "waiting to download")
@@ -3425,9 +3425,10 @@ function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, d
   const modeWord = (m) => (m === "dub" ? "dubbed" : "subbed");
   if (local && online) rows.push(cmRow("playmode", onlineId, "radio", `Play ${modeWord(mode)} online`, "O", "", `data-m="${mode}"`));
   if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${modeWord(other)}${local ? " online" : ""}`, "A", "", `data-m="${other}"`));
-  const mid = [cmRow("mark", id, watched ? "undo" : "check", watched ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!watched}" data-warn="1"`)];
+  const done = watched && !res;
+  const mid = [cmRow("mark", id, done ? "undo" : "check", done ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!done}" data-warn="1"`)];
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
-  if (ep.position) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
+  if (res) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
   const end = [];
   if (dl) end.push(cmRow("dlep", onlineId, "download", "Download", "D", vpnTag));
   if (fix) end.push(cmRow("srcfix", "", "search", local ? "Wrong online episodes?" : "Wrong episode?"));

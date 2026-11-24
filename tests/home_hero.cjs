@@ -235,6 +235,17 @@ test("the PC's banner: this episode's progress once started, a nameless episode 
   const fresh = episode("fresh", latest, false, 0);
   app = homepage({ shows: [show("Fresh", [fresh])], continue: [fresh], history: [fresh] });
   assert.doesNotMatch(app.Home(), /class="hbar"/); // not started: nothing to show
+
+  // A watched episode paused halfway still shows its progress bar and time left on Home.
+  const replayed = episode("replayed", latest, true, 685);
+  const other = episode("other", earlier, true, 685);
+  app = homepage({ shows: [show("Replayed", [replayed]), show("Other", [other])], continue: [], history: [replayed, other] });
+  const rhtml = app.Home();
+  assert.match(rhtml, /<div class="hbar"><i style="width:47\.6%"><\/i><\/div>/);
+  assert.match(rhtml, /13 min left/);
+  assert.match(rhtml, /<span>Resume<\/span>/);
+  assert.match(rhtml, /<h3>Other<\/h3><small>13 min left · disk<\/small>/);
+  assert.match(rhtml, /<i class="eprog"><i style="width:47\.56/);
 });
 
 test("Continue watching captions say only what's left and where (TODO 236)", () => {

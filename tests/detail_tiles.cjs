@@ -127,3 +127,25 @@ test("applyWatch moves only the marked episodes' watch facts", () => {
   assert.equal(eps[2].position, 0, "unwatching drops the stop point");
   assert.equal(eps[2].last_played, "2026-10-17 00:00:00", "a plain mark keeps history");
 });
+
+test("a watched episode paused halfway renders as in-progress, not dimmed watched", () => {
+  const c = context();
+  const sea = { label: "Season 1", season: 1, thumbs: { "1": "/epimg/x.1.jpg" }, titles: { "1": "Let You Down" } };
+  const s = show(sea);
+  const ep = { ...episode(1, true), position: 685, duration: 1485, last_played: "2026-11-24 16:00:00" };
+  sea.episodes = [ep];
+  const half = c.epTile(s, sea, ep, ep.id);
+  assert.doesNotMatch(half, /class="ep[^"]*watched/);
+  assert.match(half, /class="ep resume"/);
+  assert.match(half, /class="eprog"/);
+  assert.match(half, /13 min left/);
+  assert.doesNotMatch(half, /class="tick"/);
+
+  // Marking watched drops the stop point and returns the tile cleanly to watched while keeping history.
+  c.applyWatch([s], [ep.id], true, false);
+  const done = c.epTile(s, sea, ep, null);
+  assert.match(done, /class="ep watched"/);
+  assert.match(done, /class="tick"/);
+  assert.doesNotMatch(done, /class="eprog"/);
+  assert.equal(ep.last_played, "2026-11-24 16:00:00");
+});
