@@ -625,12 +625,13 @@ def _fetch_meta_later(mid):
 
 
 def played_unlinked_shows(links, on_disk):
-    """Releases played but never linked by ani-cli here, and not on disk:
-    episodes another device played came over with a sync (Decision 91), so
-    Home and History show them, as the show page would (release_show: Play
-    links on the way). Only releases with a played episode count (a mark from
-    "Mark what you watched" has no play time). Uses AniList's info as stored;
-    a release without it is fetched once and shows a moment later."""
+    """Releases played or actively rewatched but never linked by ani-cli here,
+    and not on disk: episodes and active rewatches another device synced
+    (Decision 91, 107), so Home and History show them, as the show page would
+    (release_show: Play links on the way). Only releases with a played episode
+    or an active rewatch count (a mark from "Mark what you watched" has no play
+    time). Uses AniList's info as stored; a release without it is fetched once
+    and shows a moment later."""
     linked = {l["media_id"] for l in links}
     rows = _stream_rows()
     played = {}
@@ -644,6 +645,25 @@ def played_unlinked_shows(links, on_disk):
             continue
         if mid not in linked and mid not in on_disk and n.is_integer():
             played.setdefault(mid, set()).add(int(n))
+    with database.db() as c:
+        rw_rows = c.execute(
+            "SELECT ref, done FROM rewatches WHERE started_at IS NOT NULL AND ref LIKE 'aid:%'"
+        ).fetchall()
+    for ref, done_s in rw_rows:
+        try:
+            mid = int(ref.split(":", 1)[1])
+        except ValueError:
+            continue
+        if mid in linked or mid in on_disk:
+            continue
+        nums = played.setdefault(mid, set())
+        try:
+            done = json.loads(done_s) if done_s else []
+        except ValueError:
+            done = []
+        for x in done:
+            if isinstance(x, (int, float)) and not isinstance(x, bool) and float(x).is_integer() and x >= 1:
+                nums.add(int(x))
     out = []
     for mid, nums in sorted(played.items()):
         hit = database.cache_get_ts(f"release:v1:{mid}")
