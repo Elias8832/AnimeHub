@@ -219,7 +219,7 @@ def _no_constant(name):
 
 # Changes the Android app hands to its PC soon after (Decision 91).
 SYNC_SOON = ("/api/watched", "/api/bulk-watched", "/api/entry-watched", "/api/playlists", "/api/entry", "/api/reset",
-             "/api/continue-hide")
+             "/api/continue-hide", "/api/rewatch")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -983,16 +983,23 @@ class Handler(BaseHTTPRequestHandler):
             if self._fields(body, strings=("id",), opt_ints=("version",)):
                 mode = body.get("mode")
                 start = body.get("from_start", False)  # additive: the episode menu's "Play from the start"
+                rw = body.get("rewatch", False)  # additive: start a rewatch run with this play
                 # additive: the user's answer to AniSkip without a VPN (Decision 39)
                 aniskip_ok = body.get("aniskip")
                 accent = body.get("accent")  # additive: the show's colour, for mpv's controls (Decision 52)
                 if not isinstance(start, bool):
                     self._bad("'from_start' must be a boolean")
+                elif not isinstance(rw, bool):
+                    self._bad("'rewatch' must be a boolean")
                 elif aniskip_ok is not None and not isinstance(aniskip_ok, bool):
                     self._bad("'aniskip' must be a boolean")
                 elif mode is not None and mode not in anicli.STREAM_MODES:
                     self._bad("'mode' must be one of: %s" % ", ".join(anicli.STREAM_MODES))
                 elif mode and body["id"].startswith("stream:"):
+                    if rw:
+                        progress.rewatch_start_for_episode(body["id"])
+                        peersync.soon()
+                        start = True
                     if aniskip_ok is not None:
                         player.answer_aniskip(body["id"], aniskip_ok)
                     # An online episode in the other language ("Play dubbed").
@@ -1000,6 +1007,10 @@ class Handler(BaseHTTPRequestHandler):
                     player.remember_accent(body["id"], accent)
                     self.send_json(streaming.start_stream(body["id"], mode, from_start=start))
                 else:
+                    if rw:
+                        progress.rewatch_start_for_episode(body["id"])
+                        peersync.soon()
+                        start = True
                     if aniskip_ok is not None:
                         player.answer_aniskip(body["id"], aniskip_ok)
                     player.remember_accent(body["id"], accent)
@@ -1081,8 +1092,12 @@ class Handler(BaseHTTPRequestHandler):
             # The phone plays a file itself (Decision 71).
             if self._fields(body, strings=("id",), opt_ints=("version",)):
                 start = body.get("from_start", False)
+                rw = body.get("rewatch", False)
                 if not isinstance(start, bool):
                     self._bad("'from_start' must be a boolean")
+                    return
+                if not isinstance(rw, bool):
+                    self._bad("'rewatch' must be a boolean")
                     return
                 mode, aniskip_ok = body.get("mode"), body.get("aniskip")
                 if mode is not None and mode not in anicli.STREAM_MODES:
@@ -1100,6 +1115,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(switch, bool):
                     self._bad("'switch' must be a boolean")
                     return
+                if rw:
+                    progress.rewatch_start_for_episode(body["id"])
+                    peersync.soon()
+                    start = True
                 if body["id"].startswith("stream:"):
                     r = phoneplay.start_online(body["id"], mode, from_start=start, at=at, switch=switch)
                 else:
@@ -1151,14 +1170,16 @@ class Handler(BaseHTTPRequestHandler):
                 elif op == "play":
                     # Additive (TODO 263): Play on the PC from the app.
                     if not isinstance(body.get("id"), str) or not isinstance(body.get("from_start", False), bool) \
+                            or not isinstance(body.get("rewatch", False), bool) \
                             or body.get("mode") not in (None, *anicli.STREAM_MODES) \
                             or any(body.get(k) not in (None, True, False) for k in ("vpn_ok", "aniskip")):
-                        self._bad("'id' must be a string, 'from_start', 'vpn_ok' and 'aniskip' booleans, 'mode' one of: %s"
+                        self._bad("'id' must be a string, 'from_start', 'rewatch', 'vpn_ok' and 'aniskip' booleans, 'mode' one of: %s"
                                   % ", ".join(anicli.STREAM_MODES))
                         return
                     # vpn_ok / aniskip (additive, TODO 274): the answers to the PC's VPN questions.
                     r = peersync.pc_play(body["id"], body.get("from_start", False), body.get("mode"),
-                                         vpn_ok=body.get("vpn_ok"), aniskip=body.get("aniskip"))
+                                         vpn_ok=body.get("vpn_ok"), aniskip=body.get("aniskip"),
+                                         rewatch=body.get("rewatch", False))
                     self.send_json(r, 400 if r.get("error") else 200)
                 elif op == "control":
                     # Additive (TODO 263): the app's remote for the PC hands a button on.
@@ -1235,6 +1256,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._bad("'numbers' must be a list of episode numbers")
                 else:
                     self.send_json(pages.entry_watched(body["media_id"], body["watched"], nums))
+        elif route == "/api/rewatch":
+            # Active rewatch runs (Decision 18.3): start, restore (Undo), or end.
+            if self._fields(body, strings=("ref",), bools=("active",)):
+                ref = body["ref"]
+                if not progress.REWATCH_REF_RE.match(ref):
+                    self._bad("'ref' must be \"aid:<AniList id>\" or \"sid:<show id>\"")
+                    return
+                restore = body.get("restore")
+                if restore is not None:
+                    if not (isinstance(restore, dict) and isinstance(restore.get("started_at"), str)
+                            and isinstance(restore.get("done"), list)):
+                        self._bad("'restore' must be {started_at, done}")
+                        return
+                if body["active"]:
+                    rw = progress.rewatch_start(ref, restore=restore)
+                    self.send_json({"ok": True, "ref": ref, "rewatch": rw})
+                else:
+                    prev = progress.rewatch_end(ref)
+                    self.send_json({"ok": True, "ref": ref, "rewatch": None, "prev": prev})
         elif route == "/api/reset":
             if self._fields(body, strings=("id",)):
                 progress.reset_progress(body["id"])

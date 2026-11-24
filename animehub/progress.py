@@ -1,8 +1,230 @@
-"""Watch progress: completion events, AniList tracking, watched marks."""
+"""Watch progress: completion events, AniList tracking, watched marks, rewatch runs."""
 
+import json
+import re
 import threading
 
-from . import anilist, database, library, mapping, settings, streaming, sync, util
+from . import anilist, database, franchise, library, mapping, settings, streaming, sync, util
+
+
+REWATCH_REF_RE = re.compile(r"^(aid:[1-9][0-9]{0,9}|sid:[A-Za-z0-9_-]{1,64})$")
+
+
+def _norm_done(ref, items):
+    """Normalize a rewatch's done list: sorted unique numbers for aid:, strings for sid:."""
+    out = []
+    seen = set()
+    if ref.startswith("aid:"):
+        for x in items or ():
+            if isinstance(x, bool) or not isinstance(x, (int, float)):
+                continue
+            v = int(x) if float(x).is_integer() else float(x)
+            if v >= 0 and v not in seen:
+                seen.add(v)
+                out.append(v)
+        out.sort()
+    else:
+        for x in items or ():
+            if isinstance(x, str) and x and x not in seen:
+                seen.add(x)
+                out.append(x)
+        out.sort()
+    return out
+
+
+def rewatches_all():
+    """Active rewatch runs: {ref: {started_at, done, updated_at}}."""
+    with database.db() as c:
+        rows = c.execute("SELECT ref, started_at, done, updated_at FROM rewatches"
+                         " WHERE started_at IS NOT NULL").fetchall()
+    out = {}
+    for ref, started_at, done_s, updated_at in rows:
+        try:
+            done = json.loads(done_s) if done_s else []
+        except ValueError:
+            done = []
+        out[ref] = {"started_at": started_at, "done": _norm_done(ref, done), "updated_at": updated_at}
+    return out
+
+
+def rewatch_get(ref):
+    """Active rewatch for `ref`, or None."""
+    if not ref:
+        return None
+    with database.db() as c:
+        row = c.execute("SELECT started_at, done, updated_at FROM rewatches"
+                        " WHERE ref=? AND started_at IS NOT NULL", (ref,)).fetchone()
+    if not row:
+        return None
+    try:
+        done = json.loads(row[1]) if row[1] else []
+    except ValueError:
+        done = []
+    return {"started_at": row[0], "done": _norm_done(ref, done), "updated_at": row[2]}
+
+
+def rewatch_start(ref, restore=None):
+    """Begin a rewatch run for `ref` (or restore a previously ended run on Undo)."""
+    now = util.utc_stamp()
+    if isinstance(restore, dict) and isinstance(restore.get("started_at"), str) and restore["started_at"]:
+        started_at = restore["started_at"]
+        done = _norm_done(ref, restore.get("done"))
+    else:
+        started_at = now
+        done = []
+    with database.db() as c:
+        c.execute("""INSERT INTO rewatches(ref, started_at, done, updated_at) VALUES(?,?,?,?)
+                     ON CONFLICT(ref) DO UPDATE SET started_at=excluded.started_at,
+                     done=excluded.done, updated_at=excluded.updated_at""",
+                  (ref, started_at, json.dumps(done), now))
+    return {"started_at": started_at, "done": done, "updated_at": now}
+
+
+def _ref_episode_ids(ref):
+    """All episode ids (disk + online) belonging to a rewatch ref."""
+    if ref.startswith("aid:"):
+        mid = int(ref[4:])
+        ids = []
+        scan, streams = streaming.library_shows()
+        for s in scan + streams:
+            for u in mapping.release_units(streaming.trackable(s)):
+                if u["media_id"] == mid:
+                    ids.extend(ep["id"] for ep, _ in u["eps"])
+        with database.db() as c:
+            ids.extend(r[0] for r in c.execute("SELECT id FROM episodes WHERE id LIKE ?", (f"stream:{mid}:%",)))
+        return list(dict.fromkeys(ids))
+    if ref.startswith("sid:"):
+        s = library.media_by_id(ref[4:])
+        return [ep["id"] for sea in s["seasons"] for ep in sea["episodes"]] if s else []
+    return []
+
+
+def rewatch_end(ref):
+    """End an active rewatch run for `ref`, preserving all original watched facts
+    and history while clearing any mid-rewatch pause position so the show leaves
+    Continue watching cleanly. Returns the previous active state (for Undo), or None."""
+    prev = rewatch_get(ref)
+    if not prev:
+        return None
+    now = util.utc_stamp()
+    ids = _ref_episode_ids(ref)
+    with database.db() as c:
+        c.execute("UPDATE rewatches SET started_at=NULL, done='[]', updated_at=? WHERE ref=?", (now, ref))
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            c.execute(f"UPDATE episodes SET position=0 WHERE id IN ({marks}) AND watched=1"
+                      " AND duration>0 AND position/duration < 0.92", ids)
+    return prev
+
+
+def rewatch_mark(ref, items, watched=True):
+    """Mark episode numbers (aid:) or ids (sid:) done/undone in an active rewatch."""
+    cur = rewatch_get(ref)
+    if not cur:
+        return None
+    norm = set(_norm_done(ref, items))
+    done = set(cur["done"])
+    if watched:
+        done |= norm
+    else:
+        done -= norm
+    new_done = _norm_done(ref, done)
+    now = util.utc_stamp()
+    with database.db() as c:
+        c.execute("UPDATE rewatches SET done=?, updated_at=? WHERE ref=?",
+                  (json.dumps(new_done), now, ref))
+    return {"started_at": cur["started_at"], "done": new_done, "updated_at": now}
+
+
+def rewatch_ref_for_episode(ep_id):
+    """(ref, key) for an episode id: ("aid:<media_id>", number) when mapped to
+    an AniList entry, else ("sid:<show_id>", ep_id) for an unmatched folder."""
+    if isinstance(ep_id, str) and ep_id.startswith("stream:"):
+        mid = streaming.stream_media_id(ep_id)
+        if mid:
+            token = ep_id.split(":", 2)[2]
+            return f"aid:{mid}", streaming._stream_num(token)
+        return None
+    s, ep = library.episode_by_id(ep_id)
+    if s and ep:
+        unit, n = mapping.unit_of_episode(streaming.trackable(s), ep_id)
+        if unit and n is not None:
+            return f"aid:{unit['media_id']}", n
+        if not s["id"].startswith("aid:"):
+            return f"sid:{s['id']}", ep_id
+    return None
+
+
+def rewatch_start_for_episode(ep_id):
+    """Start a rewatch run for whichever entry/folder owns `ep_id`."""
+    info = rewatch_ref_for_episode(ep_id)
+    if not info:
+        return None
+    return rewatch_start(info[0])
+
+
+def rewatch_record_finish(ep_id):
+    """Record a finished episode in its active rewatch run (before AniList sync).
+    Returns (ref, key, rewatch_dict) when recorded, else None."""
+    info = rewatch_ref_for_episode(ep_id)
+    if not info:
+        return None
+    ref, key = info
+    if not rewatch_get(ref):
+        return None
+    updated = rewatch_mark(ref, [key], watched=True)
+    return (ref, key, updated) if updated else None
+
+
+def rewatch_maybe_complete(ep_id):
+    """After playback finishes and AniList syncs: if the active rewatch run for
+    `ep_id` is now finished, end it — and for multi-season franchises where the
+    next main-story season is already watched here, chain the rewatch onto it."""
+    info = rewatch_ref_for_episode(ep_id)
+    if not info:
+        return False
+    ref, key = info
+    rw = rewatch_get(ref)
+    if not rw:
+        return False
+    done = set(rw["done"])
+    if ref.startswith("aid:"):
+        from . import pages
+        mid = int(ref[4:])
+        page = pages.franchise_view(mid, background=False)
+        entry = next((e for e in page["entries"] if e["id"] == mid), None)
+        if not entry:
+            return False
+        playable = [x["number"] for x in entry["slots"]
+                    if x.get("local") or (x.get("online") and entry["online"]["available"])]
+        nums = playable or [x["number"] for x in entry["slots"]]
+        if not nums:
+            return False
+        at_end = key == max(nums) and not (isinstance(key, int) and key < (entry.get("aired") or 0))
+        if not (all(n in done for n in nums) or at_end):
+            return False
+        rewatch_end(ref)
+        nxt_mid = franchise.story_next().get(mid)
+        if nxt_mid and not rewatch_get(f"aid:{nxt_mid}"):
+            nxt_e = next((e for e in page["entries"] if e["id"] == nxt_mid), None)
+            if nxt_e and nxt_e["slots"]:
+                have = any(x.get("local") for x in nxt_e["slots"]) or nxt_e["online"]["linked"]
+                nxt_play = [x for x in nxt_e["slots"]
+                            if x.get("local") or (x.get("online") and nxt_e["online"]["available"])]
+                if have and nxt_play and all(x["watched"] for x in nxt_play):
+                    rewatch_start(f"aid:{nxt_mid}")
+        return True
+    show_id = ref[4:]
+    s = library.media_by_id(show_id)
+    if not s:
+        return False
+    all_ids = [ep["id"] for sea in s["seasons"] for ep in sea["episodes"]]
+    if not all_ids:
+        return False
+    if all(i in done for i in all_ids) or key == all_ids[-1]:
+        rewatch_end(ref)
+        return True
+    return False
 
 
 def _completion_event(media_id, title):
@@ -131,20 +353,50 @@ def _track(s, manual=False, only=None):
     # Progress of listed entries is the Track episodes switch's alone: auto
     # -add being on must not publish progress the user switched off.
     track = manual or settings.automation_enabled("auto_progress_sync")
+    active_rw = rewatches_all()
     patches = {}
     for u in mapping.release_units(s):
         if only is not None and not any(ep["id"] in only for ep, _ in u["eps"]):
             continue
         aid = u["media_id"]
-        watched = [n for ep, n in u["eps"] if ep["watched"]]
-        highest = max(watched) if watched else 0
+        rw = active_rw.get(f"aid:{aid}")
+        if rw is not None:
+            rw_nums = [int(n) for n in rw["done"] if isinstance(n, (int, float)) and float(n).is_integer() and n >= 1]
+            highest = max(rw_nums) if rw_nums else 0
+        else:
+            watched = [n for ep, n in u["eps"] if ep["watched"]]
+            highest = max(watched) if watched else 0
         remote = entries.get(aid)
         if remote is not None:
-            if not track or not mapping.unit_fits(u, remote.get("episodes")) or highest <= (remote.get("progress") or 0):
+            if not track or not mapping.unit_fits(u, remote.get("episodes")):
                 continue
+            rstatus = remote.get("status")
+            rprog = remote.get("progress") or 0
+            total = remote.get("episodes") or u.get("total")
+            if rw is not None:
+                if highest <= 0:
+                    continue
+                if rstatus == "COMPLETED":
+                    # Auto-flip Completed -> Rewatching on rewatch progress
+                    # (skip on finale/1-ep movie so completion popup handles it).
+                    if total and highest >= total:
+                        continue
+                    patches[aid] = {"status": "REPEATING", "progress": highest}
+                    sync.outbox_enqueue(aid, patch=patches[aid])
+                    continue
+                if highest <= rprog:
+                    continue
+            else:
+                if rstatus == "REPEATING" and only is not None:
+                    # Manual REPEATING without a local rewatch run: never jump
+                    # from 0 straight to the old finale because episodes are watched=1.
+                    only_nums = [n for ep, n in u["eps"] if ep["id"] in only and ep["watched"]]
+                    highest = max(only_nums) if only_nums else 0
+                if highest <= rprog:
+                    continue
             # Starting a show that sits on Planning moves it to Watching,
             # the way AniList's own site does (the API keeps the status).
-            start = remote.get("status") == "PLANNING"
+            start = rstatus == "PLANNING"
             if sync.outbox_pending_for(aid) and not start:
                 # Offline E5 then E6: fold the newer count into the queued
                 # progress-only row; behind the user's own edit it queues
@@ -171,20 +423,27 @@ def _track_blind(s, only, add):
     58): queue each entry's highest watched episode as a verify row — the
     flush checks it against the live list before sending (sync.outbox_verify),
     so a guess never lowers progress or adds an entry unasked."""
+    active_rw = rewatches_all()
     patches = {}
     for u in mapping.release_units(s):
         if only is not None and not any(ep["id"] in only for ep, _ in u["eps"]):
             continue
-        watched = [n for ep, n in u["eps"] if ep["watched"]]
+        aid = u["media_id"]
+        rw = active_rw.get(f"aid:{aid}")
+        if rw is not None:
+            watched = [int(n) for n in rw["done"] if isinstance(n, (int, float)) and float(n).is_integer() and n >= 1]
+        else:
+            watched = [n for ep, n in u["eps"] if ep["watched"]]
         if not watched or not mapping.unit_fits(u, u.get("total")):
             continue
-        aid, highest = u["media_id"], max(watched)
+        highest = max(watched)
+        verify = {"add": add, **({"rewatch": True} if rw is not None else {})}
         if sync.outbox_pending_for(aid):
-            if sync.outbox_queue_progress(aid, highest, verify={"add": add}):
+            if sync.outbox_queue_progress(aid, highest, verify=verify):
                 patches[aid] = {"progress": highest}
             continue
         patches[aid] = {"progress": highest}
-        sync.outbox_enqueue(aid, patch=patches[aid], verify={"add": add})
+        sync.outbox_enqueue(aid, patch=patches[aid], verify=verify)
     if not patches:
         return None
     return next(iter(patches.values())) if len(patches) == 1 else patches
@@ -224,6 +483,19 @@ def bulk_watched(show_id, season=None, watched=True, ids=None):
     else:
         targets = s["seasons"]
     eps = [ep for sea in targets for ep in sea["episodes"] if pick is None or ep["id"] in pick]
+    rw_ref = f"sid:{show_id}"
+    rw = rewatch_get(rw_ref)
+    if rw and (pick is not None or watched):
+        with database.db() as c:
+            for ep in eps:
+                c.execute("UPDATE episodes SET position=0 WHERE id=?", (ep["id"],))
+        updated = rewatch_mark(rw_ref, [ep["id"] for ep in eps], watched)
+        all_ids = [ep["id"] for sea in s["seasons"] for ep in sea["episodes"]]
+        if updated and all_ids and all(i in set(updated["done"]) for i in all_ids):
+            rewatch_end(rw_ref)
+        return {"ok": True, "episodes": len(eps), "watched": bool(watched), "synced": None}
+    if rw and not watched:
+        rewatch_end(rw_ref)
     with database.db() as c:
         for ep in eps:
             c.execute(
@@ -274,6 +546,12 @@ def completion_for_episode(ep_id):
 
 
 def set_watched(eid, watched):
+    info = rewatch_ref_for_episode(eid)
+    if info and rewatch_get(info[0]):
+        with database.db() as c:
+            c.execute("UPDATE episodes SET position=0 WHERE id=?", (eid,))
+        rewatch_mark(info[0], [info[1]], bool(watched))
+        return
     with database.db() as c:
         c.execute("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched, position=0",
                   (eid, int(watched)))

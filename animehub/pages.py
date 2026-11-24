@@ -237,14 +237,14 @@ def watch_order(entries):
     return [row(m) for m in sorted([*entries, *linked.values()], key=key)]
 
 
-def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=frozenset()):
+def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=frozenset(), rewatches=None):
     """The page model (pure): `entries` in page order (franchise_of), `scan`
     after merge_db (season ranges, watch facts), `links` media id → ani-cli
     link, `rows` "stream:" id → (watched, position, duration,
     last_played), `arts` media id → stills/titles, `online_ok` ani-cli is
     there, `missed` entries ani-cli has no match for. Returns {"title",
     "poster", "banner", "entries": [facts + "group" ("main" seasons /
-    "extra"), "label", "season", "slots", "online"], "other_local":
+    "extra"), "label", "season", "slots", "online", "rewatch"], "other_local":
     [{"show_id", "season", "label", "episodes"}]: files of the
     franchise's folders that are no entry, never hidden; "order":
     watch_order}."""
@@ -275,10 +275,12 @@ def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=froz
         no = line.index(m["id"]) + 1 if m["id"] in line else None
         mid = m["id"]
         reachable = online_ok and mid not in missed
+        rw = (rewatches or {}).get(f"aid:{mid}")
         out.append(dict(_entry_facts(m), group="main" if no else "extra", season=no,
                         label=entry_label(m, roots, no),
                         online={"linked": mid in links, "available": bool(links.get(mid)) or reachable,
                                 "mode": (links.get(mid) or {}).get("mode")},
+                        rewatch={"started_at": rw["started_at"], "done": rw["done"]} if rw else None,
                         slots=entry_slots(m, local.get(mid, {}), links.get(mid), rows, arts.get(mid), reachable)))
     # Seasons named on their own (Monogatari: Nisemonogatari, Owarimonogatari)
     # leave the first one its own name too, not "Season 1".
@@ -332,7 +334,8 @@ def entry_watched(mid, watched, numbers=None):
     slots (`numbers`, or all) flips at once — a slot is one episode, file
     or online. Marking watched then publishes the entry's progress like a
     bulk mark (Decision 27: a click is the user acting), with the same fit
-    rule; unwatching stays local."""
+    rule; unwatching stays local. During an active rewatch run, marks update
+    that run's progress without erasing original watched facts."""
     page = franchise_view(mid, background=False)
     entry = next((e for e in page["entries"] if e["id"] == mid), None)
     if not entry:
@@ -340,6 +343,32 @@ def entry_watched(mid, watched, numbers=None):
     pick = set(numbers) if numbers is not None else None
     slots = [x for x in entry["slots"] if pick is None or x["number"] in pick]
     ids = [src["id"] for x in slots for src in (x["local"], x["online"]) if src]
+    ref = f"aid:{mid}"
+    rw = progress.rewatch_get(ref)
+    if rw and (pick is not None or watched):
+        with database.db() as c:
+            c.executemany("UPDATE episodes SET position=0 WHERE id=?", [(i,) for i in ids])
+        updated = progress.rewatch_mark(ref, [x["number"] for x in slots], bool(watched))
+        synced = None
+        if watched:
+            eps = [{"id": x["id"], "number": x["number"], "watched": True}
+                   for x in entry["slots"] if isinstance(x["number"], int) and x["number"] >= 1]
+            show = {"seasons": [{"episodes": eps, "releases": [
+                {"id": mid, "first_ep": 1, "last_ep": None, "offset": 0, "total": entry["episodes"]}]}]}
+            try:
+                synced = progress.anilist_track_show(show, manual=True)
+            except Exception as e:
+                util.log("entry sync failed: %s" % e)
+            playable = [x["number"] for x in entry["slots"]
+                        if x.get("local") or (x.get("online") and entry["online"]["available"])]
+            nums_all = playable or [x["number"] for x in entry["slots"]]
+            if updated and nums_all and all(n in set(updated["done"]) for n in nums_all):
+                progress.rewatch_end(ref)
+                updated = None
+        return {"ok": True, "episodes": len(slots), "ids": ids, "watched": bool(watched),
+                "synced": synced, "rewatch": updated}
+    if rw and not watched:
+        progress.rewatch_end(ref)
     with database.db() as c:
         # any mark drops the stop point: watched means done, unwatched starts over (Elias, 2026-10-24, 2026-11-06)
         c.executemany("INSERT INTO episodes(id,watched) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET watched=excluded.watched, position=0",
@@ -421,7 +450,14 @@ def stream_freshen_async(media_id):
 def prepare_next_slot(page, mid):
     """Get the entry's next episode ready when it would play online."""
     e = next((x for x in page["entries"] if x["id"] == mid), None)
-    x = next((x for x in e["slots"] if not x["watched"]), None) if e else None
+    if not e:
+        return
+    rw = e.get("rewatch")
+    if rw:
+        done = set(rw.get("done") or ())
+        x = next((x for x in e["slots"] if x["number"] not in done), None)
+    else:
+        x = next((x for x in e["slots"] if not x["watched"]), None)
     if x and x["online"] and not x["local"]:
         streaming.prepare_page(x["online"]["id"])
 
@@ -451,7 +487,8 @@ def franchise_view(mid, background=True, peek=False):
     ids = [m["id"] for m in entries]
     arts = mapping.entry_art_all(ids)
     online_ok = bool(anicli.anicli_path())
-    page = franchise_page(entries, scan, links, streaming._stream_rows(), arts, online_ok, streaming.stream_missed_ids())
+    page = franchise_page(entries, scan, links, streaming._stream_rows(), arts, online_ok,
+                          streaming.stream_missed_ids(), progress.rewatches_all())
     if not background:
         return dict(page, id=fid, selected=mid)
     sel = next((m for m in entries if m["id"] == mid), None)

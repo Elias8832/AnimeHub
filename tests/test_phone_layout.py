@@ -596,7 +596,7 @@ class PlayOnTheOtherSide(unittest.TestCase):
         # until the app is paired with one (TODO 263, Decision 104): then as in the browser.
         self.assertIn('const playWhere = () => { if (S.settings?.android && !S.pcPaired) return "phone";', APP)
         self.assertIn("const here = awayDevice() && (!S.settings?.android || S.pcPaired) ? ", APP)
-        self.assertIn('if (S.settings?.android) return pcPlay(id, fromStart, mode);', APP)  # "On the PC" goes through the app's hub, Sub/Dub too
+        self.assertIn('if (S.settings?.android) return pcPlay(id, fromStart, mode, rewatch);', APP)  # "On the PC" goes through the app's hub, Sub/Dub too
 
     def test_one_floating_player_at_a_time(self):
         # TODO 263 (Elias: "two pills", round 4: Play strip look): with the remote's
