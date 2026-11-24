@@ -372,11 +372,21 @@ def migration_30(c):
         c.execute("ALTER TABLE sync_peer ADD COLUMN take TEXT")
 
 
+def migration_31(c):
+    """Active rewatch runs (Decision 18.3): per entry ("aid:<AniList id>") or
+    unmatched folder ("sid:<show id>"), tracking the current rewatch run's
+    completed episodes (`done`) while preserving original watched facts.
+    `started_at` NULL marks an ended rewatch for peer sync."""
+    c.execute("""CREATE TABLE IF NOT EXISTS rewatches(
+        ref TEXT PRIMARY KEY, started_at TEXT, done TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL)""")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
               migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
-              migration_26, migration_27, migration_28, migration_29, migration_30]
+              migration_26, migration_27, migration_28, migration_29, migration_30, migration_31]
 
 
 def snapshot_before(target_version):

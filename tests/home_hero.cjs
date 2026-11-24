@@ -333,3 +333,55 @@ test("a finished season hands Home to the next season you have (TODO 275)", () =
   app = homepage({ ...data, story_next: undefined });
   assert.deepEqual(plain(app.keepWatching().map((x) => x.s.id)), ["Other"]);
 });
+
+test("an active rewatch tracks progress on Home, Continue watching, and mid-episode resume", () => {
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  const ep = (id, number, played = earlier, position = 1440) => ({ ...episode(id, played, true, position), number });
+  const s1 = { ...show("SPY x FAMILY", []), id: "aid:140960", kind: "stream", meta: { anilist_id: 140960 },
+    seasons: [{ key: 1, season: 1, label: "Episodes",
+      episodes: [ep("stream:140960:1", 1, latest), ep("stream:140960:2", 2, earlier, 600), ep("stream:140960:3", 3)],
+      releases: [{ id: 140960, first_ep: 1, last_ep: null, offset: 0 }] }] };
+  const other = show("Other", [episode("o1", "2026-10-13 10:00:00")]);
+  const data = { shows: [other], streams: [s1], continue: [], history: [s1.seasons[0].episodes[0], other.seasons[0].episodes[0]],
+    rewatches: { "aid:140960": { started_at: latest, done: [1] } } };
+  const app = homepage(data);
+  // E1 done in rewatch, E2 next (and paused at 600s -> resumable!)
+  assert.equal(app.slotSeen(s1, s1.seasons[0].episodes[0]), true);
+  assert.equal(app.slotSeen(s1, s1.seasons[0].episodes[1]), false);
+  const up = app.nextUpInfo();
+  assert.equal(up.s.id, "aid:140960");
+  assert.equal(up.ep.id, "stream:140960:2");
+  assert.equal(up.label, "Rewatching");
+  const html = app.Home();
+  assert.match(html, /rewatching/);
+  assert.match(html, /<span>Resume<\/span>/);
+  assert.match(html, /class="hbar"/); // mid-episode progress bar shows on watched rewatch episode
+  // Keep watching keeps the rewatching show when another show is newer
+  other.seasons[0].episodes[0].last_played = "2026-10-15 10:00:00";
+  assert.deepEqual(plain(app.keepWatching("Other").map((x) => [x.s.id, x.t.ep.id])), [["aid:140960", "stream:140960:2"]]);
+  // Ending the rewatch restores normal watched state (and clears mid-rewatch pause) so it leaves Continue watching
+  s1.seasons[0].episodes[1].position = 0;
+  data.rewatches = {};
+  assert.equal(app.slotSeen(s1, s1.seasons[0].episodes[1]), true);
+  assert.deepEqual(plain(app.keepWatching("Other").map((x) => x.s.id)), []);
+});
+
+test("a chained rewatch on an already-watched sequel hands Home to Season 2 E1", () => {
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  const ep = (id, number, played = null) => ({ ...episode(id, played, true, 0), number });
+  const stream = (mid, title, eps) => ({ ...show(title, []), id: "aid:" + mid, kind: "stream", meta: { anilist_id: mid },
+    seasons: [{ key: 1, season: 1, label: "Episodes", episodes: eps, releases: [{ id: mid, first_ep: 1, last_ep: null, offset: 0 }] }] });
+  const s1 = stream(140960, "SPY x FAMILY", [ep("stream:140960:1", 1, earlier), ep("stream:140960:2", 2, latest)]);
+  const s2 = stream(158927, "SPY x FAMILY Season 2", [ep("stream:158927:1", 1), ep("stream:158927:2", 2)]);
+  const other = show("Other", [episode("o1", "2026-10-13 10:00:00")]);
+  const app = homepage({
+    shows: [other], streams: [s1, s2], continue: [], history: [s1.seasons[0].episodes[1], other.seasons[0].episodes[0]],
+    story_next: { 140960: 158927 },
+    rewatches: { "aid:158927": { started_at: latest, done: [] } },
+  });
+  const up = app.nextUpInfo();
+  assert.equal(up.s.id, "aid:158927");
+  assert.equal(up.ep.id, "stream:158927:1");
+  assert.equal(up.label, "Rewatching");
+  assert.deepEqual(plain(app.keepWatching().map((x) => [x.s.id, x.t.ep.id])), [["aid:158927", "stream:158927:1"], ["Other", "o1"]]);
+});

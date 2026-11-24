@@ -98,9 +98,16 @@ def outbox_verify(payload, remote):
     (None = not on the list; one on Planning moves to Watching), or None
     when there is nothing to send: AniList already has this progress or
     more, or the entry is unlisted and auto-add was off when the row was
-    queued."""
+    queued. A rewatch verify row flips Completed -> Rewatching when below
+    the entry total."""
     p = payload["patch"].get("progress")
     if remote is not None:
+        if payload["verify"].get("rewatch"):
+            total = remote.get("episodes")
+            if remote.get("status") == "COMPLETED":
+                return {"status": "REPEATING", "progress": p} if (not total or p < total) else None
+            if remote.get("status") == "REPEATING":
+                return {"progress": p} if p > (remote.get("progress") or 0) else None
         if (remote.get("progress") or 0) >= p:
             return None
         return {"status": "CURRENT", "progress": p} if remote.get("status") == "PLANNING" else {"progress": p}

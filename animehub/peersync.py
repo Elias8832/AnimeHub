@@ -248,6 +248,60 @@ def apply_curation(rows):
     changed()
 
 
+# --- rewatch runs -------------------------------------------------------------
+
+def rewatch_facts():
+    with database.db() as c:
+        rows = c.execute("SELECT ref, started_at, done, updated_at FROM rewatches"
+                         " WHERE ref LIKE 'aid:%'").fetchall()
+    out = {}
+    for ref, started_at, done_s, updated_at in rows:
+        try:
+            done = json.loads(done_s) if done_s else []
+        except ValueError:
+            done = []
+        out[ref] = {"started_at": started_at, "done": done, "updated_at": updated_at or ""}
+    return out
+
+
+def check_rewatches(v):
+    """True when v isn't {aid:<id>: {started_at, done, updated_at}}."""
+    if not isinstance(v, dict):
+        return True
+    for ref, row in v.items():
+        if not (isinstance(ref, str) and AID_RE.match(ref) and isinstance(row, dict)):
+            return True
+        st, done, upd = row.get("started_at"), row.get("done"), row.get("updated_at")
+        if st is not None and not (isinstance(st, str) and len(st) <= 32):
+            return True
+        if not (isinstance(upd, str) and len(upd) <= 32):
+            return True
+        if not (isinstance(done, list) and len(done) <= 2000 and all(
+                isinstance(n, (int, float)) and not isinstance(n, bool) and n >= 0 for n in done)):
+            return True
+    return False
+
+
+def merge_rewatches(mine, theirs):
+    for_me = {r: v for r, v in theirs.items() if r not in mine or v["updated_at"] > mine[r]["updated_at"]}
+    for_them = {r: v for r, v in mine.items() if r not in theirs or v["updated_at"] > theirs[r]["updated_at"]}
+    return for_me, for_them
+
+
+def apply_rewatches(rows):
+    if not rows:
+        return
+    with database.db() as c:
+        c.executemany(
+            """INSERT INTO rewatches(ref, started_at, done, updated_at) VALUES(?,?,?,?)
+               ON CONFLICT(ref) DO UPDATE SET started_at=excluded.started_at,
+               done=excluded.done, updated_at=excluded.updated_at""",
+            [(ref, r.get("started_at"), json.dumps(r.get("done") or []), r["updated_at"])
+             for ref, r in rows.items()],
+        )
+    changed()
+
+
 # --- "Remove from Home" -----------------------------------------------------
 # Home's Continue watching keeps a show's removal by show id (Decision 81):
 # "aid:<id>" for an online show, a folder's own id for files. Between devices
@@ -334,9 +388,10 @@ def facts_payload():
     # every_slot (additive): "episodes" lists every slot, so a missing one
     # is "not here", not "unwatched". An older PC's answer lacks it.
     # home_hidden (additive): "Remove from Home"; an older PC lacks it.
+    # rewatches (additive): active/ended rewatch runs; an older PC lacks it.
     return {"version": VERSION, "name": socket.gethostname(), "episodes": episode_facts(),
             "every_slot": True, "playlists": playlist_facts(), "curation": curation_facts(),
-            "home_hidden": hidden_facts()}
+            "home_hidden": hidden_facts(), "rewatches": rewatch_facts()}
 
 
 def _check_fact(f):
@@ -382,6 +437,8 @@ def check_apply(body):
         return "'curation' must map 'aid:<id>' to an entry"
     if check_hidden(body.get("home_hidden", {"hidden": {}, "shown": {}})):
         return "'home_hidden' must hold 'hidden' and 'shown', each mapping an AniList id to when"
+    if check_rewatches(body.get("rewatches", {})):
+        return "'rewatches' must map 'aid:<id>' to {started_at, done, updated_at}"
     return None
 
 
@@ -400,6 +457,7 @@ def apply_payload(body):
     apply_playlists(body.get("playlists") or {}, body.get("gone") or {})
     apply_curation(body.get("curation") or {})
     apply_hidden(body.get("home_hidden"))
+    apply_rewatches(body.get("rewatches") or {})
     return {"ok": True, "applied": done}
 
 
@@ -769,6 +827,19 @@ def sync_once():
             if take_pc or theirs_hid is None or not (hid_them["hidden"] or hid_them["shown"]):
                 hid_them = {}  # "Use the PC's" sends nothing; an older PC has no "Remove from Home"
             n_hid_me = len(hid_me.get("hidden", {})) + len(hid_me.get("shown", {}))
+            theirs_rw = theirs.get("rewatches")
+            if theirs_rw is not None and check_rewatches(theirs_rw):
+                theirs_rw = None
+            own_rw = rewatch_facts()
+            drop_rw = []
+            if theirs_rw is None:
+                rw_me, rw_them = {}, {}
+            elif take_pc:
+                rw_me = {r: v for r, v in theirs_rw.items() if own_rw.get(r) != v}
+                rw_them = {}
+                drop_rw = [r for r in own_rw if r not in theirs_rw]
+            else:
+                rw_me, rw_them = merge_rewatches(own_rw, theirs_rw)
             to_me = episode_writes(mine, True, base, result)
             if renames:
                 with database.db() as c:
@@ -776,6 +847,8 @@ def sync_once():
             sent = {"episodes": to_them, "playlists": lists_them, "gone": gone_them, "curation": cur_them}
             if hid_them:
                 sent["home_hidden"] = hid_them
+            if rw_them:
+                sent["rewatches"] = rw_them
             got = _call(p["address"], "/api/sync/apply", p["token"], sent)[0] if any(sent.values()) else {"applied": []}
             there = set(got.get("applied") or [])
             here = set(apply_episodes(to_me, slots))
@@ -783,9 +856,14 @@ def sync_once():
             apply_curation(cur_me)
             if n_hid_me:
                 apply_hidden(hid_me)
+            apply_rewatches(rw_me)
             if drop_cur:
                 with database.db() as c:
                     c.executemany("DELETE FROM curation WHERE ref=?", [(r,) for r in drop_cur])
+                changed()
+            if drop_rw:
+                with database.db() as c:
+                    c.executemany("DELETE FROM rewatches WHERE ref=?", [(r,) for r in drop_rw])
                 changed()
             _link_in_progress({k: v[1] for k, v in to_me.items() if k in here}, slots)
             snap = {}
@@ -794,8 +872,8 @@ def sync_once():
                 keep = (base or {}).get(k) if held else v
                 if keep and _meaningful(keep):
                     snap[k] = keep
-            pulled = len(here) + len(lists_me) + len(gone_me) + len(cur_me) + len(drop_cur) + n_hid_me
-            pushed = len(there) + len(lists_them) + len(gone_them) + len(cur_them) + sum(map(len, hid_them.values()))
+            pulled = len(here) + len(lists_me) + len(gone_me) + len(cur_me) + len(drop_cur) + n_hid_me + len(rw_me) + len(drop_rw)
+            pushed = len(there) + len(lists_them) + len(gone_them) + len(cur_them) + sum(map(len, hid_them.values())) + len(rw_them)
             _state["last"] = {"pulled": pulled, "pushed": pushed}
             with database.db() as c:
                 c.execute("UPDATE sync_peer SET snapshot=?, last_ok=?, last_error=NULL, pc=?, take=NULL WHERE id=1",
@@ -878,7 +956,7 @@ def episode_for_slot(slot, online=False):
     return next((i for i in ids if not i.startswith("stream:")), None) or (ids[0] if ids else "stream:" + slot)
 
 
-def pc_play(ep_id, from_start=False, mode=None, vpn_ok=None, aniskip=None):
+def pc_play(ep_id, from_start=False, mode=None, vpn_ok=None, aniskip=None, rewatch=False):
     """POST /api/peer {op: "play"}: start this phone's episode on the paired
     PC, found there by its AniList slot. mode ("sub"/"dub"): online in that
     language, as the menu's Play dubbed / Play subbed. Without a VPN on the
@@ -894,7 +972,8 @@ def pc_play(ep_id, from_start=False, mode=None, vpn_ok=None, aniskip=None):
     try:
         got, _ = _call(p["address"], "/api/play", p["token"],
                        {"slot": slot, "from_start": bool(from_start), **({"mode": mode} if mode else {}),
-                        **({"vpn_ok": True} if vpn_ok else {}), **({"aniskip": aniskip} if aniskip is not None else {})},
+                        **({"vpn_ok": True} if vpn_ok else {}), **({"aniskip": aniskip} if aniskip is not None else {}),
+                        **({"rewatch": True} if rewatch else {})},
                        timeout=15)
     except SyncError as e:
         if "'id'" in str(e):  # a PC from before "slot"

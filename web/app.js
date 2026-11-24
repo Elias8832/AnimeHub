@@ -361,7 +361,24 @@ const epName = (s, sea, ep) => (spoils(ep) ? null : epTitle(s, sea, ep));
    watched when the same entry's online copy is, and the other way round.
    Any season of a folder too (TODO 265): its ranges say which entry each
    episode is, as the hub's mapping.release_units reads them. */
+/* Active rewatch run (Decision 18.3): a watched show keeps its permanent
+   watched facts while an active rewatch tracks this run's progress (`done`). */
+function epRw(s, ep) {
+  const rws = S.data?.rewatches;
+  if (!rws || !ep) return null;
+  const ix = epIndex(), k = ix?.slot.get(ep.id);
+  if (k) {
+    const i = k.indexOf(":"), ref = "aid:" + k.slice(0, i), rw = rws[ref];
+    return rw ? { ref, rw, key: +k.slice(i + 1) } : null;
+  }
+  const aid = s?.seasons?.length === 1 ? s.meta?.anilist_id : null;
+  if (aid && rws["aid:" + aid] && typeof ep.number === "number") return { ref: "aid:" + aid, rw: rws["aid:" + aid], key: ep.number };
+  const ref = s ? "sid:" + s.id : null, rw = ref && rws[ref];
+  return rw ? { ref, rw, key: ep.id } : null;
+}
 function slotSeen(s, ep) {
+  const r = epRw(s, ep);
+  if (r) return r.rw.done.includes(r.key);
   if (ep.watched) return true;
   const ix = epIndex(), k = ix?.slot.get(ep.id);
   return !!k && ix.bySlot.get(k).some((e) => e.watched);
@@ -386,10 +403,10 @@ function pickTarget(s) {
   /* A stopped rewatch (watched, under 92 %) leads only once nothing is left unwatched. */
   const allW = s.seasons.every((sea) => sea.episodes.every((e) => slotSeen(s, e)));
   for (const { sea } of ord) for (const ep of sea.episodes) {
-    if (resumable(ep) && (!slotSeen(s, ep) || allW) && (!resume || (ep.last_played || "") > (resume.ep.last_played || ""))) resume = { sea, ep, kind: "resume" };
+    if (resumable(ep) && (!slotSeen(s, ep) || allW) && (!resume || (ep.last_played || "") > (resume.ep.last_played || ""))) resume = { sea, ep, kind: "resume", rewatch: !!epRw(s, ep) };
   }
   if (resume) return resume;
-  for (const { sea } of ord) { const ep = sea.episodes.find((e) => !slotSeen(s, e)); if (ep) return { sea, ep, kind: "play" }; }
+  for (const { sea } of ord) { const ep = sea.episodes.find((e) => !slotSeen(s, e)); if (ep) return { sea, ep, kind: "play", rewatch: !!epRw(s, ep) }; }
   const first = ord.find((x) => x.sea.episodes.length);
   return first ? { sea: first.sea, ep: first.sea.episodes[0], kind: "rewatch" } : null;
 }
@@ -409,7 +426,7 @@ const streamEp = (ep) => ep.id.startsWith("stream:");
 let epIdx = null;
 function epIndex() {
   const d = S.data;
-  if (!d) return null;
+  if (!d || !Array.isArray(d.shows)) return null;
   const n = d.shows.length + (d.streams?.length || 0);
   if (!epIdx || epIdx.d !== d || epIdx.shows !== d.shows || epIdx.streams !== d.streams || epIdx.n !== n) {
     const at = new Map(), slot = new Map(), bySlot = new Map(); // episode → where it is; its slot; a slot's episodes (watch facts read live)
@@ -497,20 +514,22 @@ function nextUpInfo() {
     .sort((a, b) => (b.last_played || "").localeCompare(a.last_played || ""))[0];
   if (!newest) return null;
   const ctx = findEpContext(newest.id);
-  if (!slotSeen(ctx.s, ctx.ep)) return { ...ctx, label: "Continue watching", ep: ctx.ep };
+  const rwPick = (s, sea, ep, fallback) => { const rw = !!epRw(s, ep); return { s, sea, ep, label: rw ? "Rewatching" : fallback, rewatch: rw }; };
+  if (!slotSeen(ctx.s, ctx.ep)) return rwPick(ctx.s, ctx.sea, ctx.ep, "Continue watching");
   const after = ctx.sea.episodes.filter((e) => !slotSeen(ctx.s, e) && e.number > ctx.ep.number)[0];
   const anyUn = ctx.s.seasons.map((sea) => ({ sea, ep: sea.episodes.find((e) => !slotSeen(ctx.s, e)) })).filter((x) => x.ep)[0];
-  if (after) return { s: ctx.s, sea: ctx.sea, ep: after, label: "Up next" };
-  if (anyUn) return { s: ctx.s, sea: anyUn.sea, ep: anyUn.ep, label: "Up next" };
-  if (resumable(ctx.ep)) return { ...ctx, label: "Continue watching", ep: ctx.ep };
+  if (after) return rwPick(ctx.s, ctx.sea, after, "Up next");
+  if (anyUn) return rwPick(ctx.s, anyUn.sea, anyUn.ep, "Up next");
+  if (resumable(ctx.ep)) return rwPick(ctx.s, ctx.sea, ctx.ep, "Continue watching");
   /* All seen: the next season you have (TODO 275). */
   const q = sequelTarget(ctx.s);
-  if (q && !contHidden(q.s)) return { s: q.s, sea: q.t.sea, ep: q.t.ep, label: q.t.kind === "resume" ? "Continue watching" : "Up next" };
+  if (q && !contHidden(q.s)) return rwPick(q.s, q.t.sea, q.t.ep, q.t.kind === "resume" ? "Continue watching" : "Up next");
   /* A Rewatch banner only when nothing else is in progress: else the newest
      show from Continue watching leads instead. */
   const other = keepWatching()[0];
-  if (other) return { s: other.s, sea: other.t.sea, ep: other.t.ep, label: other.t.kind === "resume" ? "Continue watching" : "Up next" };
-  return { ...ctx, label: "Rewatch", ep: ctx.ep };
+  if (other) return rwPick(other.s, other.t.sea, other.t.ep, other.t.kind === "resume" ? "Continue watching" : "Up next");
+  const first = pickTarget(ctx.s);
+  return first ? { s: ctx.s, sea: first.sea, ep: first.ep, label: "Rewatch" } : { ...ctx, label: "Rewatch", ep: ctx.ep };
 }
 /* Watch facts on the model, in place (marked ids only, artwork untouched):
    the show page patches itself after a mark instead of rebuilding — see
@@ -520,7 +539,14 @@ function applyWatch(shows, ids, watched, reset) {
   let n = 0;
   for (const s of shows) for (const sea of s.seasons) for (const ep of sea.episodes) {
     if (!set.has(ep.id)) continue;
-    ep.watched = watched;
+    const r = !reset && epRw(s, ep);
+    if (r) {
+      const done = new Set(r.rw.done);
+      watched ? done.add(r.key) : done.delete(r.key);
+      r.rw.done = [...done];
+    } else {
+      ep.watched = watched;
+    }
     ep.position = 0; // any mark drops the stop point: watched means done, unwatched starts over
     if (reset) ep.last_played = null;
     n++;
@@ -707,7 +733,7 @@ function heroHTML(up, wide = false) {
   const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = resumable(ep);
   const len = ep.duration || ep.length, left = started ? `${fmtLeft(ep.duration, ep.position)} left` : len ? `${Math.round(len / 60)} min` : "";
   const src = streamEp(ep) ? "online" : "on disk";
-  const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
+  const verb = up.label === "Rewatch" ? "Rewatch" : started ? "Resume" : "Play";
   const code = epCode(sea, ep), name = epName(s, sea, ep);
   const sub = name ? `${code} · ${name}` : wide && +(/^(?:S\d+)?E(\d+)$/.exec(code)?.[1]) === ep.number ? `Episode ${ep.number}` : `${code} · Episode ${ep.number}`;
   let prog = "";
@@ -720,7 +746,7 @@ function heroHTML(up, wide = false) {
     <div class="sub">${esc(sub)}</div>
     <div class="facts">${[left, src].filter(Boolean).map(esc).join('<i class="sep"></i>')}</div>
     ${prog}
-    <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb}</span></button></div>
+    <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}"${up.label === "Rewatch" ? ' data-rw="1"' : ""}>${ico("play")}<span>${verb}</span></button></div>
   </div></div>`; // no Open show (Elias): the whole banner opens it
 }
 /* One tile per show you actually played, newest first, each pointing at the
@@ -749,9 +775,9 @@ function keepWatching(skipId) {
 }
 /* The caption is only what's left and where (TODO 236): the episode's name was cut off at this width. */
 function contCard({ s, t }, k) {
-  const ep = t.ep, part = resumable(ep), p = part ? Math.min(100, (ep.position / ep.duration) * 100) : 0;
+  const ep = t.ep, p = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, part = resumable(ep);
   const art = safeThumb(t.sea, ep) || s.banner || s.poster;
-  const meta = [part ? `${fmtLeft(ep.duration, ep.position)} left` : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
+  const meta = [part ? `${fmtLeft(ep.duration, ep.position)} left` : t.rewatch ? "rewatching" : "", streamEp(ep) ? "online" : "disk"].filter(Boolean).join(" · ");
   return `<div class="hc${isPlayingShow(s.id) ? " now" : ""}" style="--i:${k}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}" tabindex="0">
     <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:${safeThumb(t.sea, ep) ? "50% 50%" : "50% 30%"}"></span>` : ""}
     <span class="enum">${esc(epCode(t.sea, ep))}</span>${part ? `<i class="eprog"><i style="width:${p}%"></i></i>` : ""}
@@ -1786,7 +1812,7 @@ function plRowMenu(ref, x, y, targetEl = null) {
   /* A finished show (or movie) still plays: it says Rewatch (Elias, 2026-11-12). */
   const st = plState(it), t = st.show ? pickTarget(st.show) : null, m = $("#cm");
   const again = (st.fin && t?.kind !== "resume") || t?.kind === "rewatch";
-  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`, "↵") : "";
+  const play = t ? cmRow("play", t.ep.id, again ? "refresh" : "play", `${again ? "Rewatch" : resumable(t.ep) ? "Resume" : "Play"}${epTotal(st.show) > 1 ? " " + esc(epCode(t.sea, t.ep)) : ""}`, "↵", "", again ? 'data-rw="1"' : "") : "";
   /* A phone's rows and posters have no arrows on them (Elias: too cramped): moving is here. */
   const at = p.items.indexOf(it), move = isPhone() || (p.view === "posters" && mq("(pointer:coarse)")) ? (at > 0 ? cmRow("plmove", ref, "chevl", "Move earlier", "", "", 'data-d="-1"') : "") + (at < p.items.length - 1 ? cmRow("plmove", ref, "chevr", "Move later", "", "", 'data-d="1"') : "") : "";
   const art = st.entry?.poster || st.show?.poster || it.poster, col = st.entry?.color || p.color || "";
@@ -1819,7 +1845,8 @@ function contMenu(id, epId, x, y, targetEl = null) {
   const ey = ep ? [epCode(ctx.sea, ep), src].filter(Boolean).join(" · ") : "Continue watching";
   const fact = ep && part ? `${fmtLeft(ep.duration, ep.position)} left` : "";
   const head = cmHead({ eyebrow: ey, title: s.title, fact, art, kind: "still", pos, pct });
-  const rows = `${ep ? cmRow("play", ep.id, "play", `${part ? "Resume" : "Play"} ${esc(epCode(ctx.sea, ep))}`, "↵") + cmOther(ep.id) : ""}${cmRow("open", s.id, "arrowr", "Open show", "O")}<div class="sep danger-sep"></div>${cmRow("cwhide", s.id, "close", "Remove from Home", "Del", "", 'data-danger="1"')}`;
+  const rw = ep && epRw(s, ep);
+  const rows = `${ep ? cmRow("play", ep.id, "play", `${part ? "Resume" : "Play"} ${esc(epCode(ctx.sea, ep))}`, "↵") + cmOther(ep.id) : ""}${cmRow("open", s.id, "arrowr", "Open show", "O")}<div class="sep danger-sep"></div>${rw ? cmRow("rwend", rw.ref, "undo", "End rewatch", "", "", 'data-warn="1"') : ""}${cmRow("cwhide", s.id, "close", "Remove from Home", "Del", "", 'data-danger="1"')}`;
   m.innerHTML = cmWrap(head, rows);
   cmShow(m, x, y, targetEl, accentHex(s) || "");
 }
@@ -2659,12 +2686,12 @@ function epTile(s, sea, ep, tgId, i = 0) {
   const pos = rt ? "50% 50%" : s.poster ? "50% 22%" : "50% 50%";
   const pct = ep.duration ? Math.min(100, (100 * ep.position) / ep.duration) : 0;
   const part = resumable(ep);
-  const files = ep.files || [], loading = epLoading(ep.id);
+  const files = ep.files || [], loading = epLoading(ep.id), done = slotSeen(s, ep);
   const picking = S.sel?.show === s.id, picked = picking && S.sel.ids.has(ep.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", ep.watched && !part ? "watched" : "", ep.id === tgId && part ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done && !part ? "watched" : "", ep.id === tgId && part ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
   const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep);
   const meta = loading ? "loading…" : part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}${files.length > 1 ? ` · ${files.length} versions` : ""}`;
-  return tileHTML({ cls, a: "playep", v: ep.id, i, art, pos, num: "E" + String(ep.number).padStart(2, "0"), pct: part ? pct : 0, loading, watched: ep.watched && !part,
+  return tileHTML({ cls, a: "playep", v: ep.id, i, art, pos, num: "E" + String(ep.number).padStart(2, "0"), pct: part ? pct : 0, loading, watched: done && !part,
     picking, picked, title: epName(s, sea, ep) || "Episode " + ep.number, meta, menu: `Episode ${ep.number} menu` });
 }
 /* Multi-select (S.sel = { show, ids, anchor }): tiles toggle instead of
@@ -2760,15 +2787,18 @@ function frFind(id) {
   for (const e of S.fr?.page?.entries || []) for (const x of e.slots) if (x.id === id || x.local?.id === id || x.online?.id === id) return { e, x };
   return null;
 }
+/* Active rewatch run for a franchise entry (Decision 18.3). */
+const frRw = (e) => e?.rewatch || S.data?.rewatches?.["aid:" + e?.id] || null;
+const slotDone = (e, x) => { const rw = frRw(e); return rw ? rw.done.includes(x.number) : !!x.watched; };
 /* What the big button plays: the episode left half-watched most recently,
    else the first unwatched one, else the first (rewatch). */
 function frTarget(e) {
   const slots = e.slots.filter((x) => playableSlot(e, x));
   let resume = null;
-  const allW = slots.every((x) => x.watched);
-  for (const x of slots) if (resumable(x) && (!x.watched || allW) && (!resume || (x.last_played || "") > (resume.last_played || ""))) resume = x;
+  const allW = slots.every((x) => slotDone(e, x));
+  for (const x of slots) if (resumable(x) && (!slotDone(e, x) || allW) && (!resume || (x.last_played || "") > (resume.last_played || ""))) resume = x;
   if (resume) return { x: resume, kind: "resume" };
-  const next = slots.find((x) => !x.watched);
+  const next = slots.find((x) => !slotDone(e, x));
   if (next) return { x: next, kind: "play" };
   return slots[0] ? { x: slots[0], kind: "rewatch" } : null;
 }
@@ -2872,14 +2902,34 @@ function frRepaint() {
   const sig = frSig();
   if (sig !== frLastSig || !$("#app .frpage")) { softRender(); return; }
   patchShow(Fran);
+  const e = frEntry();
+  if (e && S.entry?.mid === e.id && S.entry.f && !S.entry.svc) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
 }
-function frApplyWatch(e, numbers, watched, reset) {
+function frApplyWatch(e, numbers, watched, reset, rwRes) {
   const pick = numbers ? new Set(numbers) : null;
-  for (const x of e.slots) {
-    if (pick && !pick.has(x.number)) continue;
-    x.watched = watched;
-    x.position = 0; // any mark drops the stop point: watched means done, unwatched starts over
-    if (reset) x.last_played = null;
+  const ref = "aid:" + e.id;
+  if (rwRes !== undefined) {
+    e.rewatch = rwRes;
+    if (S.data) { S.data.rewatches ||= {}; if (rwRes) S.data.rewatches[ref] = rwRes; else delete S.data.rewatches[ref]; }
+  }
+  const rw = !reset && rwRes === undefined ? frRw(e) : null;
+  if (rw) {
+    const done = new Set(rw.done);
+    for (const x of e.slots) {
+      if (pick && !pick.has(x.number)) continue;
+      watched ? done.add(x.number) : done.delete(x.number);
+      x.position = 0;
+    }
+    rw.done = [...done];
+    if (e.rewatch) e.rewatch.done = rw.done;
+    if (S.data?.rewatches?.[ref]) S.data.rewatches[ref].done = rw.done;
+  } else {
+    for (const x of e.slots) {
+      if (pick && !pick.has(x.number)) continue;
+      if (rwRes === undefined) x.watched = watched;
+      x.position = 0; // any mark drops the stop point: watched means done, unwatched starts over
+      if (reset) x.last_played = null;
+    }
   }
   frRepaint();
   loadEntry(e.id);
@@ -2890,24 +2940,24 @@ function frMark(e, numbers, watched) {
     if (!r || r.error) { toast(r?.error || "Could not save — is the hub running?"); return false; }
     toast(watched ? `Marked ${r.episodes} episode${r.episodes === 1 ? "" : "s"} watched${r.synced ? " — will sync" : ""}`
       : `Removed watched marks from ${r.episodes} episode${r.episodes === 1 ? "" : "s"}`);
-    frApplyWatch(e, numbers, watched, false);
+    frApplyWatch(e, numbers, watched, false, "rewatch" in r ? r.rewatch : undefined);
     return true;
   }).catch(() => { toast("Could not save — is the hub running?"); return false; });
 }
 function slotTile(p, e, x, tgId, i = 0) {
   const art = x.thumb || e.poster || p.poster || e.banner;
   const pos = x.thumb ? "50% 50%" : e.poster || p.poster ? "50% 22%" : "50% 50%";
-  const pct = x.duration ? Math.min(100, (100 * x.position) / x.duration) : 0, part = resumable(x);
+  const pct = x.duration ? Math.min(100, (100 * x.position) / x.duration) : 0, part = resumable(x), done = slotDone(e, x);
   const ok = playableSlot(e, x), loading = slotIds(x).some(epLoading), job = x.online && !x.local && dlJob(x.online.id);
   const picking = S.sel?.show === frSelKey(), picked = picking && S.sel.ids.has(x.id);
-  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", x.watched && !part ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
+  const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done && !part ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
   const files = x.local?.files || [], mins = minsOf(x.duration || x.length, e.duration);
   const src = x.local ? `disk · ${fileLangs({ files })}` : ok ? `online · ${e.online.mode || S.settings?.stream?.mode || "sub"}` : "not available";
   const meta = loading ? "loading…" : job ? (job.status === "running" ? `downloading · ${Math.floor(job.percent)}%` : "waiting to download")
     : part ? `${fmtLeft(x.duration, x.position)} left · ${src}` : `${mins ? mins + " min · " : ""}${src}`;
   const movie = e.format === "MOVIE" && e.slots.length <= 1;
   return tileHTML({ cls, a: ok ? "playep" : "unavail", v: x.id, i, art, pos, num: movie ? "Movie" : "E" + String(x.number).padStart(2, "0"),
-    pct: part ? pct : 0, dlPct: job?.status === "running" ? job.percent : null, loading, watched: x.watched && !part, picking, picked,
+    pct: part ? pct : 0, dlPct: job?.status === "running" ? job.percent : null, loading, watched: done && !part, picking, picked,
     title: (!spoils(x) && x.title) || (movie ? e.label : "Episode " + x.number), meta, menu: `Episode ${x.number} menu` });
 }
 /* Files of the franchise's folders that are no entry ("Specials"): plain
@@ -2978,8 +3028,8 @@ function Fran() {
   const ordIds = new Set((p.order || []).length >= 2 ? p.order.filter((x) => x.on_page).map((x) => x.id) : []);
   const byOrder = p.entries.length > 1 && p.entries.every((x) => ordIds.has(x.id));
   const tabs = p.entries.length < 2 || byOrder ? "" : `${main.length ? `<div class="rels" data-glide="frmain">${main.map((x) => chip(x)).join("")}</div>` : ""}${extra.length ? `<div class="rels extra" data-glide="frextra">${extra.map((x) => chip(x, true)).join("")}</div>` : ""}`;
-  const ready = !!S.data.stream_ready, linked = e.online.linked;
-  const seen = e.slots.filter((x) => playableSlot(e, x)), allW = seen.length > 0 && seen.every((x) => x.watched);
+  const ready = !!S.data.stream_ready, linked = e.online.linked, rw = frRw(e);
+  const seen = e.slots.filter((x) => playableSlot(e, x)), allW = seen.length > 0 && seen.every((x) => slotDone(e, x));
   const missing = ready && e.online.available ? e.slots.filter((x) => x.online && !x.local && !dlJob(x.online.id)) : [];
   const mBusy = S.modeBusy === e.id, curMode = e.online.mode || S.settings?.stream?.mode || "sub";
   const modeSeg = ready && linked ? `<span class="seg${mBusy ? " busy" : ""}" role="group" aria-label="Audio for online episodes" title="Audio for online episodes">${SLMODES.map(([m, l]) => `<button class="${curMode === m ? "on" : ""}" aria-pressed="${curMode === m}" data-a="smode" data-v="${m}" ${mBusy ? "disabled" : ""}>${mBusy && curMode !== m ? '<i class="spin"></i>' : ""}${l}</button>`).join("")}</span>` : "";
@@ -3004,7 +3054,8 @@ function Fran() {
   const title = e.title || p.title;
   const ph = isPhone(); // phones show these as a row of icons with short words (TODO 177)
   const dlBtn = missing.length ? `<button class="gb" data-a="dlmany" data-v="${e.id}" data-eps="${esc(JSON.stringify(missing.map((x) => x.online.token)))}">${ico("download")}<span>${esc(ph ? "Download" : dlLabel)}</span>${vpnTag}</button>` : "";
-  const bulkBtn = seen.length ? `<button class="gb" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}<span>${allW ? (movie || ph ? "Unwatch" : "Unwatch all") : movie ? "Mark watched" : ph ? "All watched" : "Mark all watched"}</span></button>` : "";
+  const bulkBtn = rw ? `<button class="gb" data-a="rwend" data-v="aid:${e.id}">${ico("undo")}<span>End rewatch</span></button>`
+    : seen.length ? `<button class="gb" data-a="frbulk" data-w="${!allW}">${ico(allW ? "undo" : "check")}<span>${allW ? (movie || ph ? "Unwatch" : "Unwatch all") : movie ? "Mark watched" : ph ? "All watched" : "Mark all watched"}</span></button>` : "";
   return `<div class="sp2 frpage">${backBtn()}
   <div class="fold">
   <div class="hero${framed ? " framed" : ""}"><div class="hl2">
@@ -3012,7 +3063,7 @@ function Fran() {
     <h1 class="${title.length > 26 ? "long" : title.length > 14 ? "mid" : ""}">${esc(title)}</h1>
     ${e.overview ? `<p class="desc" data-a="descx">${esc(e.overview)}</p>` : ""}
     <div class="stats2" id="entrystats"></div>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button><button class="btn ic ctamore" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.x.id)}"${tg.kind === "rewatch" ? ' data-rw="1"' : ""}>${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button><button class="btn ic ctamore" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}<span class="grp">${dlBtn}${bulkBtn}<span id="entryacts">${entryActs(S.entry?.mid === e.id ? S.entry.f : null, false)}</span><i class="gsep"></i><button class="gb ic" aria-label="More" title="More" data-a="frmore">${ico("dots")}</button></span></div>
   </div>${framed ? `<div class="hp">${poster(title, e.poster || p.poster)}</div>` : ""}</div>
   ${p.building ? '<p class="sub frbuild"><i class="spin"></i> Finding the other seasons and movies…</p>' : ""}
   <div class="eps-head"><div class="tabs2">${tabs || (byOrder ? frPick(p, e) : `<h2>${esc(movie ? "Movie" : "Episodes")}</h2>`)}</div><span class="srcl">${esc(srcLine)}</span><div class="ctl">${modeSeg}${e.slots.length > 4 ? `<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left">${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button>` : ""}</div></div>
@@ -3138,7 +3189,10 @@ function frMore(x0, y0, targetEl = null) {
   const title = e.title || p.title, showLbl = e.label && !title.toLowerCase().includes(e.label.toLowerCase()) ? e.label : "";
   const ey = showLbl || [fmtName(e.format), e.year].filter(Boolean).join(" · ");
   const fact = [localN ? (localN === tot ? `all ${localN} on disk` : `${localN} on disk`) : tot ? `${tot} episodes` : ""].filter(Boolean).join(" · ");
+  const rw = frRw(e), seen = e.slots.filter((x) => playableSlot(e, x)), allW = seen.length > 0 && seen.every((x) => x.watched);
   const main = [
+    rw ? cmRow("rwend", "aid:" + e.id, "undo", "End rewatch", "", "", 'data-warn="1"')
+      : allW && frTarget(e)?.kind !== "rewatch" ? cmRow("rwstart", "aid:" + e.id, "refresh", "Start rewatch") : "",
     cmRow("pladd", "", "list", "Add to playlist", "L", "", `data-r="aid:${e.id}" data-t="${esc(title)}" data-p="${esc(art || "")}" data-c="${esc(col)}"`),
     e.slots.some((x) => playableSlot(e, x)) ? cmRow("selmode", "", "checkc", picking ? "Stop selecting" : "Select episodes", "S") : "",
     folders.length ? cmRow("folder", folders[0].show_id, "folder", "Open the folder", "F") : "",
@@ -3361,7 +3415,7 @@ function cmOther(id) {
   const to = pw === "phone" ? "pc" : "phone";
   return cmRow("playon", id, to === "pc" ? "tv" : "phone", to === "pc" ? "Play on the PC" : "Play on this phone", "", "", `data-where="${to}"`);
 }
-function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, dl, fix, playable = true }) {
+function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, dl, fix, playable = true, watched = ep.watched }) {
   const vpn = S.data?.vpn, vpnTag = !vpn?.known ? "" : vpn.active ? '<span class="v ok">vpn ✓</span>' : '<span class="v warn">no vpn</span>';
   const res = resumable(ep), rows = [];
   if (playable) rows.push(cmRow("playep", id, "play", res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"));
@@ -3371,7 +3425,7 @@ function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, d
   const modeWord = (m) => (m === "dub" ? "dubbed" : "subbed");
   if (local && online) rows.push(cmRow("playmode", onlineId, "radio", `Play ${modeWord(mode)} online`, "O", "", `data-m="${mode}"`));
   if (online) rows.push(cmRow("playmode", onlineId, "cc", `Play ${modeWord(other)}${local ? " online" : ""}`, "A", "", `data-m="${other}"`));
-  const done = ep.watched && !res;
+  const done = watched && !res;
   const mid = [cmRow("mark", id, done ? "undo" : "check", done ? "Mark as unwatched" : "Mark as watched", "W", "", `data-w="${!done}" data-warn="1"`)];
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
   if (res) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
@@ -3398,7 +3452,7 @@ function frCm(id, x0, y0, targetEl = null) {
   const title = hasTitle ? x.title : movie ? (e.label || p?.title || "Movie") : `Episode ${String(x.number).padStart(2, "0")}`;
   const head = cmHead({ eyebrow, title, fact, art, kind: "still", pos, pct, spoil: !!(x.thumb && spoils(x)) });
   const rows = cmItems({ id: x.id, ep: x, files, verId: x.local?.id, online, onlineId: x.online?.id, mode, other, local: !!x.local, playable: playableSlot(e, x),
-    dl: online && !x.local && !dlJob(x.online.id), fix: !!S.data.stream_ready && !!x.online });
+    watched: slotDone(e, x), dl: online && !x.local && !dlJob(x.online.id), fix: !!S.data.stream_ready && !!x.online });
   m.innerHTML = cmWrap(head, rows);
   cmShow(m, x0, y0, targetEl, cmAccent(e.color || p?.color || ""));
   return true;
@@ -3418,15 +3472,15 @@ function Det() {
   const matched = !!s.meta?.anilist_id;
   const goLabel = tg ? `${KIND_WORD[tg.kind]}${movie || tg.kind === "rewatch" ? "" : " " + epCode(tg.sea, tg.ep)}` : "";
   const goBusy = tg && epLoading(tg.ep.id);
-  const flat = s.seasons.flatMap((x) => x.episodes);
-  const seaAll = sea && sea.episodes.length > 0 && sea.episodes.every((e) => e.watched), showAll = flat.length > 0 && flat.every((e) => e.watched);
+  const flat = s.seasons.flatMap((x) => x.episodes), rw = S.data?.rewatches?.["sid:" + s.id] || null;
+  const seaAll = sea && sea.episodes.length > 0 && sea.episodes.every((e) => slotSeen(s, e)), showAll = flat.length > 0 && flat.every((e) => slotSeen(s, e));
   const playing = isPlayingShow(s.id) ? `<span class="playing"><i class="led"></i>${S.data.now.loading ? "loading" : "playing"} · ${esc(S.data.now.label)}</span>` : "";
   const facts = [s.path_label || s.path || s.title, `${epTotal(s)} episodes`, matched ? "AniList unreachable — showing the folder" : s.kept_local ? "on this PC only" : "not matched yet"];
   return `<div class="sp2">${backBtn()}
   <div class="hero${s.poster ? " framed" : " bare"}"><div class="hl2">
     <div class="meta">${factLine(facts, e)}${playing}</div>
     <h1 class="${s.title.length > 26 ? "long" : s.title.length > 14 ? "mid" : ""}">${esc(s.title)}</h1>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}">${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${sea && sea.episodes.length ? `<button class="gb" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}<span>${seaAll ? "Unwatch season" : "Mark season watched"}</span></button>` : ""}${s.seasons.length > 1 && flat.length ? `<button class="gb" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}<span>${showAll ? "Unwatch all" : "Mark all watched"}</span></button>` : ""}${flat.length ? `<button class="gb${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}<span>${S.sel?.show === s.id ? "Done" : "Select"}</span></button>` : ""}<i class="gsep"></i><button class="gb ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>${s.path && flat.length ? `<button class="gb ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</span></div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}"${tg.kind === "rewatch" ? ' data-rw="1"' : ""}>${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${rw ? `<button class="gb" data-a="rwend" data-v="sid:${esc(s.id)}">${ico("undo")}<span>End rewatch</span></button>` : `${sea && sea.episodes.length ? `<button class="gb" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}<span>${seaAll ? "Unwatch season" : "Mark season watched"}</span></button>` : ""}${s.seasons.length > 1 && flat.length ? `<button class="gb" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}<span>${showAll ? "Unwatch all" : "Mark all watched"}</span></button>` : ""}`}${flat.length ? `<button class="gb${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}<span>${S.sel?.show === s.id ? "Done" : "Select"}</span></button>` : ""}<i class="gsep"></i><button class="gb ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>${s.path && flat.length ? `<button class="gb ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</span></div>
   </div>${s.poster ? `<div class="hp">${poster(s.title, s.poster)}</div>` : ""}</div>
   ${matched ? "" : `<div class="matchbox">${(autoSuggest([s]), matchTease(s))}</div>`}
   <div class="eps-head"><div class="tabs2">${s.seasons.length > 1 ? `<div class="rels" data-glide="seasons">${s.seasons.map((x, i) => `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${x.episodes.length ? `<span class="n">· ${x.episodes.length}</span>` : ""}</button>`).join("")}</div>` : `<h2>${movie ? "Movie" : "Episodes"}</h2>`}</div>
@@ -3528,13 +3582,15 @@ function entryHTML(f, pending) {
 function entryStats(f, pending) {
   if (!f.status && !pending) return `<p class="mline"><span>not on your list yet</span><button class="add" data-a="eadd">${ico("plus")}add to planning</button></p>`;
   const max = f.score_max || 10, show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
+  const rw = fe ? (fe.rewatch || S.data?.rewatches?.["aid:" + fe.id] || null) : null;
   const total = f.media?.episodes || fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
-  const got = Math.min(total || Infinity, f.local || f.progress == null ? (fe ? fe.slots.filter((x) => x.watched).length : show ? epWatched(show) : 0) : f.progress);
+  const got = Math.min(total || Infinity, rw ? rw.done.length : f.local || f.progress == null ? (fe ? fe.slots.filter((x) => x.watched).length : show ? epWatched(show) : 0) : f.progress);
   const since = f.completed_at ? "until " + f.completed_at : f.started_at ? "since " + f.started_at : "";
   const where = pending ? '<span class="warn">waiting to sync</span>' : f.local ? "<span>on this PC</span>" : "";
+  const stWord = rw ? "rewatching" : statusLabel(f.status).toLowerCase();
   const bar = !total ? "" : total <= 40 && isTabletP() ? `<span class="ticks">${Array.from({ length: total }, (_, i) => `<i class="${i < got ? "s" : ""}" style="--i:${i}"></i>`).join("")}</span>`
     : `<span class="tline"><i style="width:${(100 * got / total).toFixed(1)}%"></i></span>`;
-  return `<button class="mline" data-a="edit" title="Edit entry"><b>${esc(statusLabel(f.status).toLowerCase())}</b><i class="sep"></i><span>your score ${f.score ? esc(f.score) : "–"}${max !== 10 ? " / " + max : ""}</span>${since ? `<i class="sep"></i><span>${esc(since)}</span>` : ""}${where ? `<i class="sep"></i>${where}` : ""}</button>
+  return `<button class="mline" data-a="edit" title="Edit entry"><b>${esc(stWord)}</b><i class="sep"></i><span>your score ${f.score ? esc(f.score) : "–"}${max !== 10 ? " / " + max : ""}</span>${since ? `<i class="sep"></i><span>${esc(since)}</span>` : ""}${where ? `<i class="sep"></i>${where}` : ""}</button>
     ${total > 1 ? `<div class="tbar">${bar}<span>${got}/${total}</span></div>` : ""}${aheadLine(f, pending, fe)}`;
 }
 /* The actions that depend on your entry, inside the page's action pill:
@@ -3549,7 +3605,9 @@ function entryActs(f, pending) {
    One click and Play moves on (Elias, 2026-11-04). */
 function aheadLine(f, pending, fe) {
   if (!fe || f.local || pending || !(f.progress > 0)) return "";
-  const nums = fe.slots.filter((x) => typeof x.number === "number" && x.number <= f.progress && !x.watched && (x.local || x.online)).map((x) => x.number);
+  const rw = fe.rewatch || (typeof S !== "undefined" && S.data?.rewatches?.["aid:" + fe.id]) || null;
+  if (rw && f.status !== "REPEATING") return "";
+  const nums = fe.slots.filter((x) => typeof x.number === "number" && x.number <= f.progress && !(rw ? rw.done.includes(x.number) : x.watched) && (x.local || x.online)).map((x) => x.number);
   if (!nums.length) return "";
   const movie = fe.format === "MOVIE" && fe.slots.length <= 1;
   return `<p class="ahead"><span>${movie ? "watched on " + acct() : `${acct()} is at ep ${f.progress}`}</span><i class="sep"></i><button class="lnk" data-a="frahead" data-v="${esc(JSON.stringify(nums))}">${movie ? "mark watched here" : `catch up to ep ${f.progress}`}${ico("chevr")}</button></p>`;
@@ -5223,8 +5281,8 @@ function airRow(e, now = Date.now()) {
 }
 /* A show you're watching as one row: poster, title, what's next, play. */
 function watchRow({ s, t }) {
-  const sea = t.sea, seen = sea.episodes.filter((x) => x.watched).length;
-  return `<div class="prow" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(t.ep.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : "next"} · ${seen}/${sea.episodes.length}</small></span>
+  const sea = t.sea, seen = sea.episodes.filter((x) => slotSeen(s, x)).length;
+  return `<div class="prow" data-a="open" data-v="${esc(s.id)}" data-cw="${esc(s.id)}" data-cwep="${esc(t.ep.id)}" tabindex="0">${poster(s.title, s.poster, { c: "pp" })}<span class="pt"><b>${esc(s.title)}</b><small>${esc(epCode(sea, t.ep))} ${t.kind === "resume" ? "· " + esc(fmtLeft(t.ep.duration, t.ep.position)) + " left" : t.rewatch ? "· rewatching" : "next"} · ${seen}/${sea.episodes.length}</small></span>
     <button class="btn ic" data-a="play" data-v="${esc(t.ep.id)}" aria-label="${esc(KIND_WORD[t.kind])} ${esc(s.title)}">${ico("play")}</button></div>`;
 }
 /* Home A (TODO 177, Elias picked it): the up-next as an edge-to-edge hero,
@@ -5234,13 +5292,13 @@ function upHero(up) {
   const { seen, tot } = seasonBar(s, sea);
   /* like the PC's banner (Decision 96): this episode's bar once it's started, nothing before (TODO 236) */
   const pct = ep.duration ? Math.min(100, (ep.position / ep.duration) * 100) : 0, started = resumable(ep);
-  const verb = up.label === "Rewatch" ? "Rewatch" : resumable(ep) ? "Resume" : "Play";
+  const verb = up.label === "Rewatch" ? "Rewatch" : started ? "Resume" : "Play";
   const code = epCode(sea, ep), nm = epName(s, sea, ep); // a nameless episode said once: "Episode 1", not "E1 · Episode 1" (Decision 96)
   return `<div class="uph" data-cw="${esc(s.id)}" data-cwep="${esc(ep.id)}"><button class="uph-art" data-a="open" data-v="${esc(s.id)}" aria-label="Open ${esc(s.title)}" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(s.title)}`}"></button>
     <div class="uph-in" data-a="open" data-v="${esc(s.id)}"><div class="eye">${esc(dayWord(new Date().getHours()).toLowerCase())} · ${esc(up.label.toLowerCase())} · ${streamEp(ep) ? "online" : "on disk"}${isPlayingShow(s.id) ? ' · <span class="ok">playing now</span>' : ""}</div>
     <h2>${esc(s.title)}</h2><div class="sub">${esc(nm ? `${code} · ${nm}` : +(/^(?:S\d+)?E(\d+)$/.exec(code)?.[1]) === ep.number ? `Episode ${ep.number}` : `${code} · Episode ${ep.number}`)}${tot > 1 ? ` · ${seen} of ${tot}` : ""}</div>
     ${started ? `<div class="hbar"><i style="width:${pct.toFixed(1)}%"></i></div>` : ""}
-    <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}">${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div></div>`; // the whole card opens the show; Play plays (Elias)
+    <div class="uph-go"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}"${up.label === "Rewatch" ? ' data-rw="1"' : ""}>${ico("play")}<span>${verb} ${esc(epCode(sea, ep))}</span></button></div></div></div>`; // the whole card opens the show; Play plays (Elias)
 }
 function contStill({ s, t }) {
   const ep = t.ep, sea = t.sea, art = safeThumb(sea, ep) || s.banner || s.poster;
@@ -5642,7 +5700,7 @@ function playStrip(b, tile, more) {
   const label = b.querySelector("span")?.textContent.trim() || "", verb = b.classList.contains("loading") ? label : label.split(" ")[0];
   const head = [num, name && name !== num ? name : ""].filter(Boolean).join(" · ");
   return `<div class="pbar strip"><span class="pbi"${art ? ` style="background-image:${esc(cssUrl(art))}"` : ""}></span><span class="pbt"><b>${esc(head)}</b>${meta ? `<small>${esc(meta)}</small>` : ""}</span>`
-    + `${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}<button class="${esc(b.className.replace(/\s*\bbig\b/, ""))}" data-a="play" data-v="${esc(b.dataset.v)}">${b.querySelector(".spin, .ico")?.outerHTML || ""}<span>${esc(verb)}</span></button></div>`;
+    + `${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}<button class="${esc(b.className.replace(/\s*\bbig\b/, ""))}" data-a="play" data-v="${esc(b.dataset.v)}"${b.dataset.rw ? ' data-rw="1"' : ""}>${b.querySelector(".spin, .ico")?.outerHTML || ""}<span>${esc(verb)}</span></button></div>`;
 }
 function paintPortals() {
   pageMarks();
@@ -6069,7 +6127,7 @@ function openCm(id, x, y, targetEl = null) {
   const fact = part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}`;
   const hasTitle = !!(title && !spoils(ep));
   const head = cmHead({ eyebrow: hasTitle ? epCode(sea, ep) : sea.label || "", title: hasTitle ? title : `Episode ${String(ep.number).padStart(2, "0")}`, fact, art, kind: "still", pos, pct, spoil: !!(rt && spoils(ep)) });
-  m.innerHTML = cmWrap(head, cmItems({ id, ep, files: ep.files || [], verId: id, online: false }));
+  m.innerHTML = cmWrap(head, cmItems({ id, ep, files: ep.files || [], verId: id, online: false, watched: slotSeen(s, ep) }));
   cmShow(m, x, y, targetEl, accentHex(s) || "");
 }
 
@@ -7392,7 +7450,7 @@ const ppVideo = () => $("#pp video");
 /* The player opens at the tap (a tap lets it play with sound and go full
    screen later), then waits for the hub: a file at once, an online episode
    once ani-cli has found it (up to a minute and a half). */
-async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
+async function phonePlay(id, version = 0, fromStart = false, mode, skipOk, rewatch = false) {
   if (PP.id && !PP.ended) ppReport({ stop: true });
   PP.ac?.abort();
   ppTeardown();
@@ -7436,9 +7494,11 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk) {
   const body = { id, version, from_start: !!fromStart };
   if (mode) body.mode = mode;
   if (skipOk !== undefined) body.aniskip = skipOk;
+  if (rewatch) body.rewatch = true;
   const r = await api("/api/phone/play", body).catch(() => ({ error: "Could not reach the hub." }));
   if (PP.id !== id || ppVideo() !== v) return; // closed or replaced meanwhile
   if (r.error) { toast(r.error, "err"); return ppClose(false, true); }
+  if (rewatch) { refreshData(); if (S.view === "fr" && S.fr) frLoad(S.fr.eid); }
   if (r.note) toast(r.note);
   ppLoad(id, version, r);
 }
@@ -7845,25 +7905,25 @@ function ppClose(fromBack, quiet) {
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden && PP.id) ppReport({}); if (S.settings?.android) api("/api/peer", { op: document.hidden ? "away" : "soon" }).catch(() => {}); }); // back in the app: sync with the PC (Decision 91); away: stop waiting on it (Decision 99)
 /* where: "pc" or "phone" to skip the phone's "Play where?" (Decision 71). */
-async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
+async function play(id, version = 0, mode, asked, fromStart, skipOk, where, rewatch = false) {
   if (recapOn() && !S.recapPass?.has(id) && recapCandidate(id)) {
     const r = await recapFor(id);
-    if (r?.show) return openModal({ t: "recap", r, go: () => { (S.recapPass ||= new Set()).add(id); play(id, version, mode, asked, fromStart, skipOk, where); } });
+    if (r?.show) return openModal({ t: "recap", r, go: () => { (S.recapPass ||= new Set()).add(id); play(id, version, mode, asked, fromStart, skipOk, where, rewatch); } });
   }
   const online = id.startsWith("stream:");
   if (awayDevice() && where !== "pc") {
     const w = where || playWhere();
-    if (!w) return openModal({ t: "where", go: (v) => play(id, version, mode, asked, fromStart, skipOk, v) });
+    if (!w) return openModal({ t: "where", go: (v) => play(id, version, mode, asked, fromStart, skipOk, v, rewatch) });
     if (w === "phone") {
-      if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok, "phone"), aniskipAsk());
-      if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok, "phone") });
-      return phonePlay(id, version, fromStart, mode, skipOk);
+      if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok, "phone", rewatch), aniskipAsk());
+      if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok, "phone", rewatch) });
+      return phonePlay(id, version, fromStart, mode, skipOk, rewatch);
     }
   }
-  if (S.settings?.android) return pcPlay(id, fromStart, mode); // the app's "On the PC" (TODO 263)
-  if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk, where) });
-  if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok), aniskipAsk());
-  if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok) });
+  if (S.settings?.android) return pcPlay(id, fromStart, mode, rewatch); // the app's "On the PC" (TODO 263)
+  if (S.settings?.play_tip_done === false && !mq("(pointer:coarse)")) return openModal({ t: "tip", go: () => play(id, version, mode, asked, fromStart, skipOk, where, rewatch) });
+  if (online && !asked) return vpnGate((ok) => play(id, version, mode, true, fromStart, ok, undefined, rewatch), aniskipAsk());
+  if (skipOk === undefined && aniskipAsk()) return openModal({ t: "skp", go: (ok) => play(id, version, mode, true, fromStart, ok, undefined, rewatch) });
   S.playBusy = true;
   if (online) markLoading(id);
   const ctx = findEpContext(id);
@@ -7871,33 +7931,64 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {
   const body = { id, version };
   if (mode) body.mode = mode;
   if (fromStart) body.from_start = true;
+  if (rewatch) body.rewatch = true;
   if (skipOk !== undefined) body.aniskip = skipOk;
   const accent = accentHex(ctx?.s);
   if (accent) body.accent = accent;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
   if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
+  else if (rewatch) { refreshData(); if (S.view === "fr" && S.fr) frLoad(S.fr.eid); }
   pollSoon(600);
 }
 /* The Android app starts an episode on its paired PC: the app's hub finds it
    there by its AniList slot (TODO 263). Play: the PC's own pick (its file
    first, its Sub/Dub, VPN and skip settings); a Sub/Dub pick from the menu
    plays online in that language. The bar for it shows within a second or two. */
-async function pcPlay(id, fromStart, mode, ans = {}) {
+async function pcPlay(id, fromStart, mode, rewatch = false, ans = {}) {
   const ctx = findEpContext(id);
   toast(`Starting ${ctx ? ctx.s.title + " · " + epCode(ctx.sea, ctx.ep) : "the episode"} on the PC…`, "busy");
   /* Play dubbed / Play subbed picks online in that language there, even when the PC has the file. */
-  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart, ...(mode ? { mode } : {}), ...ans }).catch(() => ({ error: "Could not reach the PC." }));
+  const r = await api("/api/peer", { op: "play", id, from_start: !!fromStart, ...(mode ? { mode } : {}), ...(rewatch ? { rewatch: true } : {}), ...ans }).catch(() => ({ error: "Could not reach the PC." }));
   /* No VPN on the PC (TODO 274): its own questions, with its VPN, before anything plays there. */
   if (r.ask === "vpn" || r.ask === "aniskip") {
     toastDone();
     const skp = r.ask === "aniskip" || !!r.aniskip;
-    const go = (ok) => pcPlay(id, fromStart, mode, { ...ans, ...(r.ask === "vpn" ? { vpn_ok: true } : {}), ...(skp ? { aniskip: !!ok } : {}) });
+    const go = (ok) => pcPlay(id, fromStart, mode, rewatch, { ...ans, ...(r.ask === "vpn" ? { vpn_ok: true } : {}), ...(skp ? { aniskip: !!ok } : {}) });
     return openModal({ t: r.ask === "vpn" ? "vpn" : "skp", go, skp, pc: r.vpn || {} });
   }
   if (r.error) toast(r.error, "err");
-  else toast("Playing on the PC");
+  else { toast("Playing on the PC"); if (rewatch) { refreshData(); if (S.view === "fr" && S.fr) frLoad(S.fr.eid); } }
   pollSoon(300);
+}
+async function rwSet(ref, active, restore) {
+  const body = { ref, active, ...(restore ? { restore } : {}) };
+  const r = await api("/api/rewatch", body).catch(() => null);
+  if (!r || !r.ok) { toast(r?.error || "Could not save — is the hub running?", "err"); return null; }
+  if (S.data) {
+    S.data.rewatches = { ...(S.data.rewatches || {}) };
+    if (r.rewatch) S.data.rewatches[ref] = r.rewatch;
+    else {
+      // Clear mid-rewatch stop points on already-watched episodes so the show leaves Continue watching immediately.
+      for (const s of allShows()) for (const sea of s.seasons) for (const ep of sea.episodes) {
+        if (ep.watched && resumable(ep) && epRw(s, ep)?.ref === ref) ep.position = 0;
+      }
+      delete S.data.rewatches[ref];
+    }
+  }
+  if (S.view === "fr" && S.fr?.page) {
+    const mid = ref.startsWith("aid:") ? +ref.slice(4) : null;
+    const fe = mid && S.fr.page.entries.find((x) => x.id === mid);
+    if (fe) {
+      fe.rewatch = r.rewatch;
+      if (!r.rewatch) for (const x of fe.slots) if (x.watched && resumable(x)) x.position = 0;
+      frRepaint();
+      if (S.entry?.mid === mid && S.entry.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
+    }
+  } else if (S.view === "show" && showById(S.showId)) patchShow();
+  else if (S.view === "home") render(true);
+  refreshData();
+  return r;
 }
 /* Queue ani-cli downloads; they land in the library folder as ordinary files. */
 async function download(mid, eps, asked) {
@@ -8075,7 +8166,9 @@ const A = {
   },
   hrange: (v) => { S.histRange = v; S.histMax = 120; lsSet("histRange", v); render(true); }, // in place: kept bars glide to their new heights, new ones grow
   histmore: () => { S.histMax += 200; render(); },
-  play: (v) => play(v), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
+  play: (v, t) => play(v, 0, undefined, undefined, undefined, undefined, undefined, t?.dataset?.rw === "1"), playep: (v, t, e) => (t.classList.contains("ep") && (S.sel?.show === selKey() || e?.ctrlKey || e?.metaKey)) ? selToggle(v, e?.shiftKey) : play(v, +t.dataset.ver || 0),
+  rwstart: async (v) => { if (await rwSet(v, true)) toast("Rewatch started"); },
+  rwend: async (v) => { const r = await rwSet(v, false); if (r) toastUndo("Ended rewatch", () => rwSet(v, true, r.prev)); },
   cm: (v, t, e) => openCm(v, e.clientX, e.clientY, t.closest(".ep")),
   mark: (v, t) => {
     const w = t.dataset.w === "true", f = S.view === "fr" && frFind(v);

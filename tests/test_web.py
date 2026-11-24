@@ -675,9 +675,8 @@ class Polish(unittest.TestCase):
 
     def test_rewatch_tiles_show_the_stop_point(self):
         self.assertIn("(!ep.watched || ep.position / ep.duration < 0.92)", APP)  # mirrors player.resume_args
-        self.assertIn("watched: x.watched && !part", APP)
-        self.assertIn('x.watched && !part ? "watched" : ""', APP)
-        self.assertIn('ep.watched && !part ? "watched" : ""', APP)
+        self.assertIn("watched: done && !part", APP)
+        self.assertEqual(APP.count('done && !part ? "watched" : ""'), 2)
 
     @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_episode_menu_watched_and_progress_states(self):
@@ -694,13 +693,14 @@ class Polish(unittest.TestCase):
             const cmOther = () => "";
             const cmRow = (a, v, icon, label, key = "", extra = "", attrs = "") => ({ a, v, icon, label, key, attrs });
         """ + cm_items.replace('.map((g) => g.join("")).join(\'<div class="sep"></div>\')', '.flat().filter((r) => typeof r === "object")') + """
-            const call = (ep) => cmItems({ id: "loc:1", ep, files: [{ label: "default" }], verId: "loc:1", online: false, onlineId: null, mode: "sub", other: "dub", local: true, dl: false, fix: false });
+            const call = (ep, extra = {}) => cmItems({ id: "loc:1", ep, files: [{ label: "default" }], verId: "loc:1", online: false, onlineId: null, mode: "sub", other: "dub", local: true, dl: false, fix: false, ...extra });
             return {
                 watchedHalf: call({ watched: true, position: 685, duration: 1485 }),
                 watchedDone: call({ watched: true, position: 1485, duration: 1485 }),
                 watchedZero: call({ watched: true, position: 0, duration: 1485 }),
                 unwatchedHalf: call({ watched: false, position: 685, duration: 1485 }),
                 unwatchedZero: call({ watched: false, position: 0, duration: 1485 }),
+                rewatchPending: call({ watched: true, position: 0, duration: 1485 }, { watched: false }),
             };
         """)
         labels = lambda rows: [(r["label"], r["a"], r["attrs"]) for r in rows]
@@ -716,6 +716,8 @@ class Polish(unittest.TestCase):
         self.assertIn(("Reset progress", "reset", 'data-warn="1"'), labels(out["unwatchedHalf"]))
         self.assertIn(("Mark as watched", "mark", 'data-w="true" data-warn="1"'), labels(out["unwatchedZero"]))
         self.assertNotIn("Reset progress", [r["label"] for r in out["unwatchedZero"]])
+        self.assertIn(("Mark as watched", "mark", 'data-w="true" data-warn="1"'), labels(out["rewatchPending"]))
+        self.assertNotIn("Reset progress", [r["label"] for r in out["rewatchPending"]])
 
     def test_downloads_list(self):
         self.assertIn('j.status === "queued" ? "waiting · next in line"', APP)

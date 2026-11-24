@@ -172,7 +172,7 @@ class Web(unittest.TestCase):
         cls.css = (web / "style.css").read_text(encoding="utf-8")
 
     def test_play_asks_first(self):
-        start = self.app.index("async function play(id, version = 0, mode, asked, fromStart, skipOk, where) {")
+        start = self.app.index("async function play(id, version = 0, mode, asked, fromStart, skipOk, where, rewatch = false) {")
         body = self.app[start:start + 600]
         self.assertIn("recapCandidate(id)", body)
         self.assertIn('openModal({ t: "recap"', body)

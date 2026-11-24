@@ -882,6 +882,13 @@ def finish_episode(ep_id, last_time, duration, done):
                duration=excluded.duration, last_played=excluded.last_played""",
             (ep_id, 1, pos_save, duration),
         )
+    # Active rewatch run: record this episode BEFORE AniList sync so auto-track
+    # sees this run's progress (and flips Completed -> Rewatching on E01).
+    rw = None
+    try:
+        rw = progress.rewatch_record_finish(ep_id)
+    except Exception as exc:
+        util.log("rewatch update failed: %s" % exc)
     # Show-completion event (TODO 9, Decision 25): playback finishing the
     # matched release's last episode — natural EOF or the skip-credits
     # gesture both land here; manual marks never do. Rewatch replays
@@ -896,6 +903,13 @@ def finish_episode(ep_id, last_time, duration, done):
         progress.auto_track_after_play(ep_id)
     except Exception as exc:
         util.log("auto-track failed: %s" % exc)
+    # After sync: if this finished the rewatch's last episode, close it and
+    # chain to the next already-watched main season when one exists.
+    if rw:
+        try:
+            progress.rewatch_maybe_complete(ep_id)
+        except Exception as exc:
+            util.log("rewatch completion failed: %s" % exc)
     return True
 
 
