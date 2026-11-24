@@ -252,6 +252,64 @@ def job_close(job):
 PIPE_PREFIX = "\\\\.\\pipe\\"
 
 
+def runtime_file(name):
+    """A file every process of this user on this computer finds at the same
+    place: the user's private runtime dir on Linux, else the temp dir (per
+    user on Windows and macOS; a shared /tmp gets the user id in the name)."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    if not WINDOWS and runtime and Path(runtime).is_dir():
+        return Path(runtime) / name
+    uid = getattr(os, "getuid", None)
+    return Path(tempfile.gettempdir()) / (name if WINDOWS or uid is None else "%d-%s" % (uid(), name))
+
+
+class locked_file:
+    """`with locked_file(path) as f:` — the file (made 0600 when new) held
+    by this process alone: another process opening it waits. `f.text` is
+    what it holds; set `f.text` to replace it when the block ends. Raises
+    OSError when the file can't be opened or locked."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def __enter__(self):
+        self.fd = os.open(str(self.path), os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o600)
+        try:
+            if WINDOWS:
+                import msvcrt
+                msvcrt.locking(self.fd, msvcrt.LK_LOCK, 1)  # byte 0; retries for 10 s, then OSError
+            else:
+                import fcntl
+                fcntl.flock(self.fd, fcntl.LOCK_EX)
+            chunks = []
+            while True:
+                b = os.read(self.fd, 65536)
+                if not b:
+                    break
+                chunks.append(b)
+            self.text = self._was = b"".join(chunks).decode("utf-8", "replace")
+        except BaseException:
+            os.close(self.fd)
+            raise
+        return self
+
+    def __exit__(self, kind, *rest):
+        try:
+            if kind is None and self.text != self._was:
+                os.lseek(self.fd, 0, os.SEEK_SET)
+                os.ftruncate(self.fd, 0)
+                os.write(self.fd, self.text.encode("utf-8"))
+        finally:
+            if WINDOWS:
+                import msvcrt
+                os.lseek(self.fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+            os.close(self.fd)  # closing drops a POSIX lock too
+
+
 def ipc_address(name):
     """Where mpv's --input-ipc-server listens for session `name`: a socket
     in the user's private runtime dir (TODO 52h; /tmp only when

@@ -553,9 +553,50 @@ ANILIST_BACKGROUND_PER_MIN = 20
 FOREGROUND_QUIET = 8
 QUICK_WAIT = 3
 _al_gate = threading.Lock()
-_al_times = []
 _al_ctx = threading.local()
-_last_foreground = 0.0
+# AniList counts requests per address, not per app (TODO 279: the app and
+# review copies on one PC, each pacing alone, went over it together and
+# Browse kept answering "limiting requests"). So every hub on this computer
+# keeps one record, in a small locked file: `t` the requests of the last
+# minute, `fg` the last one a user waited on, `pause` until when a 429 said
+# to stop, `ext` [n, when] requests AniList counted that no hub here made
+# (a phone on the same network). In memory alone when the file can't be used.
+GATE_FILE = system.runtime_file("anime-hub-anilist.json")
+_mem = {"t": [], "fg": 0.0, "pause": 0.0, "ext": [0, 0.0]}
+
+
+class _gate:
+    """`with _gate() as st:` — the shared record, for this thread alone;
+    changes are kept when the block ends."""
+
+    def __enter__(self):
+        _al_gate.acquire()
+        self.f = None
+        if GATE_FILE:
+            try:
+                self.f = system.locked_file(GATE_FILE).__enter__()
+            except OSError:
+                self.f = None
+        if self.f is None:
+            return _mem
+        try:
+            st = json.loads(self.f.text or "{}")
+            num = lambda v: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+            ext = st.get("ext") if isinstance(st.get("ext"), list) and len(st["ext"]) == 2 else [0, 0]
+            self.st = {"t": [num(x) for x in st.get("t") or [] if num(x)], "fg": num(st.get("fg")),
+                       "pause": num(st.get("pause")), "ext": [int(num(ext[0])), num(ext[1])]}
+        except (ValueError, TypeError, AttributeError):  # a damaged record starts over
+            self.st = {"t": [], "fg": 0.0, "pause": 0.0, "ext": [0, 0.0]}
+        return self.st
+
+    def __exit__(self, kind, *rest):
+        try:
+            if self.f is not None:
+                if kind is None:
+                    self.f.text = json.dumps(self.st)
+                self.f.__exit__(kind, *rest)
+        finally:
+            _al_gate.release()
 
 
 class quick:
@@ -569,35 +610,56 @@ class quick:
         _al_ctx.deadline = None
 
 
-def _anilist_try(limit, now):
-    """Take a request slot in the last minute's window: 0 when taken, else
-    the seconds until one frees up."""
-    with _al_gate:
-        _al_times[:] = [t for t in _al_times if now - t < 60]
-        if len(_al_times) < limit:
-            _al_times.append(now)
+def _anilist_try(limit, now, background=False):
+    """Take a request slot in the last minute's window, shared by every hub
+    on this computer: 0 when taken, else the seconds until one may free up."""
+    with _gate() as st:
+        st["t"] = [t for t in st["t"] if now - 60 < t <= now + 60]  # a clock set back doesn't block for good
+        if st["pause"] > now + 120:
+            st["pause"] = 0.0  # no Retry-After is that long: a clock set back
+        if st["pause"] > now:
+            return st["pause"] - now
+        if background and now - st["fg"] < FOREGROUND_QUIET:
+            return FOREGROUND_QUIET - (now - st["fg"]) + 0.05
+        if not background:
+            st["fg"] = now
+        n, at = st["ext"]
+        ext = n if 0 <= now - at < 60 else 0
+        if len(st["t"]) + ext < limit:
+            st["t"].append(now)
             return 0
-        return 60 - (now - _al_times[0])
+        return max(60 - (now - min(st["t"] + ([at] if ext else []))), 0.05)
 
 
 def _anilist_slot():
-    global _last_foreground
     background = getattr(_al_ctx, "background", False)
     limit = ANILIST_BACKGROUND_PER_MIN if background else ANILIST_PER_MIN
     deadline = getattr(_al_ctx, "deadline", None)
     while True:
         now = time.time()
-        if background and now - _last_foreground < FOREGROUND_QUIET:
-            time.sleep(min(FOREGROUND_QUIET - (now - _last_foreground) + 0.05, 2))
-            continue
-        if not background:
-            _last_foreground = now
-        wait = _anilist_try(limit, now)
+        wait = _anilist_try(limit, now, background)
         if not wait:
             return
         if deadline and now + min(wait, 2) > deadline:
             raise AniListTransientError("AniList is busy — try again in a moment", status=429, retry_in=wait)
         time.sleep(min(max(wait, 0.05), 2))
+
+
+def _anilist_saw(headers, now):
+    """AniList's own count, after an answer: what it counted beyond this
+    computer's requests holds that many slots for a minute."""
+    try:
+        used = int(headers.get("X-RateLimit-Limit")) - int(headers.get("X-RateLimit-Remaining"))
+    except (AttributeError, TypeError, ValueError):
+        return
+    with _gate() as st:
+        st["ext"] = [max(0, used - sum(1 for t in st["t"] if now - 60 < t <= now)), now]
+
+
+def _anilist_pause(seconds):
+    """A 429: every hub here waits until AniList's Retry-After is up."""
+    with _gate() as st:
+        st["pause"] = max(st["pause"], time.time() + seconds)
 
 
 def background_work(fn):
@@ -628,21 +690,25 @@ def anilist_request(payload, token=None):
             req = Request(ANILIST_URL, data=json.dumps(payload).encode(), headers=headers)
             with urlopen(req, timeout=20) as r:
                 out = json.loads(r.read())
+                _anilist_saw(getattr(r, "headers", None), time.time())
             last_ok = time.time()
             return out
         except Exception as e:
-            if _own(e, "code") == 429 and attempt < 3:
+            if _own(e, "code") == 429:
                 # Honour AniList's Retry-After (usually well under a minute)
-                # instead of always parking the handler thread for 62 s.
+                # instead of always parking the handler thread for 62 s; the
+                # pause holds every request here, not just this one.
                 try:
-                    wait = int(e.headers.get("Retry-After"))
+                    wait = min(max(int(e.headers.get("Retry-After")), 1), 62)
                 except (AttributeError, TypeError, ValueError):
                     wait = 62
+                _anilist_pause(wait)
+                if attempt >= 3:
+                    raise
                 deadline = getattr(_al_ctx, "deadline", None)
                 if deadline and time.time() + wait > deadline:
                     raise AniListTransientError("AniList is busy — try again in a moment", status=429, retry_in=wait)
-                time.sleep(min(max(wait, 1), 62))
-                continue
+                continue  # _anilist_slot waits the pause out
             raise
 
 

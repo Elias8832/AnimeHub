@@ -43,6 +43,12 @@ for _mod in list(sys.modules.values()):
         _mod.urlopen = _offline
 
 
+# The AniList pace every hub on the computer shares (TODO 279): the tests
+# keep theirs in memory, never in the running hubs' file. Its own tests
+# point it at a throwaway file.
+animehub.server.anilist.GATE_FILE = None
+
+
 # Upscayl's AppImage is looked for in the real home folder: only its own
 # tests look, in a made-up one.
 find_upscayl_appimages = animehub.server.upscale._appimage_candidates

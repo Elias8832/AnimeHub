@@ -145,8 +145,8 @@ class Pace(unittest.TestCase):
     background leaves a reserve for a page someone is waiting on."""
 
     def setUp(self):
-        anilist._al_times.clear()
-        self.addCleanup(anilist._al_times.clear)
+        anilist._mem.update(t=[], fg=0.0, pause=0.0, ext=[0, 0.0])
+        self.addCleanup(anilist._mem.update, t=[], fg=0.0, pause=0.0, ext=[0, 0.0])
 
     def test_background_leaves_a_reserve(self):
         bg, fg = anilist.ANILIST_BACKGROUND_PER_MIN, anilist.ANILIST_PER_MIN
