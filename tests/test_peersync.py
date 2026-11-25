@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests import support
-from animehub import database, library, peersync, player, playlists, remote, server, settings, streaming
+from animehub import database, library, peersync, player, playlists, progress, remote, server, settings, streaming
 from animehub.config import config
 
 PC_DB = support.TMP / "peersync-pc.db"
@@ -363,8 +363,12 @@ class UseThePhones(unittest.TestCase):
             c.execute("INSERT INTO curation(ref, status, updated_at) VALUES('sid:local', 'CURRENT', '2026-11-13 10:00:00')")
         with device(APP_DB):
             library.hide_continue("aid:11", True)
+            library.hide_continue("aid:13", True)
+            with database.db() as c:  # hidden BEFORE pairing: "Use the phone's" still pushes it
+                c.execute("UPDATE continue_hidden SET at='2026-11-10 10:00:00' WHERE show_id='aid:13'")
         with device(PC_DB):
             library.hide_continue("aid:12", True)
+            library.hide_continue("aid:13", False)  # PC had a newer Undo on aid:13: phone's hide still wins
         res = sync()
         self.assertEqual(res["pulled"], 0)
         self.assertGreater(res["pushed"], 0)
@@ -377,12 +381,14 @@ class UseThePhones(unittest.TestCase):
             with database.db() as c:
                 self.assertEqual(c.execute("SELECT ref, status FROM curation ORDER BY ref").fetchall(),
                                  [("aid:5", "COMPLETED"), ("sid:local", "CURRENT")])
-                self.assertEqual([r[0] for r in c.execute("SELECT show_id FROM continue_hidden")], ["aid:11"])
+                self.assertEqual(set(r[0] for r in c.execute("SELECT show_id FROM continue_hidden")), {"aid:11", "aid:13"})
         with device(APP_DB):
             self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Phone list"])
             self.assertIsNone(peersync.peer()["take"])
             with database.db() as c:
-                self.assertEqual([r[0] for r in c.execute("SELECT show_id FROM continue_hidden")], ["aid:11"])
+                self.assertEqual(set(r[0] for r in c.execute("SELECT show_id FROM continue_hidden")), {"aid:11", "aid:13"})
+        # One follow-up sync aligns aid:13's timestamp (since PC had a newer Undo), then stays completely quiet.
+        sync()
         self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
         # From now on it merges both ways.
         ep(PC_DB, "stream:5:3", 0, 90, 1420, "2026-11-14 20:00:00")
@@ -550,6 +556,72 @@ class HomeShowsWhatCameOver(unittest.TestCase):
         self.assertEqual(asked, [999])
         self.assertFalse(any(s["id"] == "aid:999" for s in d["streams"]))
 
+    def test_active_rewatch_without_last_played_is_on_home(self):
+        # SPY x FAMILY Cour 2 synced as an active rewatch: all episodes watched=1, last_played=NULL.
+        for n in range(1, 14):
+            ep(APP_DB, f"stream:142838:{n}", 1, 0, 1440, None)
+        with device(APP_DB):
+            progress.rewatch_start("aid:142838")
+            # An ended rewatch with no last_played must not become a provisional show.
+            with database.db() as c:
+                c.execute("INSERT INTO rewatches(ref, started_at, done, updated_at)"
+                          " VALUES('aid:158927', NULL, '[]', '2026-11-20 10:00:00')")
+            database.cache_put("release:v1:142838", {"media": {
+                "id": 142838, "title": {"english": "SPY x FAMILY Cour 2"}, "status": "FINISHED", "episodes": 13,
+                "format": "TV", "coverImage": {"extraLarge": "https://s4.anilist.co/c2.jpg"}}})
+        d = self.library()
+        show = next(s for s in d["streams"] if s["id"] == "aid:142838")
+        self.assertTrue(show["stream"]["provisional"])
+        self.assertEqual(len(show["seasons"][0]["episodes"]), 13)
+        self.assertTrue(all(e["watched"] for e in show["seasons"][0]["episodes"]))
+        self.assertIn("aid:142838", d["rewatches"])
+        self.assertFalse(any(s["id"] == "aid:158927" for s in d["streams"]))
+
+    def test_active_rewatch_without_cached_meta_fetches_once(self):
+        with device(APP_DB):
+            progress.rewatch_start("aid:142838")
+        asked = []
+        with patch.object(streaming, "_fetch_meta_later", asked.append):
+            d = self.library()
+        self.assertEqual(asked, [142838])
+        self.assertFalse(any(s["id"] == "aid:142838" for s in d["streams"]))
+
+    def test_link_in_progress_includes_active_rewatches_and_paused_watched_episodes(self):
+        resolved = []
+        for_me = {
+            "10:1": [False, 300.0, 1440.0, "2026-11-20 10:00:00"],  # unwatched in-progress -> link
+            "11:2": [True, 600.0, 1440.0, "2026-11-21 10:00:00"],   # watched paused halfway -> link
+            "12:3": [True, 1440.0, 1440.0, "2026-11-22 10:00:00"],  # cleanly finished -> skip
+            "13:1": [True, 10.0, 1440.0, "2026-11-22 10:00:00"],    # < 1% -> skip
+            "14:1": [True, 0.0, 1440.0, "2026-11-22 10:00:00"],     # pos 0 -> skip
+            "15:1": [True, 600.0, 1440.0, "2026-11-23 10:00:00"],   # on disk -> skip
+        }
+        rw_me = {
+            "aid:142838": {"started_at": "2026-11-24 10:00:00", "done": [], "updated_at": "2026-11-24 10:00:00"},
+            "aid:158927": {"started_at": None, "done": [], "updated_at": "2026-11-24 11:00:00"},  # ended -> skip
+            "aid:15": {"started_at": "2026-11-24 12:00:00", "done": [], "updated_at": "2026-11-24 12:00:00"},  # on disk -> skip
+        }
+        slots = {"15:1": ["disk-file-1"]}
+        with device(APP_DB), \
+                patch.object(streaming.anicli, "anicli_path", lambda: "/bin/ani-cli"), \
+                patch.object(streaming, "stream_resolve_async", resolved.append):
+            peersync._link_in_progress(for_me, slots, rw_me)
+        self.assertEqual(resolved, [142838, 11, 10])
+
+    def test_use_the_pcs_sync_auto_links_pc_active_rewatch_and_paused_watched(self):
+        paired()
+        with device(APP_DB), database.db() as c:
+            c.execute("UPDATE sync_peer SET take='pc'")
+        ep(PC_DB, "stream:142838:1", 1, 0, 1440, None)
+        ep(PC_DB, "stream:55:2", 1, 600, 1440, "2026-11-23 20:00:00")
+        with device(PC_DB):
+            progress.rewatch_start("aid:142838")
+        resolved = []
+        with patch.object(streaming.anicli, "anicli_path", lambda: "/bin/ani-cli"), \
+                patch.object(streaming, "stream_resolve_async", resolved.append):
+            sync()
+        self.assertEqual(set(resolved), {142838, 55})
+
 
 class RemoveFromHome(unittest.TestCase):
     """"Remove from Home" travels by AniList id (Decision 99): an online show
@@ -604,14 +676,25 @@ class RemoveFromHome(unittest.TestCase):
             sync()
             self.assertEqual(set(self.hidden(PC_DB)), {"aid:6", "folder-1"})
 
-    def test_use_the_pcs_takes_but_sends_nothing(self):
+    def test_use_the_pcs_replaces_phones_hidden_and_sends_nothing(self):
         with device(APP_DB), database.db() as c:
             c.execute("UPDATE sync_peer SET take='pc'")
         self.hide(APP_DB, "aid:9")
+        self.hide(APP_DB, "aid:14")
+        with device(APP_DB), database.db() as c:  # hidden BEFORE pairing: still unhidden by "Use the PC's"
+            c.execute("UPDATE continue_hidden SET at='2026-11-10 10:00:00' WHERE show_id='aid:14'")
+        self.hide(APP_DB, "aid:5", False)  # phone had a newer Undo on aid:5: PC's hide still wins
         self.hide(PC_DB, "aid:5")
-        sync()
-        self.assertEqual(set(self.hidden(APP_DB)), {"aid:5", "aid:9"})
-        self.assertEqual(set(self.hidden(PC_DB)), {"aid:5"})
+        with device(PC_DB), database.db() as c:
+            c.execute("UPDATE continue_hidden SET at='2026-11-10 10:00:00' WHERE show_id='aid:5'")
+        res = sync()
+        self.assertEqual(res["pushed"], 0)
+        self.assertEqual(self.hidden(APP_DB), {"aid:5": "2026-11-10 10:00:00"})
+        self.assertEqual(self.hidden(PC_DB), {"aid:5": "2026-11-10 10:00:00"})
+        # Next ordinary sync sees both sides agree and sends nothing.
+        self.assertEqual(sync(), {"pulled": 0, "pushed": 0})
+        self.assertEqual(self.hidden(APP_DB), {"aid:5": "2026-11-10 10:00:00"})
+        self.assertEqual(self.hidden(PC_DB), {"aid:5": "2026-11-10 10:00:00"})
 
     def test_an_older_pc_gets_nothing_it_cant_read(self):
         real = peersync.facts_payload
@@ -658,9 +741,10 @@ class ANewPc(unittest.TestCase):
             return [r[0] for r in c.execute("SELECT show_id FROM continue_hidden")]
 
     def test_old_marks_stay_on_the_phone(self):
-        for take in (None, "pc"):
+        for take, expect_app in ((None, ["aid:5"]), ("pc", [])):
             with self.subTest(take=take):
                 with device(APP_DB), database.db() as c:
+                    c.execute("INSERT OR REPLACE INTO continue_hidden(show_id, at) VALUES('aid:5', '2026-11-14 23:39:37')")
                     c.execute("UPDATE sync_peer SET take=?, snapshot=NULL", (take,))
                 sync()
                 sync()  # the second, ordinary sync sends nothing old either
@@ -669,7 +753,7 @@ class ANewPc(unittest.TestCase):
                 with device(APP_DB):  # the PC's list comes back
                     self.assertEqual([p["name"] for p in playlists.all_playlists()], ["Interested"])
                 self.assertEqual(self.hidden(PC_DB), [])
-                self.assertEqual(self.hidden(APP_DB), ["aid:5"])
+                self.assertEqual(self.hidden(APP_DB), expect_app)
 
     def test_an_old_delete_on_the_pc_never_takes_the_list_off_the_phone(self):
         """TODO 276: an older app sent the phone's old delete to the PC; the

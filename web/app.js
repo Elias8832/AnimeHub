@@ -493,28 +493,66 @@ function sequelTarget(s) {
   }
   return null;
 }
+/* Find the show (disk or online) owned by a rewatch ref ("aid:<id>" or "sid:<id>").
+   When both a disk folder and an online copy match, the one played last speaks for it. */
+function rewatchShow(ref) {
+  if (!ref) return null;
+  if (ref.startsWith("sid:")) return showById(ref.slice(4));
+  if (!ref.startsWith("aid:")) return null;
+  const mid = +ref.slice(4);
+  const matches = allShows().filter((x) => x.id === ref || x.meta?.anilist_id === mid
+    || x.seasons.some((sea) => sea.media_id === mid || (sea.releases || []).some((r) => r.id === mid)));
+  if (matches.length <= 1) return matches[0] || null;
+  const latestOf = (s) => s.seasons.reduce((mx, sea) => sea.episodes.reduce((m, e) => ((e.last_played || "") > m ? e.last_played : m), mx), "");
+  return matches.reduce((best, s) => (latestOf(s) > latestOf(best) ? s : best));
+}
+/* Active rewatch runs that have remaining episodes and aren't hidden from Home, newest first. */
+function activeRewatches() {
+  const rws = S.data?.rewatches;
+  if (!rws) return [];
+  const out = [];
+  for (const [ref, rw] of Object.entries(rws)) {
+    if (!rw || !rw.started_at) continue;
+    const s = rewatchShow(ref);
+    if (!s || contHidden(s)) continue;
+    const t = pickTarget(s);
+    if (!t || t.kind === "rewatch") continue;
+    out.push({ s, t, at: rw.updated_at || rw.started_at || "" });
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at));
+}
 /* Taken off Continue watching (Decision 81): only until something of the
-   show plays after that, then it's back. Its folder and online copy go and
-   come back together (TODO 265). */
+   show plays (or a rewatch starts/advances) after that, then it's back. Its
+   folder and online copy go and come back together (TODO 265). */
 function contHidden(s) {
   const hid = S.data?.continue_hidden;
   if (!hid) return false;
   const k = showKey(s), at = Object.keys(hid).filter((id) => hid[id] && keyOfId(id) === k).map((id) => hid[id]).sort().pop();
   if (!at) return false;
   const twins = allShows().filter((x) => showKey(x) === k);
-  return !twins.some((x) => x.seasons.some((sea) => sea.episodes.some((e) => (e.last_played || "") > at)));
+  if (twins.some((x) => x.seasons.some((sea) => sea.episodes.some((e) => (e.last_played || "") > at)))) return false;
+  const rws = S.data?.rewatches;
+  if (rws && Object.entries(rws).some(([ref, rw]) => {
+    const rs = rw && rw.started_at && (rw.updated_at || rw.started_at || "") > at ? rewatchShow(ref) : null;
+    return rs && showKey(rs) === k;
+  })) return false;
+  return true;
 }
 /* The hero follows the most recently touched show, period. Continue rows
-   (position > 30 s) and history rows overlap — either may hold the true
-   newest touch, so merge both and sort by last_played. */
+   (position > 30 s), history rows, and active rewatches overlap — any may hold
+   the true newest touch, so merge and sort by timestamp. */
 function nextUpInfo() {
   const d = S.data;
   const newest = [...(d.continue || []), ...(d.history || [])]
     .filter((ep) => { const c = findEpContext(ep.id); return c && !contHidden(c.s); })
     .sort((a, b) => (b.last_played || "").localeCompare(a.last_played || ""))[0];
+  const rwTop = activeRewatches()[0] || null;
+  const rwPick = (s, sea, ep, fallback) => { const rw = !!epRw(s, ep); return { s, sea, ep, label: rw ? "Rewatching" : fallback, rewatch: rw }; };
+  if (rwTop && (!newest || rwTop.at > (newest.last_played || ""))) {
+    return rwPick(rwTop.s, rwTop.t.sea, rwTop.t.ep, rwTop.t.kind === "resume" ? "Continue watching" : "Up next");
+  }
   if (!newest) return null;
   const ctx = findEpContext(newest.id);
-  const rwPick = (s, sea, ep, fallback) => { const rw = !!epRw(s, ep); return { s, sea, ep, label: rw ? "Rewatching" : fallback, rewatch: rw }; };
   if (!slotSeen(ctx.s, ctx.ep)) return rwPick(ctx.s, ctx.sea, ctx.ep, "Continue watching");
   const after = ctx.sea.episodes.filter((e) => !slotSeen(ctx.s, e) && e.number > ctx.ep.number)[0];
   const anyUn = ctx.s.seasons.map((sea) => ({ sea, ep: sea.episodes.find((e) => !slotSeen(ctx.s, e)) })).filter((x) => x.ep)[0];
@@ -749,18 +787,21 @@ function heroHTML(up, wide = false) {
     <div class="cta"><button class="btn pri big" data-a="play" data-v="${esc(ep.id)}"${up.label === "Rewatch" ? ' data-rw="1"' : ""}>${ico("play")}<span>${verb}</span></button></div>
   </div></div>`; // no Open show (Elias): the whole banner opens it
 }
-/* One tile per show you actually played, newest first, each pointing at the
-   next relevant episode. The show the hero already features is skipped. */
+/* One tile per show you played or are actively rewatching, newest first, each
+   pointing at the next relevant episode. The show the hero already features is
+   skipped. */
 function keepWatching(skipId) {
   const seen = new Set(skipId ? [keyOfId(skipId)] : []), out = [];
-  const hist = (S.data.history || []).map((ep) => ({ ep, ctx: findEpContext(ep.id) })).filter((x) => x.ctx)
-    .sort((a, b) => (b.ep.last_played || "").localeCompare(a.ep.last_played || ""));
-  for (const x of hist) {
+  const items = [
+    ...(S.data.history || []).map((ep) => ({ at: ep.last_played || "", ctx: findEpContext(ep.id), fromRw: 0 })).filter((x) => x.ctx),
+    ...activeRewatches().map((x) => ({ at: x.at, ctx: { s: x.s }, t: x.t, fromRw: 1 })),
+  ].sort((a, b) => b.at.localeCompare(a.at) || a.fromRw - b.fromRw);
+  for (const x of items) {
     const k = showKey(x.ctx.s); // the newest played copy speaks for the show
     if (seen.has(k)) continue;
     seen.add(k);
     if (contHidden(x.ctx.s)) continue;
-    let s = x.ctx.s, t = pickTarget(s);
+    let s = x.ctx.s, t = x.t || pickTarget(s);
     if (t && t.kind === "rewatch") {
       /* all seen: its next season takes the tile, once (TODO 275) */
       const q = sequelTarget(s);

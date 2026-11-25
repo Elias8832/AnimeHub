@@ -229,6 +229,37 @@ class RewatchBackendTests(unittest.TestCase):
         peersync.apply_rewatches(for_them)
         self.assertEqual(progress.rewatch_get("aid:140960")["done"], [1, 2])
 
+    def test_played_unlinked_shows_includes_active_rewatch_without_last_played(self):
+        from animehub import streaming
+        with database.db() as c:
+            c.execute("DELETE FROM stream_links")
+            c.execute("DELETE FROM episodes")
+            for i in range(1, 14):
+                c.execute(
+                    "INSERT INTO episodes(id, watched, position, duration, last_played) VALUES(?, 1, 0, 1440, NULL)",
+                    (f"stream:142838:{i}",),
+                )
+        progress.rewatch_start("aid:142838")
+        database.cache_put("release:v1:142838", {"media": {
+            "id": 142838, "title": {"english": "SPY x FAMILY Cour 2"},
+            "status": "FINISHED", "episodes": 13, "format": "TV",
+            "coverImage": {"extraLarge": "https://s4.anilist.co/c2.jpg"},
+        }})
+        with mock.patch.object(streaming.anicli, "anicli_path", return_value="/bin/ani-cli"):
+            shows = streaming.played_unlinked_shows([], set())
+            # Already on disk or already linked -> not duplicated as provisional.
+            on_disk = streaming.played_unlinked_shows([], {142838})
+            linked = streaming.played_unlinked_shows([{"media_id": 142838}], set())
+        self.assertEqual([s["id"] for s in shows], ["aid:142838"])
+        self.assertEqual(len(shows[0]["seasons"][0]["episodes"]), 13)
+        self.assertTrue(shows[0]["stream"]["provisional"])
+        self.assertEqual(on_disk, [])
+        self.assertEqual(linked, [])
+        # Ending the rewatch removes it from played_unlinked_shows since no episode has last_played.
+        progress.rewatch_end("aid:142838")
+        with mock.patch.object(streaming.anicli, "anicli_path", return_value="/bin/ani-cli"):
+            self.assertEqual(streaming.played_unlinked_shows([], set()), [])
+
 
 class RewatchApiTests(unittest.TestCase):
     @classmethod

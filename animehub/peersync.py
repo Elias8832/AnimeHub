@@ -29,6 +29,7 @@ import re
 import socket
 import threading
 import time
+from datetime import datetime, timedelta
 from http.cookies import CookieError, SimpleCookie
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
@@ -619,6 +620,15 @@ def take_their_playlists(mine, theirs):
     return lists, gone
 
 
+def _next_stamp(ts):
+    """One second after a canonical UTC timestamp, so apply_hidden's `ts < ?`
+    clears a target `sync_gone` row from the same second."""
+    try:
+        return (datetime.strptime(ts, util.CANONICAL_TS) + timedelta(seconds=1)).strftime(util.CANONICAL_TS)
+    except ValueError:
+        return ts + "z"
+
+
 def take_their_hidden(target, source):
     """{"hidden": ..., "shown": ...} to make target's Remove from Home match source."""
     out = {"hidden": {}, "shown": {}}
@@ -626,8 +636,10 @@ def take_their_hidden(target, source):
     for mid in set(target["hidden"]) | set(target["shown"]) | set(source["hidden"]) | set(source["shown"]):
         s, t = _home_state(source, mid), _home_state(target, mid)
         if s and s[1] == 0:
-            if not t or t[1] == 1 or t[0] < s[0]:
-                out["hidden"][mid] = max(s[0], t[0] if t else "")
+            if not t or t[0] < s[0]:
+                out["hidden"][mid] = s[0]
+            elif t[1] == 1:
+                out["hidden"][mid] = _next_stamp(t[0])
         elif t and t[1] == 0:
             out["shown"][mid] = max(now, t[0])
     return out if (out["hidden"] or out["shown"]) else {}
@@ -900,21 +912,47 @@ def stamp():
     return _state["stamp"]
 
 
-def _link_in_progress(for_me, slots):
-    """Episodes started on the other device that this one has neither as a
-    file nor as a linked online episode: link the show with ani-cli, so Home
-    shows them under Continue watching (only for a handful, never the whole list)."""
+def _in_progress_ep(f):
+    if not f[1]:
+        return False
+    if not f[0]:
+        return True
+    return bool(f[2] > 0 and 0.01 < f[1] / f[2] < 0.92)
+
+
+def _link_in_progress(for_me, slots, rw_me=None):
+    """Episodes started or rewatches active on the other device that this one
+    has neither as a file nor as a linked online episode: link the show with
+    ani-cli, so Home shows them under Continue watching (only for a handful,
+    never the whole list)."""
     if not anicli.anicli_path():
         return
     linked = {l["media_id"] for l in streaming.stream_links_all()}
-    want = []
+    on_disk = {int(k.split(":")[0]) for k, ids in slots.items()
+               if any(not i.startswith("stream:") for i in ids)}
+    cands = []
     for key, f in for_me.items():
         mid = int(key.split(":")[0])
-        if f[0] or not f[1] or mid in linked or mid in want:
+        if not _in_progress_ep(f) or mid in linked:
             continue
         if any(not i.startswith("stream:") for i in slots.get(key) or ()):
             continue
-        want.append(mid)
+        cands.append((f[3] or "", mid))
+    for ref, rw in (rw_me or {}).items():
+        if not (isinstance(rw, dict) and rw.get("started_at")):
+            continue
+        m = AID_RE.match(ref)
+        if not m:
+            continue
+        mid = int(m.group(1))
+        if mid in linked or mid in on_disk:
+            continue
+        cands.append((rw.get("updated_at") or rw.get("started_at") or "", mid))
+    cands.sort(key=lambda x: x[0], reverse=True)
+    want = []
+    for _, mid in cands:
+        if mid not in want:
+            want.append(mid)
     for mid in want[:5]:
         streaming.stream_resolve_async(mid)
 
@@ -942,7 +980,8 @@ def sync_once():
             take_pc = take == "pc"
             take_phone = take == "phone"
             take_new = take == "new"
-            my_lists, my_hidden = since_pairing(playlist_facts(), hidden_facts(), p["paired"])
+            raw_my_hidden = hidden_facts()
+            my_lists, my_hidden = since_pairing(playlist_facts(), raw_my_hidden, p["paired"])
             theirs_hid = theirs.get("home_hidden")
             if theirs_hid is not None and check_hidden(theirs_hid):
                 theirs_hid = None
@@ -973,7 +1012,7 @@ def sync_once():
                 cur_me = {r: v for r, v in theirs["curation"].items() if own.get(r) != v}
                 cur_them = {}
                 drop_cur = [r for r in own if r not in theirs["curation"]]
-                hid_me, _ = merge_hidden(my_hidden, theirs_hid) if theirs_hid is not None else ({}, {})
+                hid_me = take_their_hidden(raw_my_hidden, theirs_hid) if theirs_hid is not None else {}
                 hid_them = {}
             elif take_phone:  # the first sync, "Use the phone's": nothing changes on this phone
                 result = take_theirs(theirs["episodes"], mine)
@@ -987,7 +1026,7 @@ def sync_once():
                 cur_them = {r: v for r, v in own.items() if theirs["curation"].get(r) != v}
                 drop_cur_them = [r for r in theirs["curation"] if r not in own]
                 hid_me = {}
-                hid_them = take_their_hidden(theirs_hid, my_hidden) if theirs_hid is not None else {}
+                hid_them = take_their_hidden(theirs_hid, raw_my_hidden) if theirs_hid is not None else {}
             elif baseline:
                 ep_base = dict(baseline.get("episodes") or {})
                 split = set(ep_base)
@@ -1090,6 +1129,15 @@ def sync_once():
                 lists_me, gone_me, lists_them, gone_them, renames = merge_playlists(my_lists, theirs["playlists"])
                 cur_me, cur_them = merge_curation(curation_facts(), theirs["curation"])
                 hid_me, hid_them = merge_hidden(my_hidden, theirs_hid) if theirs_hid is not None else ({}, {})
+            if not take_pc and hid_me:
+                for mid in list(hid_me.get("hidden", {})):
+                    cur = _home_state(raw_my_hidden, mid)
+                    if cur and cur[1] == 0 and cur[0] >= hid_me["hidden"][mid]:
+                        hid_me["hidden"].pop(mid)
+                for mid in list(hid_me.get("shown", {})):
+                    cur = _home_state(raw_my_hidden, mid)
+                    if cur and cur[1] == 1 and cur[0] >= hid_me["shown"][mid]:
+                        hid_me["shown"].pop(mid)
             if theirs_hid is None or not (hid_them.get("hidden") or hid_them.get("shown")):
                 hid_them = {}  # an older PC has no "Remove from Home"
             n_hid_me = len(hid_me.get("hidden", {})) + len(hid_me.get("shown", {}))
@@ -1151,6 +1199,25 @@ def sync_once():
             apply_curation(cur_me)
             if n_hid_me:
                 apply_hidden(hid_me)
+            if take_pc and n_hid_me and theirs_hid is not None:
+                folders = _show_mids()
+                owners = {}
+                for sid, mids in folders.items():
+                    for mid in mids:
+                        owners.setdefault(str(mid), []).append(sid)
+                with database.db() as c:
+                    for mid in hid_me.get("shown", {}):
+                        ts = theirs_hid["shown"].get(mid)
+                        for sid in [f"aid:{mid}"] + owners.get(mid, []):
+                            c.execute("DELETE FROM sync_gone WHERE kind='continue' AND key=?", (sid,))
+                        if ts:
+                            c.execute("INSERT INTO sync_gone(kind, key, ts) VALUES('continue', ?, ?)",
+                                      (f"aid:{mid}", ts))
+                    for mid in hid_me.get("hidden", {}):
+                        at = theirs_hid["hidden"][mid]
+                        for sid in [f"aid:{mid}"] + owners.get(mid, []):
+                            c.execute("DELETE FROM sync_gone WHERE kind='continue' AND key=?", (sid,))
+                            c.execute("UPDATE continue_hidden SET at=? WHERE show_id=?", (at, sid))
             apply_rewatches(rw_me)
             if take_phone and gone_them:
                 with database.db() as c:
@@ -1166,7 +1233,7 @@ def sync_once():
                 drop_curation(drop_cur)
             if drop_rw:
                 drop_rewatches(drop_rw)
-            _link_in_progress({k: v[1] for k, v in to_me.items() if k in here}, slots)
+            _link_in_progress({k: v[1] for k, v in to_me.items() if k in here}, slots, rw_me)
             snap = {}
             for k, v in result.items():
                 held = (k in to_them and k not in there) or (k in to_me and k not in here)

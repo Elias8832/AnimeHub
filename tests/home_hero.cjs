@@ -385,3 +385,63 @@ test("a chained rewatch on an already-watched sequel hands Home to Season 2 E1",
   assert.equal(up.label, "Rewatching");
   assert.deepEqual(plain(app.keepWatching().map((x) => [x.s.id, x.t.ep.id])), [["aid:158927", "stream:158927:1"], ["Other", "o1"]]);
 });
+
+test("a synced active rewatch with no last_played and no story_next shows on Home and Continue watching", () => {
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+  const ep = (id, number, played = null) => ({ ...episode(id, played, true, 0), number });
+  const stream = (mid, title, eps) => ({ ...show(title, []), id: "aid:" + mid, kind: "stream", meta: { anilist_id: mid },
+    seasons: [{ key: 1, season: 1, label: "Episodes", episodes: eps, releases: [{ id: mid, first_ep: 1, last_ep: null, offset: 0 }] }] });
+  const cour2 = stream(142838, "SPY x FAMILY Cour 2", [ep("stream:142838:1", 1), ep("stream:142838:2", 2)]);
+  const mdd = stream(132405, "My Dress-Up Darling", [{ ...episode("stream:132405:4", "2026-11-20 18:00:00", false, 500), number: 4 }]);
+  const str = stream(129201, "Summer Time Rendering", [{ ...episode("stream:129201:14", "2026-11-22 18:00:00", false, 300), number: 14 }]);
+
+  // 1. Active rewatch is the newest touch (and has no last_played or story_next) -> leads as hero, not duplicated in Continue watching.
+  const data = {
+    shows: [],
+    streams: [cour2, mdd, str],
+    continue: [str.seasons[0].episodes[0], mdd.seasons[0].episodes[0]],
+    history: [str.seasons[0].episodes[0], mdd.seasons[0].episodes[0]],
+    rewatches: { "aid:142838": { started_at: "2026-11-24 10:00:00", updated_at: "2026-11-24 10:00:00", done: [] } },
+  };
+  let app = homepage(data);
+  let up = app.nextUpInfo();
+  assert.equal(up.s.id, "aid:142838");
+  assert.equal(up.ep.id, "stream:142838:1");
+  assert.equal(up.label, "Rewatching");
+  assert.deepEqual(plain(app.keepWatching(up.s.id).map((x) => x.s.id)), ["aid:129201", "aid:132405"]);
+  assert.deepEqual(plain(app.keepWatching().map((x) => [x.s.id, x.t.ep.id])), [
+    ["aid:142838", "stream:142838:1"],
+    ["aid:129201", "stream:129201:14"],
+    ["aid:132405", "stream:132405:4"],
+  ]);
+
+  // 2. When another show was played more recently, the active rewatch sits in Continue watching in timestamp order.
+  data.rewatches["aid:142838"] = { started_at: "2026-11-21 10:00:00", updated_at: "2026-11-21 10:00:00", done: [] };
+  up = app.nextUpInfo();
+  assert.equal(up.s.id, "aid:129201");
+  assert.deepEqual(plain(app.keepWatching(up.s.id).map((x) => [x.s.id, x.t.ep.id])), [
+    ["aid:142838", "stream:142838:1"],
+    ["aid:132405", "stream:132405:4"],
+  ]);
+
+  // 3. Works even when history and continue are completely empty.
+  app = homepage({ shows: [], streams: [cour2], continue: [], history: [],
+    rewatches: { "aid:142838": { started_at: "2026-11-24 10:00:00", done: [] } } });
+  assert.equal(app.nextUpInfo().s.id, "aid:142838");
+  assert.equal(app.nextUpInfo().ep.id, "stream:142838:1");
+  assert.equal(app.nextUpInfo().label, "Rewatching");
+
+  // 4. Respects continue_hidden: hidden after rewatch -> gone; rewatch updated/started after hide -> back.
+  app = homepage({
+    shows: [], streams: [cour2, str], continue: [str.seasons[0].episodes[0]], history: [str.seasons[0].episodes[0]],
+    rewatches: { "aid:142838": { started_at: "2026-11-21 10:00:00", updated_at: "2026-11-21 10:00:00", done: [] } },
+    continue_hidden: { "aid:142838": "2026-11-21 12:00:00" },
+  });
+  assert.deepEqual(plain(app.keepWatching("aid:129201").map((x) => x.s.id)), []);
+  app.S.data.rewatches["aid:142838"].updated_at = "2026-11-21 13:00:00";
+  assert.deepEqual(plain(app.keepWatching("aid:129201").map((x) => x.s.id)), ["aid:142838"]);
+
+  // 5. All episodes done in the rewatch (pickTarget returns "rewatch") -> excluded.
+  app.S.data.rewatches["aid:142838"].done = [1, 2];
+  assert.deepEqual(plain(app.keepWatching("aid:129201").map((x) => x.s.id)), []);
+});
