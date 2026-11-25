@@ -393,11 +393,26 @@ def migration_32(c):
         c.execute("ALTER TABLE sync_peer ADD COLUMN baseline TEXT")
 
 
+def migration_33(c):
+    """Custom subtitles (subtitles.py): user-added or mpv-dropped subtitle
+    files copied into <data>/subtitles/ and keyed by episode slot
+    ("aid:<media_id>:<episode>" or "ep:<episode_id>" for unmatched folders),
+    so one subtitle works identically for local files, online streams, and
+    phone playback."""
+    c.execute("""CREATE TABLE IF NOT EXISTS custom_subtitles(
+        id TEXT PRIMARY KEY, slot TEXT NOT NULL, label TEXT NOT NULL,
+        lang TEXT, ext TEXT NOT NULL, file TEXT NOT NULL,
+        sha256 TEXT NOT NULL, delay REAL NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'upload', created TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS custom_subtitles_slot ON custom_subtitles(slot)")
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
               migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
-              migration_26, migration_27, migration_28, migration_29, migration_30, migration_31, migration_32]
+              migration_26, migration_27, migration_28, migration_29, migration_30, migration_31, migration_32,
+              migration_33]
 
 
 def snapshot_before(target_version):

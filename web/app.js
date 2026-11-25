@@ -2730,8 +2730,9 @@ function epTile(s, sea, ep, tgId, i = 0) {
   const files = ep.files || [], loading = epLoading(ep.id), done = slotSeen(s, ep);
   const picking = S.sel?.show === s.id, picked = picking && S.sel.ids.has(ep.id);
   const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done && !part ? "watched" : "", ep.id === tgId && part ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", rt && spoils(ep) ? "spoil" : ""].filter(Boolean).join(" ");
-  const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep);
-  const meta = loading ? "loading…" : part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}` : `${mins ? mins + " min · " : ""}disk · ${lang}${files.length > 1 ? ` · ${files.length} versions` : ""}`;
+  const mins = minsOf(ep.duration || ep.length), lang = fileLangs(ep), csub = ep.custom_subs?.length || 0;
+  const subTxt = csub ? ` · ${csub === 1 ? "custom sub" : csub + " custom subs"}` : "";
+  const meta = loading ? "loading…" : part ? `${fmtLeft(ep.duration, ep.position)} left · disk · ${lang}${subTxt}` : `${mins ? mins + " min · " : ""}disk · ${lang}${files.length > 1 ? ` · ${files.length} versions` : ""}${subTxt}`;
   return tileHTML({ cls, a: "playep", v: ep.id, i, art, pos, num: "E" + String(ep.number).padStart(2, "0"), pct: part ? pct : 0, loading, watched: done && !part,
     picking, picked, title: epName(s, sea, ep) || "Episode " + ep.number, meta, menu: `Episode ${ep.number} menu` });
 }
@@ -2992,10 +2993,11 @@ function slotTile(p, e, x, tgId, i = 0) {
   const ok = playableSlot(e, x), loading = slotIds(x).some(epLoading), job = x.online && !x.local && dlJob(x.online.id);
   const picking = S.sel?.show === frSelKey(), picked = picking && S.sel.ids.has(x.id);
   const cls = ["ep", picking ? "pick" : "", picked ? "sel" : "", done && !part ? "watched" : "", x.id === tgId ? "resume" : "", art ? "" : "noart", loading ? "loading" : "", ok ? "" : "off", x.thumb && spoils(x) ? "spoil" : ""].filter(Boolean).join(" ");
-  const files = x.local?.files || [], mins = minsOf(x.duration || x.length, e.duration);
+  const files = x.local?.files || [], mins = minsOf(x.duration || x.length, e.duration), csub = x.custom_subs?.length || 0;
   const src = x.local ? `disk · ${fileLangs({ files })}` : ok ? `online · ${e.online.mode || S.settings?.stream?.mode || "sub"}` : "not available";
+  const subTxt = csub ? ` · ${csub === 1 ? "custom sub" : csub + " custom subs"}` : "";
   const meta = loading ? "loading…" : job ? (job.status === "running" ? `downloading · ${Math.floor(job.percent)}%` : "waiting to download")
-    : part ? `${fmtLeft(x.duration, x.position)} left · ${src}` : `${mins ? mins + " min · " : ""}${src}`;
+    : part ? `${fmtLeft(x.duration, x.position)} left · ${src}${subTxt}` : `${mins ? mins + " min · " : ""}${src}${subTxt}`;
   const movie = e.format === "MOVIE" && e.slots.length <= 1;
   return tileHTML({ cls, a: ok ? "playep" : "unavail", v: x.id, i, art, pos, num: movie ? "Movie" : "E" + String(x.number).padStart(2, "0"),
     pct: part ? pct : 0, dlPct: job?.status === "running" ? job.percent : null, loading, watched: done && !part, picking, picked,
@@ -3231,11 +3233,13 @@ function frMore(x0, y0, targetEl = null) {
   const ey = showLbl || [fmtName(e.format), e.year].filter(Boolean).join(" · ");
   const fact = [localN ? (localN === tot ? `all ${localN} on disk` : `${localN} on disk`) : tot ? `${tot} episodes` : ""].filter(Boolean).join(" · ");
   const rw = frRw(e), seen = e.slots.filter((x) => playableSlot(e, x)), allW = seen.length > 0 && seen.every((x) => x.watched);
+  const subN = e.slots.reduce((n, x) => n + (x.custom_subs?.length || 0), 0);
   const main = [
     rw ? cmRow("rwend", "aid:" + e.id, "undo", "End rewatch", "", "", 'data-warn="1"')
       : allW && frTarget(e)?.kind !== "rewatch" ? cmRow("rwstart", "aid:" + e.id, "refresh", "Start rewatch") : "",
     cmRow("pladd", "", "list", "Add to playlist", "L", "", `data-r="aid:${e.id}" data-t="${esc(title)}" data-p="${esc(art || "")}" data-c="${esc(col)}"`),
     e.slots.some((x) => playableSlot(e, x)) ? cmRow("selmode", "", "checkc", picking ? "Stop selecting" : "Select episodes", "S") : "",
+    !S.settings?.phone && e.slots.length ? cmRow("subsea", String(e.id), "cc", "Custom subtitles", "", subN ? `<span class="v">${subN}</span>` : "") : "",
     folders.length ? cmRow("folder", folders[0].show_id, "folder", "Open the folder", "F") : "",
   ].filter(Boolean);
   const fix = [
@@ -3443,7 +3447,7 @@ function cmOther(id) {
   const to = pw === "phone" ? "pc" : "phone";
   return cmRow("playon", id, to === "pc" ? "tv" : "phone", to === "pc" ? "Play on the PC" : "Play on this phone", "", "", `data-where="${to}"`);
 }
-function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, dl, fix, playable = true, watched = ep.watched }) {
+function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, dl, fix, playable = true, watched = ep.watched, csubs = ep.custom_subs || [] }) {
   const vpn = S.data?.vpn, vpnTag = !vpn?.known ? "" : vpn.active ? '<span class="v ok">vpn ✓</span>' : '<span class="v warn">no vpn</span>';
   const res = resumable(ep), rows = [];
   if (playable) rows.push(cmRow("playep", id, "play", res ? `Resume at ${fmtTime(ep.position)}` : "Play", "↵"));
@@ -3458,6 +3462,10 @@ function cmItems({ id, ep, files, verId, online, onlineId, mode, other, local, d
   if (playable) { const on = S.sel?.show === selKey() && S.sel.ids.has(id); mid.push(cmRow("selep", id, "checkc", on ? "Deselect" : "Select", "S")); }
   if (res) mid.push(cmRow("reset", id, "refresh", "Reset progress", "R", "", 'data-warn="1"'));
   const end = [];
+  if (!S.settings?.phone && playable) {
+    end.push(cmRow("subep", id, "cc", "Custom subtitles", "", csubs.length ? `<span class="v">${csubs.length}</span>` : ""));
+    if (csubs.length) end.push(cmRow("subrmep", id, "trash", csubs.length === 1 ? "Remove custom subtitle" : `Remove custom subtitles (${csubs.length})`, "", "", 'data-warn="1"'));
+  }
   if (dl) end.push(cmRow("dlep", onlineId, "download", "Download", "D", vpnTag));
   if (fix) end.push(cmRow("srcfix", "", "search", local ? "Wrong online episodes?" : "Wrong episode?"));
   return [rows, mid, end].filter((g) => g.length).map((g) => g.join("")).join('<div class="sep"></div>');
@@ -3508,7 +3516,7 @@ function Det() {
   <div class="hero${s.poster ? " framed" : " bare"}"><div class="hl2">
     <div class="meta">${factLine(facts, e)}${playing}</div>
     <h1 class="${s.title.length > 26 ? "long" : s.title.length > 14 ? "mid" : ""}">${esc(s.title)}</h1>
-    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}"${tg.kind === "rewatch" ? ' data-rw="1"' : ""}>${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${rw ? `<button class="gb" data-a="rwend" data-v="sid:${esc(s.id)}">${ico("undo")}<span>End rewatch</span></button>` : `${sea && sea.episodes.length ? `<button class="gb" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}<span>${seaAll ? "Unwatch season" : "Mark season watched"}</span></button>` : ""}${s.seasons.length > 1 && flat.length ? `<button class="gb" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}<span>${showAll ? "Unwatch all" : "Mark all watched"}</span></button>` : ""}`}${flat.length ? `<button class="gb${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}<span>${S.sel?.show === s.id ? "Done" : "Select"}</span></button>` : ""}<i class="gsep"></i><button class="gb ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>${s.path && flat.length ? `<button class="gb ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</span></div>
+    <div class="cta">${tg ? `<button class="btn pri big${goBusy ? " loading" : ""}" data-a="play" data-v="${esc(tg.ep.id)}"${tg.kind === "rewatch" ? ' data-rw="1"' : ""}>${goBusy ? '<i class="spin"></i>' : ico("play")}<span>${goBusy ? "Loading…" : esc(goLabel)}</span></button>` : ""}<span class="grp">${rw ? `<button class="gb" data-a="rwend" data-v="sid:${esc(s.id)}">${ico("undo")}<span>End rewatch</span></button>` : `${sea && sea.episodes.length ? `<button class="gb" data-a="bulk" data-s="${S.seasonIdx}" data-w="${!seaAll}">${ico(seaAll ? "undo" : "check")}<span>${seaAll ? "Unwatch season" : "Mark season watched"}</span></button>` : ""}${s.seasons.length > 1 && flat.length ? `<button class="gb" data-a="bulk" data-s="" data-w="${!showAll}">${ico(showAll ? "undo" : "check")}<span>${showAll ? "Unwatch all" : "Mark all watched"}</span></button>` : ""}`}${flat.length ? `<button class="gb${S.sel?.show === s.id ? " on" : ""}" data-a="selmode">${ico("checkc")}<span>${S.sel?.show === s.id ? "Done" : "Select"}</span></button>` : ""}<i class="gsep"></i>${!S.settings?.phone && flat.length ? `<button class="gb ic" aria-label="Custom subtitles" title="Custom subtitles" data-a="subshow" data-v="${esc(s.id)}">${ico("cc")}</button>` : ""}<button class="gb ic" aria-label="Add to playlist" title="Add to playlist" data-a="pladd" data-r="${esc(plShowRef(s))}" data-t="${esc(s.title)}" data-p="${esc(s.poster || "")}">${ico("list")}</button>${s.path && flat.length ? `<button class="gb ic" aria-label="Open the folder" title="Open the folder" data-a="folder" data-v="${esc(s.id)}">${ico("folder")}</button>` : ""}</span></div>
   </div>${s.poster ? `<div class="hp">${poster(s.title, s.poster)}</div>` : ""}</div>
   ${matched ? "" : `<div class="matchbox">${(autoSuggest([s]), matchTease(s))}</div>`}
   <div class="eps-head"><div class="tabs2">${s.seasons.length > 1 ? `<div class="rels" data-glide="seasons">${s.seasons.map((x, i) => `<button class="${i === S.seasonIdx ? "on" : ""}" data-a="season" data-v="${i}">${esc(x.label)}${x.episodes.length ? `<span class="n">· ${x.episodes.length}</span>` : ""}</button>`).join("")}</div>` : `<h2>${movie ? "Movie" : "Episodes"}</h2>`}</div>
@@ -5071,7 +5079,238 @@ const dotTxt = (t, c = "ok") => `<span class="chip${c === "live" || c === "warn"
 const setLink = (tab, row, label) => `<button class="lnk" data-a="setgo" data-t="${tab}" data-v="${esc(row)}">${label} settings ›</button>`;
 const whoTxt = (u) => `<span class="who"><i class="avatar">${esc((u || "?")[0].toUpperCase())}</i>${esc(u || "")}</span>`;
 /* The pop-ups drawn this way (paintModal gives them the .dl2 frame). */
-const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done", "peer"]);
+const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done", "peer", "subs"]);
+
+/* ---------- custom subtitles (episode + whole-season batch) ---------- */
+const readB64 = (file) => new Promise((ok, no) => {
+  const fr = new FileReader();
+  fr.onload = () => ok(String(fr.result).split(",")[1] || "");
+  fr.onerror = no;
+  fr.readAsDataURL(file);
+});
+function subRefreshViews() {
+  if (S.view === "fr" && S.fr?.eid) frLoad(S.fr.eid);
+  else if (S.view === "show") reload();
+}
+async function subReloadModal() {
+  const m = S.modal;
+  if (!m || m.t !== "subs") return;
+  const q = m.mode === "ep"
+    ? [m.slot ? `slot=${encodeURIComponent(m.slot)}` : "", m.epId ? `ep=${encodeURIComponent(m.epId)}` : ""].filter(Boolean).join("&")
+    : (m.mediaId ? `media_id=${m.mediaId}` : `show_id=${encodeURIComponent(m.showId)}`);
+  try {
+    const r = await api(`/api/subtitles?${q}`);
+    if (S.modal !== m) return;
+    m.items = r.subtitles || [];
+    m.loading = false;
+  } catch {
+    if (S.modal !== m) return;
+    m.items = m.items || [];
+    m.loading = false;
+    m.err = "Could not load subtitles.";
+  }
+  paintModal();
+}
+function subOpenEp(epId) {
+  let title = "Episode", subtitle = "", art = null, slot = null;
+  if (S.view === "fr") {
+    const f = frFind(epId);
+    if (f) {
+      const { e, x } = f, p = S.fr?.page;
+      slot = `aid:${e.id}:${x.number}`;
+      title = `Episode ${String(x.number).padStart(2, "0")}`;
+      subtitle = [e.title || p?.title, !spoils(x) && x.title ? x.title : ""].filter(Boolean).join(" · ");
+      art = x.thumb || e.banner || p?.banner || e.poster || null;
+    }
+  } else {
+    const ctx = findEpContext(epId);
+    if (ctx) {
+      slot = `ep:${epId}`;
+      title = `Episode ${String(ctx.ep.number).padStart(2, "0")}`;
+      subtitle = [ctx.s.title, ctx.sea.label].filter(Boolean).join(" · ");
+      art = ctx.s.banner || ctx.s.poster || null;
+    }
+  }
+  openModal({ t: "subs", mode: "ep", epId, slot, title, subtitle, art, items: null, loading: true, busy: "", err: "" });
+  subReloadModal();
+}
+function subOpenSeason(mediaId) {
+  const e = S.fr?.page?.entries?.find((x) => x.id === mediaId) || frEntry();
+  if (!e) return;
+  const p = S.fr?.page;
+  const episodes = e.slots.map((x) => ({
+    number: x.number, slot: `aid:${e.id}:${x.number}`,
+    label: `E${String(x.number).padStart(2, "0")}${!spoils(x) && x.title ? " · " + x.title : ""}`,
+  }));
+  openModal({
+    t: "subs", mode: "season", mediaId: e.id, episodes,
+    title: "Custom subtitles", subtitle: e.title || p?.title || e.label || "",
+    art: e.banner || p?.banner || e.poster || null,
+    items: null, loading: true, busy: "", err: "", batch: null,
+  });
+  subReloadModal();
+}
+function subOpenShow(showId) {
+  const s = showById(showId);
+  if (!s) return;
+  const sea = s.seasons[S.seasonIdx] || s.seasons[0];
+  const episodes = (sea?.episodes || []).map((ep) => ({
+    number: ep.number, slot: `ep:${ep.id}`,
+    label: `E${String(ep.number).padStart(2, "0")}`,
+  }));
+  openModal({
+    t: "subs", mode: "season", showId: s.id, episodes,
+    title: "Custom subtitles", subtitle: [s.title, sea?.label].filter(Boolean).join(" · "),
+    art: s.banner || s.poster || null,
+    items: null, loading: true, busy: "", err: "", batch: null,
+  });
+  subReloadModal();
+}
+async function subHandleFiles(fileList) {
+  const m = S.modal;
+  const files = [...(fileList || [])].filter(Boolean);
+  if (!m || m.t !== "subs" || !files.length || m.busy) return;
+  m.err = "";
+  if (m.mode === "ep") {
+    m.busy = `Adding ${files.length === 1 ? files[0].name : files.length + " files"}…`;
+    paintModal();
+    let added = 0;
+    for (const f of files) {
+      if (f.size > 8_000_000) { m.err = `${f.name} is over 8 MB.`; continue; }
+      try {
+        const data = await readB64(f);
+        const r = await api("/api/subtitles/upload", { slot: m.slot, ep_id: m.epId, name: f.name, data });
+        if (!r.ok) { m.err = r.error || `Could not add ${f.name}.`; continue; }
+        added++;
+      } catch { m.err = "Could not reach the hub."; }
+    }
+    m.busy = "";
+    if (added) { toast(added === 1 ? "Subtitle added" : `${added} subtitles added`); subRefreshViews(); }
+    await subReloadModal();
+    return;
+  }
+  // Season mode: stage files (including .zip packs) for episode match preview.
+  let total = 0;
+  for (const f of files) total += f.size;
+  if (total > 24_000_000) { m.err = "Selection is over 24 MB."; paintModal(); return; }
+  m.busy = "Reading subtitle files…";
+  paintModal();
+  try {
+    const specs = [];
+    for (const f of files) specs.push({ name: f.name, data: await readB64(f) });
+    const numbers = (m.episodes || []).map((x) => x.number);
+    const r = await api("/api/subtitles/batch-stage", { files: specs, numbers });
+    if (S.modal !== m) return;
+    m.busy = "";
+    if (!r.ok) { m.err = r.error || "Could not read those files."; paintModal(); return; }
+    const byNum = new Map((m.episodes || []).map((x) => [x.number, x.slot]));
+    m.batch = {
+      token: r.token,
+      items: (r.items || []).map((it) => ({ ...it, slot: it.suggested_ep != null ? (byNum.get(it.suggested_ep) || "") : "" })),
+    };
+    paintModal();
+  } catch {
+    if (S.modal !== m) return;
+    m.busy = ""; m.err = "Could not reach the hub."; paintModal();
+  }
+}
+async function subCommitBatch() {
+  const m = S.modal;
+  if (!m || m.t !== "subs" || !m.batch || m.busy) return;
+  const picks = m.batch.items.filter((x) => !x.error && x.slot).map((x) => ({ idx: x.idx, slot: x.slot, label: x.label }));
+  if (!picks.length) { m.err = "Match at least one file to an episode."; paintModal(); return; }
+  m.busy = `Adding ${picks.length} subtitle${picks.length === 1 ? "" : "s"}…`; m.err = "";
+  paintModal();
+  try {
+    const r = await api("/api/subtitles/batch-commit", { token: m.batch.token, picks });
+    if (S.modal !== m) return;
+    m.busy = "";
+    if (!r.ok) { m.err = r.error || "Could not save subtitles."; paintModal(); return; }
+    m.batch = null;
+    toast(r.count === 1 ? "Subtitle added" : `${r.count} subtitles added`);
+    subRefreshViews();
+    await subReloadModal();
+  } catch {
+    if (S.modal !== m) return;
+    m.busy = ""; m.err = "Could not reach the hub."; paintModal();
+  }
+}
+function subToastUndo(msg, undoToken) {
+  if (!undoToken) return toast(msg);
+  toastUndo(msg, async () => {
+    try {
+      const r = await api("/api/subtitles/undo", { token: undoToken });
+      if (!r.ok) return toast(r.error || "Could not restore subtitles.");
+      toast(r.count === 1 ? "Subtitle restored" : `${r.count} subtitles restored`);
+      subRefreshViews();
+      if (S.modal?.t === "subs") subReloadModal();
+    } catch { toast("Could not reach the hub."); }
+  });
+}
+function fmtDelay(d) {
+  const v = Math.round((Number(d) || 0) * 100) / 100;
+  return `${v > 0 ? "+" : ""}${v.toFixed(2)} s`;
+}
+function SubDlg() {
+  const m = S.modal, epMode = m.mode === "ep";
+  const accept = epMode ? ".srt,.ass,.ssa,.vtt" : ".srt,.ass,.ssa,.vtt,.zip";
+  const dropHint = epMode ? "Drop .srt, .ass, .ssa or .vtt files here — or click to pick" : "Drop subtitle files or a .zip pack here — or click to pick";
+  const drop = `<label class="sdrop${m.busy ? " busy" : ""}" data-subdrop="1">
+    <input type="file" data-a="subfile" accept="${accept}" multiple hidden ${m.busy ? "disabled" : ""}>
+    <span class="sdrop-i">${m.busy ? '<i class="spin"></i>' : ico("cc")}</span>
+    <span class="sdrop-t"><b>${m.busy ? esc(m.busy) : epMode ? "Add subtitle file" : "Import season subtitles"}</b><small>${esc(m.busy ? "Working…" : dropHint)}</small></span>
+  </label>`;
+  let body = "";
+  if (m.batch) {
+    const b = m.batch, matched = b.items.filter((x) => !x.error && x.slot).length;
+    const epOpts = (sel) => `<option value="">Skip</option>` + (m.episodes || []).map((e) => `<option value="${esc(e.slot)}"${sel === e.slot ? " selected" : ""}>${esc(e.label)}</option>`).join("");
+    body = `<div class="subbh"><span><b>${b.items.length} file${b.items.length === 1 ? "" : "s"}</b> · matched ${matched}</span><button class="link-btn" data-a="subbclr">Pick different files</button></div>
+      <div class="subbl">${b.items.map((x) => `<div class="subbr${x.error ? " err" : !x.slot ? " skip" : ""}">
+        <div class="subbf"><b title="${esc(x.name)}">${esc(x.name)}</b><small>${esc(x.error || `${x.ext.slice(1).toUpperCase()} · ${x.label}`)}</small></div>
+        ${x.error ? "" : `<select class="subbs" data-a="subbep" data-i="${x.idx}" aria-label="Episode for ${esc(x.name)}">${epOpts(x.slot)}</select>`}
+        <button class="subx" data-a="subbdrop" data-i="${x.idx}" aria-label="Remove from batch">${ico("close")}</button>
+      </div>`).join("")}</div>`;
+  } else {
+    const items = m.items || [];
+    const epMap = new Map((m.episodes || []).map((x) => [x.slot, x]));
+    const rows = m.loading ? `<p class="sub">${dotTxt("Loading…", "live")}</p>`
+      : !items.length ? `<p class="sub subnone">${epMode ? "No custom subtitles attached to this episode yet. Dragging a file into mpv also keeps it here automatically." : "No custom subtitles attached to this season yet."}</p>`
+      : `<div class="sublist">${items.map((x) => {
+        const epTag = !epMode ? (x.ep_num != null ? `E${String(x.ep_num).padStart(2, "0")}` : epMap.get(x.slot)?.label || "EP") : "";
+        const meta = [x.ext.slice(1).toUpperCase(), x.source === "mpv" ? "from mpv" : "", !epMode && x.delay ? fmtDelay(x.delay) : ""].filter(Boolean).join(" · ");
+        if (epMode) {
+          return `<div class="subrow">
+            <div class="subm">
+              <input class="sub-lbl" data-a="sublbl" data-id="${esc(x.id)}" value="${esc(x.label)}" aria-label="Subtitle label" maxlength="80">
+              <small>${esc(meta)}</small>
+            </div>
+            <span class="sub-step seg" title="Subtitle timing offset">
+              <button data-a="subdel" data-v="-0.25" data-id="${esc(x.id)}" aria-label="Earlier">${ico("minus")}</button>
+              <button class="sub-dv" data-a="subdel0" data-id="${esc(x.id)}" title="Click to reset to 0 s">${fmtDelay(x.delay)}</button>
+              <button data-a="subdel" data-v="0.25" data-id="${esc(x.id)}" aria-label="Later">${ico("plus")}</button>
+            </span>
+            <button class="subx" data-a="subrm" data-v="${esc(x.id)}" aria-label="Remove ${esc(x.label)}" title="Remove">${ico("trash")}</button>
+          </div>`;
+        }
+        return `<div class="subrow sea">
+          <span class="subep">${esc(epTag)}</span>
+          <div class="subm"><b>${esc(x.label)}</b><small>${esc(meta)}</small></div>
+          <button class="subx" data-a="subrm" data-v="${esc(x.id)}" aria-label="Remove ${esc(x.label)}" title="Remove">${ico("trash")}</button>
+        </div>`;
+      }).join("")}</div>`;
+    body = drop + rows;
+  }
+  const err = m.err ? `<div class="msg">${esc(m.err)}</div>` : "";
+  const footLeft = !m.batch && !epMode && (m.items || []).length
+    ? `<button class="btn danger" data-a="subrmall">${ico("trash")}Remove all (${m.items.length})</button>`
+    : !m.batch && epMode && (m.items || []).length > 1
+    ? `<button class="btn danger" data-a="subrmall">${ico("trash")}Remove all</button>` : "";
+  const matchedN = m.batch ? m.batch.items.filter((x) => !x.error && x.slot).length : 0;
+  const footRight = m.batch
+    ? `<button class="btn" data-a="subbclr">Back</button><button class="btn pri" data-a="subbgo" ${matchedN && !m.busy ? "" : "disabled"}>Add ${matchedN} subtitle${matchedN === 1 ? "" : "s"}${kb("↵")}</button>`
+    : `<button class="btn" data-a="close">Done${kb("Esc")}</button>`;
+  return dlHead(esc(m.title), esc(m.subtitle || ""), m.art || null) + dlBody(body + err) + dlFoot(footLeft, footRight);
+}
 /* skp: the play would also use AniSkip (Decision 39), so the dialog asks
    that too; go(true/false) carries the answer. */
 function vpnGate(go, skp = false) {
@@ -6489,7 +6728,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, where: WhereDlg, peer: PeerDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, subs: SubDlg, where: WhereDlg, peer: PeerDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -7566,9 +7805,14 @@ async function ppLoad(id, version, r) {
     el.classList.remove("wait");
     toast(online ? "This phone couldn't play the episode." : "This phone can't play this file.", "err");
   });
-  for (const [i, src] of (r.subs || []).entries()) v.insertAdjacentHTML("beforeend", `<track kind="subtitles" srclang="en" label="${i ? "English " + (i + 1) : "English"}" src="${esc(src)}"${i ? "" : " default"}>`);
-  const tr = v.querySelector("track");
-  if (tr) tr.addEventListener("load", () => ppSubDelay(0), { signal: ac.signal });
+  const tracks = Array.isArray(r.sub_tracks) && r.sub_tracks.length
+    ? r.sub_tracks
+    : (r.subs || []).map((url, i) => ({ url, label: i ? "English " + (i + 1) : "English", lang: "en", custom: false, delay: 0 }));
+  PP.subTracks = tracks;
+  PP.subIdx = tracks.length ? 0 : -1;
+  PP.subDelay = tracks[0]?.delay || 0;
+  for (const [i, t] of tracks.entries()) v.insertAdjacentHTML("beforeend", `<track kind="subtitles" srclang="${esc(t.lang || "en")}" label="${esc(t.label || ("Subtitles " + (i + 1)))}" src="${esc(t.url)}"${i ? "" : " default"}>`);
+  for (const tr of v.querySelectorAll("track")) tr.addEventListener("load", () => ppSubDelay(0), { signal: ac.signal });
   ppPaintSpeed(); ppEpsLoad().then(ppPaintNext);
   el.classList.toggle("fill", !!lsGet("ppFill", false));
   if (!(await ppSource(v, r, false))) return; // closed or replaced while hls.js loaded
@@ -7639,12 +7883,20 @@ function ppMenuHTML() {
     ${ppCanFull() ? ppRow("Full screen", "ppfull", [[0, "Off"], [1, "On"]], ppIsFull() ? 1 : 0) : ""}
     <button class="btn pp-finish" data-a="ppfinish">${ico("next")}Finish episode</button>`;
 }
-/* Audio tab: Sub/Dub, subtitles on/off and their timing. */
+/* Audio tab: Sub/Dub, subtitle tracks (custom + built-in) and timing. */
 function ppAudioHTML() {
-  const r = PP.r || {}, a = r.audio, subs = (r.subs || []).length, tr = ppVideo()?.textTracks[0];
-  if (!a && !subs) return `<p class="sub">This episode has one language and no separate subtitles.</p>`;
+  const r = PP.r || {}, a = r.audio, tracks = PP.subTracks || [], v = ppVideo();
+  if (!a && !tracks.length) return `<p class="sub">This episode has one language and no separate subtitles.</p>`;
+  let cur = -1;
+  if (v?.textTracks) {
+    for (let i = 0; i < v.textTracks.length; i++) if (v.textTracks[i].mode === "showing") { cur = i; break; }
+  }
+  const subOpts = tracks.length <= 1
+    ? [[0, "Off"], [1, tracks[0]?.label ? esc(tracks[0].label) : "On"]]
+    : [[-1, "Off"], ...tracks.map((t, i) => [i, esc(t.label || `Track ${i + 1}`)])];
+  const subVal = tracks.length <= 1 ? (cur >= 0 ? 1 : 0) : cur;
   return `${a ? ppRow("Language", "ppaudio", [["sub", "Sub"], ["dub", "Dub"]], a.current) : ""}
-    ${subs ? `${ppRow("Subtitles", "ppsubs", [[0, "Off"], [1, "On"]], tr && tr.mode === "showing" ? 1 : 0)}<div class="pp-row"><span>Subtitle timing</span><span class="pp-step seg"><button data-a="ppsubd" data-v="-0.25" aria-label="Earlier">${ico("minus")}</button><b>${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button data-a="ppsubd" data-v="0.25" aria-label="Later">${ico("plus")}</button></span></div>` : ""}
+    ${tracks.length ? `${ppRow("Subtitles", "ppsubs", subOpts, subVal)}<div class="pp-row"><span>Subtitle timing</span><span class="pp-step seg"><button data-a="ppsubd" data-v="-0.25" aria-label="Earlier">${ico("minus")}</button><b>${(PP.subDelay || 0) > 0 ? "+" : ""}${(PP.subDelay || 0).toFixed(2)} s</b><button data-a="ppsubd" data-v="0.25" aria-label="Later">${ico("plus")}</button></span></div>` : ""}
     ${a ? `<p class="sub">Switching goes back 5 s.</p>` : ""}`;
 }
 /* Episodes tab: stills like the show page's, from the library the page already has. */
@@ -8502,8 +8754,98 @@ const A = {
   ppsleep: (val) => { ppSleep(val === "" ? null : val === "end" ? "end" : +val); ppPanel("menu"); if (val) ppNote(val === "end" ? "Stops after this episode" : `Pauses in ${val} minutes`); },
   ppfill: (val) => { lsSet("ppFill", val === "1"); $("#pp")?.classList.toggle("fill", val === "1"); ppPanel("menu"); },
   ppaudio: (val) => { ppPanel(null); ppSwitch(val); },
-  ppsubs: (val) => { const tr = ppVideo()?.textTracks[0]; if (tr) tr.mode = val === "1" ? "showing" : "hidden"; ppPanel("audio"); },
-  ppsubd: (val) => { ppSubDelay(+val); ppPanel("audio"); },
+  ppsubs: (val) => {
+    const v = ppVideo(), tracks = PP.subTracks || [];
+    if (!v?.textTracks) return;
+    const idx = tracks.length <= 1 ? (val === "1" ? 0 : -1) : +val;
+    PP.subIdx = idx;
+    for (let i = 0; i < v.textTracks.length; i++) v.textTracks[i].mode = i === idx ? "showing" : "hidden";
+    if (idx >= 0 && tracks[idx]) { PP.subDelay = tracks[idx].delay || 0; ppSubDelay(0); }
+    ppPanel("audio");
+  },
+  ppsubd: (val) => {
+    ppSubDelay(+val);
+    const cur = (PP.subTracks || [])[PP.subIdx];
+    if (cur?.custom && cur.id) {
+      cur.delay = PP.subDelay;
+      clearTimeout(PP.subSaveT);
+      PP.subSaveT = setTimeout(() => api("/api/subtitles/update", { id: cur.id, delay: cur.delay }).catch(() => {}), 350);
+    }
+    ppPanel("audio");
+  },
+  subep: (v) => subOpenEp(v),
+  subsea: (v) => subOpenSeason(+v),
+  subshow: (v) => subOpenShow(v),
+  subfile: (v, t) => { const fs = [...(t.files || [])]; t.value = ""; subHandleFiles(fs); },
+  subbep: (v, t) => { const it = S.modal?.batch?.items?.find((x) => String(x.idx) === t.dataset.i); if (it) { it.slot = v; paintModal(); } },
+  subbdrop: (v, t) => {
+    const b = S.modal?.batch;
+    if (!b) return;
+    b.items = b.items.filter((x) => String(x.idx) !== t.dataset.i);
+    if (!b.items.length) S.modal.batch = null;
+    paintModal();
+  },
+  subbclr: () => { if (S.modal?.t === "subs") { S.modal.batch = null; S.modal.err = ""; paintModal(); } },
+  subbgo: () => subCommitBatch(),
+  sublbl: async (v, t) => {
+    const id = t.dataset.id, lbl = (v || "").trim();
+    if (!id || !lbl) return;
+    try {
+      const r = await api("/api/subtitles/update", { id, label: lbl });
+      if (!r.ok) return toast(r.error || "Could not rename subtitle.");
+      const it = S.modal?.items?.find((x) => x.id === id);
+      if (it) it.label = r.subtitle.label;
+      subRefreshViews();
+    } catch { toast("Could not reach the hub."); }
+  },
+  subdel: async (v, t) => {
+    const id = t.dataset.id, it = S.modal?.items?.find((x) => x.id === id);
+    if (!it) return;
+    const next = Math.round(((it.delay || 0) + +v) * 100) / 100;
+    it.delay = Math.max(-60, Math.min(60, next));
+    paintModal();
+    api("/api/subtitles/update", { id, delay: it.delay }).catch(() => {});
+  },
+  subdel0: async (v, t) => {
+    const id = t.dataset.id, it = S.modal?.items?.find((x) => x.id === id);
+    if (!it) return;
+    it.delay = 0;
+    paintModal();
+    api("/api/subtitles/update", { id, delay: 0 }).catch(() => {});
+  },
+  subrm: async (v) => {
+    try {
+      const r = await api("/api/subtitles/remove", { id: v });
+      if (!r.ok) return toast(r.error || "Could not remove subtitle.");
+      subToastUndo("Subtitle removed", r.undo_token);
+      subRefreshViews();
+      if (S.modal?.t === "subs") subReloadModal();
+    } catch { toast("Could not reach the hub."); }
+  },
+  subrmep: async (v) => {
+    const f = S.view === "fr" ? frFind(v) : null;
+    const body = f ? { slot: `aid:${f.e.id}:${f.x.number}`, ep_id: v } : { ep_id: v };
+    try {
+      const r = await api("/api/subtitles/remove", body);
+      if (!r.ok) return toast(r.error || "Could not remove subtitles.");
+      subToastUndo(r.count === 1 ? "Subtitle removed" : `${r.count} subtitles removed`, r.undo_token);
+      subRefreshViews();
+    } catch { toast("Could not reach the hub."); }
+  },
+  subrmall: async () => {
+    const m = S.modal;
+    if (!m || m.t !== "subs") return;
+    const body = m.mode === "ep"
+      ? (m.slot ? { slot: m.slot } : { ep_id: m.epId })
+      : (m.mediaId ? { media_id: m.mediaId } : { show_id: m.showId });
+    try {
+      const r = await api("/api/subtitles/remove", body);
+      if (!r.ok) return toast(r.error || "Could not remove subtitles.");
+      subToastUndo(r.count === 1 ? "Subtitle removed" : `${r.count} subtitles removed`, r.undo_token);
+      subRefreshViews();
+      subReloadModal();
+    } catch { toast("Could not reach the hub."); }
+  },
   ppfinish: () => { ppPanel(null); const v = ppVideo(); if (v && !PP.ended) { v.pause(); ppReport({ ended: true }); } },
   ppep: (val) => { ppPanel(null); if (val !== PP.id) ppGo(val, 0); },
   pptoggle: () => { const v = ppVideo(); if (v) v.paused ? v.play().catch(() => {}) : v.pause(); ppShowBar(); },
@@ -9149,6 +9491,24 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target.closest("[data-a]");
   if (t && isField(t) && A[t.dataset.a]) A[t.dataset.a](t.value, t, e);
+});
+/* Drag-and-drop subtitle files anywhere onto the Custom subtitles modal. */
+document.addEventListener("dragover", (e) => {
+  if (S.modal?.t !== "subs" || S.modal.busy) return;
+  if (!e.target.closest?.("#modal .dialog")) return;
+  e.preventDefault();
+  $(".sdrop")?.classList.add("over");
+});
+document.addEventListener("dragleave", (e) => {
+  if (S.modal?.t !== "subs") return;
+  if (!e.relatedTarget || !e.relatedTarget.closest?.("#modal .dialog")) $(".sdrop")?.classList.remove("over");
+});
+document.addEventListener("drop", (e) => {
+  if (S.modal?.t !== "subs") return;
+  if (!e.target.closest?.("#modal .dialog")) return;
+  e.preventDefault();
+  $(".sdrop")?.classList.remove("over");
+  if (e.dataTransfer?.files?.length) subHandleFiles(e.dataTransfer.files);
 });
 /* Dropdowns (Decision 38, overhauled to match #cm Tight Context Card): a mouse
    click opens the app's own glass card instead of the browser's grey list; the

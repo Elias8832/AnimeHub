@@ -33,6 +33,8 @@ BLOCKED = ("/api/browse", "/api/library-root", "/api/library-extra", "/api/adopt
            "/api/auth/token", "/api/auth/logout", "/auth/callback",
            "/api/auth/mal/start", "/api/auth/mal/paste", "/auth/mal/callback", "/api/auth/use", "/api/remote", "/api/anicli-get", "/api/tools-install", "/api/update-check", "/api/update-install", "/api/update-restart",
            "/api/fonts/import", "/api/fonts/add", "/api/fonts/delete", "/api/fonts/system",
+           "/api/subtitles/upload", "/api/subtitles/batch-stage", "/api/subtitles/batch-commit",
+           "/api/subtitles/remove", "/api/subtitles/undo",
            "/api/peer")
 # What the pairing page itself needs before a phone is paired.
 OPEN = ("/pair", "/api/remote/pair", "/style.css", "/manifest.webmanifest", "/icon.svg", "/icon-180.png", "/icon-192.png", "/icon-512.png")

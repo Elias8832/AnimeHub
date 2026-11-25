@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 
-from . import anicli, database, library, mapping, pages, prepare, progress, settings, skips, streaming, system, tracks, util
+from . import anicli, database, library, mapping, pages, prepare, progress, settings, skips, streaming, subtitles, system, tracks, util
 from .config import config, PLAYER_FONTS, PLAYER_LOOKS, PLAYER_MOUSE_LUA, SKIP_CREDITS_LUA
 
 
@@ -136,27 +136,215 @@ def track_shows(ep_id):
     return keys
 
 
-def follow_tracks(sock_path, ep_id, state, data):
+def follow_tracks(sock_path, ep_id, state, data, has_custom_sub=False):
     """Called on every poll once mpv plays, with mpv's track-list: the
     first time, pick the show's remembered tracks; after that, remember a
     track the user switched to (in mpv or on the phone remote). state
-    carries the show keys and what mpv played last poll."""
+    carries the show keys and what mpv played last poll. When this episode
+    has a custom subtitle attached, keep it selected on startup instead of
+    overriding it with the show's general subtitle preference, and don't
+    overwrite the show's general preference with a per-episode external file."""
     if not isinstance(data, list) or not data:
         return
     if "shows" not in state:
         state["shows"] = track_shows(ep_id)
         if not state["shows"]:
             return
-        for prop, val in tracks.changes(data, tracks.load(state["shows"])).items():
+        want = tracks.changes(data, tracks.load(state["shows"]))
+        if has_custom_sub:
+            want.pop("sid", None)
+        for prop, val in want.items():
             mpv_ipc(sock_path, ["set_property", prop, val])
         data = (mpv_ipc(sock_path, ["get_property", "track-list"]) or {}).get("data") or data
     elif not state["shows"]:
         return
     now = tracks.selection(data)
+    ext_sub = any(t.get("type") == "sub" and t.get("selected") and t.get("external") for t in data)
     for kind in tracks.KINDS:
+        if kind == "sub" and ext_sub:
+            continue
         if "seen" in state and now[kind] != state["seen"][kind] and now[kind]:
             tracks.save(state["shows"], kind, now[kind])
     state["seen"] = now
+
+
+def _sub_path_keys(path):
+    """Normalized path keys for matching mpv's external-filename across
+    POSIX, Windows backslashes, and symlinks."""
+    s = str(path or "").strip()
+    if not s:
+        return ()
+    keys = {os.path.normcase(os.path.normpath(s))}
+    try:
+        keys.add(os.path.normcase(os.path.realpath(s)))
+    except OSError:
+        pass
+    return tuple(keys)
+
+
+def _local_video_path(ep_id, version=0):
+    if not isinstance(ep_id, str) or ep_id.startswith("stream:"):
+        return None
+    _, ep = library.episode_by_id(ep_id)
+    if not ep:
+        return None
+    files = ep.get("files") or ([{"path": ep["rel"]}] if ep.get("rel") else [])
+    if not files:
+        return None
+    idx = max(0, min(int(version or 0), len(files) - 1))
+    return library.abs_path(files[idx]["path"])
+
+
+def load_custom_subs(sock_path, ep_id, state):
+    """Attach this episode's stored custom subtitles over mpv IPC (`sub-add`)
+    and apply the primary custom subtitle's remembered delay. Works identically
+    for local files, online streams, and pre-warmed episodes."""
+    items = subtitles.for_episode(ep_id)
+    if not items:
+        return False
+    for i, item in enumerate(items):
+        p = item["path"]
+        flag = "select" if i == 0 else "auto"
+        cmd = ["sub-add", p.as_posix(), flag, item["label"]]
+        if item.get("lang"):
+            cmd.append(item["lang"])
+        mpv_ipc(sock_path, cmd)
+        for k in _sub_path_keys(p):
+            state["map"][k] = item["id"]
+            state["seen_ext"].add(k)
+        state["delays"][item["id"]] = float(item.get("delay") or 0.0)
+    first = items[0]
+    state["active"] = first["id"]
+    if first.get("delay"):
+        mpv_ipc(sock_path, ["set_property", "sub-delay", float(first["delay"])])
+    return True
+
+
+def follow_custom_subs(sock_path, ep_id, state, track_list, sub_delay, video_path=None):
+    """Watch mpv's track-list for:
+    (1) Subtitle files dragged into mpv — automatically copy and keep them for
+        this episode slot (ignoring URLs, managed files, and video sidecars).
+    (2) Subtitle delay changes on any active custom subtitle — persist them so
+        the next playback starts with the same timing offset."""
+    if not isinstance(track_list, list):
+        return
+    for t in track_list:
+        if t.get("type") != "sub" or not t.get("external"):
+            continue
+        ext_fn = t.get("external-filename")
+        if not isinstance(ext_fn, str) or not ext_fn.strip():
+            continue
+        keys = _sub_path_keys(ext_fn)
+        if not keys or any(k in state["seen_ext"] for k in keys):
+            continue
+        for k in keys:
+            state["seen_ext"].add(k)
+        saved = subtitles.capture_mpv_external(
+            ep_id, ext_fn, title=t.get("title"), lang=t.get("lang"), video_path=video_path,
+        )
+        if not saved:
+            continue
+        for k in keys:
+            state["map"][k] = saved["id"]
+        stored = subtitles.file_path(saved["id"])
+        if stored:
+            for k in _sub_path_keys(stored):
+                state["map"][k] = saved["id"]
+                state["seen_ext"].add(k)
+        state["delays"][saved["id"]] = float(saved.get("delay") or 0.0)
+        if not saved.get("deduped"):
+            try:
+                mpv_ipc(sock_path, ["show-text", f"Saved subtitle: {saved['label']}", 2500])
+            except OSError:
+                pass
+    # Track active custom subtitle and persist any user delay adjustments.
+    sel = next((t for t in track_list if t.get("type") == "sub" and t.get("selected")), None)
+    cur_id = None
+    if sel and sel.get("external") and sel.get("external-filename"):
+        for k in _sub_path_keys(sel["external-filename"]):
+            if k in state["map"]:
+                cur_id = state["map"][k]
+                break
+    prev_id = state.get("active")
+    if cur_id and cur_id != prev_id:
+        # Switched to another custom subtitle: apply its saved delay.
+        state["active"] = cur_id
+        want_delay = state["delays"].get(cur_id, 0.0)
+        if want_delay and (not isinstance(sub_delay, (int, float)) or abs(sub_delay - want_delay) >= 0.01):
+            try:
+                mpv_ipc(sock_path, ["set_property", "sub-delay", want_delay])
+            except OSError:
+                pass
+        return
+    state["active"] = cur_id
+    if cur_id and isinstance(sub_delay, (int, float)):
+        val = round(float(sub_delay), 2)
+        if abs(val - state["delays"].get(cur_id, 0.0)) >= 0.01:
+            state["delays"][cur_id] = val
+            subtitles.set_delay(cur_id, val)
+
+
+def attach_live_sub(slot, sub_record):
+    """If the episode matching `slot` is currently playing in mpv, hot-load the
+    newly added custom subtitle right away."""
+    with _active_lock:
+        a = next(iter(_active.values()), None)
+        ep_id = a.get("ep_id") if a else None
+        sock = a.get("sock") if a else None
+        cstate = a.get("custom_subs") if a else None
+    if not sock or not ep_id or slot not in subtitles.slot_keys_for_episode(ep_id):
+        return False
+    p = subtitles.file_path(sub_record["id"])
+    if not p:
+        return False
+    cmd = ["sub-add", p.as_posix(), "select", sub_record["label"]]
+    if sub_record.get("lang"):
+        cmd.append(sub_record["lang"])
+    try:
+        mpv_ipc(sock, cmd)
+        if sub_record.get("delay"):
+            mpv_ipc(sock, ["set_property", "sub-delay", float(sub_record["delay"])])
+    except OSError:
+        return False
+    if isinstance(cstate, dict):
+        for k in _sub_path_keys(p):
+            cstate["map"][k] = sub_record["id"]
+            cstate["seen_ext"].add(k)
+        cstate["delays"][sub_record["id"]] = float(sub_record.get("delay") or 0.0)
+        cstate["active"] = sub_record["id"]
+    return True
+
+
+def remove_live_subs(removed_records):
+    """If any removed custom subtitle is currently loaded in mpv, remove its
+    track immediately."""
+    if not removed_records:
+        return
+    with _active_lock:
+        a = next(iter(_active.values()), None)
+        sock = a.get("sock") if a else None
+        cstate = a.get("custom_subs") if a else None
+    if not sock:
+        return
+    gone_ids = {r["id"] for r in removed_records}
+    gone_keys = {k for r in removed_records for k in _sub_path_keys(r.get("path") or "")}
+    if isinstance(cstate, dict):
+        for k, sid in list(cstate["map"].items()):
+            if sid in gone_ids:
+                gone_keys.add(k)
+                cstate["map"].pop(k, None)
+        for sid in gone_ids:
+            cstate["delays"].pop(sid, None)
+        if cstate.get("active") in gone_ids:
+            cstate["active"] = None
+    try:
+        tlist = (mpv_ipc(sock, ["get_property", "track-list"]) or {}).get("data") or []
+        for t in tlist:
+            if t.get("type") == "sub" and t.get("external") and t.get("external-filename"):
+                if any(k in gone_keys for k in _sub_path_keys(t["external-filename"])):
+                    mpv_ipc(sock, ["sub-remove", t["id"]])
+    except OSError:
+        pass
 
 
 def track_menu(data):
@@ -657,10 +845,19 @@ def _watch(proc, ep_id, sock_path, startup, failure):
     # initial 0 then would erase the resume point if the user quits early.
     seen = False
     skips_sent = False
+    customs_loaded = False
+    has_custom_sub = False
+    custom_subs = {"map": {}, "seen_ext": set(), "delays": {}, "active": None}
     picks = {} if tracks.enabled() else None
     speed_set = False
     last_volume = sleep_seen = audio_seen = None
     prepared = False
+    video_path = None
+    with _active_lock:
+        entry = _active.get(ep_id)
+        if entry is not None and entry.get("proc") is proc:
+            entry["custom_subs"] = custom_subs
+            video_path = _local_video_path(ep_id, entry.get("version", 0))
     deadline = time.time() + startup
     connected = False
     while time.time() < deadline and proc.poll() is None:
@@ -741,6 +938,12 @@ def _watch(proc, ep_id, sock_path, startup, failure):
                     skips_sent = True
                     send_skips(proc, ep_id, sock_path, duration)
                     send_info(proc, ep_id, sock_path)
+                if not customs_loaded:
+                    customs_loaded = True
+                    try:
+                        has_custom_sub = load_custom_subs(sock_path, ep_id, custom_subs)
+                    except Exception as exc:
+                        util.log("custom subtitles load: %s" % exc)
                 # Paused, volume and tracks for the phone remote; the
                 # track-list also feeds the track memory.
                 live, track_list = read_live(sock_path, position=False)
@@ -770,10 +973,14 @@ def _watch(proc, ep_id, sock_path, startup, failure):
                     mpv_ipc(sock_path, ["quit"])
                 if picks is not None:
                     try:
-                        follow_tracks(sock_path, ep_id, picks, track_list)
+                        follow_tracks(sock_path, ep_id, picks, track_list, has_custom_sub=has_custom_sub)
                     except Exception as exc:
                         util.log("track memory: %s" % exc)
                         picks = None
+                try:
+                    follow_custom_subs(sock_path, ep_id, custom_subs, track_list, live.get("sub_delay"), video_path)
+                except Exception as exc:
+                    util.log("custom subtitles watch: %s" % exc)
                 if not prepared and duration and last_time / duration >= PREPARE_AT:
                     prepared = True
                     if settings.automation_enabled("prepare_online"):
