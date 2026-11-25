@@ -3219,7 +3219,7 @@ body.swiping #pal{background:rgba(10,11,13,.9)}
    Its look is the app's (TODO 177 round 2, Elias picked D1 in the app's look): the controls are one
    deck made like the dock, the menus one sheet like the Library's filter sheet. */
 #pp{display:none}
-#pp.on{display:block;position:fixed;inset:0;top:0;left:0;width:100vw;height:100vh;height:100dvh;z-index:55;background:#000;color:var(--ink);font-family:var(--ui);touch-action:none;-webkit-user-select:none;user-select:none;--deck:122px;--pbot:max(16px,env(safe-area-inset-bottom));--pdock:#1c1d22;--pedge:inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.1);--pshadow:0 14px 38px -10px rgba(0,0,0,.7)}
+#pp.on{display:block;position:fixed;inset:0;top:0;left:0;width:100vw;height:100vh;height:100dvh;z-index:55;background:#000;color:var(--ink);font-family:var(--ui);touch-action:none;-webkit-user-select:none;user-select:none;--sat:max(env(safe-area-inset-top,0px),var(--pp-sat,0px));--sar:max(env(safe-area-inset-right,0px),var(--pp-sar,0px));--sab:max(env(safe-area-inset-bottom,0px),var(--pp-sab,0px));--sal:max(env(safe-area-inset-left,0px),var(--pp-sal,0px));--deck:122px;--pbot:max(16px,var(--sab));--pdock:#1c1d22;--pedge:inset 1px 0 0 rgba(255,255,255,.13),inset -1px 0 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.13),inset 0 1px 0 rgba(255,255,255,.1);--pshadow:0 14px 38px -10px rgba(0,0,0,.7)}
 body.pp-open{overflow:hidden}
 #pp video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 #pp.fill video{object-fit:cover}
@@ -3231,7 +3231,7 @@ body.pp-open{overflow:hidden}
 /* A question asked while the player is open (the VPN one before an online episode) shows above it. */
 body.pp-open #modal{z-index:70}
 /* Top row: bare icons like the show page's, the title in its tall caps. */
-#pp .pp-top{position:absolute;z-index:2;left:0;right:0;top:0;display:flex;align-items:center;gap:6px;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 40px max(10px,env(safe-area-inset-left));background:linear-gradient(rgba(0,0,0,.66),transparent);opacity:0;pointer-events:none;transition:opacity .25s}
+#pp .pp-top{position:absolute;z-index:2;left:0;right:0;top:0;display:flex;align-items:center;gap:6px;padding:max(10px,var(--sat)) max(10px,var(--sar)) 40px max(10px,var(--sal));background:linear-gradient(rgba(0,0,0,.66),transparent);opacity:0;pointer-events:none;transition:opacity .25s}
 #pp.ui .pp-top{opacity:1;pointer-events:auto}
 #pp .pp-ic{width:44px;height:44px;flex:none;display:grid;place-items:center;border:0;background:none;color:#fff;padding:0}
 #pp .pp-ic .ico{width:24px;height:24px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.65))}
@@ -3239,7 +3239,7 @@ body.pp-open #modal{z-index:70}
 #pp .pp-t b{font:700 22px/1 var(--display);text-transform:uppercase;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 6px rgba(0,0,0,.5)}
 #pp .pp-t span{font-size:12px;font-weight:500;color:#d6d6d4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.6)}
 /* The deck: the dock's colour, edge and buttons; the timeline with Play on top, the labelled buttons under it. */
-#pp .pp-deck{position:absolute;z-index:2;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:var(--pbot);padding:6px 6px 5px;border-radius:26px;background:var(--pdock);box-shadow:var(--pshadow),var(--pedge);opacity:0;pointer-events:none;transform:translateY(12px);transition:opacity .25s,transform .35s var(--ease)}
+#pp .pp-deck{position:absolute;z-index:2;left:max(12px,var(--sal));right:max(12px,var(--sar));bottom:var(--pbot);padding:6px 6px 5px;border-radius:26px;background:var(--pdock);box-shadow:var(--pshadow),var(--pedge);opacity:0;pointer-events:none;transform:translateY(12px);transition:opacity .25s,transform .35s var(--ease)}
 #pp.ui .pp-deck{opacity:1;pointer-events:auto;transform:none}
 #pp.wait .pp-deck{opacity:0;pointer-events:none}
 #pp .pp-bot{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px 0 4px}
@@ -3266,13 +3266,13 @@ body.pp-open #modal{z-index:70}
 #pp .pp-tabs button:disabled{opacity:.35}
 #pp .pp-tabs .lw{display:none}
 /* Skip: a pill of the dock's material; its dot has the timeline mark's colour. */
-#pp .pp-skip{position:absolute;z-index:2;right:max(12px,env(safe-area-inset-right));bottom:var(--pbot);display:flex;align-items:center;gap:9px;height:44px;padding:0 14px 0 16px;border:0;border-radius:999px;background:var(--pdock);color:var(--ink);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:650 14px var(--ui);transition:bottom .35s var(--ease)}
+#pp .pp-skip{position:absolute;z-index:2;right:max(12px,var(--sar));bottom:var(--pbot);display:flex;align-items:center;gap:9px;height:44px;padding:0 14px 0 16px;border:0;border-radius:999px;background:var(--pdock);color:var(--ink);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:650 14px var(--ui);transition:bottom .35s var(--ease)}
 #pp.ui .pp-skip{bottom:calc(var(--pbot) + var(--deck) + 10px)}
 #pp .pp-skip .dot{width:8px;height:8px;border-radius:50%;background:var(--online)}
 #pp .pp-skip .dot.ed{background:#c9a3ff}
 #pp .pp-skip .ico{width:18px;height:18px;color:var(--ink-2)}
 /* Up next / the last episode: a card of the same material, above the deck. */
-#pp .pp-end{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:calc(var(--pbot) + var(--deck) + 10px);z-index:3;width:min(340px,calc(100% - 24px));padding:16px 18px;border-radius:22px;background:var(--pdock);box-shadow:var(--pshadow),var(--pedge);display:flex;flex-direction:column;gap:6px}
+#pp .pp-end{position:absolute;right:max(12px,var(--sar));bottom:calc(var(--pbot) + var(--deck) + 10px);z-index:3;width:min(340px,calc(100% - 24px));padding:16px 18px;border-radius:22px;background:var(--pdock);box-shadow:var(--pshadow),var(--pedge);display:flex;flex-direction:column;gap:6px}
 #pp .pp-end b{font:700 16px/1.3 var(--ui)}
 #pp .pp-end .sub{margin:0;font-size:13px;color:var(--ink-2)}
 #pp .pp-end .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
@@ -3287,14 +3287,14 @@ body.pp-open #modal{z-index:70}
 #pp .pp-tap .ico{width:30px;height:30px;filter:drop-shadow(0 1px 4px rgba(0,0,0,.6))}
 #pp .pp-tap span{text-shadow:0 1px 4px rgba(0,0,0,.7)}
 /* Locked: everything hides; a tap shows how to unlock. */
-#pp .pp-unlock{position:absolute;z-index:5;left:50%;top:max(16px,env(safe-area-inset-top));display:flex;align-items:center;gap:8px;height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--pdock);color:var(--ink);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:650 14px var(--ui);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .2s,transform .3s var(--spring)}
+#pp .pp-unlock{position:absolute;z-index:5;left:50%;top:max(16px,var(--sat));display:flex;align-items:center;gap:8px;height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--pdock);color:var(--ink);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:650 14px var(--ui);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .2s,transform .3s var(--spring)}
 #pp .pp-unlock .ico{width:18px;height:18px}
 #pp.locked.unl .pp-unlock{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 #pp.locked .pp-top,#pp.locked .pp-deck,#pp.locked .pp-skip{opacity:0!important;pointer-events:none!important}
 /* The sheet: Episodes · Audio · Playback, like the Library's filter sheet; the picture dims behind it. */
 #pp.on::after{content:"";position:absolute;inset:0;z-index:3;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .26s}
 #pp.sheet::after{opacity:var(--dim,1)}
-#pp .pp-panel{position:absolute;z-index:4;left:0;right:0;bottom:0;margin:0 auto;width:100%;max-height:min(64%,600px);display:flex;flex-direction:column;padding:8px 0 max(14px,env(safe-area-inset-bottom));border-radius:26px 26px 0 0;background:var(--pdock);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13);touch-action:pan-y;transition:transform .32s var(--ease)}
+#pp .pp-panel{position:absolute;z-index:4;left:0;right:0;bottom:0;margin:0 auto;width:100%;max-height:min(64%,600px);display:flex;flex-direction:column;padding:8px 0 max(14px,var(--sab));border-radius:26px 26px 0 0;background:var(--pdock);box-shadow:0 -10px 30px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.13);touch-action:pan-y;transition:transform .32s var(--ease)}
 #pp .pp-panel.enter{animation:ppSheet .34s var(--ease)}
 #pp .pp-panel.out{transform:translateY(100%)!important;transition:transform .26s cubic-bezier(.4,0,1,1)}
 @keyframes ppSheet{from{transform:translateY(100%)}}
@@ -3332,20 +3332,20 @@ body.pp-open #modal{z-index:70}
 #pp .pp-et small{font-size:11px;color:var(--mute)}
 #pp .pp-ep.cur small{color:var(--accent)}
 #pp .pp-ep>.ico{flex:none;width:18px;height:18px;color:var(--ink-2);margin-right:6px}
-#pp .pp-note{position:absolute;z-index:6;left:50%;top:max(16px,env(safe-area-inset-top));max-width:min(520px,80%);padding:10px 16px;border-radius:999px;background:var(--pdock);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:500 14px/1.3 var(--ui);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .2s,transform .3s var(--spring)}
+#pp .pp-note{position:absolute;z-index:6;left:50%;top:max(16px,var(--sat));max-width:min(520px,80%);padding:10px 16px;border-radius:999px;background:var(--pdock);box-shadow:var(--pshadow),inset 0 0 0 1px rgba(255,255,255,.13);font:500 14px/1.3 var(--ui);opacity:0;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .2s,transform .3s var(--spring)}
 #pp .pp-note.on{opacity:1;transform:translate(-50%,0)}
 #pp .pp-note[data-k=err]{color:var(--bad)}
 /* Sideways: the deck leaves room at the sides, its buttons sit in one row with their full words. */
 @media (orientation:landscape){
-  #pp.on{--deck:114px;--pbot:max(12px,env(safe-area-inset-bottom))}
-  #pp .pp-deck{left:max(48px,env(safe-area-inset-left));right:max(48px,env(safe-area-inset-right))}
-  #pp .pp-skip,#pp .pp-end{right:max(48px,env(safe-area-inset-right))}
+  #pp.on{--deck:114px;--pbot:max(12px,var(--sab))}
+  #pp .pp-deck{left:max(48px,var(--sal));right:max(48px,var(--sar))}
+  #pp .pp-skip,#pp .pp-end{right:max(48px,var(--sar))}
   #pp .pp-tabs button{flex-direction:row;gap:8px;height:44px;font-size:13px}
   #pp .pp-tabs button .ico{width:19px;height:19px}
   #pp .pp-tabs .lw{display:inline}
   #pp .pp-tabs .sw{display:none}
   #pp .pp-panel{width:min(600px,calc(100% - 96px));max-height:calc(100% - 16px)}
-  #pp .pp-top{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  #pp .pp-top{padding-left:max(14px,var(--sal));padding-right:max(14px,var(--sar))}
 }
 
 /* ───────── phone Library (TODO 239, Elias picked mockup 1, 2026-11-13) ─────────

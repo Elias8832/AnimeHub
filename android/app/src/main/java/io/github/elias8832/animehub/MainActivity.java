@@ -38,6 +38,9 @@ public class MainActivity extends Activity {
         return s.toString();
     }
     WebView web;
+    android.widget.FrameLayout root;
+    boolean fullscreen;
+    String lastCutout = "";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -124,6 +127,10 @@ public class MainActivity extends Activity {
         /** A sign-in is under way: AniList or MyAnimeList pages stay here until it comes back. */
         boolean signingIn;
 
+        @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap favicon) {
+            if (fullscreen) setFullscreen(false);
+        }
+
         @Override public void onPageFinished(WebView v, String url) {
             if (hub != null && url != null && url.startsWith(hub)) handOver();
         }
@@ -169,10 +176,16 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (fullscreen) applyFullscreen();
         if (askedFiles) {
             askedFiles = false;
             web.evaluateJavascript("window.hubFilesBack && hubFilesBack()", null);  // keeps the tour's page
         }
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && fullscreen) applyFullscreen();
     }
 
     /** What the page may ask of the app: window.AnimeHubApp. */
@@ -201,31 +214,111 @@ public class MainActivity extends Activity {
                     requestPermissions(new String[]{TermuxBridge.PERMISSION}, 1);
             });
         }
+
+        /** Full-screen player: hide or restore Android's status and navigation bars. */
+        @JavascriptInterface public void setFullscreen(boolean on) {
+            runOnUiThread(() -> MainActivity.this.setFullscreen(on));
+        }
+    }
+
+    void setFullscreen(boolean on) {
+        fullscreen = on;
+        applyFullscreen();
+    }
+
+    @SuppressWarnings("deprecation")
+    void applyFullscreen() {
+        android.view.Window w = getWindow();
+        if (android.os.Build.VERSION.SDK_INT >= 28 && android.os.Build.VERSION.SDK_INT < 35) {
+            android.view.WindowManager.LayoutParams lp = w.getAttributes();
+            lp.layoutInDisplayCutoutMode = fullscreen
+                    ? android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    : android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+            w.setAttributes(lp);
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            android.view.WindowInsetsController ctrl = w.getInsetsController();
+            if (ctrl != null) {
+                if (fullscreen) {
+                    ctrl.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    ctrl.hide(android.view.WindowInsets.Type.systemBars());
+                } else {
+                    ctrl.show(android.view.WindowInsets.Type.systemBars());
+                }
+            }
+        } else {
+            int flags = fullscreen
+                    ? (android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+                    : android.view.View.SYSTEM_UI_FLAG_VISIBLE;
+            w.getDecorView().setSystemUiVisibility(flags);
+        }
+        if (root != null) {
+            root.setBackgroundColor(fullscreen ? 0xff000000 : 0xff101114);
+            if (fullscreen) root.setPadding(0, 0, 0, 0);
+            root.requestApplyInsets();
+        }
+    }
+
+    /** Pass the display cutout insets to the full-screen player's controls without shrinking the video. */
+    void pushCutout(int l, int t, int r, int b) {
+        float d = getResources().getDisplayMetrics().density;
+        if (d <= 0) d = 1f;
+        int dl = Math.round(l / d), dt = Math.round(t / d), dr = Math.round(r / d), db = Math.round(b / d);
+        String key = dl + "," + dt + "," + dr + "," + db;
+        if (key.equals(lastCutout)) return;
+        lastCutout = key;
+        String js = "(function(s){s.setProperty('--pp-sal','" + dl + "px');"
+                + "s.setProperty('--pp-sat','" + dt + "px');"
+                + "s.setProperty('--pp-sar','" + dr + "px');"
+                + "s.setProperty('--pp-sab','" + db + "px');})(document.documentElement.style)";
+        web.evaluateJavascript(js, null);
     }
 
     /**
      * Android 15 draws apps under the status bar, the gesture bar and the
      * keyboard. The page sits inside them instead: padding as big as the
      * bars (and the keyboard, so it never covers the search box), in the
-     * page's own background colour.
+     * page's own background colour. While the video player is full screen
+     * the padding clears so the video fills the whole display.
      */
-    static android.view.View fitted(WebView web) {
-        android.widget.FrameLayout root = new android.widget.FrameLayout(web.getContext());
+    @SuppressWarnings("deprecation")
+    android.view.View fitted(WebView web) {
+        root = new android.widget.FrameLayout(this);
         root.setBackgroundColor(0xff101114);
         root.addView(web);
         root.setOnApplyWindowInsetsListener((v, in) -> {
+            if (fullscreen) {
+                v.setPadding(0, 0, 0, 0);
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    android.graphics.Insets cut = in.getInsets(android.view.WindowInsets.Type.displayCutout());
+                    pushCutout(cut.left, cut.top, cut.right, cut.bottom);
+                } else if (android.os.Build.VERSION.SDK_INT >= 28 && in.getDisplayCutout() != null) {
+                    android.view.DisplayCutout c = in.getDisplayCutout();
+                    pushCutout(c.getSafeInsetLeft(), c.getSafeInsetTop(), c.getSafeInsetRight(), c.getSafeInsetBottom());
+                } else {
+                    pushCutout(0, 0, 0, 0);
+                }
+                return in;
+            }
+            pushCutout(0, 0, 0, 0);
             int l, t, r, b;
             if (android.os.Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets bars = in.getInsets(android.view.WindowInsets.Type.systemBars()
                         | android.view.WindowInsets.Type.displayCutout());
                 android.graphics.Insets ime = in.getInsets(android.view.WindowInsets.Type.ime());
                 l = bars.left; t = bars.top; r = bars.right; b = Math.max(bars.bottom, ime.bottom);
-            } else {
-                l = in.getSystemWindowInsetLeft(); t = in.getSystemWindowInsetTop();
-                r = in.getSystemWindowInsetRight(); b = in.getSystemWindowInsetBottom();
+                v.setPadding(l, t, r, b);
+                return android.view.WindowInsets.CONSUMED;
             }
+            l = in.getSystemWindowInsetLeft(); t = in.getSystemWindowInsetTop();
+            r = in.getSystemWindowInsetRight(); b = in.getSystemWindowInsetBottom();
             v.setPadding(l, t, r, b);
-            return in;
+            return in.consumeSystemWindowInsets();
         });
         return root;
     }
