@@ -5319,9 +5319,13 @@ function vpnGate(go, skp = false) {
 }
 /* AniSkip without a VPN (Decision 39): asked on play like online episodes.
    The server only uses AniSkip then if the play says yes (`aniskip`). */
-/* Who would see the IP address without a VPN: the streaming site
+/* Bullet points for who sees the IP address without a VPN: the streaming site
    (ani-cli fetches online episodes and downloads), AniSkip, or both. */
-const ipLine = (online, skp, pc) => `Without a VPN, ${online && skp ? "the streaming site and AniSkip see" : online ? "the streaming site sees" : "AniSkip sees"} ${pc ? "the PC's" : "your"} IP address.`;
+const ipPoints = (online, skp, pc) => {
+  const ip = pc ? "the PC's IP" : "your IP";
+  return [online && `<b>Streaming site</b> sees ${ip}`, skp && `<b>AniSkip</b> sees ${ip}`].filter(Boolean);
+};
+const vpnList = (pts) => pts.length ? `<ul class="vpn-pts">${pts.map((p) => `<li>${p}</li>`).join("")}</ul>` : "";
 /* Use AniSkip / Without AniSkip in place of one Continue button. */
 const skpBtns = (yes, no, key = "") => `<button class="btn" data-a="${no}">Without AniSkip</button><button class="btn pri" data-a="${yes}">Use AniSkip${key}</button>`;
 const escBtn = (a = "close", l = "Cancel") => `<button class="btn" data-a="${a}">${l}${kb("Esc")}</button>`;
@@ -5339,20 +5343,20 @@ function UpDlg() {
 }
 function SkpDlg() {
   const pc = S.modal.pc;
-  return dlHead(pc ? "No VPN on the PC" : "No VPN on") + dlBody(pc ? pcVpnRow(ipLine(false, true, true)) : vpnRow(S.data?.vpn, ipLine(false, true)))
+  return dlHead(pc ? "No VPN on the PC" : "No VPN on") + dlBody(pc ? pcVpnRow(ipPoints(false, true, true)) : vpnRow(S.data?.vpn, ipPoints(false, true)))
     + dlFoot(pc ? "" : setLink("privacy", "AniSkip", "Privacy & VPN"), escBtn() + skpBtns("skpgo", "skpno"), "three");
 }
 /* A shield with a line through it: no VPN (the "More episodes are out" tile, TODO 183). */
 const SHIELD_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.7 14a7 7 0 0 0 .3-2V6l-8-3-3.2 1.2"/><path d="M4.7 4.7 4 5v6c0 6 8 10 8 10a20 20 0 0 0 5.4-4.6"/><path d="m2 2 20 20"/></svg>';
 const SHIELD = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/><path d="M12 8v4M12 15.5v.01"/></svg>';
 /* The VPN as a Settings row: amber while the hub waits for one, green once it's up. */
-const vpnRow = (v = S.data?.vpn, who = "") => v?.active ? srow("VPN", v.iface ? `Through ${esc(v.iface)}.` : "", pkdo(dotTxt("On")))
-  : srow("VPN", `${who ? who + " " : ""}Turn one on and this starts by itself.`, pkdo(dotTxt("Off", "live")));
+const vpnRow = (v = S.data?.vpn, pts = []) => v?.active ? srow("VPN", v.iface ? `Through ${esc(v.iface)}.` : "", pkdo(dotTxt("On")))
+  : srow("VPN", "", pkdo(dotTxt("Off", "live"))) + vpnList([...pts, "Turn a VPN on to start automatically"]);
 /* The paired PC's VPN in the app (TODO 274): it doesn't start by itself, Play again does. */
-const pcVpnRow = (who) => srow("VPN", who, pkdo(dotTxt("Off", "warn")));
+const pcVpnRow = (pts = []) => srow("VPN", "", pkdo(dotTxt("Off", "warn"))) + vpnList(pts);
 function VpnDlg() {
   const skp = S.modal.skp, pc = S.modal.pc;
-  return dlHead(pc ? "No VPN on the PC" : "No VPN on") + dlBody(pc ? pcVpnRow(ipLine(true, skp, true)) : vpnRow(S.data?.vpn, ipLine(true, skp)))
+  return dlHead(pc ? "No VPN on the PC" : "No VPN on") + dlBody(pc ? pcVpnRow(ipPoints(true, skp, true)) : vpnRow(S.data?.vpn, ipPoints(true, skp)))
     + dlFoot(pc ? "" : setLink("privacy", "Online episodes and downloads", "Privacy & VPN"), escBtn() + (skp ? skpBtns("vpngo", "vpnno") : `<button class="btn pri" data-a="vpngo">Continue anyway${kb("↵")}</button>`), skp ? "three" : "");
 }
 /* Next-episode prompt (TODO 10): the last file finished and the next
@@ -5363,9 +5367,9 @@ function maybeNextPrompt(p) {
   lastNextPrompt = p.id;
   openModal({ t: "nxt", p });
 }
-function nxVpn(who = "") {
+function nxVpn(pts = []) {
   const v = S.data?.vpn;
-  return v?.known ? vpnRow(v, who) : srow("VPN", "The hub can't tell whether one is on.", pkdo(dotTxt("unknown", "")));
+  return v?.known ? vpnRow(v, pts) : srow("VPN", "The hub can't tell whether one is on.", pkdo(dotTxt("unknown", "")));
 }
 function NextDlg() {
   const p = S.modal.p, c = p.id && findEpContext(p.id), art = c ? (safeThumb(c.sea, c.ep) || c.s.banner || c.s.poster) : null, v = S.data?.vpn;
@@ -5377,7 +5381,7 @@ function NextDlg() {
 
   /* The show is the big title, the episode the note beside it (an episode code alone looked empty). */
   return dlHead(esc(show || label), [show ? label : "", online ? "online" : "on disk"].filter(Boolean).map(esc).join(" · "), art, '<span class="dlcap">up next</span>')
-    + dlBody(`<div id="nx-vpn">${nxVpn(noVpn ? ipLine(online, skp) : "")}</div>`)
+    + dlBody(`<div id="nx-vpn">${nxVpn(noVpn ? ipPoints(online, skp) : [])}</div>`)
     + dlFoot("", escBtn("nxstop", "Stop here") + go, skp ? "three" : "");
 }
 /* The three places + their number keys (Decision 38; History and Stats
