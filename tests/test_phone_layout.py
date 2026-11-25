@@ -802,5 +802,33 @@ class BackPager(unittest.TestCase):
         self.assertIn("requestAnimationFrame(() => { scrollTo(0, L.sy); pagerReveal(reveal); });", land)
 
 
+class AndroidPlayerFullscreen(unittest.TestCase):
+    """Elias (2026-11-25): on Android, the status bar stayed visible during
+    playback because MainActivity had no fullscreen/immersive mode and always
+    padded the WebView by systemBars() | displayCutout()."""
+
+    def test_android_activity_hides_system_bars_and_forwards_cutout(self):
+        java = (support.ROOT / "android/app/src/main/java/io/github/elias8832/animehub/MainActivity.java").read_text(encoding="utf-8")
+        self.assertIn("@JavascriptInterface public void setFullscreen(boolean on)", java)
+        self.assertIn("BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE", java)
+        self.assertIn("ctrl.hide(android.view.WindowInsets.Type.systemBars())", java)
+        self.assertIn("ctrl.show(android.view.WindowInsets.Type.systemBars())", java)
+        self.assertIn("if (hasFocus && fullscreen) applyFullscreen();", java)
+        self.assertIn("if (fullscreen) setFullscreen(false);", java)
+        self.assertIn("s.setProperty('--pp-sat'", java)
+        self.assertIn("s.setProperty('--pp-sal'", java)
+        self.assertIn("android.view.WindowInsets.CONSUMED", java)
+
+    def test_player_uses_android_bridge_and_cutout_safe_areas(self):
+        self.assertIn("viewport-fit=cover", HTML)
+        self.assertIn('const ppHasAppFull = () => typeof window.AnimeHubApp?.setFullscreen === "function";', APP)
+        self.assertIn("window.AnimeHubApp.setFullscreen(!!on);", APP)
+        self.assertIn("window.AnimeHubApp.setFullscreen(false);", APP)
+        self.assertIn("ppIsFull() ? 1 : 0", APP)
+        self.assertIn("--sat:max(env(safe-area-inset-top,0px),var(--pp-sat,0px))", CSS)
+        self.assertIn("--sal:max(env(safe-area-inset-left,0px),var(--pp-sal,0px))", CSS)
+        self.assertIn("#pp .pp-top{position:absolute;z-index:2;left:0;right:0;top:0;display:flex;align-items:center;gap:6px;padding:max(10px,var(--sat))", CSS)
+
+
 if __name__ == "__main__":
     unittest.main()

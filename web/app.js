@@ -7636,7 +7636,7 @@ function ppMenuHTML() {
   return `${ppRow("Speed", "ppspeed", [[0.75, "0.75×"], [1, "1×"], [1.25, "1.25×"], [1.5, "1.5×"], [2, "2×"]], ppSpeed())}
     ${ppRow(left ? `Sleep · ${left} min left` : "Sleep", "ppsleep", [["", "Off"], [15, "15m"], [30, "30m"], [60, "60m"], ["end", "This ep"]], PP.sleep ? PP.sleep : "")}
     ${ppRow("Fill screen", "ppfill", [[0, "Off"], [1, "On"]], lsGet("ppFill", false) ? 1 : 0)}
-    ${ppCanFull() ? ppRow("Full screen", "ppfull", [[0, "Off"], [1, "On"]], document.fullscreenElement ? 1 : 0) : ""}
+    ${ppCanFull() ? ppRow("Full screen", "ppfull", [[0, "Off"], [1, "On"]], ppIsFull() ? 1 : 0) : ""}
     <button class="btn pp-finish" data-a="ppfinish">${ico("next")}Finish episode</button>`;
 }
 /* Audio tab: Sub/Dub, subtitles on/off and their timing. */
@@ -7870,12 +7870,20 @@ function ppUnlockHint() {
 /* An iPhone can only put the video alone in full screen (Apple's own player),
    which would leave Skip, Up next and Back behind: there the player just
    fills the page, and turning the phone sideways does the rest (Elias, 2026-11-07). */
-const ppCanFull = () => typeof document.documentElement.requestFullscreen === "function";
-function ppFull(auto) {
+const ppHasAppFull = () => typeof window.AnimeHubApp?.setFullscreen === "function";
+const ppCanFull = () => ppHasAppFull() || typeof document.documentElement.requestFullscreen === "function";
+const ppIsFull = () => ppHasAppFull() ? !!PP.full : !!document.fullscreenElement;
+function ppFull(on = true) {
   if (!ppCanFull()) return;
+  if (ppHasAppFull()) {
+    PP.full = !!on;
+    try { window.AnimeHubApp.setFullscreen(!!on); } catch {}
+    return;
+  }
   const el = $("#pp");
   if (!el) return;
-  if (document.fullscreenElement) { if (!auto) document.exitFullscreen().catch(() => {}); return; }
+  if (!on) { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); return; }
+  if (document.fullscreenElement) return;
   el.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {});
 }
 /* The opening/ending ranges, the same as mpv's: auto skips, prompt shows a button. */
@@ -7931,6 +7939,7 @@ function ppClose(fromBack, quiet) {
   PP.id = null;
   el.classList.remove("on", "ui"); el.innerHTML = "";
   document.body.classList.remove("pp-open");
+  if (ppHasAppFull()) { PP.full = false; try { window.AnimeHubApp.setFullscreen(false); } catch {} }
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   try { screen.orientation?.unlock?.(); } catch {}
   if (!fromBack && typeof ovClosed === "function") ovClosed("pp");
@@ -8475,7 +8484,12 @@ const A = {
   recapoff: () => { const m = S.modal; setToggle("recap_ask", false); toast("Turned off. Settings → Player turns it back on."); closeModal(); m.go(); },
   playwhere: (v) => { lsSet("playWhere", v || null); render(true); },
   ppclose: () => ppClose(false),
-  ppfull: () => { ppFull(false); setTimeout(() => { if (PP.panel === "menu") ppPanel("menu"); }, 400); },
+  ppfull: (v) => {
+    const want = v === undefined ? !ppIsFull() : (v === "1" || v === 1);
+    ppFull(want);
+    if (ppHasAppFull()) { if (PP.panel === "menu") ppPanel("menu"); }
+    else setTimeout(() => { if (PP.panel === "menu") ppPanel("menu"); }, 400);
+  },
   pptab: (val, t) => ppPanel(PP.panel === val && !t.closest(".pp-sh") ? null : val), // the deck's button again closes; a tab in the sheet only switches
   pplock: () => {
     const el = $("#pp"); if (!el) return;
