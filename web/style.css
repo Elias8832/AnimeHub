@@ -4104,6 +4104,10 @@ body.pp-open #modal{z-index:70}
 .dl2 .pkdo>.kb{min-width:30px;height:28px;font-size:14px}
 .dl2 .pk.pkdo{min-width:0;justify-content:flex-end;gap:14px}
 .dl2 .srow>.ctl{min-width:0}
+.dl2 .vpn-pts{margin:2px 0 4px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.dl2 .vpn-pts li{position:relative;padding-left:15px;font:400 13.5px/1.45 var(--ui);color:var(--mute)}
+.dl2 .vpn-pts li::before{content:"";position:absolute;left:2px;top:.6em;width:4px;height:4px;border-radius:50%;background:var(--mute)}
+.dl2 .vpn-pts b{font-weight:500;color:var(--ink-2)}
 .dl2 .msg:empty{display:none}
 /* the bar: a line across, a quiet note on the left, the buttons on the right */
 .dl2 .actions{margin:0;padding:12px 22px 12px 44px;border-top:1px solid var(--line);gap:4px;align-items:center}
@@ -4144,6 +4148,8 @@ body.pp-open #modal{z-index:70}
   .overlay .dl2 .pk.pkdo{min-width:0;width:auto}
   .overlay .dl2 .srow.wide>.ctl{grid-column:1/-1;grid-row:3;justify-content:flex-start;margin-top:6px;flex-wrap:wrap}
   .overlay .dl2 .srow.wide>.ctl>.path{width:100%}
+  .overlay .dl2 .vpn-pts{margin:2px 0;gap:5px}
+  .overlay .dl2 .vpn-pts li{font-size:13px}
   .overlay .dl2 .pk:not(.pkdo){width:190px}
 }
 /* New playlist in the frame: line fields, the icons as quiet tiles, group names like Settings' */

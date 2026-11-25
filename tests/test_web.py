@@ -1281,7 +1281,11 @@ class PopupFrame(unittest.TestCase):
 
     def test_vpn_is_a_settings_row(self):
         self.assertNotIn("vpnWait", APP)
-        self.assertIn('`${who ? who + " " : ""}Turn one on and this starts by itself.`, pkdo(dotTxt("Off", "live"))', APP)
+        self.assertIn('srow("VPN", "", pkdo(dotTxt("Off", "live"))) + vpnList([...pts, "Turn a VPN on to start automatically"])', APP)
+        self.assertIn('<b>Streaming site</b> sees ${ip}', APP)
+        self.assertIn('<b>AniSkip</b> sees ${ip}', APP)
+        self.assertIn('<ul class="vpn-pts">', APP)
+        self.assertIn('.dl2 .vpn-pts{', CSS)
         self.assertIn('if (vpnMoved && S.modal?.t === "nxt") paintModal();', APP)  # still repainted live while the prompt is open
 
     def test_part_two(self):
