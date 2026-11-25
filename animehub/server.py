@@ -23,7 +23,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, catalog, database, downloader, firewall, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, sync, system, tools, upscale, update, util
+from . import LOADED_AT, alpics, android, anicli, anilist, artsize, background, catalog, database, downloader, firewall, fonts, franchise, journal, lengths, library, mal, mapping, metadata, pages, peersync, phoneplay, player, playlists, progress, recap, recommend, schedule, remote, settings, streaming, subtitles, sync, system, tools, upscale, update, util
 from .config import config, APP_BROWSERS, CONFIG_PATH, CONFIG_WARNINGS, WEB
 
 
@@ -893,6 +893,40 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/fonts/system":
             # Additive (TODO 122): the fonts installed on this PC, to add one with a click.
             self.send_json({"fonts": fonts.system_fonts()})
+        elif route == "/api/subtitles":
+            # Additive: list custom subtitles for one episode, an AniList entry, a folder show, or a slot.
+            ep = (qs.get("ep") or [""])[0]
+            slot = (qs.get("slot") or [""])[0]
+            mid_s = (qs.get("media_id") or [""])[0]
+            show_id = (qs.get("show_id") or [""])[0]
+            if ep or slot:
+                keys = ([slot] if slot else []) + (subtitles.slot_keys_for_episode(ep) if ep else [])
+                items = subtitles.list_for_slots(keys)
+            elif mid_s:
+                try:
+                    mid = int(mid_s)
+                except ValueError:
+                    self._bad("'media_id' must be an integer")
+                    return
+                items = subtitles.list_for_entry(mid)
+            elif show_id:
+                s = next((x for x in library.scan_library() if x["id"] == show_id), None)
+                ep_ids = [e["id"] for e in library.eps_of(s)] if s else []
+                items = subtitles.list_for_slots([subtitles.ep_slot(i) for i in ep_ids])
+            else:
+                self._bad("pass 'ep', 'slot', 'media_id' or 'show_id'")
+                return
+            self.send_json({"subtitles": items})
+        elif route.startswith("/api/subtitles/") and route.endswith("/vtt"):
+            sub_id = route[len("/api/subtitles/"):-len("/vtt")]
+            if "/" in sub_id or not sub_id:
+                self.send_error(404)
+                return
+            text = subtitles.vtt_text(sub_id)
+            if text is None:
+                self.send_error(404)
+                return
+            self.send_file_body(text.encode("utf-8"), "text/vtt; charset=utf-8")
         elif route.startswith("/user-fonts/"):
             p = fonts.font_path(os.path.basename(unquote(route)))
             if p:
@@ -942,8 +976,11 @@ class Handler(BaseHTTPRequestHandler):
             # rfile.read(-1) would block the handler thread until EOF.
             self.send_json({"error": "invalid Content-Length"}, 400)
             return
-        # An imported font travels as base64 (TODO 122): up to 16 MB of file.
-        if length > (22_000_000 if route == "/api/fonts/import" else 16_000_000 if route == "/api/sync/apply" else 1_000_000):
+        # Fonts and subtitle batches travel as base64 (up to 16 MB / 24 MB raw).
+        max_len = (34_000_000 if route in ("/api/subtitles/upload", "/api/subtitles/batch-stage")
+                   else 22_000_000 if route == "/api/fonts/import"
+                   else 16_000_000 if route == "/api/sync/apply" else 1_000_000)
+        if length > max_len:
             self.send_json({"error": "request body too large"}, 413)
             return
         try:
@@ -1387,6 +1424,80 @@ class Handler(BaseHTTPRequestHandler):
                     fonts.delete_font(body.get("id"))
                     self.send_json({"ok": True, "fonts": fonts.all_fonts()})
             except fonts.FontError as e:
+                self.send_json({"error": str(e)}, 400)
+        elif route == "/api/subtitles/upload":
+            try:
+                slot = body.get("slot")
+                if not slot:
+                    ep_id = body.get("ep_id")
+                    mid = body.get("media_id")
+                    num = body.get("number")
+                    if isinstance(mid, int) and not isinstance(mid, bool) and mid > 0 and num is not None and not isinstance(num, bool):
+                        slot = subtitles.aid_slot(mid, num)
+                    elif isinstance(ep_id, str) and ep_id:
+                        slot = subtitles.primary_slot_for_episode(ep_id)
+                sub = subtitles.import_base64(slot, body.get("name"), body.get("data"),
+                                              label=body.get("label"), lang=body.get("lang"))
+                player.attach_live_sub(slot, sub)
+                self.send_json({"ok": True, "subtitle": sub, "subtitles": subtitles.list_for_slots([slot])})
+            except subtitles.SubtitleError as e:
+                self.send_json({"error": str(e)}, 400)
+        elif route == "/api/subtitles/batch-stage":
+            try:
+                nums = body.get("numbers")
+                valid = [n for n in nums if isinstance(n, (int, float)) and not isinstance(n, bool)] if isinstance(nums, list) else None
+                self.send_json(subtitles.stage_batch(body.get("files"), valid))
+            except subtitles.SubtitleError as e:
+                self.send_json({"error": str(e)}, 400)
+        elif route == "/api/subtitles/batch-commit":
+            try:
+                added = subtitles.commit_batch(body.get("token"), body.get("picks"))
+                for sub in added:
+                    player.attach_live_sub(sub["slot"], sub)
+                self.send_json({"ok": True, "added": added, "count": len(added)})
+            except subtitles.SubtitleError as e:
+                self.send_json({"error": str(e)}, 400)
+        elif route == "/api/subtitles/update":
+            try:
+                sub = subtitles.update_subtitle(body.get("id"), label=body.get("label"), delay=body.get("delay"))
+                self.send_json({"ok": True, "subtitle": sub})
+            except subtitles.SubtitleError as e:
+                self.send_json({"error": str(e)}, 400)
+        elif route == "/api/subtitles/remove":
+            try:
+                sub_id = body.get("id")
+                ids = body.get("ids")
+                mid = body.get("media_id")
+                ep_id = body.get("ep_id")
+                slot = body.get("slot")
+                show_id = body.get("show_id")
+                if isinstance(sub_id, str) and sub_id:
+                    removed, undo = subtitles.remove_ids([sub_id])
+                elif isinstance(ids, list):
+                    removed, undo = subtitles.remove_ids(ids)
+                elif isinstance(mid, int) and not isinstance(mid, bool) and mid > 0:
+                    removed, undo = subtitles.remove_for_entry(mid)
+                elif (isinstance(ep_id, str) and ep_id) or (isinstance(slot, str) and slot):
+                    keys = ([slot] if isinstance(slot, str) and slot else []) + (subtitles.slot_keys_for_episode(ep_id) if isinstance(ep_id, str) and ep_id else [])
+                    removed, undo = subtitles.remove_for_slots(keys)
+                elif isinstance(show_id, str) and show_id:
+                    s = next((x for x in library.scan_library() if x["id"] == show_id), None)
+                    ep_ids = [e["id"] for e in library.eps_of(s)] if s else []
+                    removed, undo = subtitles.remove_for_slots([subtitles.ep_slot(i) for i in ep_ids])
+                else:
+                    self._bad("pass 'id', 'ids', 'ep_id', 'slot', 'media_id' or 'show_id'")
+                    return
+                player.remove_live_subs(removed)
+                self.send_json({"ok": True, "count": len(removed), "undo_token": undo})
+            except subtitles.SubtitleError as e:
+                self.send_json({"error": str(e)}, 400)
+        elif route == "/api/subtitles/undo":
+            try:
+                restored = subtitles.undo_remove(body.get("token"))
+                for sub in restored:
+                    player.attach_live_sub(sub["slot"], sub)
+                self.send_json({"ok": True, "restored": restored, "count": len(restored)})
+            except subtitles.SubtitleError as e:
                 self.send_json({"error": str(e)}, 400)
         elif route == "/api/keep-local":
             # TODO 12c: "Not on AniList — keep local" (keep: false undoes it).

@@ -4711,3 +4711,45 @@ body.pp-open #modal{z-index:70}
 }
 :root[data-motion=calm] #ddm:not(.sheet) button{animation:none}
 
+/* ───────── custom subtitles dialog ───────── */
+.sdrop{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:var(--r-l);background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);cursor:pointer;transition:background .18s var(--ease),border-color .18s var(--ease),transform .12s var(--ease);margin-bottom:14px}
+.sdrop:hover,.sdrop.over{background:rgba(255,255,255,.08);border-color:color-mix(in srgb,var(--accent) 55%,rgba(255,255,255,.16))}
+.sdrop:active{transform:scale(.992)}
+.sdrop.busy{opacity:.65;pointer-events:none}
+.sdrop-i{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 18%,rgba(255,255,255,.06));color:var(--accent-hi);flex:none}
+.sdrop-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.sdrop-t b{font-size:14.5px;font-weight:600;color:var(--ink)}
+.sdrop-t small{font-size:13px;color:var(--mute)}
+.subnone{margin:4px 2px 0;line-height:1.5}
+.sublist,.subbl{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;padding-right:2px}
+.subrow,.subbr{display:flex;align-items:center;gap:10px;padding:9px 10px 9px 12px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06)}
+.subm,.subbf{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.subm b,.subbf b{font-size:13.5px;font-weight:550;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subm small,.subbf small{font:400 12px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub-lbl{width:100%;background:transparent;border:0;border-bottom:1px solid transparent;padding:2px 0;font:550 13.5px var(--ui);color:var(--ink);outline:0;transition:border-color .16s}
+.sub-lbl:hover{border-bottom-color:rgba(255,255,255,.16)}
+.sub-lbl:focus{border-bottom-color:var(--accent)}
+.sub-step{flex:none;display:inline-flex;align-items:center;gap:0;border-radius:999px;background:rgba(255,255,255,.06);padding:2px}
+.sub-step button{height:28px;min-width:28px;padding:0 6px;border:0;background:transparent;color:var(--ink);border-radius:999px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font:500 12px var(--mono);transition:background .15s}
+.sub-step button:hover{background:rgba(255,255,255,.1)}
+.sub-step .sub-dv{min-width:60px;padding:0 6px;color:var(--mute)}
+.sub-step .sub-dv:hover{color:var(--ink)}
+.subep{flex:none;font:600 12px var(--mono);color:var(--accent-hi);background:color-mix(in srgb,var(--accent) 16%,transparent);padding:4px 8px;border-radius:8px;min-width:38px;text-align:center}
+.subx{flex:none;width:30px;height:30px;border-radius:9px;border:0;background:transparent;color:var(--mute);display:grid;place-items:center;cursor:pointer;transition:background .15s,color .15s}
+.subx:hover{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.subbh{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;font-size:13.5px;color:var(--mute)}
+.subbh b{color:var(--ink)}
+.subbr.skip{opacity:.65}
+.subbr.err{border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+.subbr.err .subbf small{color:var(--bad)}
+.subbs{flex:none;max-width:175px;height:32px;border-radius:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:var(--ink);padding:0 10px;font:500 12.5px var(--ui);outline:0}
+.subbs:focus{border-color:var(--accent)}
+.btn.danger{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent);border-color:color-mix(in srgb,var(--bad) 26%,transparent)}
+.btn.danger:hover{background:color-mix(in srgb,var(--bad) 22%,transparent);border-color:color-mix(in srgb,var(--bad) 42%,transparent)}
+@media (max-width:640px){
+  .subrow{flex-wrap:wrap}
+  .sub-step{margin-left:auto}
+  .subbr{flex-wrap:wrap}
+  .subbs{max-width:none;flex:1}
+}
+

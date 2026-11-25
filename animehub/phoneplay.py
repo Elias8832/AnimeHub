@@ -21,7 +21,7 @@ import uuid
 from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
-from . import anicli, database, library, player, prepare, settings, skips, streaming, system, util
+from . import anicli, database, library, player, prepare, settings, skips, streaming, subtitles, system, util
 from .config import config
 
 # A phone player still counts as playing this long after its last report
@@ -55,8 +55,8 @@ def file_of(ep_id, version=0):
 
 
 # Subtitles beside a file that a phone's <track> can read once made WebVTT.
-SUB_EXTS = (".vtt", ".srt")
-SUB_MAX = 4 * 1024 * 1024
+SUB_EXTS = (".vtt", ".srt", ".ass", ".ssa")
+SUB_MAX = 8 * 1024 * 1024
 
 
 def file_subs(path):
@@ -79,7 +79,22 @@ def file_subtitle(ep_id, version, n):
     if not 0 <= n < len(subs):
         return None
     with open(subs[n], "rb") as f:
-        return to_vtt(f.read(SUB_MAX).decode("utf-8-sig", "replace"))
+        return to_vtt(f.read(SUB_MAX).decode("utf-8-sig", "replace"), subs[n].suffix)
+
+
+def _phone_sub_tracks(ep_id, builtin_tracks):
+    """Custom subtitles first (so the user's attached track is selected by
+    default on phones too), followed by built-in file/stream subtitles."""
+    custom = [{
+        "url": f"/api/subtitles/{c['id']}/vtt",
+        "label": c["label"],
+        "lang": c.get("lang") or "en",
+        "custom": True,
+        "id": c["id"],
+        "delay": float(c.get("delay") or 0.0),
+    } for c in subtitles.for_episode(ep_id)]
+    tracks = custom + list(builtin_tracks)
+    return [t["url"] for t in tracks], tracks
 
 
 def _pc_proc():
@@ -119,10 +134,16 @@ def start(ep_id, version=0, from_start=False, at=None):
     path, s, ep = hit
     label = _label(s, ep, ep_id)
     _begin(ep_id, version, s["title"], label)
+    fsubs = file_subs(path)
+    builtin = [{"url": f"/api/phone/filesub?id={_q(ep_id)}&v={int(version or 0)}&n={i}",
+                "label": subtitles.guess_label_and_lang(p.name)[0],
+                "lang": subtitles.guess_label_and_lang(p.name)[1] or "en",
+                "custom": False, "delay": 0.0}
+               for i, p in enumerate(fsubs)]
+    sub_urls, sub_tracks = _phone_sub_tracks(ep_id, builtin)
     return {"ok": True, "id": ep_id, "src": f"/api/phone/video?id={_q(ep_id)}&v={int(version or 0)}",
             "type": mimetypes.guess_type(path.name)[0] or "video/mp4", "hls": False,
-            "subs": [f"/api/phone/filesub?id={_q(ep_id)}&v={int(version or 0)}&n={i}"
-                     for i in range(len(file_subs(path)))],
+            "subs": sub_urls, "sub_tracks": sub_tracks,
             "start": _start_at(ep_id, from_start, at), "show": s["title"], "label": label,
             # Sub/Dub (Decision 70's rules): each version's audio, the player switches between them.
             "versions": [player.file_mode(f) for f in (ep.get("files") or [])],
@@ -388,8 +409,13 @@ def start_online(ep_id, mode=None, from_start=False, at=None, switch=False):
         _links[tok] = {"ep_id": ep_id, "url": got["url"], "referrer": got["referrer"], "subs": got["subs"],
                        "allowed": {got["url"]}, "ts": now}
     _begin(ep_id, 0, s["title"], label)
+    builtin = [{"url": f"/api/phone/sub/{tok}/{i}",
+                "label": f"English {i + 1}" if i else "English",
+                "lang": "en", "custom": False, "delay": 0.0}
+               for i in range(len(got["subs"]))]
+    sub_urls, sub_tracks = _phone_sub_tracks(ep_id, builtin)
     out = {"ok": True, "id": ep_id, "src": relay_url(tok, got["url"]), "hls": _looks_hls(got["url"]),
-           "subs": [f"/api/phone/sub/{tok}/{i}" for i in range(len(got["subs"]))],
+           "subs": sub_urls, "sub_tracks": sub_tracks,
            "start": _start_at(ep_id, from_start, at), "show": s["title"], "label": label,
            "audio": {"current": play_mode, "options": list(anicli.STREAM_MODES)}}
     if note:
@@ -505,7 +531,5 @@ def subtitle(tok, n):
     return to_vtt(text)
 
 
-def to_vtt(text):
-    if text.lstrip().startswith("WEBVTT"):
-        return text
-    return "WEBVTT\n\n" + _SRT_TIME.sub(r"\1.\2", text.replace("\r\n", "\n"))
+def to_vtt(text, ext=".srt"):
+    return subtitles.to_vtt(text, ext)

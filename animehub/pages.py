@@ -4,7 +4,7 @@ import json
 import threading
 import time
 
-from . import anicli, anilist, database, franchise, library, mapping, progress, settings, streaming, util
+from . import anicli, anilist, database, franchise, library, mapping, progress, settings, streaming, subtitles, util
 from .config import config
 
 
@@ -98,7 +98,7 @@ def _watch(src):
     return {k: src.get(k) for k in ("watched", "position", "duration", "last_played")}
 
 
-def entry_slots(m, local, link, rows, art, online_ok):
+def entry_slots(m, local, link, rows, art, online_ok, custom_subs=None, custom_ep_subs=None):
     """One entry's episodes, in order: a slot per episode number that is on
     disk (`local`: number → scanned episode), in the online episode list
     (`link`, once ani-cli linked the entry), or aired by AniList (until
@@ -124,6 +124,10 @@ def entry_slots(m, local, link, rows, art, online_ok):
                             {"watched": bool(r[0]), "position": r[1], "duration": r[2], "last_played": r[3]}
                             if r else None) if x]
         last = max(srcs, key=lambda x: x.get("last_played") or "", default={})
+        csubs = list((custom_subs or {}).get(str(n)) or ())
+        if ep and custom_ep_subs and ep["id"] in custom_ep_subs:
+            seen_ids = {c["id"] for c in csubs}
+            csubs += [c for c in custom_ep_subs[ep["id"]] if c["id"] not in seen_ids]
         slots.append({"number": n, "title": titles.get(str(n)), "thumb": thumbs.get(str(n)),
                       "id": ep["id"] if ep else sid, "source": "local" if ep else "online" if sid else None,
                       "local": {"id": ep["id"], "files": ep["files"], "show_id": ep.get("show_id"),
@@ -134,7 +138,9 @@ def entry_slots(m, local, link, rows, art, online_ok):
                       "position": last.get("position") or 0, "duration": last.get("duration") or 0,
                       "last_played": last.get("last_played"),
                       # additive: the file's measured length (lengths.py)
-                      **({"length": ep["length"]} if ep and ep.get("length") else {})})
+                      **({"length": ep["length"]} if ep and ep.get("length") else {}),
+                      # additive: attached custom subtitles (subtitles.py)
+                      **({"custom_subs": csubs} if csubs else {})})
     return slots
 
 
@@ -237,7 +243,7 @@ def watch_order(entries):
     return [row(m) for m in sorted([*entries, *linked.values()], key=key)]
 
 
-def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=frozenset(), rewatches=None):
+def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=frozenset(), rewatches=None, custom_subs=None):
     """The page model (pure): `entries` in page order (franchise_of), `scan`
     after merge_db (season ranges, watch facts), `links` media id → ani-cli
     link, `rows` "stream:" id → (watched, position, duration,
@@ -270,6 +276,7 @@ def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=froz
             if loose:
                 other.append({"show_id": s["id"], "season": mapping.season_key(sea), "label": sea["label"],
                               "folder": s["title"], "episodes": loose})
+    ep_csubs = {ep["id"]: ep["custom_subs"] for s in scan for sea in s["seasons"] for ep in sea["episodes"] if ep.get("custom_subs")}
     out = []
     for m in entries:
         no = line.index(m["id"]) + 1 if m["id"] in line else None
@@ -281,7 +288,8 @@ def franchise_page(entries, scan, links, rows, arts, online_ok=True, missed=froz
                         online={"linked": mid in links, "available": bool(links.get(mid)) or reachable,
                                 "mode": (links.get(mid) or {}).get("mode")},
                         rewatch={"started_at": rw["started_at"], "done": rw["done"]} if rw else None,
-                        slots=entry_slots(m, local.get(mid, {}), links.get(mid), rows, arts.get(mid), reachable)))
+                        slots=entry_slots(m, local.get(mid, {}), links.get(mid), rows, arts.get(mid), reachable,
+                                          (custom_subs or {}).get(mid), ep_csubs)))
     # Seasons named on their own (Monogatari: Nisemonogatari, Owarimonogatari)
     # leave the first one its own name too, not "Season 1".
     main = [(e, m) for e, m in zip(out, entries) if e["group"] == "main"]
@@ -488,7 +496,8 @@ def franchise_view(mid, background=True, peek=False):
     arts = mapping.entry_art_all(ids)
     online_ok = bool(anicli.anicli_path())
     page = franchise_page(entries, scan, links, streaming._stream_rows(), arts, online_ok,
-                          streaming.stream_missed_ids(), progress.rewatches_all())
+                          streaming.stream_missed_ids(), progress.rewatches_all(),
+                          subtitles.summary_for_entries(ids))
     if not background:
         return dict(page, id=fid, selected=mid)
     sel = next((m for m in entries if m["id"] == mid), None)

@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import alpics, anicli, anilist, database, franchise, lengths, mapping, metadata, player, playlists, progress, settings, streaming, util
+from . import alpics, anicli, anilist, database, franchise, lengths, mapping, metadata, player, playlists, progress, settings, streaming, subtitles, util
 from .config import config
 
 
@@ -561,6 +561,7 @@ def merge_db(scan):
                        {("season", sid) for sid in scan_ids & season_rows}
                 if have & back:
                     c.executemany("DELETE FROM tombstones WHERE kind=? AND key=?", have & back)
+    csubs_by_ep = subtitles.summary_for_ep_ids(known)
     for s in scan:
         m = meta.get(s["id"])
         if m:
@@ -585,6 +586,9 @@ def merge_db(scan):
                 n = lengths.get(ep.get("rel"))
                 if n:
                     ep["length"] = n
+                cs = csubs_by_ep.get(ep["id"])
+                if cs:
+                    ep["custom_subs"] = cs
                 if r is not None:
                     # Identity stamp (TODO 25): a played episode learns which
                     # show/label it belongs to, so its history row stays
