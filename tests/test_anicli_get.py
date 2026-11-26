@@ -179,6 +179,7 @@ class AniCliUpdateNoticesAndUpgrade(unittest.TestCase):
 
         settings.set_automation("update_vpn_only", True)
         with mock.patch.object(settings, "vpn_status", return_value={"active": False, "known": True}), \
+                mock.patch.object(anicli, "upgrade_method", return_value="download"), \
                 mock.patch.object(anicli, "urlopen", side_effect=AssertionError("asked GitHub")):
             self.assertEqual(anicli.check_update(), {"error": anicli.ANICLI_NO_VPN})
             self.assertEqual(anicli.upgrade_start(), {"error": anicli.ANICLI_NO_VPN})
