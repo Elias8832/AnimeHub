@@ -24,8 +24,8 @@ _USER_FIELDS = ("name mediaListOptions{scoreFormat} statistics{anime{episodesWat
                 " favourites{anime(perPage:50){nodes{id}}}")
 _LIST_FIELDS = ("lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day}"
                 " score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status averageScore"
-                " season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring"
-                " airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }")
+                " popularity season episodes format duration startDate{year} genres nextAiringEpisode{ episode"
+                " timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }")
 ANILIST_USER_QUERY = ("query($name:String){ User(name:$name){ " + _USER_FIELDS + " }"
                       " MediaListCollection(userName:$name, type:ANIME){ " + _LIST_FIELDS + " } }")
 # By the account's id (stored at connect): a renamed account still reads,
@@ -33,7 +33,7 @@ ANILIST_USER_QUERY = ("query($name:String){ User(name:$name){ " + _USER_FIELDS +
 # for token files from before the id was kept.
 ANILIST_USER_QUERY_ID = ("query($id:Int){ User(id:$id){ " + _USER_FIELDS + " }"
                          " MediaListCollection(userId:$id, type:ANIME){ " + _LIST_FIELDS + " } }")
-MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
+MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore popularity seasonYear startDate{year}
 coverImage{extraLarge color} bannerImage description
 relations{edges{relationType node{id format}}}
 streamingEpisodes{title thumbnail}"""
@@ -339,22 +339,100 @@ def anilist_entry_state(media_id):
     return out
 
 
-# --- About extras (TODO 172): genres, tags and characters for the show
-# page's About section. Public data, no login. Its own query, so the
-# franchise walk (FRANCHISE_FIELDS, up to 60 entries) stays small.
+# --- About extras (TODO 172, 260): genres, tags, characters, studios, trailer,
+# rankings, streaming links and non-franchise related anime for the show page's
+# About section. Public data, no login. Its own query, so the franchise walk
+# (FRANCHISE_FIELDS, up to 60 entries) stays small.
 
 ABOUT_QUERY = """query($id:Int){Media(id:$id,type:ANIME){ id genres
+ studios(isMain:true){ nodes{ id name } }
+ trailer{ id site thumbnail }
+ rankings{ rank type allTime year season context }
+ externalLinks{ url site type }
+ relations{ edges{ relationType node{ id type format status averageScore seasonYear
+  title{ english romaji } coverImage{ extraLarge color } } } }
  tags{ name rank isMediaSpoiler isGeneralSpoiler isAdult }
  characters(sort:[ROLE,RELEVANCE,ID],perPage:18){ edges{ role
   node{ id name{full} image{large} }
   voiceActors(sort:[RELEVANCE,ID]){ id name{full} image{large medium} languageV2 } } } }}"""
+ABOUT_CACHE_VER = "v4"
 ABOUT_FRESH = 3 * 24 * 3600
 ABOUT_TAG_MIN_RANK = 50  # AniList's own rank: lower ones are weak votes
 ABOUT_TAGS_MAX = 12
+_ABOUT_IN_ORDER = {"SEQUEL", "PREQUEL", "PARENT", "SIDE_STORY", "SUMMARY"}
+_TRAILER_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
 
 
 def _img(i):
     return (i or {}).get("large") or (i or {}).get("medium")
+
+
+def _trailer_shape(tr):
+    if not isinstance(tr, dict):
+        return None
+    tid = str(tr.get("id") or "").strip()
+    site = str(tr.get("site") or "").strip().lower()
+    if not _TRAILER_ID_RE.fullmatch(tid) or site not in ("youtube", "dailymotion"):
+        return None
+    url = ("https://www.youtube.com/watch?v=%s" % tid if site == "youtube"
+           else "https://www.dailymotion.com/video/%s" % tid)
+    thumb = tr.get("thumbnail")
+    if not isinstance(thumb, str) or not thumb.startswith("https://"):
+        thumb = "https://i.ytimg.com/vi/%s/hqdefault.jpg" % tid if site == "youtube" else None
+    return {"id": tid, "site": site, "url": url, "thumbnail": thumb}
+
+
+def _rankings_shape(rows):
+    out, seen = [], set()
+    items = [r for r in (rows or []) if isinstance(r, dict) and isinstance(r.get("rank"), int)
+             and r["rank"] > 0 and (r.get("allTime") or r["rank"] <= 100) and r.get("context")]
+    items.sort(key=lambda r: (0 if r.get("allTime") else 1, r["rank"]))
+    for r in items:
+        key = (r.get("type"), bool(r.get("allTime")), r.get("year"), r.get("season"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"rank": r["rank"], "type": r.get("type"), "all_time": bool(r.get("allTime")),
+                    "year": r.get("year"), "season": r.get("season"), "context": r.get("context")})
+        if len(out) >= 3:
+            break
+    return out
+
+
+def _watch_on_shape(links):
+    out, seen = [], set()
+    for l in links or []:
+        if not isinstance(l, dict) or l.get("type") != "STREAMING":
+            continue
+        site = (l.get("site") or "").strip()
+        url = (l.get("url") or "").strip()
+        if not site or not url.startswith("https://") or site.lower() in seen:
+            continue
+        seen.add(site.lower())
+        out.append({"site": site, "url": url})
+        if len(out) >= 6:
+            break
+    return out
+
+
+def _related_shape(rels):
+    out, seen = [], set()
+    for e in ((rels or {}).get("edges") or []):
+        rt = e.get("relationType")
+        n = e.get("node") or {}
+        if not rt or rt in _ABOUT_IN_ORDER or n.get("type") != "ANIME" or not n.get("id") or n["id"] in seen:
+            continue
+        seen.add(n["id"])
+        t, c = n.get("title") or {}, n.get("coverImage") or {}
+        title = t.get("english") or t.get("romaji")
+        if not title:
+            continue
+        out.append({"id": n["id"], "relation": rt, "title": title, "format": n.get("format"),
+                    "year": n.get("seasonYear"), "average": n.get("averageScore"),
+                    "poster": c.get("extraLarge"), "color": c.get("color")})
+        if len(out) >= 12:
+            break
+    return out
 
 
 def _about_shape(m):
@@ -378,16 +456,25 @@ def _about_shape(m):
                       "role": e.get("role"),
                       "ja": va["ja"]["name"]["full"] if "ja" in va else None,
                       "en": va["en"]["name"]["full"] if "en" in va else None,
+                      "ja_id": va["ja"].get("id") if "ja" in va else None,
+                      "en_id": va["en"].get("id") if "en" in va else None,
                       "ja_image": _img((va.get("ja") or {}).get("image")),
                       "en_image": _img((va.get("en") or {}).get("image"))})
+    studios = [{"id": s["id"], "name": s["name"]}
+               for s in ((m.get("studios") or {}).get("nodes") or [])
+               if s.get("id") and s.get("name")]
     return {"id": m["id"], "genres": [g for g in (m.get("genres") or []) if g],
-            "tags": tags[:ABOUT_TAGS_MAX], "characters": chars}
+            "tags": tags[:ABOUT_TAGS_MAX], "characters": chars,
+            "studios": studios, "trailer": _trailer_shape(m.get("trailer")),
+            "rankings": _rankings_shape(m.get("rankings")),
+            "watch_on": _watch_on_shape(m.get("externalLinks")),
+            "related": _related_shape(m.get("relations"))}
 
 
 def media_about(media_id):
     """The About extras for one entry, cached a few days. A failed read
     falls back to the stored copy at any age; with none, it raises."""
-    key = "media-about:v3:%d" % media_id
+    key = "media-about:%s:%d" % (ABOUT_CACHE_VER, media_id)
     row = database.cache_get_ts(key)
     if row and time.time() - row[1] < ABOUT_FRESH:
         return row[0]
@@ -1213,6 +1300,9 @@ def _list_cache_fresh(which, since=None):
     cached = _cache_raw(which)
     if not cached or (cached.get("service") == "mal") != (which == "mal"):
         return None
+    entries = cached.get("entries") or []
+    if since is None and entries and all("popularity" not in e for e in entries):
+        return None
     ts = cached.get("_ts", 0)
     if (ts >= since) if since is not None else (time.time() - ts < 600):
         return {k: v for k, v in cached.items() if k != "_ts"}
@@ -1313,8 +1403,9 @@ def _anilist_lists():
                     "progress": e.get("progress") or 0,
                     "score": e.get("score") or 0,
                     "score100": e.get("score100"),
-                    # Additive: AniList's community score, 0-100.
+                    # Additive: AniList's community score, 0-100, and member count.
                     "average": e["media"].get("averageScore"),
+                    "popularity": e["media"].get("popularity"),
                     "episodes": e["media"].get("episodes"),
                     "format": e["media"].get("format"),
                     "duration": e["media"].get("duration"),

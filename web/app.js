@@ -47,6 +47,7 @@ const ICONS = {
   tv: ['<rect x="3" y="5.5" width="18" height="12" rx="2.5"/><path d="M8 21h8"/>'],
   phone: ['<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/>'],
   search: ['<circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.6-3.6"/>'],
+  compass: ['<circle cx="12" cy="12" r="8.5"/><path d="m15.4 8.6-1.8 5-5 1.8 1.8-5z"/>'],
   refresh: ['<path d="M20 11a8 8 0 0 0-14.3-4.6L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.6L20 15.5M20 20v-4.5h-4.5"/>'],
   undo: ['<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5M4 4v4.5h4.5"/>'],
   folder: ['<path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2.2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'],
@@ -981,24 +982,38 @@ const BR_SEASONS = ["WINTER", "SPRING", "SUMMER", "FALL"];
 const BR_SORTS = [["trending", "Trending"], ["popularity", "Popularity"], ["score", "Average score"], ["newest", "Newest"], ["title", "Title"]];
 const BR_FMT = [["TV", "TV"], ["MOVIE", "Movie"], ["ONA", "ONA"], ["OVA", "OVA"], ["SPECIAL", "Special"], ["TV_SHORT", "TV short"]];
 const brF0 = () => ({ genres: [], fyear: "all", fseason: "", format: "", score: "all" });
-S.br = { list: "over", sea: null, sort: "", f: brF0(), ...lsGet("br", {}) };
+S.br = { list: "over", sea: null, sort: "", q: "", entity: null, bioOpen: false, f: brF0(), ...lsGet("br", {}) };
 S.br.f = { ...brF0(), ...S.br.f };
+S.br.q = ""; S.br.entity = null; S.br.bioOpen = false;
 /* A list that became a sort (an older save, or history from before) opens All anime in that order. */
 const BR_OLD = { popular: "", top: "score" };
-function brListOf(l, sort) { return l in BR_OLD ? ["all", BR_OLD[l]] : BR_LISTS.some(([k]) => k === l) ? [l, sort || ""] : ["over", ""]; }
+function brListOf(l, sort, entity) {
+  if ((l === "person" || l === "studio") && entity?.id) return [l, sort || ""];
+  return l in BR_OLD ? ["all", BR_OLD[l]] : BR_LISTS.some(([k]) => k === l) ? [l, sort || ""] : ["over", ""];
+}
 [S.br.list, S.br.sort] = brListOf(S.br.list, S.br.sort);
 for (const k of ["fyear", "score"]) if (!Array.isArray(S.br.f[k])) S.br.f[k] = "all"; // ranges, like the Library's (an older single value reads as any)
 const BR_RANGE = { fyear: () => [1960, new Date().getFullYear() + 1, 1], score: () => [0, 100, 5] };
-const brSave = () => lsSet("br", { list: S.br.list, f: S.br.f, sort: S.br.sort });
+const brEntity = () => (S.br.list === "person" || S.br.list === "studio") && S.br.entity?.id ? S.br.entity : null;
+const brSave = () => { if (!brEntity()) lsSet("br", { list: S.br.list, f: S.br.f, sort: S.br.sort }); };
 const brSeaLabel = (x) => x ? `${x.season[0]}${x.season.slice(1).toLowerCase()} ${x.year}` : "";
 function brStep(x, n) { const i = BR_SEASONS.indexOf(x.season) + n; return { season: BR_SEASONS[((i % 4) + 4) % 4], year: x.year + Math.floor(i / 4) }; }
-const brOn = () => { const f = S.br.f; return f.genres.length > 0 || Array.isArray(f.fyear) || Array.isArray(f.score) || !!(f.fseason || f.format); };
+const brFilterN = () => { const f = S.br.f; return [f.genres.length > 0, Array.isArray(f.fyear), Array.isArray(f.score), !!f.fseason, !!f.format].filter(Boolean).length; };
+const brOn = () => brFilterN() > 0 || !!(S.br.q || "").trim();
 const brSeasonList = (l = S.br.list) => l === "season" || l === "next";
 /* Which season a season list shows: the one you stepped to, else AniList's own. */
 const brSea = () => S.br.sea || S.brOver?.data?.seasons?.[S.br.list] || null;
-const brSort = () => S.br.sort || BR_SORT0[S.br.list] || "popularity";
+const brSort = () => {
+  if (S.br.sort) return S.br.sort;
+  if (brEntity()) return "popularity";
+  if ((S.br.q || "").trim()) return "relevance";
+  return BR_SORT0[S.br.list] || "popularity";
+};
 function brSpec() {
-  const f = S.br.f, sp = { list: S.br.list, sort: brSort() };
+  const ent = brEntity();
+  if (ent) return { list: S.br.list, id: ent.id, sort: brSort() };
+  const f = S.br.f, q = (S.br.q || "").trim(), sp = { list: S.br.list, sort: brSort() };
+  if (q) sp.q = q;
   if (brSeasonList()) { const x = brSea(); if (x) Object.assign(sp, { season: x.season, year: x.year }); }
   if (f.genres.length) sp.genres = f.genres.join(",");
   for (const k of ["fyear", "fseason", "format", "score"]) if (f[k] && f[k] !== "all" && !(brSeasonList() && (k === "fyear" || k === "fseason"))) sp[k] = Array.isArray(f[k]) ? f[k].join("-") : f[k];
@@ -1006,13 +1021,15 @@ function brSpec() {
 }
 const brQS = (sp, page = 1) => "/api/catalog?" + new URLSearchParams({ ...sp, page }).toString();
 const brKey = (sp) => JSON.stringify(sp);
-S.brc = {}; // spec key → { items, page, has_next, busy, err }
+S.brc = {}; // spec key → { items, page, has_next, busy, err, person?, studio? }
 function brLoad(more) {
   const sp = brSpec(), key = brKey(sp), c = (S.brc[key] ||= { items: [], page: 0, has_next: true, busy: false, err: null });
   if (c.busy || (!more && (c.page || c.err)) || (more && !c.has_next)) return c; // a failure waits for Try again
   c.busy = true; c.err = null;
   api(brQS(sp, c.page + 1)).then((r) => {
     if (r.error) throw r;
+    if (r.person) c.person = r.person;
+    if (r.studio) c.studio = r.studio;
     const have = new Set(c.items.map((x) => x.id));
     c.items.push(...(r.items || []).filter((x) => !have.has(x.id))); c.page = r.page; c.has_next = !!r.has_next;
   }).catch((e) => brFail(c, e))
@@ -1063,7 +1080,7 @@ const BR_PH = '<div class="brphc" aria-hidden="true"><i></i><b></b><u></u></div>
    Elias). + Planning shows on hover, like Home's Recommended row. */
 function brCard(x, i, o = {}) {
   const st = o.st.get(x.id), add = aniMode() && !st;
-  const facts = [st ? statusLabel(st) : "", fmtName(x.format), o.noYear ? "" : x.year].filter(Boolean).join(" · ");
+  const facts = [o.person && x.character ? x.character : "", st ? statusLabel(st) : "", fmtName(x.format), o.noYear ? "" : x.year].filter(Boolean).join(" · ");
   return `<div class="card brc" role="button" tabindex="0" style="--i:${Math.min(i, 24)}" data-a="bopen" data-v="${x.id}" data-poster="${esc(x.poster || "")}" data-color="${esc(x.color || "")}" aria-label="${esc(x.title)}">
     <div class="pw">${poster(x.title, x.poster)}${o.rank ? `<b class="brrn">${o.rank}</b>` : ""}${add ? `<button class="radd" data-a="badd" data-v="${x.id}" title="Add to Planning">${ico("plus")}Planning</button>` : ""}</div>
     <h3><span class="ttl">${esc(x.title)}</span>${x.average ? `<span class="kb" title="AniList average">${x.average}</span>` : ""}</h3><div class="m">${esc(facts)}</div></div>`;
@@ -1105,17 +1122,19 @@ function brFilters() {
 }
 function brRail() {
   let n = 0;
-  const seas = S.brOver?.data?.seasons || {};
+  const seas = S.brOver?.data?.seasons || {}, ent = brEntity();
   /* A season list stepped to the other one lights that one; stepped further, neither (the grid's title says which). */
-  const sea = brSeasonList() && S.br.sea, on = !sea ? S.br.list : ["season", "next"].find((k) => seas[k] && seas[k].season === sea.season && seas[k].year === sea.year) || S.br.list;
+  const sea = brSeasonList() && S.br.sea, on = ent ? "" : !sea ? S.br.list : ["season", "next"].find((k) => seas[k] && seas[k].season === sea.season && seas[k].year === sea.year) || S.br.list;
   const it = ([k, l]) => `<button class="${on === k ? "on" : ""}" style="--i:${n++}" data-a="blist" data-v="${k}">${esc(l)}${seas[k] ? `<span class="n">${esc(seas[k].label)}</span>` : ""}</button>`;
-  return `<aside class="lnav brnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Browse</h1><div class="sum"><span>from AniList</span></div></div>
+  const qv = ent ? "" : (S.br.q || "");
+  const qbox = `<label class="brq" style="--i:${n++}">${ico("search")}<input id="brq" type="search" autocomplete="off" spellcheck="false" placeholder="Search catalog" aria-label="Search AniList catalog" value="${esc(qv)}">${qv ? `<button class="brqx" data-a="bqclear" aria-label="Clear search">${ico("close")}</button>` : ""}</label>`;
+  return `<aside class="lnav brnav"><div class="lhello" style="--i:${n++}"><h1 class="hd">Browse</h1><div class="sum"><span>from AniList</span></div></div>${qbox}
     <h4 style="--i:${n++}">Lists</h4>${BR_LISTS.map(it).join("")}
-    <h4 style="--i:${n++}" class="brfh">Filter${brOn() ? `<button class="brclr" data-a="bclear">Clear</button>` : ""}</h4><div class="lflt" style="--i:${n++}">${brFilters()}</div></aside>`;
+    ${ent ? "" : `<h4 style="--i:${n++}" class="brfh">Filter${brOn() ? `<button class="brclr" data-a="bclear">Clear</button>` : ""}</h4><div class="lflt" style="--i:${n++}">${brFilters()}</div>`}</aside>`;
 }
 function brHero(x, st) {
   const add = aniMode() && !st.get(x.id), size = x.title.length > 24 ? " tl3" : x.title.length > 12 ? " tl2" : "";
-  const facts = [x.average ? `★ ${x.average}` : "", fmtName(x.format), x.year, x.studio, x.genres.slice(0, 3).join(", ")].filter(Boolean).map(esc).join('<i class="sep"></i>');
+  const facts = [x.average ? `★ ${x.average}` : "", fmtName(x.format), x.year, x.studio, x.genres.slice(0, 3).join(", ")].filter(Boolean).map((s) => `<span>${esc(s)}</span>`).join('<i class="sep"></i>');
   return `<div class="upn brhero${size}" data-a="bopen" data-v="${x.id}" data-k="hero" style="--h:${hueOf(x.title)};--art:${esc(cssUrl(x.banner || x.poster))}"><i class="upa"></i><div class="upc">
     <div class="eye"><i class="mdot"></i>trending now · #1${st.get(x.id) ? ` · <span class="ok">${esc(statusLabel(st.get(x.id)).toLowerCase())}</span>` : ""}</div>
     <h1>${esc(x.title)}</h1><div class="facts">${facts}</div>
@@ -1136,10 +1155,34 @@ function brOverHTML(st) {
   /* Three rows (Elias: "so much at once"); Next season is in the side list. */
   return (hero ? brHero(hero, st) : "") + row("trending", "Trending now") + row("season", "This season", seas.season?.label) + row("top", "Top rated", "", true);
 }
+function brTitleText() {
+  const ent = brEntity();
+  if (ent) return ent.name || (S.br.list === "person" ? "Voice actor" : "Studio");
+  const sea = brSeasonList() ? brSea() : null;
+  if (sea) return brSeaLabel(sea);
+  return (BR_LISTS.find(([k]) => k === S.br.list) || [0, "Browse"])[1];
+}
+function brSortOpts() {
+  const q = !!(S.br.q || "").trim() && !brEntity();
+  return q ? [["relevance", "Best match"], ...BR_SORTS] : BR_SORTS;
+}
+function brEntityHead(ent, c) {
+  const isPerson = S.br.list === "person", info = isPerson ? c.person : c.studio;
+  const name = info?.name || ent.name || (isPerson ? "Voice actor" : "Studio");
+  const sub = [isPerson ? info?.native : (info?.is_animation_studio ? "Animation studio" : "Studio"),
+    info?.favourites != null ? `${info.favourites.toLocaleString()} favourites` : ""].filter(Boolean).join(" · ");
+  const bio = isPerson && info?.description ? info.description : "";
+  const shortBio = bio.length > 260 && !S.br.bioOpen;
+  const alUrl = `https://anilist.co/${isPerson ? "staff" : "studio"}/${ent.id}`;
+  return `<div class="brent${isPerson && info?.image ? " has-img" : ""}">
+    <div class="brent-top"><button class="backbtn" data-a="back" aria-label="Back">${ico("chevl")}<span>Back</span></button><a class="link-btn brent-al" href="${alUrl}" data-a="ext" data-v="${alUrl}">AniList${ico("ext")}</a></div>
+    <div class="brent-body">${isPerson && info?.image ? `<span class="brent-pic">${poster(name, info.image)}</span>` : ""}
+      <div class="brent-tx"><h1 class="hd">${esc(name)}</h1>${sub ? `<div class="brent-sub">${esc(sub)}</div>` : ""}${bio ? `<p class="brent-bio">${esc(shortBio ? bio.slice(0, 260).replace(/\s+\S*$/, "") + "…" : bio)}${bio.length > 260 ? ` <button class="link-btn" data-a="brbio">${S.br.bioOpen ? "Show less" : "Read more"}</button>` : ""}</p>` : ""}</div></div></div>`;
+}
 function brGridHTML(st) {
-  const L = S.br.list, c = brLoad(), sea = brSeasonList() ? brSea() : null;
+  const L = S.br.list, c = brLoad(), ent = brEntity(), sea = !ent && brSeasonList() ? brSea() : null, q = !ent ? (S.br.q || "").trim() : "";
   const ranked = L === "all" && brSort() === "score" && !brOn(); // the places on AniList, as the Overview's Top rated row shows them
-  const title = sea ? brSeaLabel(sea) : (BR_LISTS.find(([k]) => k === L) || [0, ""])[1];
+  const title = ent ? (L === "person" ? "Roles" : "Anime") : sea ? brSeaLabel(sea) : q ? `“${q}”` : (BR_LISTS.find(([k]) => k === L) || [0, ""])[1];
   /* The app's own round arrows, before the title: they stay under the pointer as you step (no pills naming the
      neighbours, Elias: "this looks bad"); the season they go to is their tooltip. */
   const nb = (n) => esc(brSeaLabel(brStep(sea, n)));
@@ -1147,17 +1190,19 @@ function brGridHTML(st) {
   const scls = age < 220 ? (S.br.stepDir > 0 ? " step-r" : " step-l") : "";
   const ssty = scls && age > 8 ? ` style="animation-delay:${-Math.round(age)}ms"` : "";
   if (age >= 220) S.br.stepDir = 0;
-  const steps = sea ? `<span class="brsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}" title="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}" title="${nb(1)}">${ico("chevr")}</button><h2 class="lh${scls}"${ssty}>${esc(title)}</h2></span>` : "";
-  const sort = `<label class="fl">sort<select data-a="bsort">${BR_SORTS.map(([k, l]) => `<option value="${k}"${brSort() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
+  const ph = isPhone();
+  const steps = sea && !ph ? `<span class="brsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}" title="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}" title="${nb(1)}">${ico("chevr")}</button><h2 class="lh${scls}"${ssty}>${esc(title)}</h2></span>` : "";
+  const sort = ph ? "" : `<label class="fl">sort<select data-a="bsort">${brSortOpts().map(([k, l]) => `<option value="${k}"${brSort() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
   const span = (r) => r[0] === r[1] ? String(r[0]) : r.join("–");
-  const f = S.br.f, fx = [...f.genres, Array.isArray(f.fyear) && !sea ? span(f.fyear) : "", f.fseason && !sea ? f.fseason[0] + f.fseason.slice(1).toLowerCase() : "", f.format ? fmtName(f.format) : "", Array.isArray(f.score) ? `average ${span(f.score)}` : ""].filter(Boolean);
-  const head = `<div class="filters brhd${sea ? " sea" : ""}">${steps || `<h2 class="lh">${esc(title)}</h2>`}${fx.length ? `<span class="brfx">${fx.map(esc).join(" · ")}</span>` : ""}<span class="fill"></span>${sort}</div>`;
+  const f = S.br.f, fx = ent ? [] : [...f.genres, Array.isArray(f.fyear) && !sea ? span(f.fyear) : "", f.fseason && !sea ? f.fseason[0] + f.fseason.slice(1).toLowerCase() : "", f.format ? fmtName(f.format) : "", Array.isArray(f.score) ? `average ${span(f.score)}` : ""].filter(Boolean);
+  const qclr = q ? `<button class="brqchip" data-a="bqclear" title="Clear search">“${esc(q)}”${ico("close")}</button>` : "";
+  const head = ph && !ent && !q && !fx.length ? "" : `<div class="filters brhd${sea ? " sea" : ""}">${steps || (ph && !ent ? "" : `<h2 class="lh">${esc(title)}</h2>`)}${q && (ph || sea) ? qclr : ""}${fx.length ? `<span class="brfx">${fx.map(esc).join(" · ")}</span>` : ""}<span class="fill"></span>${sort}</div>`;
   let body;
   if (!c.items.length && c.err) body = brErr(c);
-  else if (!c.items.length && !c.busy && c.page) body = `<div class="emptyx brnone"><div class="eico">${ico("search")}</div><b>Nothing matches</b><span>No show on AniList has all of these.</span><button class="btn" data-a="bclear">Clear filters</button></div>`;
-  else body = `<div class="wall brwall">${c.items.map((x, i) => brCard(x, i, { st, rank: ranked ? i + 1 : 0, noYear: !!sea })).join("")}${c.busy ? BR_PH.repeat(c.items.length ? 7 : 21) : ""}</div>
+  else if (!c.items.length && !c.busy && c.page) body = `<div class="emptyx brnone"><div class="eico">${ico("search")}</div><b>Nothing matches</b><span>${ent ? "No anime listed on AniList." : "No show on AniList has all of these."}</span>${ent ? "" : `<button class="btn" data-a="bclear">Clear filters</button>`}</div>`;
+  else body = `<div class="wall brwall">${c.items.map((x, i) => brCard(x, i, { st, rank: ranked ? i + 1 : 0, noYear: !!sea, person: L === "person" })).join("")}${c.busy ? BR_PH.repeat(c.items.length ? 7 : 21) : ""}</div>
     ${c.has_next && c.items.length ? `<div class="brmore"><button class="btn" data-a="bmore">${c.busy ? "Loading…" : "Show more"}</button></div>` : ""}${c.err && c.items.length ? `<p class="brnote">${c.due ? (brTickOn(), `AniList is busy — ${brWhen(c)}`) : esc(c.err)} <button class="link-btn" data-a="bmore">Try now</button></p>` : ""}`;
-  return head + body;
+  return (ent ? brEntityHead(ent, c) : "") + head + body;
 }
 function brMainHTML() {
   const st = brStatus();
@@ -1165,10 +1210,80 @@ function brMainHTML() {
 }
 function Browse() {
   brLoadOver(); brLoadGenres();
-  const rail = isRail();
-  const head = rail ? "" : `<div class="hello"><h1 class="hd">Browse</h1></div><div class="tabs" data-glide="brtabs">${BR_LISTS.map(([k, l]) => `<button class="${S.br.list === k ? "on" : ""}" data-a="blist" data-v="${k}">${esc(l)}</button>`).join("")}</div>
-    <div class="filters brflt">${brFilters()}${brOn() ? `<button class="btn clr" data-a="bclear">${ico("close")}Clear</button>` : ""}</div>`;
-  return `<div class="lib2 brw">${head}<div class="libg">${rail ? brRail() : ""}<div class="lmain" id="brmain">${brMainHTML()}</div></div></div>`;
+  const rail = isRail(), ph = isPhone(), ent = brEntity(), sea = !ent && brSeasonList() ? brSea() : null;
+  let head = "";
+  if (ph) {
+    if (!ent) {
+      const nb = (n) => esc(brSeaLabel(brStep(sea, n)));
+      const stp = sea ? `<span class="brpsteps"><button class="arr" data-a="bstep" data-v="-1" aria-label="${nb(-1)}">${ico("chevl")}</button><button class="arr" data-a="bstep" data-v="1" aria-label="${nb(1)}">${ico("chevr")}</button></span>` : "";
+      head = `<div class="hello lph brphead"><h1 class="hd">${esc(brTitleText())}</h1>${stp}</div>`;
+    }
+  } else if (!rail) {
+    head = `<div class="hello"><h1 class="hd">Browse</h1></div><div class="tabs" data-glide="brtabs">${BR_LISTS.map(([k, l]) => `<button class="${!ent && S.br.list === k ? "on" : ""}" data-a="blist" data-v="${k}">${esc(l)}</button>`).join("")}</div>
+      ${ent ? "" : `<div class="filters brflt">${brFilters()}${brOn() ? `<button class="btn clr" data-a="bclear">${ico("close")}Clear</button>` : ""}</div>`}`;
+  }
+  return `<div class="lib2 brw${ph ? " brphone" : ""}">${head}<div class="libg">${rail ? brRail() : ""}<div class="lmain" id="brmain">${brMainHTML()}</div></div></div>`;
+}
+/* Phone Browse bottom bar + list/sort/filter sheets (mirrors Library's phone UX, TODO 260). */
+function brBar() {
+  const ent = brEntity(), over = S.br.list === "over", nf = ent ? 0 : brFilterN();
+  return `<div class="libbar brbar${ent ? " solo" : ""}"><button class="lbn" data-a="brpick" aria-label="Switch list">${ico("layers")}<span class="lnm">${esc(brTitleText())}</span>${ico("chevd")}</button><span class="fill"></span>${!over ? `<button class="lbi" data-a="brsortm" aria-label="Sort">${ico("sort")}</button>` : ""}${!ent ? `<button class="lbi${nf ? " on" : ""}" data-a="fltopen" aria-label="Filter">${ico("filter")}${nf ? `<b>${nf}</b>` : ""}</button>` : ""}</div>`;
+}
+function brPickMenu() {
+  const cm = $("#cm"), seas = S.brOver?.data?.seasons || {}, ent = brEntity();
+  const row = ([k, l]) => {
+    const on = !ent && S.br.list === k, sub = seas[k]?.label || "";
+    return `<button class="mi lpk${on ? " on" : ""}" data-a="blist" data-v="${k}"><span class="ml">${esc(l)}</span>${sub ? `<span class="mn">${esc(sub)}</span>` : ""}${on ? ico("check") : ""}</button>`;
+  };
+  cm.innerHTML = `<div class="cap">Browse</div>` + BR_LISTS.map(row).join("");
+  cmShow(cm, 0, innerHeight);
+  cm.querySelector(".mi.sel")?.classList.remove("sel");
+}
+function brSortMenu() {
+  const cm = $("#cm"), cur = brSort();
+  const r = ([v, l]) => `<button class="mi lso${v === cur ? " on" : ""}" data-a="bsort" data-v="${v}"><span class="ml">${esc(l)}</span>${v === cur ? ico("check") : ""}</button>`;
+  cm.innerHTML = `<div class="cap">Sort</div>` + brSortOpts().map(r).join("");
+  cmShow(cm, 0, innerHeight);
+  cm.querySelector(".mi.sel")?.classList.remove("sel");
+}
+const BR_FLT = [["genres", "Genres", "tag"], ["fyear", "Year", "cal"], ["fseason", "Season", "clock"], ["format", "Format", "tv"], ["score", "Average", "speed"]];
+const brFOn = (k) => {
+  const f = S.br.f, sea = brSeasonList() && brSea();
+  if (k === "genres") return f.genres.length > 0;
+  if (k === "fyear") return !!sea || Array.isArray(f.fyear);
+  if (k === "fseason") return !!sea || !!f.fseason;
+  if (k === "score") return Array.isArray(f.score);
+  return !!f[k];
+};
+function brFText(k) {
+  const f = S.br.f, sea = brSeasonList() && brSea(), cap = (x) => x[0] + x.slice(1).toLowerCase();
+  if (k === "genres") return f.genres.length > 2 ? `${f.genres.length} picked` : f.genres.join(", ");
+  if (k === "fyear") { const v = sea ? [sea.year, sea.year] : f.fyear; return v[0] === v[1] ? String(v[0]) : v.join(" – "); }
+  if (k === "fseason") return cap(sea ? sea.season : f.fseason);
+  if (k === "format") return fmtName(f.format);
+  if (k === "score") return f.score[0] === f.score[1] ? String(f.score[0]) : f.score.join(" – ");
+  return "";
+}
+function brFltSheet() {
+  const list = BR_FLT.filter(([k]) => k !== "genres" || (S.brGenres && S.brGenres.length));
+  const foot = `<div class="fsfoot">${brOn() ? `<button class="btn clr" data-a="bclear">Clear</button>` : ""}<button class="btn pri fltdone" data-a="fltclose">Show results</button></div>`;
+  const pg = list.find(([k]) => k === S.fltPage);
+  if (pg) {
+    const [k, l] = pg, sea = brSeasonList() && brSea(), cap = (x) => x[0] + x.slice(1).toLowerCase();
+    let body;
+    if (BR_RANGE[k]) {
+      const [lo, hi, st] = BR_RANGE[k](), cur = k === "fyear" && sea ? [sea.year, sea.year] : Array.isArray(S.br.f[k]) ? S.br.f[k] : [lo, hi];
+      body = fslider(k, lo, hi, st, cur, true);
+    } else {
+      const opts = k === "genres" ? (S.brGenres || []).map((g) => [g, g]) : k === "fseason" ? BR_SEASONS.map((s) => [s, cap(s)]) : BR_FMT;
+      const cur = k === "genres" ? S.br.f.genres : k === "fseason" && sea ? [sea.season] : S.br.f[k] ? [S.br.f[k]] : [];
+      body = `<div class="fsopts">${opts.map(([v, lab]) => { const on = cur.includes(v); return `<button class="fso${on ? " on" : ""}" aria-pressed="${on}" data-a="bpick" data-k="${k}" data-v="${esc(v)}"><span>${esc(lab)}</span>${ico("check")}</button>`; }).join("")}</div>`;
+    }
+    return `<div class="fspg ${S.fltDir || ""}" id="fspg-${k}"><div class="fshd"><button class="fsback" data-a="fpage" data-v="" aria-label="Back to all filters">${ico("chevl")}</button><b class="fsh">${esc(l)}</b><span class="fsn">${k === "genres" && S.br.f.genres.length ? S.br.f.genres.length + " picked" : ""}</span></div>${body}</div>${foot}`;
+  }
+  const card = ([k, l, i]) => `<div class="fson" role="button" tabindex="0" data-a="fpage" data-v="${k}">${ico(i)}<span class="fsv"><small>${esc(l)}</small><b>${esc(brFText(k))}</b></span><button class="fsx" data-a="foff" data-v="${k}" aria-label="Remove ${esc(l)}">${ico("close")}</button></div>`;
+  const row = ([k, l, i]) => `<button class="fsr" data-a="fpage" data-v="${k}">${ico(i)}<span>${esc(l)}</span>${ico("chevr")}</button>`;
+  return `<div class="fspg ${S.fltDir || ""}" id="fspg-main"><div class="fshd"><b class="fsh">Filter</b></div>${list.filter(([k]) => brFOn(k)).map(card).join("")}<div class="fsrows">${list.filter(([k]) => !brFOn(k)).map(row).join("")}</div></div>${foot}`;
 }
 /* Redraw in place. A new list or filter fades the posters in the Library's way (.wall.fade); nothing glides or slides. */
 function brPaint(fade) {
@@ -1192,16 +1307,50 @@ function brWatch() {
   brIO.observe(m);
 }
 function brGo(list, push = true, sort = "") {
-  if (list === S.br.list && sort === S.br.sort && !S.br.sea) return;
-  S.br.list = list; S.br.sea = null; S.br.sort = sort; brSave();
+  if (list === S.br.list && sort === S.br.sort && !S.br.sea && !brEntity()) return;
+  S.br.list = list; S.br.sea = null; S.br.sort = sort; S.br.entity = null; S.br.bioOpen = false;
+  if (list === "over") S.br.q = "";
+  brSave();
   scrollTo(0, 0);
   brPaint(true);
   if (push) pushNav();
+}
+function brOpenSearch(query) {
+  const qq = (query || "").trim();
+  if (!qq) return;
+  clearSearch();
+  S.br.entity = null; S.br.sea = null; S.br.list = "all"; S.br.q = qq; S.br.sort = ""; S.br.bioOpen = false;
+  if (S.view !== "browse") { S.view = "browse"; S.navIn = true; render(); scrollTo(0, 0); pushNav(); }
+  else { scrollTo(0, 0); brPaint(true); pushNav(); }
+}
+function brOpenEntity(type, id, name) {
+  if (!id) return;
+  S.br.list = type; S.br.entity = { type, id: +id, name: name || "" }; S.br.sea = null; S.br.sort = ""; S.br.bioOpen = false;
+  if (S.view !== "browse") { S.view = "browse"; S.navIn = true; render(); scrollTo(0, 0); pushNav(); }
+  else { scrollTo(0, 0); brPaint(true); pushNav(); }
+}
+function brOpenGenre(genre) {
+  if (!genre) return;
+  S.br.entity = null; S.br.sea = null; S.br.q = ""; S.br.f = { ...brF0(), genres: [genre] }; S.br.list = "all"; S.br.sort = ""; brSave();
+  if (S.view !== "browse") { S.view = "browse"; S.navIn = true; render(); scrollTo(0, 0); pushNav(); }
+  else { scrollTo(0, 0); brPaint(true); pushNav(); }
+}
+function brOpenRank(type, year, season) {
+  S.br.entity = null; S.br.q = ""; S.br.f = brF0();
+  if (season && year) { S.br.list = "season"; S.br.sea = { season, year: +year }; S.br.sort = type === "RATED" ? "score" : ""; }
+  else { S.br.list = "all"; S.br.sea = null; if (year) S.br.f.fyear = [+year, +year]; S.br.sort = type === "RATED" ? "score" : ""; }
+  brSave();
+  if (S.view !== "browse") { S.view = "browse"; S.navIn = true; render(); scrollTo(0, 0); pushNav(); }
+  else { scrollTo(0, 0); brPaint(true); pushNav(); }
 }
 /* A filter picked on the Overview opens All anime with it (the side list shows where you are). */
 function brFiltered(k) {
   if (brSeasonList() && (k === "fyear" || k === "fseason")) return brSeaFiltered(k);
   brSave();
+  if (isPhone() && document.body.classList.contains("flt-open")) {
+    if (S.br.list === "over" && brOn()) S.br.list = "all";
+    return fltRepaint();
+  }
   if (S.br.list === "over" && brOn()) { S.br.list = "all"; brSave(); scrollTo(0, 0); brPaint(true); return pushNav(); }
   brPaint(true);
 }
@@ -1215,9 +1364,13 @@ function brSeaFiltered(k) {
   const y = f.fyear, one = Array.isArray(y) && y[0] === y[1];
   if (f.fseason && one) {
     S.br.sea = { season: f.fseason, year: y[0] }; f.fseason = ""; f.fyear = "all";
-    brSave(); brPaint(true); return navKeep();
+    brSave();
+    if (isPhone() && document.body.classList.contains("flt-open")) return fltRepaint();
+    brPaint(true); return navKeep();
   }
-  S.br.list = "all"; S.br.sea = null; brSave(); scrollTo(0, 0); brPaint(true); pushNav();
+  S.br.list = "all"; S.br.sea = null; brSave();
+  if (isPhone() && document.body.classList.contains("flt-open")) return fltRepaint();
+  scrollTo(0, 0); brPaint(true); pushNav();
 }
 const BR_A = {
   blist: (v) => { const [l, s] = v.split(":"); brGo(l, true, s || ""); }, // "all:score": All anime, best rated first
@@ -1226,8 +1379,18 @@ const BR_A = {
   bretryo: () => { S.brOver = null; brPaint(); },
   bmore: () => { const c = S.brc[brKey(brSpec())]; if (c) c.err = null; brLoad(true); brPaint(); },
   bstep: (v) => { S.br.stepDir = +v; S.br.stepAt = performance.now(); S.br.sea = brStep(brSea(), +v); brPaint(true); navKeep(); },
-  bsort: (v) => { S.br.sort = v === (BR_SORT0[S.br.list] || "popularity") ? "" : v; brSave(); brPaint(true); navKeep(); },
-  bclear: () => { S.br.f = brF0(); fdropClose(); brFiltered(); },
+  bsort: (v) => { const def = brEntity() ? "popularity" : (S.br.q || "").trim() ? "relevance" : (BR_SORT0[S.br.list] || "popularity"); S.br.sort = v === def ? "" : v; brSave(); brPaint(true); navKeep(); },
+  bclear: () => { S.br.f = brF0(); S.br.q = ""; fdropClose(); brFiltered(); },
+  bqclear: () => { S.br.q = ""; if (S.br.sort === "relevance") S.br.sort = ""; brPaint(true); navKeep(); },
+  brsearch: (v) => brOpenSearch(v || S.q),
+  brperson: (v, t) => brOpenEntity("person", v, t?.dataset.n || ""),
+  brstudio: (v, t) => brOpenEntity("studio", v, t?.dataset.n || ""),
+  brgenre: (v) => brOpenGenre(v),
+  brrank: (v, t) => brOpenRank(t?.dataset.t || "", t?.dataset.y || "", t?.dataset.s || ""),
+  brsea: () => { S.br.entity = null; S.br.sea = null; S.br.q = ""; S.br.list = "season"; S.br.sort = ""; brSave(); A.go("browse"); },
+  brbio: () => { S.br.bioOpen = !S.br.bioOpen; brPaint(); },
+  brpick: () => brPickMenu(),
+  brsortm: () => brSortMenu(),
   bpick: (v, t) => {
     const k = t.dataset.k, f = S.br.f;
     if (k === "genres") f.genres = f.genres.includes(v) ? f.genres.filter((g) => g !== v) : [...f.genres, v];
@@ -1248,6 +1411,17 @@ const BR_A = {
 };
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.classList?.contains("brc")) { e.preventDefault(); A.bopen(e.target.dataset.v); }
+  if (e.key === "Enter" && e.target.id === "brq") {
+    e.preventDefault();
+    const val = e.target.value.trim();
+    S.br.q = val; S.br.entity = null;
+    if (val && S.br.list === "over") S.br.list = "all";
+    if (val && !S.br.sort) S.br.sort = "";
+    brPaint(true); pushNav();
+  }
+});
+document.addEventListener("search", (e) => {
+  if (e.target.id === "brq" && !e.target.value.trim() && S.br.q) BR_A.bqclear();
 });
 /* @browse:end */
 
@@ -1263,8 +1437,10 @@ function yearBounds() {
 const SORT = {
   updated: (a, b) => (b.updated || 0) - (a.updated || 0), score: (a, b) => (b.score || 0) - (a.score || 0),
   average: (a, b) => (b.average || 0) - (a.average || 0),
+  popularity: (a, b) => (b.popularity || 0) - (a.popularity || 0),
   year: (a, b) => (b.year || 0) - (a.year || 0), title: (a, b) => (a.title || "").localeCompare(b.title || ""),
 };
+const fmtPop = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(1)}M` : n >= 99950 ? `${Math.round(n / 1e3)}k` : n >= 1000 ? `${+(n / 1e3).toFixed(1)}k` : String(n));
 /* The reverse button flips the order; shows with no score, average, year or
    date stay last either way, so "lowest first" doesn't open on blanks. */
 const blankFor = (k, e) => k !== "title" && !e[k];
@@ -1942,9 +2118,10 @@ function entryCard(e, i) {
   const facts = rows ? phoneFact(e) : e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
   const pre = (rows && S.lib.tab === "ALL" ? esc(statusLabel(e.status)) + " · " : "") + (disk ? `<span class="dsk">${ico("disk")}${e.capability === "partial" ? "some on disk" : "on disk"}</span> · ` : "");
   const more = ph ? "" : [fmtName(e.format), e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
-  /* Sorting or filtering by the average shows the average, or the order would look random. */
-  const byAvg = S.lib.sort === "average" || Array.isArray(S.lib.average);
-  const badge = byAvg ? (e.average ? `<span class="kb" title="AniList average">${e.average}</span>` : "")
+  /* Sorting by popularity or sorting/filtering by the average shows that number, or the order would look random. */
+  const byPop = S.lib.sort === "popularity", byAvg = !byPop && (S.lib.sort === "average" || Array.isArray(S.lib.average));
+  const badge = byPop ? (e.popularity ? `<span class="kb" title="${e.popularity.toLocaleString()} on AniList">${fmtPop(e.popularity)}</span>` : "")
+    : byAvg ? (e.average ? `<span class="kb" title="AniList average">${e.average}</span>` : "")
     : e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : "";
   return `<button class="card" style="--i:${Math.min(i, 24)}${e.poster ? `;--art:${esc(cssUrl(pic(e.poster)))}` : ""}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}"${ph ? ` aria-label="${esc(e.title)}"` : ""}>
     <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}
@@ -2371,7 +2548,7 @@ function Lib() {
     const filters = (m.cold || isUn) ? "" : ph ? '<div class="filters"></div>' /* the sheet itself is built in paintPortals */ : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]])}${fsel("group", "show", [["all", "Each show"], ["fr", "Franchises"]])}
+      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", SORTS)}${fsel("group", "show", [["all", "Each show"], ["fr", "Franchises"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
     /* Phones: sort, filter and the view live in the bar above the dock (libBar). */
     const fltb = !filters || ph ? "" : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
@@ -2459,22 +2636,24 @@ function fltRepaint(top) {
    the nearer thumb comes), the span written big above. Native double range
    inputs looked broken there (TODO 239). */
 const fslNum = (x, st) => +(Math.round(x / st) * st).toFixed(st < 1 ? 1 : 0);
-function fslider(k, lo, hi, st) {
-  const v = Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi], a = Math.max(lo, v[0]), b = Math.min(hi, v[1]), pct = (x) => ((x - lo) / (hi - lo || 1)) * 100;
+function fslider(k, lo, hi, st, cur, isBr) {
+  const v = Array.isArray(cur) ? cur : Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi], a = Math.max(lo, v[0]), b = Math.min(hi, v[1]), pct = (x) => ((x - lo) / (hi - lo || 1)) * 100;
   const set = a > lo || b < hi;
-  return `<div class="fsl${set ? " set" : ""}" data-k="${k}" data-lo="${lo}" data-hi="${hi}" data-st="${st}" style="--a:${pct(a)}%;--b:${pct(b)}%">
-    <b class="fslv">${a} – ${b}</b><div class="fst"><i class="fsf"></i><span class="fsk" data-i="0" role="slider" aria-label="From" aria-valuemin="${lo}" aria-valuemax="${hi}" aria-valuenow="${a}"></span><span class="fsk" data-i="1" role="slider" aria-label="To" aria-valuemin="${lo}" aria-valuemax="${hi}" aria-valuenow="${b}"></span></div></div>`;
+  return `<div class="fsl${set ? " set" : ""}" data-k="${k}"${isBr ? ' data-br="1"' : ""} data-lo="${lo}" data-hi="${hi}" data-st="${st}" style="--a:${pct(a)}%;--b:${pct(b)}%">
+    <b class="fslv">${a === b ? a : `${a} – ${b}`}</b><div class="fst"><i class="fsf"></i><span class="fsk" data-i="0" role="slider" aria-label="From" aria-valuemin="${lo}" aria-valuemax="${hi}" aria-valuenow="${a}"></span><span class="fsk" data-i="1" role="slider" aria-label="To" aria-valuemin="${lo}" aria-valuemax="${hi}" aria-valuenow="${b}"></span></div></div>`;
 }
 let fsd = null;
 document.addEventListener("pointerdown", (e) => {
   const t = e.target.closest?.(".fsl .fst");
   if (!t) return;
-  const box = t.closest(".fsl"), k = box.dataset.k, lo = +box.dataset.lo, hi = +box.dataset.hi, st = +box.dataset.st, r = t.getBoundingClientRect();
-  const [a, b] = Array.isArray(S.lib[k]) ? S.lib[k] : [lo, hi];
+  const box = t.closest(".fsl"), k = box.dataset.k, isBr = !!box.dataset.br, lo = +box.dataset.lo, hi = +box.dataset.hi, st = +box.dataset.st, r = t.getBoundingClientRect();
+  const sea = isBr && k === "fyear" && brSeasonList() && brSea();
+  const src = isBr ? (sea ? [sea.year, sea.year] : S.br.f[k]) : S.lib[k];
+  const [a, b] = Array.isArray(src) ? src : [lo, hi];
   const val = (x) => fslNum(lo + Math.min(1, Math.max(0, (x - r.left) / r.width)) * (hi - lo), st);
   const v0 = val(e.clientX), knob = e.target.closest(".fsk");
   const i = knob ? +knob.dataset.i : Math.abs(v0 - a) < Math.abs(v0 - b) || (a === b && v0 < a) ? 0 : 1;
-  fsd = { box, k, lo, hi, i, a, b, val };
+  fsd = { box, k, isBr, lo, hi, i, a, b, val };
   t.setPointerCapture?.(e.pointerId);
   box.classList.add("drag"); box.querySelectorAll(".fsk")[i].classList.add("on");
   fslMove(e.clientX); e.preventDefault();
@@ -2484,7 +2663,7 @@ function fslMove(x) {
   if (d.i === 0) d.a = Math.min(v, d.b); else d.b = Math.max(v, d.a);
   const pct = (n) => ((n - d.lo) / (d.hi - d.lo || 1)) * 100;
   d.box.style.setProperty("--a", pct(d.a) + "%"); d.box.style.setProperty("--b", pct(d.b) + "%");
-  d.box.querySelector(".fslv").textContent = `${d.a} – ${d.b}`;
+  d.box.querySelector(".fslv").textContent = d.a === d.b ? String(d.a) : `${d.a} – ${d.b}`;
   d.box.classList.toggle("set", d.a > d.lo || d.b < d.hi);
   const ks = d.box.querySelectorAll(".fsk"); ks[0].setAttribute("aria-valuenow", d.a); ks[1].setAttribute("aria-valuenow", d.b);
 }
@@ -2493,7 +2672,14 @@ const fslEnd = () => {
   const d = fsd; fsd = null;
   if (!d) return;
   d.box.classList.remove("drag"); d.box.querySelector(".fsk.on")?.classList.remove("on");
-  const all = d.a <= d.lo && d.b >= d.hi, was = JSON.stringify(S.lib[d.k]);
+  const all = d.a <= d.lo && d.b >= d.hi;
+  if (d.isBr) {
+    const was = JSON.stringify(S.br.f[d.k]);
+    S.br.f[d.k] = all ? "all" : [d.a, d.b];
+    if (JSON.stringify(S.br.f[d.k]) !== was || (d.k === "fyear" && brSeasonList())) brFiltered(d.k);
+    return;
+  }
+  const was = JSON.stringify(S.lib[d.k]);
   S.lib[d.k] = all ? "all" : [d.a, d.b];
   if (JSON.stringify(S.lib[d.k]) !== was) { saveLib(); fltRepaint(); }
 };
@@ -2539,8 +2725,8 @@ function libPickMenu() {
   cm.querySelector(".mi.sel")?.classList.remove("sel");
 }
 /* Sort as a sheet: the order, its direction in words, and franchises on one card. */
-const SORTS = [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]];
-const SORT_DIR = { updated: ["Newest first", "Oldest first"], score: ["Highest first", "Lowest first"], average: ["Highest first", "Lowest first"], year: ["Newest first", "Oldest first"], title: ["A to Z", "Z to A"] };
+const SORTS = [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["popularity", "Popularity"], ["year", "Year"], ["title", "Title"]];
+const SORT_DIR = { updated: ["Newest first", "Oldest first"], score: ["Highest first", "Lowest first"], average: ["Highest first", "Lowest first"], popularity: ["Most popular first", "Least popular first"], year: ["Newest first", "Oldest first"], title: ["A to Z", "Z to A"] };
 function libSortMenu() {
   const cm = $("#cm"), k = SORT[S.lib.sort] ? S.lib.sort : "updated";
   const r = (a, v, label, on) => `<button class="mi lso${on ? " on" : ""}" data-a="${a}" data-v="${v}"><span class="ml">${label}</span>${on ? ico("check") : ""}</button>`;
@@ -2552,7 +2738,7 @@ function libSortMenu() {
 let ltIO = null;
 function libTitleWatch() {
   ltIO?.disconnect(); ltIO = null;
-  const h = isPhone() && S.view === "library" && $("#app .lib2 .lph .hd");
+  const h = isPhone() && (S.view === "library" || S.view === "browse") && $("#app .lib2 .lph .hd");
   if (!h || !("IntersectionObserver" in window)) { document.body.classList.remove("lt-vis"); return; }
   ltIO = new IntersectionObserver(([en]) => document.body.classList.toggle("lt-vis", en.isIntersecting), { rootMargin: "-64px 0px 0px 0px" });
   ltIO.observe(h);
@@ -3148,17 +3334,29 @@ function frAbout(e) {
   if (nx) rows.splice(3, 0, ["next episode", `E${nx.episode} · ${new Date(nx.at * 1000).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`]);
   const x = aboutMemo[e.id];
   if (!e.overview && !rows.length && !x) return "";
-  return `<section class="about"><div><div class="sh"><h2>About</h2></div>${e.overview ? `<p>${esc(e.overview)}</p>` : ""}</div>
+  return `<section class="about"><div><div class="sh"><h2>About</h2></div>${e.overview ? `<p>${esc(e.overview)}</p>` : ""}<div id="abouttr">${aboutTrailer(e.id)}</div></div>
     <dl>${rows.map(([k, v]) => { const c = k === "format" || k === "year" || k === "score" ? ' class="top"' : ""; return `<dt${c}>${k}</dt><dd${c}>${esc(v)}</dd>`; }).join("")}<span id="aboutx">${aboutRows(e.id)}</span><span id="aboutlive"></span></dl></section>
-  <section class="hsec cast" id="cast">${castHTML(e)}</section>`;
+  <section class="hsec cast" id="cast">${castHTML(e)}</section>
+  <section class="hsec related" id="related">${relatedHTML(S.fr?.page, e)}</section>`;
 }
-/* About extras (TODO 172): genres, tags and characters from AniList's
+/* About extras (TODO 172, 260): genres, tags, characters, studios, trailer,
+   rankings, streaming links and non-franchise related anime from AniList's
    public data (GET /api/about), fetched once the page is up, kept per entry.
    Spoiler tags hide behind a click while Hide spoilers is on (Decision 57). */
 const aboutMemo = {}, aboutAsked = {};
 /* Word lists (genres, tags) are joined by a zero-width space: a line may break
    there, and the dot between two words is drawn by CSS (TODO 240). */
 const ZW = "\u200b";
+const REL_WORD = { ALTERNATIVE: "Alternative", SPIN_OFF: "Spin-off", CHARACTER: "Same characters", OTHER: "Related", COMPILATION: "Compilation", CONTAINS: "Contains", ADAPTATION: "Adaptation" };
+function rankLabel(r) {
+  const when = r.all_time ? "all time" : [r.season ? r.season[0] + r.season.slice(1).toLowerCase() : "", r.year].filter(Boolean).join(" ");
+  return `#${r.rank} ${r.context}${when && !r.context.toLowerCase().includes(when.toLowerCase()) ? " · " + when : ""}`;
+}
+function aboutTrailer(mid) {
+  const tr = aboutMemo[mid]?.trailer;
+  if (!tr?.url) return "";
+  return `<a class="trcard" href="${esc(tr.url)}" data-a="ext" data-v="${esc(tr.url)}"><span class="trimg"${tr.thumbnail ? ` style="background-image:${esc(cssUrl(tr.thumbnail))}"` : ""}><i>${ico("play")}</i></span><span class="trtxt"><b>Watch trailer</b><small>${tr.site === "youtube" ? "YouTube" : "Dailymotion"}</small></span></a>`;
+}
 function aboutRows(mid) {
   const x = aboutMemo[mid];
   if (!x) return "";
@@ -3167,12 +3365,17 @@ function aboutRows(mid) {
   const tags = shown.map((t) => `<span class="tg${t.spoiler ? " tspl" : ""}"${t.spoiler ? ' title="Spoiler tag"' : ""}>${esc(t.name)}</span>`).join(ZW)
     + (held ? `${ZW}<span class="tg"><button class="tspb" data-a="tagspoil" data-v="${mid}">${held} spoiler tag${held === 1 ? "" : "s"}</button></span>` : "");
   const more = shown.length > 6 ? `<dd class="tgm"><button class="tgmore" data-a="tagsmore">+${shown.length - 6} more</button></dd>` : ""; // phones show six (TODO 177)
-  return (x.genres.length ? `<dt>genres</dt><dd class="gen"><span class="dw">${x.genres.map((g) => `<span>${esc(g)}</span>`).join(ZW)}</span></dd>` : "") + (x.tags.length ? `<dt class="tgk">tags</dt><dd class="tags"><span class="dw">${tags}</span></dd>${more}` : "");
+  const studios = x.studios?.length ? `<dt>studio</dt><dd class="gen"><span class="dw">${x.studios.map((s) => `<span><button class="ablk" data-a="brstudio" data-v="${s.id}" data-n="${esc(s.name)}">${esc(s.name)}</button></span>`).join(ZW)}</span></dd>` : "";
+  const genres = x.genres.length ? `<dt>genres</dt><dd class="gen"><span class="dw">${x.genres.map((g) => `<span><button class="ablk" data-a="brgenre" data-v="${esc(g)}">${esc(g)}</button></span>`).join(ZW)}</span></dd>` : "";
+  const ranks = x.rankings?.length ? `<dt>rankings</dt><dd class="gen"><span class="dw">${x.rankings.map((r) => `<span><button class="ablk" data-a="brrank" data-t="${esc(r.type || "")}" data-y="${r.year || ""}" data-s="${esc(r.season || "")}">${esc(rankLabel(r))}</button></span>`).join(ZW)}</span></dd>` : "";
+  const watch = x.watch_on?.length ? `<dt>watch on</dt><dd class="gen"><span class="dw">${x.watch_on.map((w) => `<span><a class="ablk" href="${esc(w.url)}" data-a="ext" data-v="${esc(w.url)}">${esc(w.site)}</a></span>`).join(ZW)}</span></dd>` : "";
+  return studios + genres + ranks + watch + (x.tags.length ? `<dt class="tgk">tags</dt><dd class="tags"><span class="dw">${tags}</span></dd>${more}` : "");
 }
 /* Characters (TODO 172, round 5): the watch order's own tiles (Elias) —
    the same poster, name and small grey line, main characters big and
    supporting small after a gap. The grey line is the voice; its language
-   follows Sub/Dub until picked here. A tile opens the character on AniList. */
+   follows Sub/Dub until picked here. Clicking the voice actor opens their
+   roles in Browse (TODO 260); the character poster opens AniList. */
 function castHTML(e) {
   const x = aboutMemo[e.id];
   if (!x?.characters.length) return "";
@@ -3180,17 +3383,32 @@ function castHTML(e) {
   let lang = S.castLang || ((e.online?.mode || S.settings?.stream?.mode) === "dub" ? "en" : "ja");
   if (lang === "en" && !hasEn) lang = "ja"; else if (lang === "ja" && !hasJa && hasEn) lang = "en";
   let apart = false;
-  const tile = (c) => { const main = c.role === "MAIN", first = !main && !apart, url = c.id ? `https://anilist.co/character/${c.id}` : ""; apart ||= first;
-    return `<a class="ot${main ? " big" : ""}${first ? " apart" : ""}"${url ? ` href="${url}" data-a="ext" data-v="${url}"` : ""} title="${esc(c.name)}"><span class="pw">${poster(c.name, c.image, { c: "op" })}</span><b>${esc(c.name)}</b><small>${esc(c[lang] || "no voice listed")}</small></a>`; };
+  const tile = (c) => { const main = c.role === "MAIN", first = !main && !apart, url = c.id ? `https://anilist.co/character/${c.id}` : "", va = c[lang], vaId = c[lang + "_id"]; apart ||= first;
+    const ch = `<a class="ot-main"${url ? ` href="${url}" data-a="ext" data-v="${url}"` : ""} title="${esc(c.name)}"><span class="pw">${poster(c.name, c.image, { c: "op" })}</span><b>${esc(c.name)}</b></a>`;
+    const voice = va && vaId ? `<button class="ot-va" data-a="brperson" data-v="${vaId}" data-n="${esc(va)}" title="View ${esc(va)}'s roles">${esc(va)}</button>` : `<small>${esc(va || "no voice listed")}</small>`;
+    return `<div class="ot${main ? " big" : ""}${first ? " apart" : ""}">${ch}${voice}</div>`; };
   const seg = hasEn && hasJa ? `<span class="seg" role="group" aria-label="Voice language">${[["ja", "Japanese"], ["en", "English"]].map(([k, l]) => `<button class="${lang === k ? "on" : ""}" aria-pressed="${lang === k}" data-a="castlang" data-v="${k}">${l}</button>`).join("")}</span>` : "";
   return `<div class="sh"><h2>Characters</h2><span class="fill"></span>${seg}<button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder castrow">${x.characters.map(tile).join("")}</div>`;
+}
+/* Related anime outside this show's Watch order (spin-offs, alternatives, etc., TODO 260). */
+function relatedHTML(p, e) {
+  const x = aboutMemo[e.id];
+  if (!x?.related?.length) return "";
+  const inFr = new Set((p?.entries || []).map((z) => z.id));
+  const list = x.related.filter((r) => !inFr.has(r.id));
+  if (!list.length) return "";
+  const tile = (r) => `<button class="ot" data-a="bopen" data-v="${r.id}" data-poster="${esc(r.poster || "")}" data-color="${esc(r.color || "")}" title="${esc(r.title)}"><span class="pw">${poster(r.title, r.poster, { c: "op" })}</span><b>${esc(r.title)}</b><small>${esc([REL_WORD[r.relation] || r.relation.toLowerCase(), r.year].filter(Boolean).join(" · "))}</small></button>`;
+  return `<div class="sh"><h2>Related</h2><span class="fill"></span><button class="arr" data-a="strip" data-d="-1" aria-label="Scroll left" disabled>${ico("chevl")}</button><button class="arr" data-a="strip" data-d="1" aria-label="Scroll right">${ico("chevr")}</button></div><div class="strip hstrip frorder relrow">${list.map(tile).join("")}</div>`;
 }
 function aboutPaint(mid) {
   const e = frEntry();
   if (S.view !== "fr" || !e || e.id !== mid) return;
-  const rows = $("#aboutx"), cast = $("#cast");
+  const rows = $("#aboutx"), tr = $("#abouttr"), cast = $("#cast"), rels = $("#related");
   if (rows) rows.innerHTML = aboutRows(mid);
+  if (tr) tr.innerHTML = aboutTrailer(mid);
   if (cast) { cast.innerHTML = castHTML(e); strips(); }
+  if (rels) { rels.innerHTML = relatedHTML(S.fr?.page, e); strips(); }
+  if (S.entry?.res && S.entry.mid === mid) entryDraw(S.entry.res); // drop duplicate plain studio once clickable ones arrive
 }
 function loadAbout(mid) {
   if (aboutMemo[mid] || aboutAsked[mid] > Date.now() - 60e3) return; // a failed read tries again after a minute
@@ -3691,7 +3909,8 @@ function entryDraw(res) {
   const al = $("#aboutlive");
   if (al) {
     al._own = true;
-    al.innerHTML = [m.studios?.length ? ["studio", m.studios.join(", ")] : null, m.popularity != null ? ["on lists", m.popularity.toLocaleString()] : null,
+    const hasLinkStudio = !!aboutMemo[S.entry.mid]?.studios?.length;
+    al.innerHTML = [!hasLinkStudio && m.studios?.length ? ["studio", m.studios.join(", ")] : null, m.popularity != null ? ["on lists", m.popularity.toLocaleString()] : null,
       m.favourites != null ? ["favourites", m.favourites.toLocaleString()] : null].filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
   }
 }
@@ -4180,9 +4399,10 @@ function pick(label, act, k, opts, cur, o = {}) {
     if (n <= 3 && !o.dot && !opts.some((x) => x[2]) && opts.reduce((t, x) => t + x[1].length, 0) <= 17)
       return `<span class="${cls} pkseg" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => `<button class="${v === curV ? "on" : ""}" aria-pressed="${v === curV}" data-a="${act}"${dk} data-v="${esc(v)}"${dis}>${esc(l)}</button>`).join("")}</span>`;
   }
-  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(opts[(i + d + n) % n][0])}" aria-label="${esc(label)}: ${word}" data-d="${d}"${dis}>${ico(icon)}</button>`;
+  const sOpts = opts.filter(([v]) => v !== "__custom__" && v !== "custom"), sn = sOpts.length || 1, si = Math.max(0, sOpts.findIndex(([v]) => v === cur));
+  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(sOpts[(si + d + sn) % sn][0])}" aria-label="${esc(label)}: ${word}" data-d="${d}"${dis}>${ico(icon)}</button>`;
   const font = opts[i][2] ? ` style="font-family:${esc(opts[i][2])}"` : "";
-  return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}${pickTouch ? " pklist" : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
+  return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}${pickTouch ? " pklist" : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot, r, cu]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}${r ? ` data-r="${esc(r)}"` : ""}${cu ? ' data-custom="1"' : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
 }
 let pickTouch = false; // set while Settings builds on a phone
 const onoff = (key, label, on, off) => pick(label, "advset", key, [["on", "On"], ["off", "Off"]], on ? "on" : "off", { off });
@@ -4303,7 +4523,7 @@ function setResults(s, tabs) {
         const keep = rows.filter((r) => { const t = r.querySelector("b")?.textContent || ""; return setHit(words, `${r.textContent} ${setWords(t)}`); });
         if (!keep.length) { g.remove(); continue; }
         rows.filter((r) => !keep.includes(r)).forEach((r) => r.remove());
-        g.querySelectorAll(".sub,.pairbox,.dirpick").forEach((x) => x.remove());
+        g.querySelectorAll(".sub,.pairbox,.dirpick,.subprev").forEach((x) => x.remove());
       } else if (!setHit(words, g.textContent)) { g.remove(); continue; }
       if (h && name !== label) h.innerHTML = `<small>${esc(label)}</small>${esc(name)}`;
       else if (h) h.textContent = label;
@@ -4395,12 +4615,15 @@ function plFanRow() {
 }
 /* Fonts (TODO 122): a card per font with a sample in it, one row for
    text and one for titles; imported fonts join both rows. */
-function fontRows(s) {
-  const mine = s.fonts || [];
+function loadUserFonts(mine) {
   let st = $("#ufonts-all"); // the previews need every imported font loaded
   if (!st) { st = document.createElement("style"); st.id = "ufonts-all"; document.head.append(st); }
-  st.textContent = mine.map((f) => fontFace(f) + fontFace(f, true)).join("");
-  lsSet("fontList", mine);
+  st.textContent = (mine || []).map((f) => fontFace(f) + fontFace(f, true)).join("");
+  lsSet("fontList", mine || []);
+}
+function fontRows(s) {
+  const mine = s.fonts || [];
+  loadUserFonts(mine);
   const row = (role, title, line) => {
     const cur = fontGet(role), base = role === "text" ? `"Anime Hub Digits", ${TEXT_BASE}` : '"Barlow Condensed", sans-serif';
     const opts = role === "num" // each choice shows its digits, in the text font's letters
@@ -4454,7 +4677,7 @@ async function fontAdd(family) {
   if (r.ok && S.settings) S.settings.fonts = r.fonts;
   if (S.modal === m) $("#fontlist").innerHTML = fontListRows();
   if (!r.ok) return toast(r.error || "Could not add the font.");
-  toast(`${r.font.name} added — pick it for text or titles`);
+  toast(`${r.font.name} added — pick it for text, titles or subtitles`);
   if (S.view === "settings") render(true);
 }
 async function fontImport(file, input) {
@@ -4470,7 +4693,7 @@ async function fontImport(file, input) {
   toastDone();
   if (!r.ok) return toast(r.error || "Could not add the font.");
   if (S.settings) S.settings.fonts = r.fonts;
-  toast(`${r.font.name} added — pick it for text or titles`);
+  toast(`${r.font.name} added — pick it for text, titles or subtitles`);
   if (S.modal?.t === "fonts") closeModal();
   if (S.view === "settings") render(true);
 }
@@ -4599,16 +4822,318 @@ function playerGroup(s) {
     ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}
     ${rc}${m.keys && !pickTouch ? hkGroup(m) : ""}` : rc}`;
 }
+const SUB_LOOK_KEYS = ["sub_styled", "sub_font", "sub_size", "sub_bold", "sub_color", "sub_outline", "sub_outline_color", "sub_blur", "sub_spacing", "sub_back", "sub_pos"];
+const SUB_PRESET_LIST = [["own", "My config"], ["animehub", "Anime Hub"], ["yellow", "Classic yellow"], ["contrast", "High contrast"], ["boxed", "Boxed"]];
+const SUB_ALANGS = [["own", "My config"], ["jpn", "Japanese"], ["eng", "English"], ["ger", "German"], ["jpn_eng", "Japanese, then English"], ["eng_jpn", "English, then Japanese"], ["ger_jpn", "German, then Japanese"]];
+const SUB_SLANGS = [["own", "My config"], ["eng", "English"], ["ger", "German"], ["ger_eng", "German, then English"], ["eng_ger", "English, then German"], ["jpn", "Japanese"], ["spa", "Spanish"], ["fre", "French"], ["por", "Portuguese"], ["off", "Off by default"]];
+const SUB_STYLED = [
+  ["own", "My config", "Your mpv.conf decides how styled tracks are handled."],
+  ["keep", "Keep original", "Styled subtitles keep their own fonts, colours and signs."],
+  ["scale", "Scale size only", "Size scales styled subtitles too; fonts, colours and signs stay original."],
+  ["style", "Restyle, keep signs", "Uses your look for dialogue while keeping signs and songs in place."],
+  ["override", "Replace all", "Uses your look for everything. Signs and songs can look wrong."],
+  ["strip", "Plain text", "Strips all styling, signs and animations."],
+];
+const SUB_SIZES = [
+  ["own", "My config"],
+  ["xsmall", "Extra small"],
+  ["small", "Small"],
+  ["normal", "Normal"],
+  ["large", "Large"],
+  ["xlarge", "Extra large"],
+];
+const SUB_SIZE_PX = { own: 38, xsmall: 24, small: 30, normal: 38, large: 50, xlarge: 62 };
+const SUB_COLORS = [["own", "My config"], ["white", "White", "", "#ffffff"], ["warm", "Warm white", "", "#fff5d6"], ["yellow", "Yellow", "", "#ffe64d"], ["cyan", "Cyan", "", "#80ecff"], ["green", "Soft green", "", "#a8f5a2"], ["gray", "Light grey", "", "#d4d4d8"]];
+const SUB_OUTLINES = [["own", "My config"], ["none", "None"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]];
+const SUB_OUTLINE_COLORS = [["own", "My config"], ["black", "Black", "", "#000000"], ["dark", "Charcoal", "", "#26262b"], ["navy", "Dark blue", "", "#0d1829"], ["white", "White", "", "#ffffff"]];
+const SUB_BLURS = [["own", "My config"], ["none", "Sharp"], ["soft", "Subtle"], ["medium", "Soft"], ["strong", "Very soft"]];
+const SUB_SPACINGS = [["own", "My config"], ["tight", "Tight"], ["normal", "Normal"], ["relaxed", "Relaxed"], ["wide", "Wide"]];
+const SUB_BACKS = [["own", "My config"], ["none", "None"], ["shadow", "Soft shadow"], ["deep", "Strong shadow"], ["box", "Dim box"], ["solid", "Solid box"]];
+const SUB_POS = [["own", "My config"], ["bottom", "Bottom"], ["low", "Slightly raised"], ["raised", "Raised"], ["high", "High"], ["top", "Top"]];
+const SUB_PV_COLOR = { own: "#ffffff", white: "#ffffff", warm: "#fff5d6", yellow: "#ffe64d", cyan: "#80ecff", green: "#a8f5a2", gray: "#d4d4d8" };
+const SUB_PV_OUTLINE = { own: 1.5, none: 0, thin: 0.9, normal: 1.6, thick: 2.6 };
+const SUB_PV_OCOLOR = { own: "#000000", black: "#000000", dark: "#26262b", navy: "#0d1829", white: "#ffffff" };
+const SUB_PV_BLUR = { own: 0, none: 0, soft: 0.5, medium: 1.2, strong: 2.2 };
+const SUB_PV_LH = { own: 1.28, tight: 1.12, normal: 1.28, relaxed: 1.44, wide: 1.62 };
+const SUB_PV_BGS = [["art", "Scene"], ["dark", "Black"], ["light", "White"], ["split", "Black and white"], ["check", "Checker pattern"]];
+const subPvBg = () => { const v = lsGet("sub_pv_bg", "art"); return SUB_PV_BGS.some(([k]) => k === v) ? v : "art"; };
+const isHexCol = (v) => /^#[0-9a-f]{6}$/i.test(String(v || ""));
+const subSizePx = (v) => (/^\d+$/.test(String(v || "")) ? Math.max(16, Math.min(96, +v)) : (SUB_SIZE_PX[v] || 38));
+const subPvPx = (v) => Math.max(10, Math.round(subSizePx(v) * 0.45));
+function subShadowCss(r, col, blur, back) {
+  const parts = [];
+  if (r > 0) {
+    const rings = r >= 2 ? [r, +(r * 0.5).toFixed(2)] : [r];
+    for (const rad of rings) {
+      const dr = +(rad * 0.72).toFixed(2);
+      for (const [x, y] of [[rad, 0], [-rad, 0], [0, rad], [0, -rad], [dr, dr], [-dr, dr], [dr, -dr], [-dr, -dr]]) parts.push(`${x}px ${y}px ${blur}px ${col}`);
+    }
+  }
+  if (back === "shadow") parts.push("0 2px 3px rgba(0,0,0,.72)");
+  else if (back === "deep") parts.push("0 3px 6px rgba(0,0,0,.92)");
+  return parts.length ? parts.join(",") : "none";
+}
+function subFontStack(v) {
+  if (!v || v === "own" || v === "sans") return "sans-serif";
+  if (v === "app") return '"Hanken Grotesk", sans-serif';
+  if (v === "serif") return "Georgia, serif";
+  if (v === "mono") return '"JetBrains Mono", monospace';
+  return v.startsWith("u:") ? `"${userFam(v.slice(2))}", sans-serif` : "sans-serif";
+}
+function subLineStyle(m) {
+  const st = m.sub_styled || "own", keep = st === "keep", scaleOnly = st === "scale";
+  const size = keep ? 17 : subPvPx(m.sub_size);
+  const fam = keep || scaleOnly ? "sans-serif" : subFontStack(m.sub_font);
+  const weight = keep || scaleOnly ? 400 : m.sub_bold === "on" ? 700 : 400;
+  const col = keep || scaleOnly ? "#ffffff" : (isHexCol(m.sub_color) ? m.sub_color : (SUB_PV_COLOR[m.sub_color] || "#ffffff"));
+  const outR = keep || scaleOnly ? 1.5 : (SUB_PV_OUTLINE[m.sub_outline] ?? 1.5);
+  const outC = keep || scaleOnly ? "#000000" : (isHexCol(m.sub_outline_color) ? m.sub_outline_color : (SUB_PV_OCOLOR[m.sub_outline_color] || "#000000"));
+  const blur = keep || scaleOnly ? 0 : (SUB_PV_BLUR[m.sub_blur] || 0);
+  const lh = keep || scaleOnly ? 1.28 : (SUB_PV_LH[m.sub_spacing] || 1.28);
+  const back = keep || scaleOnly ? "own" : (m.sub_back || "own");
+  const bg = back === "box" ? "rgba(0,0,0,.56)" : back === "solid" ? "rgba(0,0,0,.86)" : "transparent";
+  const pad = back === "box" || back === "solid" ? "3px 10px" : "0";
+  const shadow = subShadowCss(outR, outC, blur, back);
+  return `font-family:${fam};font-size:${size}px;font-weight:${weight};line-height:${lh};color:${col};text-shadow:${shadow};background:${bg};padding:${pad}`;
+}
+function subPreview(m) {
+  const st = m.sub_styled || "own";
+  const anySet = SUB_LOOK_KEYS.some((k) => m[k] && m[k] !== "own");
+  const lineCss = subLineStyle(m);
+  const note = st === "keep" ? "Styled tracks keep their own look · plain tracks use your picks"
+    : st === "scale" ? "Size scales styled tracks · signs & songs stay original"
+    : st === "style" ? "Dialogue uses your style · signs stay in place"
+    : st === "override" ? "Replaces everything · signs & songs can look wrong"
+    : st === "strip" ? "Plain text · styling and animations removed"
+    : anySet ? "Preview of your picks · set Styled subtitles to apply to ASS tracks"
+    : "Using your mpv.conf";
+  const pvBg = subPvBg(), ref = pvBg === "art" && S.data ? (nextUpInfo()?.s || lastShow()) : null, art = ref && (ref.banner || ref.poster);
+  const bgs = SUB_PV_BGS.map(([k, l]) => `<button class="sp-bg bg-${k}${pvBg === k ? " on" : ""}" data-a="subbg" data-v="${k}" aria-label="Preview background: ${l}" aria-pressed="${pvBg === k}" title="${l}"></button>`).join("");
+  return `<div class="subprev" aria-label="Live subtitle preview"><div class="sp-frame bg-${pvBg}">${art ? `<i class="sp-art" style="background-image:${esc(cssUrl(art))}" aria-hidden="true"></i>` : ""}${pvBg === "art" ? '<i class="sp-scene" aria-hidden="true"></i>' : ""}
+    <div class="sp-stage"><span class="sp-line" style="${esc(lineCss)}">We'll meet again when the<br>cherry blossoms fall.</span></div></div>
+    <div class="sp-bar"><p class="sp-note">${esc(note)}</p><div class="sp-bgs" role="group" aria-label="Preview background">${bgs}</div></div></div>`;
+}
+const SUB_POP_SWATCHES = ["#ffffff", "#fff5d6", "#ffe64d", "#ffb86c", "#80ecff", "#a8f5a2", "#f2a4d8", "#101218"];
+function hexToHsv(hex) {
+  const h6 = String(hex || "#ffffff").replace(/^#/, "");
+  const r = parseInt(h6.slice(0, 2), 16) / 255, g = parseInt(h6.slice(2, 4), 16) / 255, b = parseInt(h6.slice(4, 6), 16) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  const h = !d ? 0 : mx === r ? ((g - b) / d + (g < b ? 6 : 0)) * 60 : mx === g ? ((b - r) / d + 2) * 60 : ((r - g) / d + 4) * 60;
+  return [h, mx ? d / mx : 0, mx];
+}
+function hsvToHex(h, s, v) {
+  const c = v * s, hh = ((h % 360) + 360) % 360, x = c * (1 - Math.abs(((hh / 60) % 2) - 1)), m = v - c;
+  const [r, g, b] = hh < 60 ? [c, x, 0] : hh < 120 ? [x, c, 0] : hh < 180 ? [0, c, x] : hh < 240 ? [0, x, c] : hh < 300 ? [x, 0, c] : [c, 0, x];
+  const hx = (n) => Math.round(Math.max(0, Math.min(1, n + m)) * 255).toString(16).padStart(2, "0");
+  return "#" + hx(r) + hx(g) + hx(b);
+}
+let subPopState = null;
+function subPopClose(commit = false) {
+  const st = subPopState;
+  if (!st) return;
+  subPopState = null;
+  st.ac.abort();
+  st.anchor?.closest?.(".pk")?.classList.remove("ddon");
+  const pop = $("#subpop");
+  if (pop) { pop.classList.remove("open"); pop.hidden = true; pop.innerHTML = ""; }
+  if (commit && st.val !== st.orig) {
+    api("/api/settings", { [st.key]: st.val }).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; if (S.view === "settings") render(true);
+    }).catch(() => toast("Could not save — is the hub running?"));
+  } else if (S.view === "settings") {
+    render(true); // restore preview and select value on cancel
+  }
+}
+function subPopMount(anchor, cls, html) {
+  let pop = $("#subpop");
+  if (!pop) { pop = document.createElement("div"); pop.id = "subpop"; pop.hidden = true; document.body.append(pop); }
+  pop.className = "subpop " + cls;
+  pop.innerHTML = html;
+  pop.hidden = false;
+  const z = zoomGet() / 100, box = anchor.getBoundingClientRect();
+  const pw = pop.offsetWidth || 248, ph = pop.offsetHeight || 220;
+  const left = Math.max(10, Math.min((box.left + box.width / 2) / z - pw / 2, innerWidth / z - pw - 10));
+  const below = innerHeight / z - box.bottom / z - 16, up = below < ph && box.top / z > below;
+  const top = up ? Math.max(10, box.top / z - ph - 8) : Math.min(innerHeight / z - ph - 10, box.bottom / z + 8);
+  pop.style.left = left + "px"; pop.style.top = top + "px";
+  pop.style.transformOrigin = `${up ? "bottom" : "top"} center`;
+  pop.classList.remove("open"); void pop.offsetWidth; pop.classList.add("open");
+  anchor.closest?.(".pk")?.classList.add("ddon");
+  return pop;
+}
+function subColorCtl(m, k, label, presets) {
+  const cur = m[k] || "own", hex = isHexCol(cur);
+  const customOpt = hex ? [cur, cur.toUpperCase(), "", cur, "Custom", 1] : ["__custom__", "Custom colour…", "", ACCENT_FOLLOW, "", 1];
+  const opts = [...presets, customOpt];
+  const dot = hex ? cur : (presets.find(([v]) => v === cur)?.[3] || "");
+  return pick(label, "spref", "mpv_" + k, opts, cur, { dot });
+}
+function subColorPick(key, sel) {
+  const m = S.settings?.mpv, field = key.slice(4);
+  if (!m) return;
+  const orig = m[field] || "own";
+  const presets = field === "sub_color" ? SUB_COLORS : SUB_OUTLINE_COLORS;
+  let curHex = isHexCol(orig) ? orig : (presets.find(([v]) => v === orig)?.[3] || (field === "sub_color" ? "#ffffff" : "#000000"));
+  let [h, s, v] = hexToHsv(curHex);
+  ddClose(false, true);
+  if (subPopState) subPopClose(false);
+  if (S.view === "settings") render(true); // snap <select> off __custom__ back to real value
+  const anchor = $(`select[data-k="${key}"]`)?.closest(".pk") || sel;
+  if (!anchor) return;
+  const sws = SUB_POP_SWATCHES.map((c) => `<button type="button" class="cp-sw" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("");
+  const pop = subPopMount(anchor, "col", `<div class="cp-sv" style="background-color:hsl(${Math.round(h)} 100% 50%)"><i class="cp-dot"></i></div>
+    <div class="cp-hue"><i class="cp-hth"></i></div>
+    <div class="cp-sws">${sws}</div>
+    <div class="cp-foot"><i class="cp-cur"></i><input class="cp-hex mono" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Hex colour"><button type="button" class="cp-ok">Done</button></div>`);
+  const ac = new AbortController(), sig = { signal: ac.signal };
+  const st = subPopState = { key, orig, val: curHex, anchor, ac };
+  const svEl = pop.querySelector(".cp-sv"), dotEl = pop.querySelector(".cp-dot"), hueEl = pop.querySelector(".cp-hue"), hthEl = pop.querySelector(".cp-hth");
+  const curEl = pop.querySelector(".cp-cur"), hexEl = pop.querySelector(".cp-hex");
+  const sync = (fromHex = false) => {
+    curHex = hsvToHex(h, s, v);
+    st.val = curHex;
+    svEl.style.backgroundColor = `hsl(${Math.round(h)} 100% 50%)`;
+    dotEl.style.left = `${(s * 100).toFixed(2)}%`; dotEl.style.top = `${((1 - v) * 100).toFixed(2)}%`; dotEl.style.background = curHex;
+    hthEl.style.left = `${((h / 360) * 100).toFixed(2)}%`; hthEl.style.background = `hsl(${Math.round(h)} 100% 50%)`;
+    curEl.style.background = curHex;
+    if (!fromHex) hexEl.value = curHex.toUpperCase();
+    const line = $(".subprev .sp-line");
+    if (line && S.settings?.mpv) line.setAttribute("style", subLineStyle({ ...S.settings.mpv, [field]: curHex }));
+  };
+  sync();
+  const drag = (el, fn) => {
+    const move = (e) => { const r = el.getBoundingClientRect(); fn(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))); sync(); };
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); move(e); }, sig);
+    el.addEventListener("pointermove", (e) => { if (e.buttons) move(e); }, sig);
+  };
+  drag(svEl, (x, y) => { s = x; v = 1 - y; });
+  drag(hueEl, (x) => { h = Math.min(359.9, x * 360); });
+  pop.querySelectorAll(".cp-sw").forEach((b) => b.addEventListener("click", () => { [h, s, v] = hexToHsv(b.dataset.c); sync(); }, sig));
+  hexEl.addEventListener("input", () => {
+    const raw = hexEl.value.trim(); const norm = raw.startsWith("#") ? raw : "#" + raw;
+    if (isHexCol(norm)) { [h, s, v] = hexToHsv(norm); sync(true); }
+  }, sig);
+  hexEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); subPopClose(true); } }, sig);
+  pop.querySelector(".cp-ok").addEventListener("click", () => subPopClose(true), sig);
+  setTimeout(() => {
+    if (subPopState !== st) return;
+    document.addEventListener("pointerdown", (e) => { if (!pop.contains(e.target)) subPopClose(true); }, { ...sig, capture: true });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); subPopClose(false); } }, { ...sig, capture: true });
+  }, 0);
+}
+function subSizePick(sel) {
+  const m = S.settings?.mpv;
+  if (!m) return;
+  const orig = m.sub_size || "own";
+  let px = subSizePx(orig);
+  ddClose(false, true);
+  if (subPopState) subPopClose(false);
+  if (S.view === "settings") render(true);
+  const anchor = $('select[data-k="mpv_sub_size"]')?.closest(".pk") || sel;
+  if (!anchor) return;
+  const pop = subPopMount(anchor, "sz", `<div class="cp-szh"><span>Custom size</span><b class="mono">${px} px</b></div>
+    <input class="cp-range" type="range" min="16" max="96" step="1" value="${px}" aria-label="Custom subtitle size">
+    <div class="cp-foot"><div class="cp-step"><button type="button" data-d="-1" aria-label="Smaller">${ico("minus")}</button><button type="button" data-d="1" aria-label="Larger">${ico("plus")}</button></div><button type="button" class="cp-ok">Done</button></div>`);
+  const ac = new AbortController(), sig = { signal: ac.signal };
+  const st = subPopState = { key: "mpv_sub_size", orig, val: String(px), anchor, ac };
+  const rng = pop.querySelector(".cp-range"), num = pop.querySelector(".cp-szh b");
+  const sync = () => {
+    px = Math.max(16, Math.min(96, px));
+    st.val = String(px);
+    rng.value = String(px);
+    rng.style.setProperty("--p", `${(((px - 16) / 80) * 100).toFixed(2)}%`);
+    num.textContent = px + " px";
+    const line = $(".subprev .sp-line");
+    if (line && S.settings?.mpv) line.setAttribute("style", subLineStyle({ ...S.settings.mpv, sub_size: String(px) }));
+  };
+  sync();
+  rng.addEventListener("input", () => { px = +rng.value; sync(); }, sig);
+  pop.querySelectorAll(".cp-step button").forEach((b) => b.addEventListener("click", () => { px += +b.dataset.d; sync(); }, sig));
+  pop.querySelector(".cp-ok").addEventListener("click", () => subPopClose(true), sig);
+  setTimeout(() => {
+    if (subPopState !== st) return;
+    document.addEventListener("pointerdown", (e) => { if (!pop.contains(e.target)) subPopClose(true); }, { ...sig, capture: true });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); subPopClose(false); } else if (e.key === "Enter") { e.preventDefault(); subPopClose(true); } }, { ...sig, capture: true });
+  }, 0);
+}
+function subProfileRun(body, msg) {
+  api("/api/subtitles/profile", body).then((r) => {
+    if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+    S.settings = r; if (S.view === "settings") render(true);
+    if (msg) toast(msg);
+  }).catch(() => toast("Could not save — is the hub running?"));
+}
+function subProfileSavePop(sel) {
+  ddClose(false, true);
+  if (subPopState) subPopClose(false);
+  if (S.view === "settings") render(true);
+  const anchor = $('select[data-a="subpf"]')?.closest(".pk") || sel;
+  if (!anchor) return;
+  const pop = subPopMount(anchor, "pf", `<div class="cp-szh"><span>Save subtitle profile</span></div>
+    <input class="cp-name" type="text" maxlength="40" placeholder="Profile name…" autocomplete="off" spellcheck="false" aria-label="Profile name">
+    <div class="cp-foot"><label class="cp-def"><input type="checkbox"><span>Set as default</span></label><button type="button" class="cp-ok">Save</button></div>`);
+  const ac = new AbortController(), sig = { signal: ac.signal };
+  const st = subPopState = { key: "", orig: "", val: "", anchor, ac };
+  const inp = pop.querySelector(".cp-name"), def = pop.querySelector(".cp-def input"), ok = pop.querySelector(".cp-ok");
+  const commit = () => {
+    const name = inp.value.trim();
+    if (!name) { inp.focus(); return; }
+    const makeDef = !!def.checked;
+    subPopClose(false);
+    subProfileRun({ op: "save", name, default: makeDef }, makeDef ? `Saved “${name}” as default` : `Saved profile “${name}”`);
+  };
+  ok.addEventListener("click", commit, sig);
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }, sig);
+  setTimeout(() => {
+    if (subPopState !== st) return;
+    inp.focus();
+    document.addEventListener("pointerdown", (e) => { if (!pop.contains(e.target)) subPopClose(false); }, { ...sig, capture: true });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); subPopClose(false); } }, { ...sig, capture: true });
+  }, 0);
+}
 function subsGroup(s) {
-  const m = s.mpv || {}, st = s.stream || {};
+  const m = s.mpv || {}, st = s.stream || {}, mine = s.fonts || [];
+  if (!s.android) loadUserFonts(mine);
+  const styled = m.sub_styled || "own", styledDesc = SUB_STYLED.find(([v]) => v === styled)?.[2] || "";
+  const fontOpts = [["own", "My config"], ["app", "Anime Hub", '"Hanken Grotesk", sans-serif'], ["sans", "Sans-serif", "sans-serif"], ["serif", "Serif", "Georgia, serif"], ["mono", "Monospace", '"JetBrains Mono", monospace'],
+    ...mine.filter((f) => /\.(ttf|otf)$/i.test(f.id)).map((f) => ["u:" + f.id, f.name, `"${userFam(f.id)}", sans-serif`])];
+  const curSize = m.sub_size || "own", customSz = /^\d+$/.test(curSize);
+  const sizeOpts = [...SUB_SIZES, customSz ? [curSize, `${curSize} px`, "", "", "Custom", 1] : ["__custom__", "Custom size…", "", "", "", 1]];
+  const savedPfs = m.sub_profiles || [], curPf = m.sub_profile || "own", defPf = m.sub_default_profile || "own";
+  const allPfs = [...SUB_PRESET_LIST, ...savedPfs.map((p) => [p.id, p.name])];
+  const defName = allPfs.find(([id]) => id === defPf)?.[1] || "My config";
+  const isSavedPf = savedPfs.some((p) => p.id === curPf);
+  const pfOpts = [
+    ...SUB_PRESET_LIST.map(([id, l]) => [id, l, "", "", id === defPf ? "Default" : ""]),
+    ...savedPfs.map((p) => [p.id, p.name, "", "", p.id === defPf ? "Default" : "Saved"]),
+    ...(curPf === "custom" ? [["custom", "Custom"]] : []),
+    ["__custom__", "Save current…", "", "", "", 1],
+  ];
+  const pfHelp = curPf === "custom" ? 'Tweaked from presets. <button class="lnk" data-a="subpfsave">Save as profile</button>'
+    : curPf === defPf ? `Default profile.${isSavedPf ? ' <button class="lnk" data-a="subpfdel">Delete</button>' : ""}`
+    : `<button class="lnk" data-a="subpfdef">Set as default</button>${isSavedPf ? ' · <button class="lnk" data-a="subpfdel">Delete</button>' : ""}`;
+  const fontHelp = s.phone ? "Add fonts on your PC." : 'Any font you added shows up here. <button class="lnk" data-a="fontpick">Add a font</button>';
   return `<div class="group"><h3>Audio and subtitle tracks</h3>
     ${srow("Sub or dub", "For online episodes. Each episode's menu can play the other one.", pick("Sub or dub", "spref", "stream_mode", SLMODES, st.mode, { off: !s.tools?.["ani-cli"] }))}
-    ${srow("Remember audio and subtitles", "Switch tracks once and the show's next episodes use the same ones.", onoff("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>
-    ${s.android ? "" : `<div class="group"><h3>Subtitle look</h3><p class="sub">Little changes unless Styled subtitles is set to Replace.</p>
-    ${srow("Size", "", mpick(m, "sub_size", "Subtitle size", [["own", "My config"], ["small", "Small"], ["normal", "Normal"], ["large", "Large"]]))}
-    ${srow("Colour", "", mpick(m, "sub_color", "Subtitle colour", [["own", "My config"], ["white", "White"], ["yellow", "Yellow"]]))}
-    ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", [["own", "My config"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]]))}
-    ${srow("Styled subtitles", "Replace uses this style instead. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`}`;
+    ${srow("Remember audio and subtitles", "Switch tracks once and the show's next episodes use the same ones.", onoff("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}
+    ${s.android ? "" : srow("Preferred audio", "Default audio language for multi-track files before track memory takes over.", mpick(m, "alang", "Preferred audio", SUB_ALANGS))
+      + srow("Preferred subtitles", "Default subtitle language for multi-track files.", mpick(m, "slang", "Preferred subtitles", SUB_SLANGS))
+      + srow("Hide [SDH] cues", "Strips [music], (sighs) and sound effects from closed-caption tracks.", onoff("mpv_sub_sdh", "Hide [SDH] cues", m.sub_sdh === true))}</div>
+    ${s.android ? "" : `<div class="group"><h3>Subtitle look</h3><p class="sub">From the next episode on. My config leaves an option to your mpv.conf.${curPf !== defPf ? ` <button class="lnk" data-a="subreset">Reset to ${esc(defName)}</button>` : ""}</p>
+    ${subPreview(m)}
+    ${srow("Profile", pfHelp, pick("Subtitle profile", "subpf", null, pfOpts, curPf))}
+    ${srow("Styled subtitles", styledDesc, mpick(m, "sub_styled", "Styled subtitles", SUB_STYLED.map(([v, l]) => [v, l])))}
+    ${srow("Font", fontHelp, pick("Subtitle font", "spref", "mpv_sub_font", fontOpts, m.sub_font || "own", { cls: "pkfont" }))}
+    ${srow("Size", styled === "scale" ? "Scales styled and plain subtitles alike." : "", pick("Subtitle size", "spref", "mpv_sub_size", sizeOpts, curSize))}
+    ${srow("Bold", "", mpick(m, "sub_bold", "Bold subtitles", [["own", "My config"], ["on", "On"], ["off", "Off"]]))}
+    ${srow("Colour", "", subColorCtl(m, "sub_color", "Subtitle colour", SUB_COLORS))}
+    ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", SUB_OUTLINES))}
+    ${srow("Outline colour", "", subColorCtl(m, "sub_outline_color", "Outline colour", SUB_OUTLINE_COLORS))}
+    ${srow("Edge softness", "Softens sharp outlines so text blends into the picture.", mpick(m, "sub_blur", "Edge softness", SUB_BLURS))}
+    ${srow("Line spacing", "Gap between two-line subtitles.", mpick(m, "sub_spacing", "Line spacing", SUB_SPACINGS))}
+    ${srow("Background", "Drop shadow or shaded box behind the text.", mpick(m, "sub_back", "Subtitle background", SUB_BACKS))}
+    ${srow("Position", "How high subtitles sit on the picture.", mpick(m, "sub_pos", "Subtitle position", SUB_POS))}</div>`}`;
 }
 function skipGroup(s) {
   const sk = s.skip || {};
@@ -4946,7 +5471,7 @@ const SETTINGS_INDEX = [
   ["Fullscreen", "player", "mpv fullscreen window player config"], ["Starting volume", "player", "mpv volume start remember last"], ["Player design", "player", "mpv controls design skin osc interface anime hub controls"], ["Player layout", "player", "mpv look layout design style float dock skin"],
   ["Season reminder", "player", "recap recaps season before previous remind remember new season popup last episode", "recap_ask"], ["Remind me after", "player", "recap reminder season before months wait remember"],
   ["Smooth controls while playing", "player", "mpv smooth lag laggy video sync display refresh"], ["Loaded part on the seek bar", "player", "mpv buffer cache loaded preload seek bar"], ["Skip buttons jump", "player", "mpv skip seconds forward back length"], ["Click", "player", "mpv mouse click pause picture"], ["Double-click", "player", "mpv mouse double click fullscreen"], ["Scroll wheel", "player", "mpv mouse scroll wheel volume seek"], ["Right click", "player", "mpv mouse right click menu context pause fullscreen"], ["Right double-click", "player", "mpv mouse right double click menu pause fullscreen"], ["Play / pause", "player", "mpv keys hotkeys shortcuts keyboard bind keybind input space mouse button middle side"], ["Who wins", "player", "mpv input.conf priority config settings override clash conflict"],
-  ["Sub or dub", "subs", "sub dub audio language online japanese english"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dual remember", "remember_tracks"], ["Size", "subs", "mpv subtitle size bigger smaller"], ["Colour", "subs", "mpv subtitle colour color white yellow"], ["Outline", "subs", "mpv subtitle outline border thick thin"], ["Styled subtitles", "subs", "mpv subtitle styled ass replace override style font"],
+  ["Sub or dub", "subs", "sub dub audio language online japanese english"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dual remember", "remember_tracks"], ["Preferred audio", "subs", "mpv audio language alang japanese english german default track"], ["Preferred subtitles", "subs", "mpv subtitle language slang english german japanese spanish french off default track"], ["Hide [SDH] cues", "subs", "mpv subtitle sdh closed caption music sighs hearing impaired filter strip"], ["Profile", "subs", "mpv subtitle profile preset default save anime hub yellow contrast boxed"], ["Styled subtitles", "subs", "mpv subtitle styled ass keep scale restyle replace override strip plain signs songs"], ["Font", "subs", "mpv subtitle font typeface family"], ["Size", "subs", "mpv subtitle size scale exact px slider bigger smaller extra"], ["Bold", "subs", "mpv subtitle bold weight thick"], ["Colour", "subs", "mpv subtitle colour color custom hex white warm yellow cyan green grey"], ["Outline", "subs", "mpv subtitle outline border thick thin none"], ["Outline colour", "subs", "mpv subtitle outline border colour color custom hex black charcoal blue white"], ["Edge softness", "subs", "mpv subtitle blur edge soft sharp gaussian"], ["Line spacing", "subs", "mpv subtitle line spacing gap tight relaxed wide"], ["Background", "subs", "mpv subtitle background box shadow drop dim solid"], ["Position", "subs", "mpv subtitle position height bottom raised high top margin"],
   ["Skip openings", "skipping", "skip opening op intro chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed outro chapter mpv"], ["Mark them on the seek bar", "skipping", "mpv timeline chapters marks opening ending seek bar", "mpv_marks"], ["Skip times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Load the next episode early", "online", "prepare next episode speed faster ready", "prepare_online"], ["ani-cli", "online", "ani-cli update version install streaming"],
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Text font", "appearance", "font fonts typeface text letters serif"], ["Title font", "appearance", "font fonts typeface title heading"], ["Your fonts", "appearance", "font fonts import add installed system pc upload ttf otf woff own remove"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
@@ -5066,9 +5591,11 @@ function srHTML() {
   if (cmds.length) h += `<div class="psec">commands</div>` + cmds.map(([[t, , , key], k]) => row(`data-a="cmd" data-v="${k}"`, `<span class="ic">›</span><span class="tx"><b>${esc(t)}</b></span>${key ? `<span class="r"><kbd class="kb">${key}</kbd></span>` : ""}`, { t, m: "command", k: [["Run", "↵"]] })).join("");
   const busy = q && alSearchable() && (S.alBusy || (S.alq !== q && q.length >= 2));
   if (busy) h += '<div class="psec"><i class="spin"></i> searching AniList…</div>';
+  if (q) h += `<div class="psec">browse</div>` + row(`data-a="brsearch" data-v="${esc(q)}"`, `<span class="ic">${ico("search")}</span><span class="tx"><b>Browse “${esc(q)}”</b><small>all matching anime with filters</small></span><span class="r"><kbd class="kb">⇧↵</kbd></span>`,
+    { t: `Browse “${q}”`, m: "Open in Browse with genres, year, season, format and score filters", k: [["Browse all", "⇧↵"]] });
   if (!h) h = `<p class="cap">No matches${alSearchable() ? " in your library, on AniList or in settings" : " in your library or settings"}</p>`;
   return `<div class="pal2"><div class="plist">${h}</div><div class="pview" id="srpv"></div>
-    <div class="pfoot"><span>open <kbd class="kb">↵</kbd></span><span>move <kbd class="kb">↑</kbd><kbd class="kb">↓</kbd></span><span class="fill"></span><span>library · anilist · settings · commands</span><span>close <kbd class="kb">esc</kbd></span></div></div>`;
+    <div class="pfoot"><span>open <kbd class="kb">↵</kbd></span><span>browse <kbd class="kb">⇧↵</kbd></span><span>move <kbd class="kb">↑</kbd><kbd class="kb">↓</kbd></span><span class="fill"></span><span>library · anilist · settings · commands</span><span>close <kbd class="kb">esc</kbd></span></div></div>`;
 }
 /* The preview pane follows the picked row (arrows or pointer). */
 function srPreview(i) {
@@ -5653,12 +6180,12 @@ addEventListener("resize", () => { const k = layoutKey(); if (k !== layoutNow) {
 /* Phones and tablets: a service worker, so "Install app" makes a real app
    (sw.js caches nothing). Needs https — the Tailscale address. */
 if ("serviceWorker" in navigator && isSecureContext && mq("(pointer:coarse)")) navigator.serviceWorker.register("/sw.js").catch(() => {});
-const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["history", "Journal", "clock"], ["week", "Calendar", "cal"]];
+const PHONE_TABS = [["home", "Home", "home"], ["library", "Library", "grid"], ["browse", "Browse", "compass"], ["history", "Journal", "clock"], ["week", "Calendar", "cal"]];
 function paintTabbar() {
   const el = $("#tabbar");
   if (!el) return;
   if (!isPhone()) { if (el.firstChild) el.innerHTML = ""; return; }
-  const cur = S.view === "show" || S.view === "fr" ? "library" : S.view === "stats" ? "history" : S.view;
+  const cur = S.view === "show" || S.view === "fr" ? (S.showBack === "browse" ? "browse" : "library") : S.view === "stats" ? "history" : S.view;
   /* Phone polish (TODO 177, Elias picked A): one glass dock, search inside the
      pill so it sits centred; the bars above it are their own pills (TODO 239).
      Icons only, no names (Elias, TODO 236). */
@@ -6011,7 +6538,7 @@ function CalDesk() {
   const acls = asd ? (asd > 0 ? " step-r" : " step-l") : "";
   return `<div class="airp2"><div class="airhead${acls}"><h1 class="hd"><span>${title}</span>${sizers}</h1>
     <span class="airnav"><button class="i" data-a="airgo" data-v="-1" aria-label="Back">${ico("chevl")}</button><button data-a="airtoday">Today</button><button class="i" data-a="airgo" data-v="1" aria-label="Forward">${ico("chevr")}</button></span>
-    ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<span class="fill"></span>
+    ${S.sched?.state === "loading" ? '<span class="mut airload"><i class="spin"></i>getting the schedule</span>' : ""}<button class="link-btn airsea" data-a="brsea">Season chart${ico("arrowr")}</button><span class="fill"></span>
     <span class="airtabs" role="group" aria-label="View">${seg("airmode", c.mode, [["month", "Month"], ["week", "Week"]])}</span><i class="airdiv"></i><span class="airtabs" role="group" aria-label="Which shows">${seg("airscope", c.scope, [["all", "All lists"], ["watching", "Watching"]])}</span></div>
     <div class="sum airsum">${sum}</div>
     ${week ? airWeek(c, days, today) : `<div class="airbody">${airMonth(c, days, today)}${panel}</div>`}</div>`;
@@ -6040,7 +6567,7 @@ function CalPhone() {
   const list = keys.map((k) => { const [a, b] = name(k);
     return `<section class="agday" id="ag-${k}"><div class="dh"><b>${esc(a)}</b>${b ? `<span>${esc(b)}</span>` : ""}</div>${days.get(k).map((x) => row(x, n++)).join("")}</section>`; }).join("");
   const scope = ["all", "watching"].map((v) => `<button class="${c.scope === v ? "on" : ""}" aria-pressed="${c.scope === v}" data-a="airscope" data-v="${v}">${v === "all" ? "All lists" : "Watching"}</button>`).join("");
-  return `<div class="wk2 agw"><div class="hello"><h1 class="hd">Calendar</h1><div class="sum"><span><b>${week}</b> episode${week === 1 ? "" : "s"} this week</span>${S.sched?.state === "loading" ? '<span class="mut"><i class="spin"></i> getting the schedule</span>' : ""}</div>
+  return `<div class="wk2 agw"><div class="hello"><h1 class="hd">Calendar</h1><div class="sum"><span><b>${week}</b> episode${week === 1 ? "" : "s"} this week</span>${S.sched?.state === "loading" ? '<span class="mut"><i class="spin"></i> getting the schedule</span>' : ""}<button class="link-btn airsea" data-a="brsea">Season chart${ico("arrowr")}</button></div>
     <span class="seg" role="group" aria-label="Which shows">${scope}</span></div>
     <div class="agstrip">${strip}</div>${list || `<p class="empty">Nothing airs in the next four weeks${c.scope === "watching" ? " on Watching" : ""}.</p>`}</div>`;
 }
@@ -6122,11 +6649,14 @@ function paintPortals() {
     if (b) html += tile ? playStrip(b, tile, more) : `<div class="pbar">${b.outerHTML}${more ? `<button class="btn ic" aria-label="More" data-a="frmore">${ico("dots")}</button>` : ""}</div>`;
   }
   if (isPhone() && S.view === "library" && S.data && !$("#app .lib2.plph")) html += libBar();
+  if (isPhone() && S.view === "browse") html += brBar();
   /* The filter sheet is built here, not copied from the page: while it's open,
      a pick repaints only the sheet, the bar and the posters behind (TODO 239:
      re-rendering the page under it made it and the backdrop flicker). */
-  const flt = isPhone() && S.view === "library" && S.data && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
-  if (flt) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet"><div class="filters">${grab}${fltSheet(libModel())}</div></div>`;
+  const fltLib = isPhone() && S.view === "library" && S.data && document.body.classList.contains("flt-open") && $("#app .lib2 .filters");
+  const fltBr = isPhone() && S.view === "browse" && !brEntity() && document.body.classList.contains("flt-open");
+  if (fltLib) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet"><div class="filters">${grab}${fltSheet(libModel())}</div></div>`;
+  else if (fltBr) html += `<i class="fltscrim" data-a="fltclose"></i><div class="lib2 fsheet"><div class="filters">${grab}${brFltSheet()}</div></div>`;
   else document.body.classList.remove("flt-open");
   /* Updated in place: a bar or sheet that stays keeps its node, so its entrance
      doesn't replay on every sort, filter or view change (Elias, TODO 239). */
@@ -6248,6 +6778,7 @@ function srHTMLTouch() {
     if (!g.more) parts.push(`<h2 class="srlab">${SR_HEAD[g.k]}</h2>`);
   }
   if (alSearchable() && (scope === "all" || scope === "al") && (S.alBusy || (S.alq !== qq && qq.length >= 2))) parts.push('<p class="srnone"><i class="spin"></i> searching AniList…</p>');
+  if (qq) parts.push(mi(`data-a="brsearch" data-v="${esc(qq)}"`, "srrow more", `${sic("search")}<span class="tx"><b>Browse “${esc(qq)}”</b><small>all matching anime with filters</small></span>${ico("chevr")}`));
   if (!t) parts.unshift(`<p class="srnone">Nothing for “${esc(qq)}”.</p>`);
   const kinds = SR_SCOPES.filter(([k]) => k === "all" || m.n[k]);
   const chips = kinds.length > 2 || scope !== "all" ? `<div class="srscope">${kinds.map(([k, l]) => `<button class="chip${k === scope ? " on" : ""}" data-a="srscope" data-v="${k}" aria-pressed="${k === scope}">${l}${k !== "all" && m.n[k] ? `<small>${m.n[k]}</small>` : ""}</button>`).join("")}</div>` : "";
@@ -8684,7 +9215,7 @@ const A = {
     if (!r.ok) return toast(r.error || "Could not remove the font.");
     for (const k of ["text", "title", "num"]) if (fontGet(k) === "u:" + v) lsSet("font_" + k, "default");
     applyFonts();
-    if (S.settings) S.settings.fonts = r.fonts;
+    if (S.settings) { S.settings.fonts = r.fonts; if (S.settings.mpv?.sub_font === "u:" + v) S.settings.mpv.sub_font = "own"; }
     toast("Font removed");
     if (S.view === "settings") render(true);
   },
@@ -8744,7 +9275,31 @@ const A = {
     hkSave(over, note);
   },
   hkresetall: () => hkSave({}, "Keys are back to mpv's own"),
+  subbg: (v) => {
+    lsSet("sub_pv_bg", v);
+    const cur = $(".subprev");
+    if (cur && S.settings?.mpv) cur.outerHTML = subPreview(S.settings.mpv);
+  },
+  subpf: (v, t) => {
+    if (v === "__custom__") return subProfileSavePop(t);
+    if (v && v !== "custom") subProfileRun({ op: "apply", id: v });
+  },
+  subpfsave: (v, t) => subProfileSavePop(t),
+  subpfdef: () => {
+    const id = S.settings?.mpv?.sub_profile;
+    if (id && id !== "custom") subProfileRun({ op: "default", id }, "Set as default profile");
+  },
+  subpfdel: () => {
+    const m = S.settings?.mpv, p = (m?.sub_profiles || []).find((x) => x.id === m.sub_profile);
+    if (p) subProfileRun({ op: "delete", id: p.id }, `Deleted profile “${p.name}”`);
+  },
+  subreset: () => {
+    const m = S.settings?.mpv, def = m?.sub_default_profile || "own";
+    const name = [...SUB_PRESET_LIST, ...(m?.sub_profiles || []).map((p) => [p.id, p.name])].find(([id]) => id === def)?.[1] || "My config";
+    subProfileRun({ op: "reset" }, `Subtitle look reset to ${name}`);
+  },
   spref: (v, t) => {
+    if (v === "__custom__") return t.dataset.k === "mpv_sub_size" ? subSizePick(t) : subColorPick(t.dataset.k, t);
     api("/api/settings", { [t.dataset.k]: v }).then((r) => {
       if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
       S.settings = r; if (S.view === "settings") render(true);
@@ -9144,13 +9699,25 @@ const A = {
   fltclose: () => {
     const f = $(".fsheet .filters");
     if (f?.classList.contains("closing")) return;
-    const done = () => { S.fltPage = null; document.body.classList.remove("flt-open"); paintPortals(); if (S.fltDirty) { S.fltDirty = false; paintWall(true); } };
+    const done = () => {
+      S.fltPage = null; document.body.classList.remove("flt-open"); paintPortals();
+      if (S.view === "browse") { if (S.fltDirty) { S.fltDirty = false; brPaint(true); pushNav(); } return; }
+      if (S.fltDirty) { S.fltDirty = false; paintWall(true); }
+    };
     ovClosed("flt");
     if (f && isPhone() && !reduceMotion()) { f.classList.add("closing"); $("#portal .fltscrim")?.classList.add("closing"); setTimeout(done, 200); } else done();
   },
   /* Phones: a filter's own page in the sheet, and × on one that's on (TODO 239). */
   fpage: (v) => { S.fltDir = v ? "fwd" : "back"; S.fltPage = v || null; fltRepaint(true); },
-  foff: (v) => { if (v === "genres") S.lib.genres = []; else if (v !== "src" || !srcLocked()) S.lib[v] = "all"; saveLib(); fltRepaint(); },
+  foff: (v) => {
+    if (S.view === "browse") {
+      if (v === "genres") S.br.f.genres = [];
+      else if (v === "fyear" || v === "fseason") { S.br.f[v] = v === "fyear" ? "all" : ""; if (brSeasonList()) { S.br.list = "all"; S.br.sea = null; } }
+      else S.br.f[v] = v === "score" ? "all" : "";
+      brSave(); return fltRepaint();
+    }
+    if (v === "genres") S.lib.genres = []; else if (v !== "src" || !srcLocked()) S.lib[v] = "all"; saveLib(); fltRepaint();
+  },
   rmton: () => remoteSet({ on: !S.remote?.on }),
   rmtcode: () => remoteSet({ new_code: true }),
   rmtdel: (v) => remoteSet({ remove: Number(v) }),
@@ -9934,7 +10501,11 @@ function ddOpen(sel, kb = false, pt = null) {
 function ddPick(i, btnEl) {
   const sel = ddSel, m = $("#ddm");
   if (!sel || ddBusy) return;
-  const idx = +i, changed = sel.selectedIndex !== idx, sheet = m?.classList.contains("sheet");
+  const idx = +i, opt = sel.options[idx];
+  if (opt?.dataset.custom) {
+    return sel.dataset.a === "subpf" ? subProfileSavePop(sel) : sel.dataset.k === "mpv_sub_size" ? subSizePick(sel) : subColorPick(sel.dataset.k, sel);
+  }
+  const changed = sel.selectedIndex !== idx, sheet = m?.classList.contains("sheet");
   const wasKb = ddKb, act = sel.dataset.a, dk = sel.dataset.k;
   const w0 = changed ? sel.closest(".fl, .frpick")?.getBoundingClientRect().width || 0 : 0;
   /* Commit at 0ms so fast outside clicks or switching dropdowns never lose a pick. */
@@ -10372,10 +10943,14 @@ q.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key !== "Enter") return;
+  const qq = S.q.trim();
+  if (qq && e.shiftKey) { e.preventDefault(); q.blur(); brOpenSearch(qq); return; }
   const picked = $("#sr .mi.sel");
   if (picked) { e.preventDefault(); q.blur(); picked.click(); return; }
+  if (qq && (touchSearch() || S.view === "browse")) { e.preventDefault(); q.blur(); brOpenSearch(qq); return; }
   const first = $("#sr .mi");
   if (first) { e.preventDefault(); q.blur(); first.click(); }
+  else if (qq) { e.preventDefault(); q.blur(); brOpenSearch(qq); }
 });
 /* The Library's go-to-top button, once you've scrolled past the first row or two. */
 function paintTop() {
@@ -10888,7 +11463,7 @@ function pagerSpeed(p) {
 const backs = new Map();
 /* Ids the CSS styles stay in a kept page; the rest go, so a lookup by id
    never finds the copy instead of the page on screen. */
-const PK_IDS = new Set(["wall", "aboutx", "entryacts", "entrybox", "msst"]);
+const PK_IDS = new Set(["wall", "aboutx", "abouttr", "related", "entryacts", "entrybox", "msst"]);
 let backEl = null, backLanding = null;
 function backSave() {
   if (!isPhone() || !mq("(pointer:coarse)") || !S.data) return;
@@ -11192,7 +11767,7 @@ let navSeeded = false;
 const nidNew = () => Math.random().toString(36).slice(2, 10);
 let curNid = nidNew(), curPnid = null;
 const navSnap = () => ({ nid: curNid, pnid: curPnid, view: S.view, showId: S.showId, seasonIdx: S.seasonIdx, back: S.showBack, fr: S.fr?.eid ?? null, scroll: scrollY,
-  lt: S.view === "library" ? S.lib.tab : undefined, bl: S.view === "browse" ? S.br.list : undefined, bs: S.view === "browse" ? S.br.sort : undefined, pl: S.view === "library" && S.lib.tab === "PLAYLISTS" ? S.lib.pl ?? null : undefined });
+  lt: S.view === "library" ? S.lib.tab : undefined, bl: S.view === "browse" ? S.br.list : undefined, bs: S.view === "browse" ? S.br.sort : undefined, bq: S.view === "browse" ? S.br.q || undefined : undefined, be: S.view === "browse" ? brEntity() || undefined : undefined, bsea: S.view === "browse" && brSeasonList() ? S.br.sea || undefined : undefined, pl: S.view === "library" && S.lib.tab === "PLAYLISTS" ? S.lib.pl ?? null : undefined });
 const navUrl = () => location.pathname + location.search + (S.view === "show" ? "#show=" + encodeURIComponent(S.showId) : S.view === "fr" ? "#f=" + S.fr.eid : VIEWS.includes(S.view) && S.view !== "home" ? "#" + S.view : "");
 /* The page as it is now, into its own history entry (keeps how it was reached). */
 const navKeep = () => history.replaceState({ ...history.state, ...navSnap() }, "", navUrl());
@@ -11210,7 +11785,10 @@ function applyNav(h, quiet) {
   const wasPl = stay && !!plCurrent();
   S.navIn = !stay; S.view = VIEWS.includes(h.view) || h.view === "show" || (h.view === "fr" && h.fr) ? h.view : "home"; S.showId = h.showId ?? null; S.seasonIdx = h.seasonIdx || 0; S.showBack = h.back || "home";
   if (S.view === "fr") S.fr = { eid: h.fr, page: frKnown(h.fr), err: null };
-  if (S.view === "browse" && h.bl) { const [l, s] = brListOf(h.bl, h.bs); if (l !== S.br.list || s !== S.br.sort) { S.br.list = l; S.br.sea = null; S.br.sort = s; brSave(); } }
+  if (S.view === "browse" && h.bl) {
+    const [l, s] = brListOf(h.bl, h.bs, h.be);
+    S.br.list = l; S.br.sort = s; S.br.entity = h.be || null; S.br.q = h.bq || ""; S.br.sea = h.bsea || null; S.br.bioOpen = false; brSave();
+  }
   if (S.view === "library" && h.lt) { // back/forward between a Library tab, the playlists and one playlist
     if (h.pl && !(S.data.playlists || []).some((p) => p.id === h.pl)) h.pl = null; // deleted since
     S.lib.tab = h.lt; if (h.pl !== undefined) S.lib.pl = h.pl; S.plq = ""; S.plJust2 = null; saveLib(); S.fadeNext = true;

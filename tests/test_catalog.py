@@ -58,6 +58,12 @@ class Variables(unittest.TestCase):
         v = catalog.variables({"list": "popular", "genres": ["Action", "Drama"], "format": "MOVIE", "fseason": "SPRING"})
         self.assertEqual((v["genres"], v["format"], v["season"]), (["Action", "Drama"], "MOVIE", "SPRING"))
 
+    def test_search_defaults_to_relevance_unless_sorted(self):
+        v = catalog.variables({"list": "all", "q": "frieren"})
+        self.assertEqual((v["search"], v["sort"]), ("frieren", ["SEARCH_MATCH"]))
+        v2 = catalog.variables({"list": "all", "q": "frieren", "sort": "score"})
+        self.assertEqual((v2["search"], v2["sort"]), ("frieren", ["SCORE_DESC", "POPULARITY_DESC"]))
+
 
 class Parse(unittest.TestCase):
     def test_defaults_to_the_overview(self):
@@ -65,15 +71,19 @@ class Parse(unittest.TestCase):
 
     def test_bad_values_are_refused(self):
         for qs in ({"list": ["nope"]}, {"format": ["CD"]}, {"score": ["101"]}, {"score": ["x"]}, {"score": ["90-70"]}, {"sort": ["random"]},
-                   {"season": ["FALL"]}, {"season": ["AUTUMN"], "year": ["2026"]}, {"fyear": ["soon"]}, {"fyear": ["2010-2020-2030"]}, {"page": ["0"]}):
+                   {"season": ["FALL"]}, {"season": ["AUTUMN"], "year": ["2026"]}, {"fyear": ["soon"]}, {"fyear": ["2010-2020-2030"]}, {"page": ["0"]},
+                   {"list": ["person"]}, {"list": ["person"], "id": ["0"]}, {"list": ["studio"], "id": ["abc"]}):
             with self.subTest(qs=qs), self.assertRaises(ValueError):
                 catalog.parse(qs)
 
     def test_reads_everything(self):
         got = catalog.parse({"list": ["season"], "season": ["SUMMER"], "year": ["2026"], "genres": ["Action,Drama"],
-                             "format": ["TV"], "score": ["70-90"], "fyear": ["2015"], "sort": ["score"], "page": ["2"]})
+                             "format": ["TV"], "score": ["70-90"], "fyear": ["2015"], "sort": ["score"], "q": ["frieren"], "page": ["2"]})
         self.assertEqual(got, {"list": "season", "season": "SUMMER", "year": 2026, "genres": ["Action", "Drama"],
-                               "format": "TV", "score": (70, 90), "fyear": (2015, 2015), "sort": "score", "page": 2})
+                               "format": "TV", "score": (70, 90), "fyear": (2015, 2015), "sort": "score", "q": "frieren", "page": 2})
+        self.assertEqual(catalog.parse({"list": ["person"], "id": ["9"]}), {"list": "person", "id": 9, "page": 1})
+        self.assertEqual(catalog.parse({"list": ["studio"], "id": ["858"], "sort": ["score"]}),
+                         {"list": "studio", "id": 858, "sort": "score", "page": 1})
 
 
 class Answers(unittest.TestCase):
@@ -129,6 +139,63 @@ class Answers(unittest.TestCase):
         with mock.patch.object(catalog.anilist, "anilist_request", return_value={"errors": [{"message": "bad"}]}):
             with self.assertRaises(RuntimeError):
                 catalog.catalog({"list": ["popular"]})
+
+    def test_person_and_studio_pages_dedup_and_cache(self):
+        staff_reply = {"data": {"Staff": {
+            "id": 9, "name": {"full": "Atsumi Tanezaki", "native": "種崎敦美"},
+            "image": {"large": "https://x/va.jpg"}, "description": "Voice actress ~!secret!~", "favourites": 4200,
+            "characterMedia": {"pageInfo": {"hasNextPage": False}, "edges": [
+                {"characterRole": "MAIN", "characters": [{"id": 1, "name": {"full": "Frieren"}}],
+                 "node": {**M, "type": "ANIME", "isAdult": False}},
+                {"characterRole": "SUPPORTING", "characters": [{"id": 2, "name": {"full": "Anya"}}],
+                 "node": {**M, "type": "ANIME", "isAdult": False}},
+                {"characterRole": "MAIN", "characters": [{"id": 3, "name": {"full": "Skip"}}],
+                 "node": {**M, "id": 8, "type": "MANGA", "isAdult": False}},
+            ]}}}}
+        with mock.patch.object(catalog.anilist, "anilist_request", return_value=staff_reply) as req:
+            p1 = catalog.catalog({"list": ["person"], "id": ["9"]})
+            p2 = catalog.catalog({"list": ["person"], "id": ["9"]})
+        self.assertEqual(req.call_count, 1)
+        self.assertEqual(p1, p2)
+        self.assertEqual(p1["person"]["name"], "Atsumi Tanezaki")
+        self.assertEqual(p1["person"]["description"], "Voice actress")
+        self.assertEqual(len(p1["items"]), 1)
+        self.assertEqual(p1["items"][0]["character"], "Frieren, Anya")
+
+        studio_reply = {"data": {"Studio": {
+            "id": 858, "name": "Wit Studio", "favourites": 9000, "isAnimationStudio": True,
+            "media": {"pageInfo": {"hasNextPage": True}, "nodes": [
+                {**M, "type": "ANIME", "isAdult": False},
+                {**M, "id": 99, "type": "ANIME", "isAdult": True},
+            ]}}}}
+        with mock.patch.object(catalog.anilist, "anilist_request", return_value=studio_reply) as req:
+            s1 = catalog.catalog({"list": ["studio"], "id": ["858"], "sort": ["score"]})
+        self.assertEqual(req.call_count, 1)
+        self.assertEqual(s1["studio"]["name"], "Wit Studio")
+        self.assertEqual([x["id"] for x in s1["items"]], [7])
+        self.assertTrue(s1["has_next"])
+
+    def test_search_uses_local_title_index_for_prefixes_and_typos(self):
+        m1 = {**M, "id": 128893, "title": {"english": "Hell's Paradise", "romaji": "Jigokuraku"}, "popularity": 300000}
+        m2 = {**M, "id": 145140, "title": {"english": "Helck", "romaji": "Helck"}, "popularity": 50000}
+        hits = [([145140, 1, ["helck"], "TV", 2023, 24, "Helck"], 0.3),
+                ([128893, 5, ["hells paradise"], "TV", 2023, 13, "Hell's Paradise"], 0.3)]
+        reply = {"data": {"Page": {"pageInfo": {"hasNextPage": False}, "media": [m2, m1]}}}
+        with mock.patch.object(catalog.titles, "search", return_value=hits), \
+             mock.patch.object(catalog.anilist, "anilist_request", return_value=reply) as req:
+            out = catalog.catalog({"list": ["all"], "q": ["Hel"], "format": ["TV"]})
+        v = req.call_args.args[0]["variables"]
+        self.assertEqual(v["ids"], [145140, 128893])
+        self.assertEqual(v["format"], "TV")
+        self.assertNotIn("search", v)
+        # Same closeness bucket: higher popularity first
+        self.assertEqual([x["id"] for x in out["items"]], [128893, 145140])
+
+        # Fallback to AniList's native search when title index isn't ready yet
+        with mock.patch.object(catalog.titles, "search", return_value=None), \
+             mock.patch.object(catalog.anilist, "anilist_request", side_effect=page_answer) as req:
+            catalog.catalog({"list": ["all"], "q": ["frieren"]})
+        self.assertEqual(req.call_args.args[0]["variables"]["search"], "frieren")
 
 
 if __name__ == "__main__":

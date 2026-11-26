@@ -1069,14 +1069,15 @@ class Handler(BaseHTTPRequestHandler):
             # TODO 15: automation toggles + tour dismissal (Decision 5).
             # Only known boolean keys; everything else is a structured 400.
             keys = ("auto_progress_sync", "auto_add_watch", "anilist_watched", "vpn_icon", "vpn_warn", "aniskip", "aniskip_vpn_warn", "tour_done", "play_tip_done",
-                    "upscale_banners", "hide_spoilers", "update_check", "update_vpn_only", "update_asked", "measure_lengths", "remember_tracks", "mpv_marks", "prepare_online", "phone_play_both",
+                    "upscale_banners", "hide_spoilers", "update_check", "update_vpn_only", "update_asked", "measure_lengths", "remember_tracks", "mpv_marks", "mpv_sub_sdh", "prepare_online", "phone_play_both",
                     "keep_running", "start_at_login", "recap_ask")
             # ani-cli bridge preferences: closed vocabularies.
+            custom_sub = ("mpv_sub_size", "mpv_sub_color", "mpv_sub_outline_color", "mpv_sub_font")
             choices = {"stream_quality": anicli.STREAM_QUALITIES, "stream_mode": anicli.STREAM_MODES,
                        "skip_op": settings.SKIP_MODES, "skip_ed": settings.SKIP_MODES,
                        **{key: settings.MPV_MODES for key in settings.MPV_OPTIONS},
                        "mpv_look": tuple(settings.PLAYER_LOOKS),
-                       **{key: allowed for key, (_, allowed) in settings.MPV_CHOICES.items()},
+                       **{key: allowed for key, (_, allowed) in settings.MPV_CHOICES.items() if key not in custom_sub},
                        "upscale_style": tuple(upscale.STYLES), "update_channel": update.CHANNELS,
                        "recap_after": recap.AFTER_CHOICES}
             for key in keys:
@@ -1091,8 +1092,8 @@ class Handler(BaseHTTPRequestHandler):
                 if key in body and body[key] not in allowed:
                     self._bad("'%s' must be one of: %s" % (key, ", ".join(allowed)))
                     return
-            if not any(key in body for key in (*keys, *choices, "mpv_keys")):
-                self._bad("nothing to change — send one of: %s" % ", ".join((*keys, *choices, "mpv_keys")))
+            if not any(key in body for key in (*keys, *choices, "mpv_keys", *custom_sub)):
+                self._bad("nothing to change — send one of: %s" % ", ".join((*keys, *choices, "mpv_keys", *custom_sub)))
                 return
             if "mpv_keys" in body:
                 # Settings → mpv → Keys: the whole set of moved keys.
@@ -1101,6 +1102,26 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     self._bad(str(e))
                     return
+            if "mpv_sub_font" in body and not (
+                isinstance(body["mpv_sub_font"], str)
+                and (body["mpv_sub_font"] in settings.SUB_FONTS or (body["mpv_sub_font"].startswith("u:") and fonts.sub_font_info(body["mpv_sub_font"][2:])))
+            ):
+                self._bad("unknown subtitle font '%s'" % body["mpv_sub_font"])
+                return
+            if "mpv_sub_size" in body and not settings._valid_sub_size(body["mpv_sub_size"]):
+                self._bad(f"'mpv_sub_size' must be a preset or {settings.SUB_SIZE_MIN}-{settings.SUB_SIZE_MAX}")
+                return
+            for ckey in ("mpv_sub_color", "mpv_sub_outline_color"):
+                if ckey in body and not settings._valid_sub_color(ckey, body[ckey]):
+                    self._bad(f"'{ckey}' must be a preset or #rrggbb")
+                    return
+            if "mpv_sub_font" in body:
+                settings.set_sub_font(body["mpv_sub_font"])
+            if "mpv_sub_size" in body:
+                settings.set_sub_size(body["mpv_sub_size"])
+            for ckey in ("mpv_sub_color", "mpv_sub_outline_color"):
+                if ckey in body:
+                    settings.set_sub_color(ckey, body[ckey])
             for key in choices:
                 if key in body:
                     settings.set_setting(key, body[key])
@@ -1127,7 +1148,34 @@ class Handler(BaseHTTPRequestHandler):
                     settings.set_automation(key, body[key])
                     if key == "measure_lengths" and body[key]:
                         lengths.turned_on()
-            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None or system.ANDROID})
+            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None or system.ANDROID,
+                            "fonts": fonts.all_fonts()})
+        elif route == "/api/subtitles/profile":
+            # Built-in presets + user-saved subtitle look profiles (TODO 290).
+            op = body.get("op")
+            try:
+                if op == "apply":
+                    settings.apply_sub_profile(body.get("id"))
+                elif op == "save":
+                    if "default" in body and not isinstance(body["default"], bool):
+                        raise ValueError("'default' must be a boolean")
+                    settings.save_sub_profile(body.get("name"), make_default=bool(body.get("default")))
+                elif op == "delete":
+                    settings.delete_sub_profile(body.get("id"))
+                elif op == "default":
+                    pid = body.get("id")
+                    settings.set_default_sub_profile(pid)
+                    if body.get("apply") is True:
+                        settings.apply_sub_profile(pid)
+                elif op == "reset":
+                    settings.apply_sub_profile(settings.sub_default_profile())
+                else:
+                    raise ValueError("unknown profile op — use apply, save, delete, default or reset")
+            except ValueError as e:
+                self._bad(str(e))
+                return
+            self.send_json({"ok": True, **settings.settings_payload(), "phone": self.remote_device is not None or system.ANDROID,
+                            "fonts": fonts.all_fonts()})
         elif route == "/api/phone/play":
             # The phone plays a file itself (Decision 71).
             if self._fields(body, strings=("id",), opt_ints=("version",)):
