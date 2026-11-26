@@ -322,6 +322,8 @@ class Handler(BaseHTTPRequestHandler):
         if tag:
             self.send_header("ETag", tag)
             self.send_header("Cache-Control", "no-cache")
+        else:
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1394,12 +1396,21 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(res, 200 if res.get("ok") else 400)
         elif route == "/api/anicli-get":
             self.send_json(anicli.fetch_anicli())
+        elif route == "/api/anicli-check":
+            self.send_json(anicli.check_update())
+        elif route == "/api/anicli-upgrade":
+            self.send_json(anicli.upgrade_start())
         elif route == "/api/tools-install":
             groups = body.get("groups")
             r = tools.install([g for g in groups if isinstance(g, str)] if isinstance(groups, list) else None)
             self.send_json(r, 400 if r.get("error") else 200)
         elif route == "/api/update-check":
-            self.send_json(update.check())
+            r = update.check()
+            if r.get("ok") and anicli.anicli_path():
+                a = anicli.check_update()
+                if a.get("ok"):
+                    r["anicli"] = a.get("found")
+            self.send_json(r)
         elif route == "/api/update-install":
             self.send_json(update.install())
         elif route == "/api/update-restart":
@@ -1873,7 +1884,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_error(404)
         except anicli.AniCliError as e:
-            self.send_json({"error": str(e)}, 502)
+            self.send_json(anicli.error_dict(e), 502)
 
     def _bad(self, msg):
         self.send_json({"error": msg}, 400)

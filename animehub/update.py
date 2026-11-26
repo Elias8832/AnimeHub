@@ -226,12 +226,17 @@ def due(now=None):
 
 
 def loop():
+    from . import anicli
     time.sleep(60)
     while True:
         if due():
             result = check()
             if result.get("error"):
                 util.log("update check: %s" % result["error"])
+        if anicli.update_due():
+            result = anicli.check_update()
+            if result.get("error"):
+                util.log("ani-cli update check: %s" % result["error"])
         time.sleep(3600)
 
 

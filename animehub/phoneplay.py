@@ -349,7 +349,7 @@ def _run_capture(link, token, mode):
             with open(err, "ab") as f:
                 proc = anicli.anicli_spawn(["--exit-after-play", "-e", token, link["query"]], env, subprocess.DEVNULL, f)
         except anicli.AniCliError as e:
-            return None, str(e)
+            return None, e
         deadline = time.time() + anicli.STREAM_STARTUP_TIMEOUT
         while time.time() < deadline and not out.exists() and proc.poll() is None:
             time.sleep(0.2)
@@ -388,7 +388,7 @@ def start_online(ep_id, mode=None, from_start=False, at=None, switch=False, rema
     try:
         link = streaming.stream_autolink(mid)
     except anicli.AniCliError as e:
-        return {"error": str(e)}
+        return anicli.error_dict(e)
     want = mode if mode in anicli.STREAM_MODES else None
     if want and want != link["mode"] and not switch:
         streaming.stream_set_mode(mid, want)
@@ -408,25 +408,27 @@ def start_online(ep_id, mode=None, from_start=False, at=None, switch=False, rema
         return {"error": "unknown episode"}
     label = _label(s, ep, ep_id)
     got, msg = _run_capture(link, token, play_mode)
-    if not got and not rematched and "invalid anime selection" in (msg or "").lower():
+    msg_text = str(msg or "")
+    if not got and not rematched and "invalid anime selection" in msg_text.lower():
         try:
             streaming.stream_autolink(mid, rematch=True)
         except anicli.AniCliError as e:
-            return {"error": str(e)}
+            return anicli.error_dict(e)
         return start_online(ep_id, mode, from_start, at, switch, rematched=True)
     note = None
-    nodub = not got and play_mode == "dub" and "no sources found for dub" in (msg or "").lower()
+    nodub = not got and play_mode == "dub" and "no sources found for dub" in msg_text.lower()
     if nodub and switch:
         return {"error": f"{code} has no English dub yet."}
     if nodub:
         got, msg = _run_capture(link, token, "sub")
+        msg_text = str(msg or "")
         play_mode = "sub"
         note = f"{code} isn't dubbed yet — playing it subbed."
     if got and switch and play_mode != link["mode"]:
         streaming.stream_set_mode(mid, play_mode)  # the pick sticks, as on the PC
     if not got:
-        util.log("phone stream %s failed: %s" % (ep_id, msg))
-        return {"error": streaming.friendly_stream_error(msg, code)}
+        util.log("phone stream %s failed: %s" % (ep_id, msg_text))
+        return anicli.error_dict(msg, streaming.friendly_stream_error(msg_text, code))
     with database.db() as c:
         # Identity stamp (TODO 25), as start_stream does.
         c.execute("INSERT INTO episodes(id,show_id,label) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE"

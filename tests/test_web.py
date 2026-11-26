@@ -1655,3 +1655,48 @@ class DropdownMenuPolish(unittest.TestCase):
         self.assertNotIn("% bs.length]", APP)
         self.assertIn(".lib2 .fl:has(select:focus-visible),.pk .pkm:has(select:focus-visible){", CSS)
         self.assertIn('sel.setAttribute("aria-expanded", "true");', APP)
+
+
+class AniCliUpgradeNoticeUI(unittest.TestCase):
+    """Noticing and upgrading ani-cli from the status line, Home, show pages,
+    Settings (PC + Android), and playback failures."""
+
+    def test_notice_surfaces_and_dialog_wired(self):
+        self.assertIn('"aniup"', APP.split("const DL2 = new Set(", 1)[1].split(")", 1)[0])
+        self.assertIn("function AniUpDlg()", APP)
+        self.assertIn("function aniUpChip()", APP)
+        self.assertIn("function aniBanner(", APP)
+        self.assertIn("${aniUpChip()}${upChip()}", APP)
+        self.assertIn(".setb.has-upd:after,.setb.has-warn:after{", CSS)
+        self.assertIn(".ani-bar{", CSS)
+        self.assertIn("if (res.anicli_update)", APP)
+        self.assertIn("if (r.anicli_update)", APP)
+        # Android termuxReady flags outdated / unsupported ani-cli instead of saying Found
+        self.assertIn("!s.stream?.outdated && s.stream?.check?.ok !== false", APP)
+        self.assertIn("Update in Termux", APP)
+        # Post-upgrade refresh: loadSettings uses no-store + sequence guard, and upgrade repaints underlying view + clears frMemo
+        self.assertIn('const res = await fetch("/api/settings", { cache: "no-store" });', APP)
+        self.assertIn("if (seq !== setSeq) return S.settings;", APP)
+        self.assertIn('if (nowSig !== wasSig && (S.view === "home" || S.view === "fr" || S.view === "settings")) render(true);', APP)
+        self.assertNotIn('if (S.modal?.t === "aniup" || S.modal?.t === "tour") paintModal(); else if (S.view === "settings"', APP)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_ani_state_and_chips_evaluate_cleanly(self):
+        state_fn = APP[APP.index("function aniState("):APP.index("function aniBanner(")]
+        out = run_js(f"""const ico = () => "";
+S.settings = {{ tools: {{ "ani-cli": "/usr/bin/ani-cli" }}, stream: {{ version: "5.1.0", outdated: true, min_version: "5.2", upgrade_method: "download" }} }};
+{state_fn}
+const broken = {{ state: aniState(), chip: aniUpChip() }};
+S.settings.stream = {{ version: "5.2.0", outdated: false, update: {{ version: "5.2.1", url: "https://example.com" }}, upgrade_method: "download" }};
+const opt = {{ state: aniState(), chip: aniUpChip() }};
+S.settings.stream = {{ version: "5.2.1", outdated: false, update: null, upgrade_method: "download" }};
+const ok = {{ state: aniState(), chip: aniUpChip() }};
+return {{ broken, opt, ok }};""")
+        self.assertTrue(out["broken"]["state"]["broken"])
+        self.assertIn("Update ani-cli", out["broken"]["chip"])
+        self.assertIn("warn", out["broken"]["chip"])
+        self.assertFalse(out["opt"]["state"]["broken"])
+        self.assertTrue(out["opt"]["state"]["need"])
+        self.assertIn("ani-cli 5.2.1 is out", out["opt"]["chip"])
+        self.assertFalse(out["ok"]["state"]["need"])
+        self.assertEqual(out["ok"]["chip"], "")

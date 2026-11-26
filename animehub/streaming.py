@@ -835,7 +835,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
     try:
         link = stream_autolink(mid)
     except anicli.AniCliError as e:
-        return {"error": str(e)}
+        return anicli.error_dict(e)
     if mode in anicli.STREAM_MODES and mode != link["mode"]:
         stream_set_mode(mid, mode)
         link["mode"] = mode
@@ -893,7 +893,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
                 proc = anicli.anicli_spawn(["--exit-after-play", "-e", token, link["query"]], env,
                                     subprocess.DEVNULL, err or subprocess.DEVNULL)
             except anicli.AniCliError as e:
-                return {"error": friendly_stream_error(str(e), code)}
+                return anicli.error_dict(e, friendly_stream_error(str(e), code))
             finally:
                 if err:
                     err.close()
