@@ -307,6 +307,168 @@ class SettingsRouteTests(unittest.TestCase):
         self.assertIn("--volume=62", settings.mpv_flags())
         self.addCleanup(settings.set_setting, "mpv_last_volume", "")
 
+    def test_subtitle_look_options_and_flags(self):
+        """Expanded subtitle look: font, bold, colours, outline, background/shadow,
+        position, and ASS override modes — always space-free for ani-cli."""
+        from animehub import fonts
+        all_keys = ("mpv_alang", "mpv_slang", "mpv_sub_size", "mpv_sub_bold", "mpv_sub_color", "mpv_sub_outline",
+                    "mpv_sub_outline_color", "mpv_sub_blur", "mpv_sub_spacing", "mpv_sub_back", "mpv_sub_pos",
+                    "mpv_sub_styled", "mpv_sub_font")
+        self.addCleanup(self.post, {**{k: "own" for k in all_keys}, "mpv_sub_sdh": False})
+        before = settings.mpv_flags()
+
+        code, body = self.post({
+            "mpv_alang": "jpn_eng",
+            "mpv_slang": "ger_eng",
+            "mpv_sub_sdh": True,
+            "mpv_sub_size": "xlarge",
+            "mpv_sub_bold": "on",
+            "mpv_sub_color": "cyan",
+            "mpv_sub_outline": "none",
+            "mpv_sub_outline_color": "navy",
+            "mpv_sub_blur": "medium",
+            "mpv_sub_spacing": "relaxed",
+            "mpv_sub_back": "box",
+            "mpv_sub_pos": "raised",
+            "mpv_sub_styled": "style",
+            "mpv_sub_font": "serif",
+        })
+        self.assertEqual(code, 200)
+        self.assertIn("fonts", body)
+        self.assertEqual(body["mpv"]["sub_font"], "serif")
+        self.assertTrue(body["mpv"]["sub_sdh"])
+        added = settings.mpv_flags()[len(before):]
+        for expected in (
+            "--alang=jpn,ja,jp,eng,en",
+            "--slang=ger,deu,de,eng,en",
+            "--sub-filter-sdh=yes",
+            "--sub-font-size=62",
+            "--sub-bold=yes",
+            "--sub-color=0.5/0.93/1.0",
+            "--sub-outline-size=0",
+            "--sub-outline-color=0.05/0.09/0.16/1.0",
+            "--sub-blur=0.9",
+            "--sub-line-spacing=5",
+            "--sub-border-style=background-box",
+            "--sub-back-color=0.0/0.0/0.0/0.55",
+            "--sub-pos=86",
+            "--sub-ass-override=yes",
+            "--sub-font=serif",
+        ):
+            self.assertIn(expected, added)
+        self.assertTrue(all(" " not in f for f in settings.mpv_flags()))
+
+        # Exact numeric size + custom #rrggbb colours + slang=off (--sid=no).
+        code, body = self.post({"mpv_sub_size": "44", "mpv_sub_color": "#FF99AA", "mpv_sub_outline_color": "#1A1026", "mpv_slang": "off", "mpv_sub_sdh": False})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["mpv"]["sub_size"], "44")
+        self.assertEqual(body["mpv"]["sub_color"], "#ff99aa")
+        self.assertEqual(body["mpv"]["sub_outline_color"], "#1a1026")
+        flags = settings.mpv_flags()
+        self.assertIn("--sub-font-size=44", flags)
+        self.assertIn("--sub-color=#ff99aa", flags)
+        self.assertIn("--sub-outline-color=#1a1026", flags)
+        self.assertIn("--sid=no", flags)
+        self.assertNotIn("--sub-filter-sdh=yes", flags)
+
+        # Scale mode maps both presets and exact numeric sizes to --sub-scale.
+        code, _ = self.post({"mpv_sub_styled": "scale", "mpv_sub_size": "44", "mpv_sub_back": "shadow"})
+        self.assertEqual(code, 200)
+        flags = settings.mpv_flags()
+        self.assertIn("--sub-ass-override=scale", flags)
+        self.assertIn("--sub-scale=1.16", flags)
+        self.assertNotIn("--sub-font-size=44", flags)
+        self.assertIn("--sub-shadow-offset=1.5", flags)
+
+        # Invalid values are rejected atomically before saving anything in the batch.
+        for bad in ({"mpv_sub_font": "../evil.ttf"}, {"mpv_sub_font": "u:missing.ttf"},
+                    {"mpv_sub_size": "12"}, {"mpv_sub_size": "120"}, {"mpv_sub_color": "#123"},
+                    {"mpv_sub_outline_color": "red"}, {"mpv_sub_sdh": "yes"},
+                    {"mpv_alang": "klingon"}, {"mpv_slang": "elvish"}, {"mpv_sub_blur": "max"},
+                    {"mpv_sub_spacing": "huge"}, {"mpv_sub_back": "glow"}, {"mpv_sub_pos": "middle"}, {"mpv_sub_bold": "maybe"}):
+            self.assertEqual(self.post(bad)[0], 400, bad)
+        self.assertEqual(self.post({"mpv_sub_size": "32", "mpv_sub_color": "nope"})[0], 400)
+        self.assertEqual(settings.sub_size(), "44")  # rejected batch left prior size untouched
+
+        # Bundled "app" font (Hanken Grotesk) uses --include=<space-free conf>.
+        code, _ = self.post({"mpv_sub_font": "app"})
+        self.assertEqual(code, 200)
+        flags = settings.mpv_flags()
+        self.assertTrue(all(" " not in f for f in flags))
+        inc = [f for f in flags if f.startswith("--include=")]
+        self.assertEqual(len(inc), 1)
+        conf_text = Path(inc[0].split("=", 1)[1]).read_text(encoding="utf-8")
+        self.assertIn("sub-font=Hanken Grotesk", conf_text)
+        self.assertIn("sub-fonts-dir=", conf_text)
+
+        # User-added TTF font works via u:<id> and falls back to "own" if removed.
+        ttf = fonts.font_dir() / "Demo_Sub.ttf"
+        ttf.parent.mkdir(parents=True, exist_ok=True)
+        ttf.write_bytes(b"\x00\x01\x00\x00" + b"\x00" * 16)
+        self.addCleanup(ttf.unlink, missing_ok=True)
+        code, body = self.post({"mpv_sub_font": "u:Demo_Sub.ttf"})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["mpv"]["sub_font"], "u:Demo_Sub.ttf")
+        flags = settings.mpv_flags()
+        inc = [f for f in flags if f.startswith("--include=")]
+        self.assertEqual(len(inc), 1)
+        self.assertIn("sub-font=Demo Sub", Path(inc[0].split("=", 1)[1]).read_text(encoding="utf-8"))
+        ttf.unlink()
+        self.assertEqual(settings.sub_font(), "own")
+
+    def test_subtitle_profiles_presets_and_default(self):
+        """Built-in presets, saved user profiles, default selection, and reset."""
+        self.addCleanup(settings.set_setting, "mpv_sub_profiles", "[]")
+        self.addCleanup(settings.set_setting, "mpv_sub_default_profile", "own")
+        self.addCleanup(settings.apply_sub_profile, "own")
+
+        # Built-in Anime Hub preset applies all 11 look keys and matches as active.
+        code, body = self.post({"op": "apply", "id": "animehub"}, "/api/subtitles/profile")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["mpv"]["sub_profile"], "animehub")
+        self.assertEqual(body["mpv"]["sub_font"], "app")
+        self.assertEqual(body["mpv"]["sub_styled"], "style")
+        self.assertEqual(body["mpv"]["sub_outline"], "none")
+        self.assertEqual(body["mpv"]["sub_blur"], "none")
+        self.assertEqual(body["mpv"]["sub_spacing"], "tight")
+        self.assertEqual(body["mpv"]["sub_back"], "shadow")
+        self.assertEqual(body["mpv"]["sub_pos"], "bottom")
+
+        # Tweaking a single key switches active profile to "custom".
+        code, body = self.post({"mpv_sub_color": "#ff99aa", "mpv_sub_size": "46"})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["mpv"]["sub_profile"], "custom")
+
+        # Save current custom look as a named default profile.
+        code, body = self.post({"op": "save", "name": "Late night", "default": True}, "/api/subtitles/profile")
+        self.assertEqual(code, 200)
+        saved = body["mpv"]["sub_profiles"]
+        self.assertEqual(len(saved), 1)
+        pid = saved[0]["id"]
+        self.assertEqual(saved[0]["name"], "Late night")
+        self.assertEqual(body["mpv"]["sub_profile"], pid)
+        self.assertEqual(body["mpv"]["sub_default_profile"], pid)
+
+        # Switch to another preset, then reset -> restores "Late night" default!
+        code, body = self.post({"op": "apply", "id": "boxed"}, "/api/subtitles/profile")
+        self.assertEqual((code, body["mpv"]["sub_profile"]), (200, "boxed"))
+        code, body = self.post({"op": "reset"}, "/api/subtitles/profile")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["mpv"]["sub_profile"], pid)
+        self.assertEqual(body["mpv"]["sub_color"], "#ff99aa")
+        self.assertEqual(body["mpv"]["sub_size"], "46")
+
+        # Deleting the default profile falls default back to "own".
+        code, body = self.post({"op": "delete", "id": pid}, "/api/subtitles/profile")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["mpv"]["sub_profiles"], [])
+        self.assertEqual(body["mpv"]["sub_default_profile"], "own")
+
+        # Built-in names and unknown ops/ids are rejected cleanly.
+        for bad in ({"op": "save", "name": "Anime Hub"}, {"op": "save", "name": "   "},
+                    {"op": "apply", "id": "nope"}, {"op": "delete", "id": "animehub"}, {"op": "weird"}):
+            self.assertEqual(self.post(bad, "/api/subtitles/profile")[0], 400, bad)
+
     def test_player_look_reads_skip_and_mouse(self):
         self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_wheel": "own", "mpv_right": "menu", "mpv_right_double": "own", "mpv_priority": "config"})
         self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "double": "own", "wheel": "own", "right": "menu", "right_double": "own", "priority": "config", "loaded": "on", "keys": settings.player_prefs()["keys"]})

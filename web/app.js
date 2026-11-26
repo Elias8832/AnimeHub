@@ -4161,9 +4161,10 @@ function pick(label, act, k, opts, cur, o = {}) {
     if (n <= 3 && !o.dot && !opts.some((x) => x[2]) && opts.reduce((t, x) => t + x[1].length, 0) <= 17)
       return `<span class="${cls} pkseg" role="group" aria-label="${esc(label)}">${opts.map(([v, l]) => `<button class="${v === curV ? "on" : ""}" aria-pressed="${v === curV}" data-a="${act}"${dk} data-v="${esc(v)}"${dis}>${esc(l)}</button>`).join("")}</span>`;
   }
-  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(opts[(i + d + n) % n][0])}" aria-label="${esc(label)}: ${word}" data-d="${d}"${dis}>${ico(icon)}</button>`;
+  const sOpts = opts.filter(([v]) => v !== "__custom__" && v !== "custom"), sn = sOpts.length || 1, si = Math.max(0, sOpts.findIndex(([v]) => v === cur));
+  const step = (d, icon, word) => `<button class="pka" data-a="${act}"${dk} data-v="${esc(sOpts[(si + d + sn) % sn][0])}" aria-label="${esc(label)}: ${word}" data-d="${d}"${dis}>${ico(icon)}</button>`;
   const font = opts[i][2] ? ` style="font-family:${esc(opts[i][2])}"` : "";
-  return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}${pickTouch ? " pklist" : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
+  return `<span class="pk${o.off ? " off" : ""}${o.cls ? " " + o.cls : ""}${pickTouch ? " pklist" : ""}">${step(-1, "chevl", "previous")}<span class="pkm">${o.dot ? `<i class="pkdot" style="background:${o.dot}"></i>` : ""}<select class="pkv" data-a="${act}"${dk} aria-label="${esc(label)}"${font}${dis}>${opts.map(([v, l, f, dot, r, cu]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${f ? ` data-f="${esc(f)}"` : ""}${dot ? ` data-dot="${esc(dot)}"` : ""}${r ? ` data-r="${esc(r)}"` : ""}${cu ? ' data-custom="1"' : ""}>${esc(l)}</option>`).join("")}</select></span>${step(1, "chevr", "next")}</span>`;
 }
 let pickTouch = false; // set while Settings builds on a phone
 const onoff = (key, label, on, off) => pick(label, "advset", key, [["on", "On"], ["off", "Off"]], on ? "on" : "off", { off });
@@ -4276,7 +4277,7 @@ function setResults(s, tabs) {
         const keep = rows.filter((r) => { const t = r.querySelector("b")?.textContent || ""; return setHit(words, `${r.textContent} ${setWords(t)}`); });
         if (!keep.length) { g.remove(); continue; }
         rows.filter((r) => !keep.includes(r)).forEach((r) => r.remove());
-        g.querySelectorAll(".sub,.pairbox,.dirpick").forEach((x) => x.remove());
+        g.querySelectorAll(".sub,.pairbox,.dirpick,.subprev").forEach((x) => x.remove());
       } else if (!setHit(words, g.textContent)) { g.remove(); continue; }
       if (h && name !== label) h.innerHTML = `<small>${esc(label)}</small>${esc(name)}`;
       else if (h) h.textContent = label;
@@ -4366,12 +4367,15 @@ function plFanRow() {
 }
 /* Fonts (TODO 122): a card per font with a sample in it, one row for
    text and one for titles; imported fonts join both rows. */
-function fontRows(s) {
-  const mine = s.fonts || [];
+function loadUserFonts(mine) {
   let st = $("#ufonts-all"); // the previews need every imported font loaded
   if (!st) { st = document.createElement("style"); st.id = "ufonts-all"; document.head.append(st); }
-  st.textContent = mine.map((f) => fontFace(f) + fontFace(f, true)).join("");
-  lsSet("fontList", mine);
+  st.textContent = (mine || []).map((f) => fontFace(f) + fontFace(f, true)).join("");
+  lsSet("fontList", mine || []);
+}
+function fontRows(s) {
+  const mine = s.fonts || [];
+  loadUserFonts(mine);
   const row = (role, title, line) => {
     const cur = fontGet(role), base = role === "text" ? `"Anime Hub Digits", ${TEXT_BASE}` : '"Barlow Condensed", sans-serif';
     const opts = role === "num" // each choice shows its digits, in the text font's letters
@@ -4425,7 +4429,7 @@ async function fontAdd(family) {
   if (r.ok && S.settings) S.settings.fonts = r.fonts;
   if (S.modal === m) $("#fontlist").innerHTML = fontListRows();
   if (!r.ok) return toast(r.error || "Could not add the font.");
-  toast(`${r.font.name} added — pick it for text or titles`);
+  toast(`${r.font.name} added — pick it for text, titles or subtitles`);
   if (S.view === "settings") render(true);
 }
 async function fontImport(file, input) {
@@ -4441,7 +4445,7 @@ async function fontImport(file, input) {
   toastDone();
   if (!r.ok) return toast(r.error || "Could not add the font.");
   if (S.settings) S.settings.fonts = r.fonts;
-  toast(`${r.font.name} added — pick it for text or titles`);
+  toast(`${r.font.name} added — pick it for text, titles or subtitles`);
   if (S.modal?.t === "fonts") closeModal();
   if (S.view === "settings") render(true);
 }
@@ -4570,16 +4574,318 @@ function playerGroup(s) {
     ${srow("Scroll wheel", "", mpick(m, "wheel", "Scroll wheel", [["own", "My config"], ["volume", "Volume"], ["seek", "Skip"]]))}
     ${rc}${m.keys && !pickTouch ? hkGroup(m) : ""}` : rc}`;
 }
+const SUB_LOOK_KEYS = ["sub_styled", "sub_font", "sub_size", "sub_bold", "sub_color", "sub_outline", "sub_outline_color", "sub_blur", "sub_spacing", "sub_back", "sub_pos"];
+const SUB_PRESET_LIST = [["own", "My config"], ["animehub", "Anime Hub"], ["yellow", "Classic yellow"], ["contrast", "High contrast"], ["boxed", "Boxed"]];
+const SUB_ALANGS = [["own", "My config"], ["jpn", "Japanese"], ["eng", "English"], ["ger", "German"], ["jpn_eng", "Japanese, then English"], ["eng_jpn", "English, then Japanese"], ["ger_jpn", "German, then Japanese"]];
+const SUB_SLANGS = [["own", "My config"], ["eng", "English"], ["ger", "German"], ["ger_eng", "German, then English"], ["eng_ger", "English, then German"], ["jpn", "Japanese"], ["spa", "Spanish"], ["fre", "French"], ["por", "Portuguese"], ["off", "Off by default"]];
+const SUB_STYLED = [
+  ["own", "My config", "Your mpv.conf decides how styled tracks are handled."],
+  ["keep", "Keep original", "Styled subtitles keep their own fonts, colours and signs."],
+  ["scale", "Scale size only", "Size scales styled subtitles too; fonts, colours and signs stay original."],
+  ["style", "Restyle, keep signs", "Uses your look for dialogue while keeping signs and songs in place."],
+  ["override", "Replace all", "Uses your look for everything. Signs and songs can look wrong."],
+  ["strip", "Plain text", "Strips all styling, signs and animations."],
+];
+const SUB_SIZES = [
+  ["own", "My config"],
+  ["xsmall", "Extra small"],
+  ["small", "Small"],
+  ["normal", "Normal"],
+  ["large", "Large"],
+  ["xlarge", "Extra large"],
+];
+const SUB_SIZE_PX = { own: 38, xsmall: 24, small: 30, normal: 38, large: 50, xlarge: 62 };
+const SUB_COLORS = [["own", "My config"], ["white", "White", "", "#ffffff"], ["warm", "Warm white", "", "#fff5d6"], ["yellow", "Yellow", "", "#ffe64d"], ["cyan", "Cyan", "", "#80ecff"], ["green", "Soft green", "", "#a8f5a2"], ["gray", "Light grey", "", "#d4d4d8"]];
+const SUB_OUTLINES = [["own", "My config"], ["none", "None"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]];
+const SUB_OUTLINE_COLORS = [["own", "My config"], ["black", "Black", "", "#000000"], ["dark", "Charcoal", "", "#26262b"], ["navy", "Dark blue", "", "#0d1829"], ["white", "White", "", "#ffffff"]];
+const SUB_BLURS = [["own", "My config"], ["none", "Sharp"], ["soft", "Subtle"], ["medium", "Soft"], ["strong", "Very soft"]];
+const SUB_SPACINGS = [["own", "My config"], ["tight", "Tight"], ["normal", "Normal"], ["relaxed", "Relaxed"], ["wide", "Wide"]];
+const SUB_BACKS = [["own", "My config"], ["none", "None"], ["shadow", "Soft shadow"], ["deep", "Strong shadow"], ["box", "Dim box"], ["solid", "Solid box"]];
+const SUB_POS = [["own", "My config"], ["bottom", "Bottom"], ["low", "Slightly raised"], ["raised", "Raised"], ["high", "High"], ["top", "Top"]];
+const SUB_PV_COLOR = { own: "#ffffff", white: "#ffffff", warm: "#fff5d6", yellow: "#ffe64d", cyan: "#80ecff", green: "#a8f5a2", gray: "#d4d4d8" };
+const SUB_PV_OUTLINE = { own: 1.5, none: 0, thin: 0.9, normal: 1.6, thick: 2.6 };
+const SUB_PV_OCOLOR = { own: "#000000", black: "#000000", dark: "#26262b", navy: "#0d1829", white: "#ffffff" };
+const SUB_PV_BLUR = { own: 0, none: 0, soft: 0.5, medium: 1.2, strong: 2.2 };
+const SUB_PV_LH = { own: 1.28, tight: 1.12, normal: 1.28, relaxed: 1.44, wide: 1.62 };
+const SUB_PV_BGS = [["art", "Scene"], ["dark", "Black"], ["light", "White"], ["split", "Black and white"], ["check", "Checker pattern"]];
+const subPvBg = () => { const v = lsGet("sub_pv_bg", "art"); return SUB_PV_BGS.some(([k]) => k === v) ? v : "art"; };
+const isHexCol = (v) => /^#[0-9a-f]{6}$/i.test(String(v || ""));
+const subSizePx = (v) => (/^\d+$/.test(String(v || "")) ? Math.max(16, Math.min(96, +v)) : (SUB_SIZE_PX[v] || 38));
+const subPvPx = (v) => Math.max(10, Math.round(subSizePx(v) * 0.45));
+function subShadowCss(r, col, blur, back) {
+  const parts = [];
+  if (r > 0) {
+    const rings = r >= 2 ? [r, +(r * 0.5).toFixed(2)] : [r];
+    for (const rad of rings) {
+      const dr = +(rad * 0.72).toFixed(2);
+      for (const [x, y] of [[rad, 0], [-rad, 0], [0, rad], [0, -rad], [dr, dr], [-dr, dr], [dr, -dr], [-dr, -dr]]) parts.push(`${x}px ${y}px ${blur}px ${col}`);
+    }
+  }
+  if (back === "shadow") parts.push("0 2px 3px rgba(0,0,0,.72)");
+  else if (back === "deep") parts.push("0 3px 6px rgba(0,0,0,.92)");
+  return parts.length ? parts.join(",") : "none";
+}
+function subFontStack(v) {
+  if (!v || v === "own" || v === "sans") return "sans-serif";
+  if (v === "app") return '"Hanken Grotesk", sans-serif';
+  if (v === "serif") return "Georgia, serif";
+  if (v === "mono") return '"JetBrains Mono", monospace';
+  return v.startsWith("u:") ? `"${userFam(v.slice(2))}", sans-serif` : "sans-serif";
+}
+function subLineStyle(m) {
+  const st = m.sub_styled || "own", keep = st === "keep", scaleOnly = st === "scale";
+  const size = keep ? 17 : subPvPx(m.sub_size);
+  const fam = keep || scaleOnly ? "sans-serif" : subFontStack(m.sub_font);
+  const weight = keep || scaleOnly ? 400 : m.sub_bold === "on" ? 700 : 400;
+  const col = keep || scaleOnly ? "#ffffff" : (isHexCol(m.sub_color) ? m.sub_color : (SUB_PV_COLOR[m.sub_color] || "#ffffff"));
+  const outR = keep || scaleOnly ? 1.5 : (SUB_PV_OUTLINE[m.sub_outline] ?? 1.5);
+  const outC = keep || scaleOnly ? "#000000" : (isHexCol(m.sub_outline_color) ? m.sub_outline_color : (SUB_PV_OCOLOR[m.sub_outline_color] || "#000000"));
+  const blur = keep || scaleOnly ? 0 : (SUB_PV_BLUR[m.sub_blur] || 0);
+  const lh = keep || scaleOnly ? 1.28 : (SUB_PV_LH[m.sub_spacing] || 1.28);
+  const back = keep || scaleOnly ? "own" : (m.sub_back || "own");
+  const bg = back === "box" ? "rgba(0,0,0,.56)" : back === "solid" ? "rgba(0,0,0,.86)" : "transparent";
+  const pad = back === "box" || back === "solid" ? "3px 10px" : "0";
+  const shadow = subShadowCss(outR, outC, blur, back);
+  return `font-family:${fam};font-size:${size}px;font-weight:${weight};line-height:${lh};color:${col};text-shadow:${shadow};background:${bg};padding:${pad}`;
+}
+function subPreview(m) {
+  const st = m.sub_styled || "own";
+  const anySet = SUB_LOOK_KEYS.some((k) => m[k] && m[k] !== "own");
+  const lineCss = subLineStyle(m);
+  const note = st === "keep" ? "Styled tracks keep their own look · plain tracks use your picks"
+    : st === "scale" ? "Size scales styled tracks · signs & songs stay original"
+    : st === "style" ? "Dialogue uses your style · signs stay in place"
+    : st === "override" ? "Replaces everything · signs & songs can look wrong"
+    : st === "strip" ? "Plain text · styling and animations removed"
+    : anySet ? "Preview of your picks · set Styled subtitles to apply to ASS tracks"
+    : "Using your mpv.conf";
+  const pvBg = subPvBg(), ref = pvBg === "art" && S.data ? (nextUpInfo()?.s || lastShow()) : null, art = ref && (ref.banner || ref.poster);
+  const bgs = SUB_PV_BGS.map(([k, l]) => `<button class="sp-bg bg-${k}${pvBg === k ? " on" : ""}" data-a="subbg" data-v="${k}" aria-label="Preview background: ${l}" aria-pressed="${pvBg === k}" title="${l}"></button>`).join("");
+  return `<div class="subprev" aria-label="Live subtitle preview"><div class="sp-frame bg-${pvBg}">${art ? `<i class="sp-art" style="background-image:${esc(cssUrl(art))}" aria-hidden="true"></i>` : ""}${pvBg === "art" ? '<i class="sp-scene" aria-hidden="true"></i>' : ""}
+    <div class="sp-stage"><span class="sp-line" style="${esc(lineCss)}">We'll meet again when the<br>cherry blossoms fall.</span></div></div>
+    <div class="sp-bar"><p class="sp-note">${esc(note)}</p><div class="sp-bgs" role="group" aria-label="Preview background">${bgs}</div></div></div>`;
+}
+const SUB_POP_SWATCHES = ["#ffffff", "#fff5d6", "#ffe64d", "#ffb86c", "#80ecff", "#a8f5a2", "#f2a4d8", "#101218"];
+function hexToHsv(hex) {
+  const h6 = String(hex || "#ffffff").replace(/^#/, "");
+  const r = parseInt(h6.slice(0, 2), 16) / 255, g = parseInt(h6.slice(2, 4), 16) / 255, b = parseInt(h6.slice(4, 6), 16) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  const h = !d ? 0 : mx === r ? ((g - b) / d + (g < b ? 6 : 0)) * 60 : mx === g ? ((b - r) / d + 2) * 60 : ((r - g) / d + 4) * 60;
+  return [h, mx ? d / mx : 0, mx];
+}
+function hsvToHex(h, s, v) {
+  const c = v * s, hh = ((h % 360) + 360) % 360, x = c * (1 - Math.abs(((hh / 60) % 2) - 1)), m = v - c;
+  const [r, g, b] = hh < 60 ? [c, x, 0] : hh < 120 ? [x, c, 0] : hh < 180 ? [0, c, x] : hh < 240 ? [0, x, c] : hh < 300 ? [x, 0, c] : [c, 0, x];
+  const hx = (n) => Math.round(Math.max(0, Math.min(1, n + m)) * 255).toString(16).padStart(2, "0");
+  return "#" + hx(r) + hx(g) + hx(b);
+}
+let subPopState = null;
+function subPopClose(commit = false) {
+  const st = subPopState;
+  if (!st) return;
+  subPopState = null;
+  st.ac.abort();
+  st.anchor?.closest?.(".pk")?.classList.remove("ddon");
+  const pop = $("#subpop");
+  if (pop) { pop.classList.remove("open"); pop.hidden = true; pop.innerHTML = ""; }
+  if (commit && st.val !== st.orig) {
+    api("/api/settings", { [st.key]: st.val }).then((r) => {
+      if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+      S.settings = r; if (S.view === "settings") render(true);
+    }).catch(() => toast("Could not save — is the hub running?"));
+  } else if (S.view === "settings") {
+    render(true); // restore preview and select value on cancel
+  }
+}
+function subPopMount(anchor, cls, html) {
+  let pop = $("#subpop");
+  if (!pop) { pop = document.createElement("div"); pop.id = "subpop"; pop.hidden = true; document.body.append(pop); }
+  pop.className = "subpop " + cls;
+  pop.innerHTML = html;
+  pop.hidden = false;
+  const z = zoomGet() / 100, box = anchor.getBoundingClientRect();
+  const pw = pop.offsetWidth || 248, ph = pop.offsetHeight || 220;
+  const left = Math.max(10, Math.min((box.left + box.width / 2) / z - pw / 2, innerWidth / z - pw - 10));
+  const below = innerHeight / z - box.bottom / z - 16, up = below < ph && box.top / z > below;
+  const top = up ? Math.max(10, box.top / z - ph - 8) : Math.min(innerHeight / z - ph - 10, box.bottom / z + 8);
+  pop.style.left = left + "px"; pop.style.top = top + "px";
+  pop.style.transformOrigin = `${up ? "bottom" : "top"} center`;
+  pop.classList.remove("open"); void pop.offsetWidth; pop.classList.add("open");
+  anchor.closest?.(".pk")?.classList.add("ddon");
+  return pop;
+}
+function subColorCtl(m, k, label, presets) {
+  const cur = m[k] || "own", hex = isHexCol(cur);
+  const customOpt = hex ? [cur, cur.toUpperCase(), "", cur, "Custom", 1] : ["__custom__", "Custom colour…", "", ACCENT_FOLLOW, "", 1];
+  const opts = [...presets, customOpt];
+  const dot = hex ? cur : (presets.find(([v]) => v === cur)?.[3] || "");
+  return pick(label, "spref", "mpv_" + k, opts, cur, { dot });
+}
+function subColorPick(key, sel) {
+  const m = S.settings?.mpv, field = key.slice(4);
+  if (!m) return;
+  const orig = m[field] || "own";
+  const presets = field === "sub_color" ? SUB_COLORS : SUB_OUTLINE_COLORS;
+  let curHex = isHexCol(orig) ? orig : (presets.find(([v]) => v === orig)?.[3] || (field === "sub_color" ? "#ffffff" : "#000000"));
+  let [h, s, v] = hexToHsv(curHex);
+  ddClose(false, true);
+  if (subPopState) subPopClose(false);
+  if (S.view === "settings") render(true); // snap <select> off __custom__ back to real value
+  const anchor = $(`select[data-k="${key}"]`)?.closest(".pk") || sel;
+  if (!anchor) return;
+  const sws = SUB_POP_SWATCHES.map((c) => `<button type="button" class="cp-sw" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("");
+  const pop = subPopMount(anchor, "col", `<div class="cp-sv" style="background-color:hsl(${Math.round(h)} 100% 50%)"><i class="cp-dot"></i></div>
+    <div class="cp-hue"><i class="cp-hth"></i></div>
+    <div class="cp-sws">${sws}</div>
+    <div class="cp-foot"><i class="cp-cur"></i><input class="cp-hex mono" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Hex colour"><button type="button" class="cp-ok">Done</button></div>`);
+  const ac = new AbortController(), sig = { signal: ac.signal };
+  const st = subPopState = { key, orig, val: curHex, anchor, ac };
+  const svEl = pop.querySelector(".cp-sv"), dotEl = pop.querySelector(".cp-dot"), hueEl = pop.querySelector(".cp-hue"), hthEl = pop.querySelector(".cp-hth");
+  const curEl = pop.querySelector(".cp-cur"), hexEl = pop.querySelector(".cp-hex");
+  const sync = (fromHex = false) => {
+    curHex = hsvToHex(h, s, v);
+    st.val = curHex;
+    svEl.style.backgroundColor = `hsl(${Math.round(h)} 100% 50%)`;
+    dotEl.style.left = `${(s * 100).toFixed(2)}%`; dotEl.style.top = `${((1 - v) * 100).toFixed(2)}%`; dotEl.style.background = curHex;
+    hthEl.style.left = `${((h / 360) * 100).toFixed(2)}%`; hthEl.style.background = `hsl(${Math.round(h)} 100% 50%)`;
+    curEl.style.background = curHex;
+    if (!fromHex) hexEl.value = curHex.toUpperCase();
+    const line = $(".subprev .sp-line");
+    if (line && S.settings?.mpv) line.setAttribute("style", subLineStyle({ ...S.settings.mpv, [field]: curHex }));
+  };
+  sync();
+  const drag = (el, fn) => {
+    const move = (e) => { const r = el.getBoundingClientRect(); fn(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))); sync(); };
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); move(e); }, sig);
+    el.addEventListener("pointermove", (e) => { if (e.buttons) move(e); }, sig);
+  };
+  drag(svEl, (x, y) => { s = x; v = 1 - y; });
+  drag(hueEl, (x) => { h = Math.min(359.9, x * 360); });
+  pop.querySelectorAll(".cp-sw").forEach((b) => b.addEventListener("click", () => { [h, s, v] = hexToHsv(b.dataset.c); sync(); }, sig));
+  hexEl.addEventListener("input", () => {
+    const raw = hexEl.value.trim(); const norm = raw.startsWith("#") ? raw : "#" + raw;
+    if (isHexCol(norm)) { [h, s, v] = hexToHsv(norm); sync(true); }
+  }, sig);
+  hexEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); subPopClose(true); } }, sig);
+  pop.querySelector(".cp-ok").addEventListener("click", () => subPopClose(true), sig);
+  setTimeout(() => {
+    if (subPopState !== st) return;
+    document.addEventListener("pointerdown", (e) => { if (!pop.contains(e.target)) subPopClose(true); }, { ...sig, capture: true });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); subPopClose(false); } }, { ...sig, capture: true });
+  }, 0);
+}
+function subSizePick(sel) {
+  const m = S.settings?.mpv;
+  if (!m) return;
+  const orig = m.sub_size || "own";
+  let px = subSizePx(orig);
+  ddClose(false, true);
+  if (subPopState) subPopClose(false);
+  if (S.view === "settings") render(true);
+  const anchor = $('select[data-k="mpv_sub_size"]')?.closest(".pk") || sel;
+  if (!anchor) return;
+  const pop = subPopMount(anchor, "sz", `<div class="cp-szh"><span>Custom size</span><b class="mono">${px} px</b></div>
+    <input class="cp-range" type="range" min="16" max="96" step="1" value="${px}" aria-label="Custom subtitle size">
+    <div class="cp-foot"><div class="cp-step"><button type="button" data-d="-1" aria-label="Smaller">${ico("minus")}</button><button type="button" data-d="1" aria-label="Larger">${ico("plus")}</button></div><button type="button" class="cp-ok">Done</button></div>`);
+  const ac = new AbortController(), sig = { signal: ac.signal };
+  const st = subPopState = { key: "mpv_sub_size", orig, val: String(px), anchor, ac };
+  const rng = pop.querySelector(".cp-range"), num = pop.querySelector(".cp-szh b");
+  const sync = () => {
+    px = Math.max(16, Math.min(96, px));
+    st.val = String(px);
+    rng.value = String(px);
+    rng.style.setProperty("--p", `${(((px - 16) / 80) * 100).toFixed(2)}%`);
+    num.textContent = px + " px";
+    const line = $(".subprev .sp-line");
+    if (line && S.settings?.mpv) line.setAttribute("style", subLineStyle({ ...S.settings.mpv, sub_size: String(px) }));
+  };
+  sync();
+  rng.addEventListener("input", () => { px = +rng.value; sync(); }, sig);
+  pop.querySelectorAll(".cp-step button").forEach((b) => b.addEventListener("click", () => { px += +b.dataset.d; sync(); }, sig));
+  pop.querySelector(".cp-ok").addEventListener("click", () => subPopClose(true), sig);
+  setTimeout(() => {
+    if (subPopState !== st) return;
+    document.addEventListener("pointerdown", (e) => { if (!pop.contains(e.target)) subPopClose(true); }, { ...sig, capture: true });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); subPopClose(false); } else if (e.key === "Enter") { e.preventDefault(); subPopClose(true); } }, { ...sig, capture: true });
+  }, 0);
+}
+function subProfileRun(body, msg) {
+  api("/api/subtitles/profile", body).then((r) => {
+    if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
+    S.settings = r; if (S.view === "settings") render(true);
+    if (msg) toast(msg);
+  }).catch(() => toast("Could not save — is the hub running?"));
+}
+function subProfileSavePop(sel) {
+  ddClose(false, true);
+  if (subPopState) subPopClose(false);
+  if (S.view === "settings") render(true);
+  const anchor = $('select[data-a="subpf"]')?.closest(".pk") || sel;
+  if (!anchor) return;
+  const pop = subPopMount(anchor, "pf", `<div class="cp-szh"><span>Save subtitle profile</span></div>
+    <input class="cp-name" type="text" maxlength="40" placeholder="Profile name…" autocomplete="off" spellcheck="false" aria-label="Profile name">
+    <div class="cp-foot"><label class="cp-def"><input type="checkbox"><span>Set as default</span></label><button type="button" class="cp-ok">Save</button></div>`);
+  const ac = new AbortController(), sig = { signal: ac.signal };
+  const st = subPopState = { key: "", orig: "", val: "", anchor, ac };
+  const inp = pop.querySelector(".cp-name"), def = pop.querySelector(".cp-def input"), ok = pop.querySelector(".cp-ok");
+  const commit = () => {
+    const name = inp.value.trim();
+    if (!name) { inp.focus(); return; }
+    const makeDef = !!def.checked;
+    subPopClose(false);
+    subProfileRun({ op: "save", name, default: makeDef }, makeDef ? `Saved “${name}” as default` : `Saved profile “${name}”`);
+  };
+  ok.addEventListener("click", commit, sig);
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }, sig);
+  setTimeout(() => {
+    if (subPopState !== st) return;
+    inp.focus();
+    document.addEventListener("pointerdown", (e) => { if (!pop.contains(e.target)) subPopClose(false); }, { ...sig, capture: true });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); subPopClose(false); } }, { ...sig, capture: true });
+  }, 0);
+}
 function subsGroup(s) {
-  const m = s.mpv || {}, st = s.stream || {};
+  const m = s.mpv || {}, st = s.stream || {}, mine = s.fonts || [];
+  if (!s.android) loadUserFonts(mine);
+  const styled = m.sub_styled || "own", styledDesc = SUB_STYLED.find(([v]) => v === styled)?.[2] || "";
+  const fontOpts = [["own", "My config"], ["app", "Anime Hub", '"Hanken Grotesk", sans-serif'], ["sans", "Sans-serif", "sans-serif"], ["serif", "Serif", "Georgia, serif"], ["mono", "Monospace", '"JetBrains Mono", monospace'],
+    ...mine.filter((f) => /\.(ttf|otf)$/i.test(f.id)).map((f) => ["u:" + f.id, f.name, `"${userFam(f.id)}", sans-serif`])];
+  const curSize = m.sub_size || "own", customSz = /^\d+$/.test(curSize);
+  const sizeOpts = [...SUB_SIZES, customSz ? [curSize, `${curSize} px`, "", "", "Custom", 1] : ["__custom__", "Custom size…", "", "", "", 1]];
+  const savedPfs = m.sub_profiles || [], curPf = m.sub_profile || "own", defPf = m.sub_default_profile || "own";
+  const allPfs = [...SUB_PRESET_LIST, ...savedPfs.map((p) => [p.id, p.name])];
+  const defName = allPfs.find(([id]) => id === defPf)?.[1] || "My config";
+  const isSavedPf = savedPfs.some((p) => p.id === curPf);
+  const pfOpts = [
+    ...SUB_PRESET_LIST.map(([id, l]) => [id, l, "", "", id === defPf ? "Default" : ""]),
+    ...savedPfs.map((p) => [p.id, p.name, "", "", p.id === defPf ? "Default" : "Saved"]),
+    ...(curPf === "custom" ? [["custom", "Custom"]] : []),
+    ["__custom__", "Save current…", "", "", "", 1],
+  ];
+  const pfHelp = curPf === "custom" ? 'Tweaked from presets. <button class="lnk" data-a="subpfsave">Save as profile</button>'
+    : curPf === defPf ? `Default profile.${isSavedPf ? ' <button class="lnk" data-a="subpfdel">Delete</button>' : ""}`
+    : `<button class="lnk" data-a="subpfdef">Set as default</button>${isSavedPf ? ' · <button class="lnk" data-a="subpfdel">Delete</button>' : ""}`;
+  const fontHelp = s.phone ? "Add fonts on your PC." : 'Any font you added shows up here. <button class="lnk" data-a="fontpick">Add a font</button>';
   return `<div class="group"><h3>Audio and subtitle tracks</h3>
     ${srow("Sub or dub", "For online episodes. Each episode's menu can play the other one.", pick("Sub or dub", "spref", "stream_mode", SLMODES, st.mode, { off: !s.tools?.["ani-cli"] }))}
-    ${srow("Remember audio and subtitles", "Switch tracks once and the show's next episodes use the same ones.", onoff("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}</div>
-    ${s.android ? "" : `<div class="group"><h3>Subtitle look</h3><p class="sub">Little changes unless Styled subtitles is set to Replace.</p>
-    ${srow("Size", "", mpick(m, "sub_size", "Subtitle size", [["own", "My config"], ["small", "Small"], ["normal", "Normal"], ["large", "Large"]]))}
-    ${srow("Colour", "", mpick(m, "sub_color", "Subtitle colour", [["own", "My config"], ["white", "White"], ["yellow", "Yellow"]]))}
-    ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", [["own", "My config"], ["thin", "Thin"], ["normal", "Normal"], ["thick", "Thick"]]))}
-    ${srow("Styled subtitles", "Replace uses this style instead. Signs and songs can look wrong.", mpick(m, "sub_styled", "Styled subtitles", [["own", "My config"], ["override", "Replace"]]))}</div>`}`;
+    ${srow("Remember audio and subtitles", "Switch tracks once and the show's next episodes use the same ones.", onoff("remember_tracks", "Remember audio and subtitles", s.remember_tracks !== false))}
+    ${s.android ? "" : srow("Preferred audio", "Default audio language for multi-track files before track memory takes over.", mpick(m, "alang", "Preferred audio", SUB_ALANGS))
+      + srow("Preferred subtitles", "Default subtitle language for multi-track files.", mpick(m, "slang", "Preferred subtitles", SUB_SLANGS))
+      + srow("Hide [SDH] cues", "Strips [music], (sighs) and sound effects from closed-caption tracks.", onoff("mpv_sub_sdh", "Hide [SDH] cues", m.sub_sdh === true))}</div>
+    ${s.android ? "" : `<div class="group"><h3>Subtitle look</h3><p class="sub">From the next episode on. My config leaves an option to your mpv.conf.${curPf !== defPf ? ` <button class="lnk" data-a="subreset">Reset to ${esc(defName)}</button>` : ""}</p>
+    ${subPreview(m)}
+    ${srow("Profile", pfHelp, pick("Subtitle profile", "subpf", null, pfOpts, curPf))}
+    ${srow("Styled subtitles", styledDesc, mpick(m, "sub_styled", "Styled subtitles", SUB_STYLED.map(([v, l]) => [v, l])))}
+    ${srow("Font", fontHelp, pick("Subtitle font", "spref", "mpv_sub_font", fontOpts, m.sub_font || "own", { cls: "pkfont" }))}
+    ${srow("Size", styled === "scale" ? "Scales styled and plain subtitles alike." : "", pick("Subtitle size", "spref", "mpv_sub_size", sizeOpts, curSize))}
+    ${srow("Bold", "", mpick(m, "sub_bold", "Bold subtitles", [["own", "My config"], ["on", "On"], ["off", "Off"]]))}
+    ${srow("Colour", "", subColorCtl(m, "sub_color", "Subtitle colour", SUB_COLORS))}
+    ${srow("Outline", "", mpick(m, "sub_outline", "Subtitle outline", SUB_OUTLINES))}
+    ${srow("Outline colour", "", subColorCtl(m, "sub_outline_color", "Outline colour", SUB_OUTLINE_COLORS))}
+    ${srow("Edge softness", "Softens sharp outlines so text blends into the picture.", mpick(m, "sub_blur", "Edge softness", SUB_BLURS))}
+    ${srow("Line spacing", "Gap between two-line subtitles.", mpick(m, "sub_spacing", "Line spacing", SUB_SPACINGS))}
+    ${srow("Background", "Drop shadow or shaded box behind the text.", mpick(m, "sub_back", "Subtitle background", SUB_BACKS))}
+    ${srow("Position", "How high subtitles sit on the picture.", mpick(m, "sub_pos", "Subtitle position", SUB_POS))}</div>`}`;
 }
 function skipGroup(s) {
   const sk = s.skip || {};
@@ -4893,7 +5199,7 @@ const SETTINGS_INDEX = [
   ["Fullscreen", "player", "mpv fullscreen window player config"], ["Starting volume", "player", "mpv volume start remember last"], ["Player design", "player", "mpv controls design skin osc interface anime hub controls"], ["Player layout", "player", "mpv look layout design style float dock skin"],
   ["Season reminder", "player", "recap recaps season before previous remind remember new season popup last episode", "recap_ask"], ["Remind me after", "player", "recap reminder season before months wait remember"],
   ["Smooth controls while playing", "player", "mpv smooth lag laggy video sync display refresh"], ["Loaded part on the seek bar", "player", "mpv buffer cache loaded preload seek bar"], ["Skip buttons jump", "player", "mpv skip seconds forward back length"], ["Click", "player", "mpv mouse click pause picture"], ["Double-click", "player", "mpv mouse double click fullscreen"], ["Scroll wheel", "player", "mpv mouse scroll wheel volume seek"], ["Right click", "player", "mpv mouse right click menu context pause fullscreen"], ["Right double-click", "player", "mpv mouse right double click menu pause fullscreen"], ["Play / pause", "player", "mpv keys hotkeys shortcuts keyboard bind keybind input space mouse button middle side"], ["Who wins", "player", "mpv input.conf priority config settings override clash conflict"],
-  ["Sub or dub", "subs", "sub dub audio language online japanese english"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dual remember", "remember_tracks"], ["Size", "subs", "mpv subtitle size bigger smaller"], ["Colour", "subs", "mpv subtitle colour color white yellow"], ["Outline", "subs", "mpv subtitle outline border thick thin"], ["Styled subtitles", "subs", "mpv subtitle styled ass replace override style font"],
+  ["Sub or dub", "subs", "sub dub audio language online japanese english"], ["Remember audio and subtitles", "subs", "audio subtitle subs track language dual remember", "remember_tracks"], ["Preferred audio", "subs", "mpv audio language alang japanese english german default track"], ["Preferred subtitles", "subs", "mpv subtitle language slang english german japanese spanish french off default track"], ["Hide [SDH] cues", "subs", "mpv subtitle sdh closed caption music sighs hearing impaired filter strip"], ["Profile", "subs", "mpv subtitle profile preset default save anime hub yellow contrast boxed"], ["Styled subtitles", "subs", "mpv subtitle styled ass keep scale restyle replace override strip plain signs songs"], ["Font", "subs", "mpv subtitle font typeface family"], ["Size", "subs", "mpv subtitle size scale exact px slider bigger smaller extra"], ["Bold", "subs", "mpv subtitle bold weight thick"], ["Colour", "subs", "mpv subtitle colour color custom hex white warm yellow cyan green grey"], ["Outline", "subs", "mpv subtitle outline border thick thin none"], ["Outline colour", "subs", "mpv subtitle outline border colour color custom hex black charcoal blue white"], ["Edge softness", "subs", "mpv subtitle blur edge soft sharp gaussian"], ["Line spacing", "subs", "mpv subtitle line spacing gap tight relaxed wide"], ["Background", "subs", "mpv subtitle background box shadow drop dim solid"], ["Position", "subs", "mpv subtitle position height bottom raised high top margin"],
   ["Skip openings", "skipping", "skip opening op intro chapter mpv"], ["Skip endings", "skipping", "skip ending credits ed outro chapter mpv"], ["Mark them on the seek bar", "skipping", "mpv timeline chapters marks opening ending seek bar", "mpv_marks"], ["Skip times from AniSkip", "skipping", "aniskip skip times opening ending privacy", "aniskip"],
   ["Quality", "online", "quality resolution 1080 720 stream download"], ["Load the next episode early", "online", "prepare next episode speed faster ready", "prepare_online"], ["ani-cli", "online", "ani-cli update version install streaming"],
   ["Accent colour", "appearance", "colour color accent theme follow"], ["Text font", "appearance", "font fonts typeface text letters serif"], ["Title font", "appearance", "font fonts typeface title heading"], ["Your fonts", "appearance", "font fonts import add installed system pc upload ttf otf woff own remove"], ["Zoom", "appearance", "zoom size scale bigger smaller"],
@@ -8520,7 +8826,7 @@ const A = {
     if (!r.ok) return toast(r.error || "Could not remove the font.");
     for (const k of ["text", "title", "num"]) if (fontGet(k) === "u:" + v) lsSet("font_" + k, "default");
     applyFonts();
-    if (S.settings) S.settings.fonts = r.fonts;
+    if (S.settings) { S.settings.fonts = r.fonts; if (S.settings.mpv?.sub_font === "u:" + v) S.settings.mpv.sub_font = "own"; }
     toast("Font removed");
     if (S.view === "settings") render(true);
   },
@@ -8577,7 +8883,31 @@ const A = {
     hkSave(over, note);
   },
   hkresetall: () => hkSave({}, "Keys are back to mpv's own"),
+  subbg: (v) => {
+    lsSet("sub_pv_bg", v);
+    const cur = $(".subprev");
+    if (cur && S.settings?.mpv) cur.outerHTML = subPreview(S.settings.mpv);
+  },
+  subpf: (v, t) => {
+    if (v === "__custom__") return subProfileSavePop(t);
+    if (v && v !== "custom") subProfileRun({ op: "apply", id: v });
+  },
+  subpfsave: (v, t) => subProfileSavePop(t),
+  subpfdef: () => {
+    const id = S.settings?.mpv?.sub_profile;
+    if (id && id !== "custom") subProfileRun({ op: "default", id }, "Set as default profile");
+  },
+  subpfdel: () => {
+    const m = S.settings?.mpv, p = (m?.sub_profiles || []).find((x) => x.id === m.sub_profile);
+    if (p) subProfileRun({ op: "delete", id: p.id }, `Deleted profile “${p.name}”`);
+  },
+  subreset: () => {
+    const m = S.settings?.mpv, def = m?.sub_default_profile || "own";
+    const name = [...SUB_PRESET_LIST, ...(m?.sub_profiles || []).map((p) => [p.id, p.name])].find(([id]) => id === def)?.[1] || "My config";
+    subProfileRun({ op: "reset" }, `Subtitle look reset to ${name}`);
+  },
   spref: (v, t) => {
+    if (v === "__custom__") return t.dataset.k === "mpv_sub_size" ? subSizePick(t) : subColorPick(t.dataset.k, t);
     api("/api/settings", { [t.dataset.k]: v }).then((r) => {
       if (!r || r.error) return toast(r?.error || "Could not save — is the hub running?");
       S.settings = r; if (S.view === "settings") render(true);
@@ -9708,7 +10038,11 @@ function ddOpen(sel, kb = false, pt = null) {
 function ddPick(i, btnEl) {
   const sel = ddSel, m = $("#ddm");
   if (!sel || ddBusy) return;
-  const idx = +i, changed = sel.selectedIndex !== idx, sheet = m?.classList.contains("sheet");
+  const idx = +i, opt = sel.options[idx];
+  if (opt?.dataset.custom) {
+    return sel.dataset.a === "subpf" ? subProfileSavePop(sel) : sel.dataset.k === "mpv_sub_size" ? subSizePick(sel) : subColorPick(sel.dataset.k, sel);
+  }
+  const changed = sel.selectedIndex !== idx, sheet = m?.classList.contains("sheet");
   const wasKb = ddKb, act = sel.dataset.a, dk = sel.dataset.k;
   const w0 = changed ? sel.closest(".fl, .frpick")?.getBoundingClientRect().width || 0 : 0;
   /* Commit at 0ms so fast outside clicks or switching dropdowns never lose a pick. */

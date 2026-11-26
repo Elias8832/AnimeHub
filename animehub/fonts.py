@@ -202,6 +202,17 @@ def _entry(p):
     return out
 
 
+def sub_font_info(fid):
+    """(folder, family) for an added TTF/OTF font mpv can load via sub-fonts-dir, or None."""
+    p = font_path(fid)
+    if not p or p.stem.endswith(BOLD) or p.suffix.lower() not in (".ttf", ".otf"):
+        return None
+    with open(p, "rb") as f:
+        meta = read_meta(f)
+    family = ((meta and meta["family"]) or p.stem.replace("_", " ")).replace("\r", " ").replace("\n", " ").strip()
+    return (font_dir(), family) if family else None
+
+
 def all_fonts():
     """[{id, name, url, variable, bold?}] for every added font, by name."""
     out = []

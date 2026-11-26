@@ -1509,3 +1509,34 @@ class DropdownMenuPolish(unittest.TestCase):
         self.assertNotIn("% bs.length]", APP)
         self.assertIn(".lib2 .fl:has(select:focus-visible),.pk .pkm:has(select:focus-visible){", CSS)
         self.assertIn('sel.setAttribute("aria-expanded", "true");', APP)
+
+
+class SubtitleSettingsUI(unittest.TestCase):
+    """Expanded Subtitle look rows, ASS modes, and live preview in Settings -> Subtitles."""
+
+    def test_subtitle_look_rows_and_live_preview(self):
+        fn = APP[APP.index("function subsGroup("):APP.index("function skipGroup(")]
+        for row in ('"Preferred audio"', '"Preferred subtitles"', '"Hide [SDH] cues"',
+                    '"Profile"', '"Styled subtitles"', '"Font"', '"Size"', '"Bold"', '"Colour"',
+                    '"Outline"', '"Outline colour"', '"Edge softness"', '"Line spacing"',
+                    '"Background"', '"Position"'):
+            self.assertIn(f"srow({row},", fn)
+        self.assertIn("${subPreview(m)}", fn)
+        self.assertIn('data-a="subreset"', fn)
+        self.assertIn('data-a="fontpick"', fn)
+        self.assertIn("function subProfileSavePop(", APP)
+        self.assertIn('"__custom__", "Save current…"', APP)
+        self.assertIn('"__custom__", "Custom colour…"', APP)
+        self.assertIn('"__custom__", "Custom size…"', APP)
+        self.assertIn("function subColorPick(", APP)
+        self.assertIn("function subSizePick(", APP)
+        self.assertIn("loadUserFonts(mine);", fn)
+        self.assertIn(".set2 .subprev{position:sticky;top:68px;", CSS)
+        self.assertIn(".subpop{position:fixed;z-index:85;", CSS)
+        self.assertIn(".subpop input.cp-range,.subpop input.cp-range:hover:not(:disabled){", CSS)
+        self.assertIn('data-custom="1"', APP)
+        self.assertIn(".subprev .sp-frame{", CSS)
+        self.assertIn(".subprev .sp-frame.bg-check{", CSS)
+        self.assertIn(".subprev .sp-bgs{", CSS)
+        self.assertIn('data-a="subbg"', APP)
+        self.assertIn('g.querySelectorAll(".sub,.pairbox,.dirpick,.subprev")', APP)
