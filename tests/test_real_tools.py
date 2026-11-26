@@ -28,7 +28,7 @@ from animehub.config import apply_config, config, CONFIG
 # a checkout's CRLF line ends would break bash.
 STAND_IN = b"""#!/bin/sh
 # ANI_CLI_MENU ANI_CLI_PLAYER_FLAGS ANI_CLI_PLAYER ANI_CLI_MODE ANI_CLI_QUALITY
-version_number="5.1.0"
+version_number="5.2.0"
 episode="" download=""
 while [ $# -gt 0 ]; do
     case "$1" in

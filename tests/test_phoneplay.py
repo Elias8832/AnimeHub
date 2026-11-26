@@ -211,6 +211,7 @@ from urllib.parse import parse_qs, urlparse  # noqa: E402
 from animehub import anicli, streaming  # noqa: E402
 
 REF = "https://ref.example/"
+ORIGIN = "https://ref.example"
 SEG = bytes(range(256)) * 8
 MP4 = bytes(reversed(range(256))) * 16
 SITE = {
@@ -219,18 +220,27 @@ SITE = {
     "/low/key.bin": b"k" * 16,
     "/low/seg0.ts": SEG,
     "/low/seg1.ts": SEG[::-1],
+    "/audio/index.m3u8": b"#EXTM3U\n#EXTINF:6,\naseg0.ts\n#EXT-X-ENDLIST\n",
+    "/audio/aseg0.ts": b"A" * 64,
+    "/cdn/opaque-hls": b"#EXTM3U\n#EXTINF:6,\n/low/seg0.ts\n#EXT-X-ENDLIST\n",
+    "/cdn/opaque-mp4": MP4,
     "/subs.srt": b"1\r\n00:00:01,000 --> 00:00:02,500\r\nHello\r\n",
 }
 
 
 class Site(BaseHTTPRequestHandler):
-    """A stand-in streaming site: it answers only with ani-cli's referrer."""
+    """A stand-in streaming site: it answers only with ani-cli's referrer (and
+    optional Origin when require_origin is set)."""
+    require_origin = None
 
     def log_message(self, *a):
         pass
 
     def do_GET(self):
         if self.headers.get("Referer") != REF:
+            self.send_error(403)
+            return
+        if self.require_origin and self.headers.get("Origin") != self.require_origin:
             self.send_error(403)
             return
         path = urlparse(self.path).path
@@ -347,12 +357,86 @@ class Relay(unittest.TestCase):
         self.assertEqual(body.decode(), "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.500\nHello\n")
         self.assertEqual(self.get(f"/api/phone/sub/{tok}/1")[0], 404)
 
+    def test_ani_cli_52_args_origin_split_audio_and_extensionless_hls(self):
+        got = phoneplay.player_args([
+            "--referrer=" + REF,
+            "--http-header-fields=Origin: " + ORIGIN,
+            "--demuxer-lavf-format=hls",
+            "--audio-file=https://a.example/audio.m3u8",
+            "--sub-file=https://s.example/a.vtt",
+            "--force-media-title=Show Episode 1",
+            "https://v.example/cdn/opaque",
+        ])
+        self.assertEqual(got, {
+            "url": "https://v.example/cdn/opaque",
+            "referrer": REF,
+            "origin": ORIGIN,
+            "audio": "https://a.example/audio.m3u8",
+            "hls": True,
+            "subs": ["https://s.example/a.vtt"],
+        })
+
+    def test_origin_header_reaches_relay_and_subtitles(self):
+        tok = "t-origin"
+        phoneplay._links[tok] = {
+            "ep_id": "stream:1:1", "url": self.base + "/master.m3u8", "referrer": REF,
+            "origin": ORIGIN, "subs": [self.base + "/subs.srt"],
+            "allowed": {self.base + "/master.m3u8"}, "playlists": set(), "ts": phoneplay.time.time(),
+        }
+        with patch.object(Site, "require_origin", ORIGIN):
+            st, _, _ = self.get(phoneplay.relay_url(tok, self.base + "/master.m3u8"))
+            self.assertEqual(st, 200)
+            st, _, body = self.get(f"/api/phone/sub/{tok}/0")
+            self.assertEqual(st, 200)
+            self.assertIn(b"Hello", body)
+
+    def test_extensionless_hls_is_rewritten_and_plain_binary_streams(self):
+        tok = "t-opaque"
+        url = self.base + "/cdn/opaque-hls"
+        phoneplay._links[tok] = {
+            "ep_id": "stream:1:1", "url": url, "referrer": REF, "origin": "",
+            "subs": [], "allowed": {url}, "playlists": set(), "ts": phoneplay.time.time(),
+        }
+        st, h, body = self.get(phoneplay.relay_url(tok, url))
+        self.assertEqual((st, h["Content-Type"]), (200, "application/vnd.apple.mpegurl"))
+        seg = [x for x in body.decode().splitlines() if x.startswith("/api/")][0]
+        self.assertEqual(self.get(seg)[2], SEG)
+
+        tok2 = "t-bin"
+        url2 = self.base + "/cdn/opaque-mp4"
+        phoneplay._links[tok2] = {
+            "ep_id": "stream:1:1", "url": url2, "referrer": REF, "origin": "",
+            "subs": [], "allowed": {url2}, "playlists": set(), "ts": phoneplay.time.time(),
+        }
+        st, _, body = self.get(phoneplay.relay_url(tok2, url2))
+        self.assertEqual((st, body), (200, MP4))
+
+    def test_split_audio_builds_master_playlist_and_relays_both_tracks(self):
+        tok = "t-split"
+        vurl = self.base + "/low/index.m3u8"
+        aurl = self.base + "/audio/index.m3u8"
+        phoneplay._links[tok] = {
+            "ep_id": "stream:1:1", "url": vurl, "referrer": REF, "origin": ORIGIN, "audio": aurl,
+            "subs": [], "allowed": {vurl, aurl}, "playlists": {vurl, aurl}, "ts": phoneplay.time.time(),
+        }
+        st, h, body = self.get(phoneplay.relay_url(tok, phoneplay.MASTER_KEY))
+        self.assertEqual((st, h["Content-Type"]), (200, "application/vnd.apple.mpegurl"))
+        text = body.decode()
+        self.assertIn('#EXT-X-MEDIA:TYPE=AUDIO', text)
+        self.assertIn('AUDIO="audio"', text)
+        audio_pl = re.search(r'URI="([^"]+)"', text).group(1)
+        video_pl = [x for x in text.splitlines() if x.startswith("/api/")][0]
+        aseg = [x for x in self.get(audio_pl)[2].decode().splitlines() if x.startswith("/api/")][0]
+        vseg = [x for x in self.get(video_pl)[2].decode().splitlines() if x.startswith("/api/")][0]
+        self.assertEqual(self.get(aseg)[2], b"A" * 64)
+        self.assertEqual(self.get(vseg)[2], SEG)
+
 
 # ani-cli as far as the phone needs it: it hands its player what the real
 # one hands mpv (referrer, subtitle file, link).
 FAKE_ANICLI = b"""#!/bin/sh
 # ANI_CLI_MENU ANI_CLI_PLAYER_FLAGS ANI_CLI_PLAYER ANI_CLI_MODE ANI_CLI_QUALITY
-version_number="5.1.0"
+version_number="5.2.0"
 episode=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -414,6 +498,35 @@ class OnlineStart(unittest.TestCase):
 
     def test_an_id_without_an_episode(self):
         self.assertEqual(phoneplay.start_online("stream:900"), {"error": "unknown episode"})
+
+    def test_stale_title_rematches_once(self):
+        calls = []
+
+        def cap(link, token, mode):
+            calls.append(link["title"])
+            if len(calls) == 1:
+                return None, "Invalid anime selection"
+            return {"url": "https://v.example/ep2/index.m3u8", "referrer": REF, "origin": ORIGIN,
+                    "audio": "https://v.example/ep2/audio.m3u8", "subs": []}, None
+
+        fresh = dict(self.link, title="TEST SHOW")
+        with patch.object(phoneplay, "_run_capture", side_effect=cap), \
+                patch.object(streaming, "stream_autolink", side_effect=[self.link, fresh, fresh]) as auto:
+            r = phoneplay.start_online("stream:900:2")
+        self.assertTrue(r.get("ok"), r)
+        self.assertTrue(r["hls"])
+        self.assertIn("u=master", r["src"])
+        self.assertEqual(calls, ["Test Show", "TEST SHOW"])
+        self.assertEqual(auto.call_args_list[1], ((900,), {"rematch": True}))
+
+    def test_stream_refresh_rematches_when_provider_title_changes(self):
+        fresh = dict(self.link, title="TEST SHOW", episodes=["1", "2", "3"])
+        with patch.object(streaming, "stream_link_get", return_value=self.link), \
+                patch.object(anicli, "anicli_episodes", side_effect=anicli.AniCliError('ani-cli no longer finds “Test Show”')), \
+                patch.object(streaming, "stream_autolink", return_value=fresh) as auto:
+            r = streaming.stream_refresh(900)
+        self.assertEqual(r, {"ok": True, "episodes": 3, "added": 1})
+        auto.assert_called_once_with(900, rematch=True)
 
 
 class PlayerMenu(unittest.TestCase):

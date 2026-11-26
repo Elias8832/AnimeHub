@@ -127,6 +127,41 @@ class Pieces(Downloads):
         self.assertTrue(wait_for(lambda: not settings.get_setting(downloader.RUNNING_KEY), 5),
                         settings.get_setting(downloader.RUNNING_KEY))
 
+    def test_tmp_dir_matches_download_dir_and_stale_title_rematches(self):
+        """ani-cli 5.2+ writes yt-dlp temp files to ANI_CLI_TMP_DIR (default
+        '.'), and provider switches can change titles (Invalid anime selection)."""
+        seen_tmp = self.lib.parent / "tmp-seen.txt"
+        script = self.lib.parent / "ani-cli-52"
+        script.write_bytes(STAND_IN.replace(
+            b'printf \'1 Test Show\\n\' | "$ANI_CLI_MENU" "Select anime: " >/dev/null || exit 1\n',
+            b'printf \'1 Test Show\\n\' | "$ANI_CLI_MENU" "Select anime: " >/dev/null || '
+            b'{ printf "\\033[1;31mInvalid anime selection\\033[0m\\n" >&2; exit 1; }\n'
+        ).replace(
+            b'if [ -n "$download" ]; then\n',
+            b'if [ -n "$download" ]; then\n'
+            b'    printf "%s" "$ANI_CLI_TMP_DIR" >"$HUB_TMP_SEEN"\n'))
+        script.chmod(0o755)
+        clip = self.lib.parent / "clip.mp4"
+        clip.write_bytes(b"x" * 2000)
+        dest = self.lib / "Test Show"
+        job = {"media_id": 900011, "token": "1", "mode": "sub", "show": "Test Show",
+               "dest": str(dest), "status": "running", "percent": 0, "error": None}
+        old_link = {"media_id": 900011, "query": "Test Show", "title": "Old 5.1 Title", "idx": 1,
+                    "mode": "sub", "episodes": ["1"], "meta": {}}
+        new_link = {"media_id": 900011, "query": "Test Show", "title": "Test Show", "idx": 1,
+                    "mode": "sub", "episodes": ["1"], "meta": {}}
+        with mock.patch.object(anicli, "anicli_path", return_value=str(script)), \
+                mock.patch.dict(os.environ, {"HUB_TEST_FILE": system.shell_path(clip),
+                                             "HUB_TMP_SEEN": system.shell_path(seen_tmp)}), \
+                mock.patch.object(streaming, "stream_link_get", return_value=old_link), \
+                mock.patch.object(streaming, "stream_autolink", return_value=new_link) as rematch, \
+                mock.patch.object(downloader, "_dl_adopt"):
+            downloader._dl_run(job)
+        rematch.assert_called_once_with(900011, rematch=True)
+        self.assertEqual(job["status"], "done", job)
+        self.assertEqual(seen_tmp.read_text(), system.shell_path(dest))
+        self.assertTrue((dest / "Test Show Episode 1.mp4").is_file())
+
 
 class CutOff(Downloads):
     PIECES = ("Test Show Episode 2.mp4.part", "Test Show Episode 2.mp4.part-Frag7", "Test Show Episode 2.mp4.part-Frag8.part",

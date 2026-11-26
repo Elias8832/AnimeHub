@@ -70,7 +70,7 @@ class AniCliError(Exception):
 
 # Older releases can't reach the current provider (distro packages lag), so
 # Settings and the tour offer the official script (Decision 47).
-MIN_VERSION = (5, 1)
+MIN_VERSION = (5, 2)
 ANICLI_URL = "https://github.com/pystardust/ani-cli/releases/latest/download/ani-cli"
 ANICLI_MAX = 2_000_000
 ANICLI_TOOLS = ("curl", "sed", "grep")  # what it needs with the hub answering its menus
@@ -149,11 +149,24 @@ def fetch_anicli():
     tmp.write_bytes(raw)
     tmp.chmod(0o755)
     os.replace(tmp, path)
-    _anicli_versions.pop(str(path), None)
+    _clear_version_cache(str(path))
     return {"ok": True, "version": anicli_version(), "changed": True}
 
 
 _anicli_versions = {}
+
+
+def _stat_key(exe):
+    try:
+        st = os.stat(exe)
+        return (exe, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def _clear_version_cache(exe):
+    for k in [k for k in _anicli_versions if k == exe or (isinstance(k, tuple) and k[0] == exe)]:
+        _anicli_versions.pop(k, None)
 
 
 def anicli_version():
@@ -162,14 +175,15 @@ def anicli_version():
     exe = anicli_path()
     if not exe:
         return None
-    if exe not in _anicli_versions:
+    key = _stat_key(exe) or exe
+    if key not in _anicli_versions:
         try:
             out = subprocess.run([*system.script_argv(exe), "-V"], stdin=subprocess.DEVNULL, capture_output=True,
                                  text=True, timeout=10, **system.quiet()).stdout.strip()
         except (OSError, subprocess.TimeoutExpired):
             out = ""
-        _anicli_versions[exe] = out.splitlines()[-1] if out else None
-    return _anicli_versions[exe]
+        _anicli_versions[key] = out.splitlines()[-1] if out else None
+    return _anicli_versions[key]
 
 
 def stream_prefs():
@@ -204,7 +218,8 @@ def anicli_env(link=None, capture=None, **extra):
     env.update(system.script_env())
     env.update(ANI_CLI_MENU=system.shell_path(anicli_menu_helper()), TERM="dumb",
                ANI_CLI_QUALITY=prefs["quality"],
-               ANI_CLI_MODE=(link or {}).get("mode") or prefs["mode"])
+               ANI_CLI_MODE=(link or {}).get("mode") or prefs["mode"],
+               ANI_CLI_EXACT="0", ANI_CLI_DEFAULT_SOURCE="search")
     if capture:
         env["HUB_ANICLI_CAPTURE"] = system.shell_path(capture)
     if link:
@@ -240,10 +255,8 @@ def anicli_check():
     exe = anicli_path()
     if not exe:
         return None
-    try:
-        st = os.stat(exe)
-        key = (exe, st.st_mtime_ns, st.st_size)
-    except OSError:
+    key = _stat_key(exe)
+    if key is None:
         return {"ok": None, "missing": []}
     if key not in _anicli_checks:
         try:
@@ -280,6 +293,9 @@ def anicli_spawn(args, env, stdout, stderr):
     if not exe:
         raise AniCliError("ani-cli was not found — install ani-cli and make sure it is on PATH.")
     check = anicli_check()
+    if system.ANDROID and ((check and check["ok"] is False) or anicli_outdated()):
+        if android.fetch_anicli():
+            check = anicli_check()
     if check and check["ok"] is False:
         raise AniCliError(anicli_unsupported_message(check))
     if anicli_outdated():

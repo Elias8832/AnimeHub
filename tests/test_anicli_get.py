@@ -9,7 +9,7 @@ from tests import support  # noqa: F401  (isolated config/data first)
 from animehub import anicli, system
 
 GOOD =b"""#!/bin/sh
-version_number="5.1.0"
+version_number="5.2.0"
 ANI_CLI_MENU ANI_CLI_PLAYER_FLAGS ANI_CLI_PLAYER ANI_CLI_MODE ANI_CLI_QUALITY
 Select anime
 Select episode
@@ -31,10 +31,10 @@ class GetAniCli(unittest.TestCase):
     @unittest.skipIf(system.WINDOWS, "Windows updates ani-cli with Scoop")
     def test_saves_a_runnable_copy_and_prefers_it(self):
         with mock.patch.object(anicli, "urlopen", return_value=reply(GOOD)), \
-             mock.patch.object(anicli, "anicli_version", return_value="5.1.0"):
-            self.assertEqual(anicli.fetch_anicli(), {"ok": True, "version": "5.1.0", "changed": True})
+             mock.patch.object(anicli, "anicli_version", return_value="5.2.0"):
+            self.assertEqual(anicli.fetch_anicli(), {"ok": True, "version": "5.2.0", "changed": True})
         with mock.patch.object(anicli, "urlopen", return_value=reply(GOOD)), \
-             mock.patch.object(anicli, "anicli_version", return_value="5.1.0"):
+             mock.patch.object(anicli, "anicli_version", return_value="5.2.0"):
             self.assertEqual(anicli.fetch_anicli()["changed"], False)  # the newest already
         self.assertEqual(anicli.anicli_path(), str(anicli.own_anicli()))
         self.assertTrue(anicli.own_anicli().stat().st_mode & 0o100)
@@ -60,7 +60,7 @@ class GetAniCli(unittest.TestCase):
         fetch.assert_not_called()
 
     def test_old_versions_are_outdated(self):
-        for version, old in (("4.14.0", True), ("5.0.9", True), ("5.1.0", False), ("6.0", False), (None, False)):
+        for version, old in (("4.14.0", True), ("5.1.9", True), ("5.2.0", False), ("6.0", False), (None, False)):
             with mock.patch.object(anicli, "anicli_version", return_value=version):
                 self.assertEqual(anicli.anicli_outdated(), old, version)
 
@@ -108,3 +108,28 @@ class TooOldOrBlocked(unittest.TestCase):
         from animehub import streaming
         msg = streaming.friendly_stream_error("ani-cli: Blocked by cloudflare. Try installing curl-impersonate")
         self.assertIn("install curl-impersonate", msg)
+
+    @unittest.skipIf(system.WINDOWS, "uses a POSIX shell script")
+    def test_in_place_upgrade_refreshes_cached_version(self):
+        """Upgrading /usr/bin/ani-cli while the hub runs must invalidate
+        _anicli_versions without a restart (ani-cli 5.1 -> 5.2)."""
+        import os
+        script = support.TMP / "ani-cli-upgraded"
+        script.write_bytes(b'#!/bin/sh\necho "5.1.0"\n')
+        script.chmod(0o755)
+        self.addCleanup(script.unlink, missing_ok=True)
+        anicli._anicli_versions.clear()
+        with mock.patch.object(anicli, "anicli_path", return_value=str(script)):
+            self.assertEqual(anicli.anicli_version(), "5.1.0")
+            self.assertTrue(anicli.anicli_outdated())
+            script.write_bytes(b'#!/bin/sh\necho "5.2.0"\n')
+            os.utime(script, ns=(script.stat().st_mtime_ns + 1_000_000_000, script.stat().st_mtime_ns + 1_000_000_000))
+            self.assertEqual(anicli.anicli_version(), "5.2.0")
+            self.assertFalse(anicli.anicli_outdated())
+
+    def test_env_resets_user_exact_match_and_source(self):
+        with mock.patch.dict("os.environ", {"ANI_CLI_EXACT": "1", "ANI_CLI_DEFAULT_SOURCE": "history"}), \
+                mock.patch.object(anicli, "stream_prefs", return_value={"quality": "best", "mode": "sub"}):
+            env = anicli.anicli_env()
+        self.assertEqual(env["ANI_CLI_EXACT"], "0")
+        self.assertEqual(env["ANI_CLI_DEFAULT_SOURCE"], "search")
