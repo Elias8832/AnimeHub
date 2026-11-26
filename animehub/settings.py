@@ -5,10 +5,11 @@ import os
 import re
 import subprocess
 import threading
+import uuid
 from pathlib import Path
 
-from . import android, anicli, background, database, lengths, library, system, upscale
-from .config import config, CONFIG, CONFIG_PATH, PLAYER_LOOKS
+from . import android, anicli, background, database, fonts, lengths, library, system, upscale
+from .config import config, CONFIG, CONFIG_PATH, PLAYER_FONTS, PLAYER_LOOKS
 
 
 def get_setting(key):
@@ -52,6 +53,8 @@ AUTOMATION_DEFAULTS = {"auto_progress_sync": True, "auto_add_watch": False,
                        "remember_tracks": True,
                        # Openings/endings as marks on mpv's timeline (Decision 45).
                        "mpv_marks": True,
+                       # Strip [music] / (sighs) hearing-impaired tags in mpv (TODO 290).
+                       "mpv_sub_sdh": False,
                        # Playing on the phone leaves mpv on the PC playing (Decision 71).
                        "phone_play_both": False,
                        # Play on a new season asks first when the season
@@ -84,11 +87,22 @@ def mpv_mode(key):
 # Settings → mpv beyond on/off/own (Decision 53). Setting → (default, choices).
 # "own" sends nothing: mpv.conf and input.conf decide, as in Decision 45.
 CLICK_CHOICES = ("own", "menu", "pause", "fullscreen", "off")
+SUB_FONTS = ("own", "app", "sans", "serif", "mono")
+SUB_SIZE_MIN, SUB_SIZE_MAX = 16, 96
+_HEX_COLOR = re.compile(r"^#[0-9a-f]{6}\Z", re.I)
 MPV_CHOICES = {"mpv_start_volume": ("own", ("own", "last", "25", "50", "75", "100")),
-               "mpv_sub_size": ("own", ("own", "small", "normal", "large")),
-               "mpv_sub_color": ("own", ("own", "white", "yellow")),
-               "mpv_sub_outline": ("own", ("own", "thin", "normal", "thick")),
-               "mpv_sub_styled": ("own", ("own", "override")),
+               "mpv_alang": ("own", ("own", "jpn", "eng", "ger", "jpn_eng", "eng_jpn", "ger_jpn")),
+               "mpv_slang": ("own", ("own", "eng", "ger", "ger_eng", "eng_ger", "jpn", "spa", "fre", "por", "off")),
+               "mpv_sub_size": ("own", ("own", "xsmall", "small", "normal", "large", "xlarge")),
+               "mpv_sub_bold": ("own", ("own", "on", "off")),
+               "mpv_sub_color": ("own", ("own", "white", "warm", "yellow", "cyan", "green", "gray")),
+               "mpv_sub_outline": ("own", ("own", "none", "thin", "normal", "thick")),
+               "mpv_sub_outline_color": ("own", ("own", "black", "dark", "navy", "white")),
+               "mpv_sub_blur": ("own", ("own", "none", "soft", "medium", "strong")),
+               "mpv_sub_spacing": ("own", ("own", "tight", "normal", "relaxed", "wide")),
+               "mpv_sub_back": ("own", ("own", "none", "shadow", "deep", "box", "solid")),
+               "mpv_sub_pos": ("own", ("own", "bottom", "low", "raised", "high", "top")),
+               "mpv_sub_styled": ("own", ("own", "keep", "scale", "style", "override", "strip")),
                # Read by the player look, not flags.
                "mpv_skip_seconds": ("10", ("5", "10", "15", "30")),
                # The four clicks share one list (Decision 74).
@@ -100,10 +114,281 @@ MPV_CHOICES = {"mpv_start_volume": ("own", ("own", "last", "25", "50", "75", "10
                # Decision 74: who wins when input.conf binds the same button or key.
                "mpv_priority": ("config", ("config", "settings")),
                "mpv_loaded": ("on", ("on", "off"))}
-_CHOICE_FLAGS = {"mpv_sub_size": {"small": "--sub-font-size=30", "normal": "--sub-font-size=38", "large": "--sub-font-size=50"},
-                 "mpv_sub_color": {"white": "--sub-color=1.0/1.0/1.0", "yellow": "--sub-color=1.0/0.9/0.3"},
-                 "mpv_sub_outline": {"thin": "--sub-outline-size=1", "normal": "--sub-outline-size=2", "thick": "--sub-outline-size=3.5"},
-                 "mpv_sub_styled": {"override": "--sub-ass-override=force"}}
+_SUB_SCALE_FLAGS = {"xsmall": "--sub-scale=0.65", "small": "--sub-scale=0.8", "normal": "--sub-scale=1.0",
+                    "large": "--sub-scale=1.3", "xlarge": "--sub-scale=1.6"}
+_CHOICE_FLAGS = {"mpv_alang": {"jpn": "--alang=jpn,ja,jp", "eng": "--alang=eng,en", "ger": "--alang=ger,deu,de",
+                               "jpn_eng": "--alang=jpn,ja,jp,eng,en", "eng_jpn": "--alang=eng,en,jpn,ja,jp",
+                               "ger_jpn": "--alang=ger,deu,de,jpn,ja,jp"},
+                 "mpv_slang": {"eng": "--slang=eng,en,enUS,en-US", "ger": "--slang=ger,deu,de,deDE,de-DE",
+                               "ger_eng": "--slang=ger,deu,de,eng,en", "eng_ger": "--slang=eng,en,ger,deu,de",
+                               "jpn": "--slang=jpn,ja,jp", "spa": "--slang=spa,es", "fre": "--slang=fre,fra,fr",
+                               "por": "--slang=por,pt,ptBR,pt-BR", "off": "--sid=no"},
+                 "mpv_sub_size": {"xsmall": "--sub-font-size=24", "small": "--sub-font-size=30",
+                                  "normal": "--sub-font-size=38", "large": "--sub-font-size=50", "xlarge": "--sub-font-size=62"},
+                 "mpv_sub_bold": {"on": "--sub-bold=yes", "off": "--sub-bold=no"},
+                 "mpv_sub_color": {"white": "--sub-color=1.0/1.0/1.0", "warm": "--sub-color=1.0/0.96/0.84",
+                                   "yellow": "--sub-color=1.0/0.9/0.3", "cyan": "--sub-color=0.5/0.93/1.0",
+                                   "green": "--sub-color=0.66/0.96/0.64", "gray": "--sub-color=0.83/0.83/0.85"},
+                 "mpv_sub_outline": {"none": "--sub-outline-size=0", "thin": "--sub-outline-size=1",
+                                     "normal": "--sub-outline-size=2", "thick": "--sub-outline-size=3.5"},
+                 "mpv_sub_outline_color": {"black": "--sub-outline-color=0.0/0.0/0.0/1.0",
+                                           "dark": "--sub-outline-color=0.15/0.15/0.17/1.0",
+                                           "navy": "--sub-outline-color=0.05/0.09/0.16/1.0",
+                                           "white": "--sub-outline-color=1.0/1.0/1.0/1.0"},
+                 "mpv_sub_blur": {"none": "--sub-blur=0", "soft": "--sub-blur=0.4",
+                                  "medium": "--sub-blur=0.9", "strong": "--sub-blur=1.6"},
+                 "mpv_sub_spacing": {"tight": "--sub-line-spacing=-4", "normal": "--sub-line-spacing=0",
+                                     "relaxed": "--sub-line-spacing=5", "wide": "--sub-line-spacing=11"},
+                 "mpv_sub_back": {"none": ("--sub-border-style=outline-and-shadow", "--sub-shadow-offset=0"),
+                                  "shadow": ("--sub-border-style=outline-and-shadow", "--sub-shadow-offset=1.5", "--sub-back-color=0.0/0.0/0.0/0.65"),
+                                  "deep": ("--sub-border-style=outline-and-shadow", "--sub-shadow-offset=2.8", "--sub-back-color=0.0/0.0/0.0/0.85"),
+                                  "box": ("--sub-border-style=background-box", "--sub-back-color=0.0/0.0/0.0/0.55"),
+                                  "solid": ("--sub-border-style=background-box", "--sub-back-color=0.0/0.0/0.0/0.85")},
+                 "mpv_sub_pos": {"bottom": "--sub-pos=100", "low": "--sub-pos=94", "raised": "--sub-pos=86",
+                                 "high": "--sub-pos=76", "top": "--sub-pos=10"},
+                 "mpv_sub_styled": {"keep": "--sub-ass-override=no", "scale": "--sub-ass-override=scale",
+                                    "style": "--sub-ass-override=yes", "override": "--sub-ass-override=force",
+                                    "strip": "--sub-ass-override=strip"}}
+_SUB_FONT_SIMPLE = {"sans": "--sub-font=sans-serif", "serif": "--sub-font=serif", "mono": "--sub-font=monospace"}
+
+
+def _valid_sub_size(value):
+    return isinstance(value, str) and (
+        value in MPV_CHOICES["mpv_sub_size"][1]
+        or (value.isdigit() and SUB_SIZE_MIN <= int(value) <= SUB_SIZE_MAX)
+    )
+
+
+def sub_size():
+    v = get_setting("mpv_sub_size")
+    return v if _valid_sub_size(v) else "own"
+
+
+def set_sub_size(value):
+    if not _valid_sub_size(value):
+        raise ValueError(f"'mpv_sub_size' must be a preset or {SUB_SIZE_MIN}-{SUB_SIZE_MAX}")
+    set_setting("mpv_sub_size", str(int(value)) if value.isdigit() else value)
+
+
+def _valid_sub_color(key, value):
+    return isinstance(value, str) and (value in MPV_CHOICES[key][1] or bool(_HEX_COLOR.match(value)))
+
+
+def sub_color(key):
+    v = get_setting(key)
+    return v.lower() if _valid_sub_color(key, v) else "own"
+
+
+def set_sub_color(key, value):
+    if not _valid_sub_color(key, value):
+        raise ValueError(f"'{key}' must be a preset or #rrggbb")
+    set_setting(key, value.lower())
+
+
+SUB_LOOK_KEYS = ("sub_styled", "sub_font", "sub_size", "sub_bold", "sub_color", "sub_outline",
+                 "sub_outline_color", "sub_blur", "sub_spacing", "sub_back", "sub_pos")
+SUB_PRESETS = {
+    "own": {"id": "own", "name": "My config",
+            "values": {k: "own" for k in SUB_LOOK_KEYS}},
+    "animehub": {"id": "animehub", "name": "Anime Hub",
+                 "values": {"sub_styled": "style", "sub_font": "app", "sub_size": "normal", "sub_bold": "on",
+                            "sub_color": "white", "sub_outline": "none", "sub_outline_color": "black",
+                            "sub_blur": "none", "sub_spacing": "tight", "sub_back": "shadow", "sub_pos": "bottom"}},
+    "yellow": {"id": "yellow", "name": "Classic yellow",
+               "values": {"sub_styled": "style", "sub_font": "sans", "sub_size": "normal", "sub_bold": "on",
+                          "sub_color": "yellow", "sub_outline": "normal", "sub_outline_color": "black",
+                          "sub_blur": "soft", "sub_spacing": "normal", "sub_back": "shadow", "sub_pos": "low"}},
+    "contrast": {"id": "contrast", "name": "High contrast",
+                 "values": {"sub_styled": "style", "sub_font": "sans", "sub_size": "large", "sub_bold": "on",
+                            "sub_color": "white", "sub_outline": "thick", "sub_outline_color": "black",
+                            "sub_blur": "none", "sub_spacing": "relaxed", "sub_back": "deep", "sub_pos": "low"}},
+    "boxed": {"id": "boxed", "name": "Boxed",
+              "values": {"sub_styled": "style", "sub_font": "app", "sub_size": "normal", "sub_bold": "off",
+                         "sub_color": "warm", "sub_outline": "thin", "sub_outline_color": "black",
+                         "sub_blur": "none", "sub_spacing": "normal", "sub_back": "box", "sub_pos": "low"}},
+}
+
+
+def current_sub_look():
+    """The 11 active Subtitle look settings as {sub_*: value}."""
+    out = {}
+    for k in SUB_LOOK_KEYS:
+        if k == "sub_font":
+            out[k] = sub_font()
+        elif k == "sub_size":
+            out[k] = sub_size()
+        elif k in ("sub_color", "sub_outline_color"):
+            out[k] = sub_color("mpv_" + k)
+        else:
+            out[k] = mpv_choice("mpv_" + k)
+    return out
+
+
+def _clean_profile_values(raw):
+    if not isinstance(raw, dict):
+        return {k: "own" for k in SUB_LOOK_KEYS}
+    out = {}
+    for k in SUB_LOOK_KEYS:
+        v = raw.get(k, "own")
+        if k == "sub_font":
+            ok = isinstance(v, str) and (v in SUB_FONTS or (v.startswith("u:") and fonts.sub_font_info(v[2:])))
+            out[k] = v if ok else "own"
+        elif k == "sub_size":
+            out[k] = (str(int(v)) if isinstance(v, str) and v.isdigit() else v) if _valid_sub_size(v) else "own"
+        elif k in ("sub_color", "sub_outline_color"):
+            out[k] = v.lower() if _valid_sub_color("mpv_" + k, v) else "own"
+        else:
+            out[k] = v if v in MPV_CHOICES["mpv_" + k][1] else "own"
+    return out
+
+
+def sub_profiles():
+    """Saved user subtitle profiles: [{id, name, values}]."""
+    try:
+        raw = json.loads(get_setting("mpv_sub_profiles") or "[]")
+    except ValueError:
+        return []
+    if not isinstance(raw, list):
+        return []
+    out, seen = [], set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        pid = item.get("id")
+        name = str(item.get("name") or "").strip()[:40]
+        if not isinstance(pid, str) or not pid.startswith("p_") or pid in seen or not name:
+            continue
+        seen.add(pid)
+        out.append({"id": pid, "name": name, "values": _clean_profile_values(item.get("values"))})
+    return out[:24]
+
+
+def _write_sub_profiles(items):
+    set_setting("mpv_sub_profiles", json.dumps(items))
+
+
+def _find_sub_profile(pid):
+    if pid in SUB_PRESETS:
+        return SUB_PRESETS[pid]
+    return next((p for p in sub_profiles() if p["id"] == pid), None)
+
+
+def sub_default_profile():
+    v = get_setting("mpv_sub_default_profile")
+    return v if v and _find_sub_profile(v) else "own"
+
+
+def active_sub_profile():
+    """Id of the built-in preset or saved profile matching the current look, else 'custom'."""
+    cur = current_sub_look()
+    for pid, p in SUB_PRESETS.items():
+        if p["values"] == cur:
+            return pid
+    for p in sub_profiles():
+        if p["values"] == cur:
+            return p["id"]
+    return "custom"
+
+
+def apply_sub_profile(pid):
+    prof = _find_sub_profile(pid)
+    if not prof:
+        raise ValueError(f"unknown subtitle profile '{pid}'")
+    vals = _clean_profile_values(prof["values"])
+    for k, v in vals.items():
+        set_setting("mpv_" + k, v)
+    return prof
+
+
+def save_sub_profile(name, make_default=False):
+    clean = re.sub(r"\s+", " ", str(name or "")).strip()[:40]
+    if not clean:
+        raise ValueError("enter a profile name")
+    if any(clean.casefold() == p["name"].casefold() for p in SUB_PRESETS.values()):
+        raise ValueError(f"'{clean}' is a built-in preset — pick another name")
+    items = sub_profiles()
+    vals = current_sub_look()
+    existing = next((p for p in items if p["name"].casefold() == clean.casefold()), None)
+    if existing:
+        existing["name"] = clean
+        existing["values"] = vals
+        saved = existing
+    else:
+        if len(items) >= 24:
+            raise ValueError("up to 24 saved profiles — delete one first")
+        saved = {"id": "p_" + uuid.uuid4().hex[:8], "name": clean, "values": vals}
+        items.append(saved)
+    _write_sub_profiles(items)
+    if make_default:
+        set_setting("mpv_sub_default_profile", saved["id"])
+    return saved
+
+
+def delete_sub_profile(pid):
+    items = sub_profiles()
+    kept = [p for p in items if p["id"] != pid]
+    if len(kept) == len(items):
+        raise ValueError(f"unknown saved profile '{pid}'")
+    _write_sub_profiles(kept)
+    if get_setting("mpv_sub_default_profile") == pid:
+        set_setting("mpv_sub_default_profile", "own")
+
+
+def set_default_sub_profile(pid):
+    if not _find_sub_profile(pid):
+        raise ValueError(f"unknown subtitle profile '{pid}'")
+    set_setting("mpv_sub_default_profile", pid)
+
+
+def sub_font():
+    """Subtitle font setting: a built-in id or "u:<fid>" for an existing TTF/OTF font."""
+    v = get_setting("mpv_sub_font")
+    if v in SUB_FONTS:
+        return v
+    if isinstance(v, str) and v.startswith("u:") and fonts.sub_font_info(v[2:]):
+        return v
+    return "own"
+
+
+def set_sub_font(value):
+    if not isinstance(value, str):
+        raise ValueError("'mpv_sub_font' must be a string")
+    if value in SUB_FONTS or (value.startswith("u:") and fonts.sub_font_info(value[2:])):
+        set_setting("mpv_sub_font", value)
+        return
+    raise ValueError("unknown subtitle font '%s'" % value)
+
+
+def _sub_font_flags():
+    """Flags for mpv_sub_font, always space-free (ani-cli splits ANI_CLI_PLAYER_FLAGS
+    on whitespace). Multi-word font names and custom font dirs go into a tiny
+    --include config file inside the data dir."""
+    v = sub_font()
+    if v == "own":
+        return []
+    if v in _SUB_FONT_SIMPLE:
+        return [_SUB_FONT_SIMPLE[v]]
+    if v == "app":
+        folder, family = PLAYER_FONTS, "Hanken Grotesk"
+    else:
+        info = fonts.sub_font_info(v[2:])
+        if not info:
+            return []
+        folder, family = info
+    conf = config.DATA / "mpv-sub.conf"
+    body = f"sub-fonts-dir={folder.as_posix()}\nsub-font={family}\n"
+    try:
+        if not conf.is_file() or conf.read_text(encoding="utf-8") != body:
+            conf.parent.mkdir(parents=True, exist_ok=True)
+            tmp = conf.with_suffix(".part")
+            tmp.write_text(body, encoding="utf-8")
+            system.replace(tmp, conf)
+    except OSError:
+        return []
+    spelled = system.space_free_path(conf)
+    if spelled:
+        return [f"--include={spelled}"]
+    return [f"--sub-font={family}"] if not any(c.isspace() for c in family) else []
 
 
 def mpv_choice(key):
@@ -208,10 +493,25 @@ def mpv_flags():
         if mode != "own":
             flags = on if mode == "on" else off
             out.extend((flags,) if isinstance(flags, str) else flags)
+    styled = mpv_choice("mpv_sub_styled")
     for key, flags in _CHOICE_FLAGS.items():
-        flag = flags.get(mpv_choice(key))
+        if key == "mpv_sub_size":
+            val = sub_size()
+            if styled == "scale":
+                flag = _SUB_SCALE_FLAGS.get(val) or (f"--sub-scale={int(val) / 38:.2f}" if val.isdigit() else None)
+            else:
+                flag = flags.get(val) or (f"--sub-font-size={val}" if val.isdigit() else None)
+        elif key in ("mpv_sub_color", "mpv_sub_outline_color"):
+            val = sub_color(key)
+            prop = "--sub-color" if key == "mpv_sub_color" else "--sub-outline-color"
+            flag = flags.get(val) or (f"{prop}={val}" if val.startswith("#") else None)
+        else:
+            flag = flags.get(mpv_choice(key))
         if flag:
-            out.append(flag)
+            out.extend((flag,) if isinstance(flag, str) else flag)
+    if automation_enabled("mpv_sub_sdh"):
+        out.append("--sub-filter-sdh=yes")
+    out.extend(_sub_font_flags())
     volume = start_volume_flag()
     if volume:
         out.append(volume)
@@ -338,8 +638,13 @@ def settings_payload():
         "recap_after": _recap_after(),
         # additive (Decision 45): mpv options, "on" / "off" / "own"
         "mpv": {**{key[4:]: mpv_mode(key) for key in MPV_OPTIONS}, "marks": automation_enabled("mpv_marks"),
+                "sub_sdh": automation_enabled("mpv_sub_sdh"),
                 "look": player_look(), "looks": list(PLAYER_LOOKS),
                 **{key[4:]: mpv_choice(key) for key in MPV_CHOICES},
+                "sub_size": sub_size(), "sub_color": sub_color("mpv_sub_color"),
+                "sub_outline_color": sub_color("mpv_sub_outline_color"), "sub_font": sub_font(),
+                "sub_profiles": sub_profiles(), "sub_profile": active_sub_profile(),
+                "sub_default_profile": sub_default_profile(),
                 "keys": player_keys(), "key_defaults": PLAYER_KEYS},
         # additive (Decision 51): the server without the window; only the desktop app can
         "background_ok": background.launcher() is not None,
