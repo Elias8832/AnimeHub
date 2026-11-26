@@ -2906,15 +2906,17 @@ document.addEventListener("pointerover", (e) => {
 let frTok = 0;
 async function frLoad(mid) {
   const tok = ++frTok;
-  let artLook = true;
+  let artLook = true, prev = S.fr?.page ? JSON.stringify(S.fr.page) : "";
   for (let i = 0; i < 80; i++) {
     const p = await api("/api/franchise?id=" + mid).catch(() => null);
     if (tok !== frTok || S.view !== "fr" || !S.fr) return;
     if (!p || p.error) { if (!S.fr.page) { S.fr.err = p?.error || "Could not reach the hub."; softRender(); } return; }
     if (p.unavailable && !p.entries.length) return frUnavailable(p.unavailable);
-    const first = !S.fr.page;
+    const first = !S.fr.page, pj = JSON.stringify(p);
     S.fr.page = p; S.fr.err = null; frRemember(p);
-    first ? softRender() : frRepaint();
+    if (first) softRender();
+    else if (pj !== prev) frRepaint();
+    prev = pj;
     const e = p.entries.find((x) => x.id === S.fr.eid);
     let wait = p.building || p.resolving.includes(S.fr.eid);
     if (!wait && artLook && e && e.slots.length && !e.slots.some((x) => x.thumb)) { artLook = false; wait = true; await sleep(3500); }
@@ -3648,12 +3650,22 @@ function aheadLine(f, pending, fe) {
   const movie = fe.format === "MOVIE" && fe.slots.length <= 1;
   return `<p class="ahead"><span>${movie ? "watched on " + acct() : `${acct()} is at ep ${f.progress}`}</span><i class="sep"></i><button class="lnk" data-a="frahead" data-v="${esc(JSON.stringify(nums))}">${movie ? "mark watched here" : `catch up to ep ${f.progress}`}${ico("chevr")}</button></p>`;
 }
-/* Paint the editor and/or the row from fields; steppers that changed get their bump. */
+/* Paint the editor and/or the row from fields; steppers that changed get their bump.
+   #entrystats and #entryacts patch in place so background polls, downloads and edits
+   never destroy the progress bar node and restart its entrance animation. */
 function entryPaint(f, pending, prev) {
   const page = !S.entry?.svc, st = page && $("#entrystats");
-  if (st) { st.innerHTML = entryStats(f, pending); st._own = true; }
+  if (st) {
+    const html = entryStats(f, pending);
+    if (st._html !== html) { st._html = html; morphHTML(st, html); }
+    st._own = true;
+  }
   const acts = page && $("#app #entryacts"); // not a back swipe's copy of another page
-  if (acts) { acts.innerHTML = entryActs(f, pending); acts._own = true; }
+  if (acts) {
+    const html = entryActs(f, pending);
+    if (acts._html !== html) { acts._html = html; morphHTML(acts, html); }
+    acts._own = true;
+  }
   const box = $("#entrybox");
   if (!box) return;
   box.innerHTML = entryHTML(f, pending);
@@ -3759,7 +3771,8 @@ function entryErrPaint() {
     const show = S.view === "show" ? showById(S.showId) : null, fe = S.view === "fr" ? frEntry() : null;
     const total = fe?.episodes || fe?.slots.length || (show ? epTotal(show) : 0);
     const bar = total > 1 ? `<div class="tbar aerrbar"><span class="ticks">${total <= 40 ? "<i></i>".repeat(total) : "<i></i>"}</span><span>–/${total}</span></div>` : "";
-    st.innerHTML = `<p class="mline aerr ${e.checking ? "chk" : ""}" title="${esc(e.msg || "")}" role="status"><i class="adot"></i><span class="warn">${esc(errLabel(e).toLowerCase())}</span>${when ? `<i class="sep"></i><span class="cd">${when}</span>` : ""}${act ? `<i class="sep"></i>${act}` : ""}</p>${bar}`;
+    const html = `<p class="mline aerr ${e.checking ? "chk" : ""}" title="${esc(e.msg || "")}" role="status"><i class="adot"></i><span class="warn">${esc(errLabel(e).toLowerCase())}</span>${when ? `<i class="sep"></i><span class="cd">${when}</span>` : ""}${act ? `<i class="sep"></i>${act}` : ""}</p>${bar}`;
+    if (st._html !== html) { st._html = html; st.innerHTML = html; }
     st._own = true;
   }
   const box = $("#entrybox");

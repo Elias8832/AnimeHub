@@ -1186,6 +1186,152 @@ class ShowPageRedo(unittest.TestCase):
         self.assertIn("not on your list yet", off)
         self.assertIn('data-a="eadd"', off)  # phones: the action pill is hidden, the add stays
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_progress_bar_node_survives_repaints_and_updates(self):
+        """Background polls, frLoad ticks, downloads, and entry updates must not
+        recreate #entrystats' progress bar node and restart its growx/tick animation."""
+        self.assertIn("span.tline i{display:block;height:100%;border-radius:3px;background:var(--accent);animation:growx .6s .15s var(--ease) both;transform-origin:left;transition:width .35s var(--ease)}", CSS)
+        self.assertIn("#app span.tline i,#app .ticks i{animation:none!important}", CSS)
+        self.assertIn("else if (pj !== prev) frRepaint();", APP)
+        # Extract morphNode/morphChildren/morphHTML + entryStats/entryActs/entryPaint
+        morph_src = APP[APP.index("const LIVE_CLASSES ="):APP.index("/* A Settings section")]
+        entry_src = APP[APP.index("function entryStats("):APP.index("function entryDraw(")]
+        script = r"""
+const assert = require("node:assert/strict");
+class AttrList {
+  constructor(map) { this._m = map; }
+  *[Symbol.iterator]() { for (const [name, value] of this._m) yield { name, value }; }
+}
+class ClassList {
+  constructor(el) { this.el = el; }
+  _set() { return new Set((this.el._attrs.get("class") || "").split(/\s+/).filter(Boolean)); }
+  contains(c) { return this._set().has(c); }
+}
+class Node {
+  constructor(type, name, text = "") {
+    this.nodeType = type; this.nodeName = name; this.tagName = name;
+    this.nodeValue = text; this.childNodes = []; this.parentNode = null;
+    this._attrs = new Map(); this.attributes = new AttrList(this._attrs);
+    this.classList = new ClassList(this);
+    this.dataset = new Proxy({}, {
+      get: (_, k) => this._attrs.get("data-" + k),
+      set: (_, k, v) => { this._attrs.set("data-" + k, String(v)); return true; },
+    });
+  }
+  get id() { return this._attrs.get("id") || ""; }
+  get firstChild() { return this.childNodes[0] || null; }
+  get nextSibling() {
+    if (!this.parentNode) return null;
+    const i = this.parentNode.childNodes.indexOf(this);
+    return i >= 0 ? this.parentNode.childNodes[i + 1] || null : null;
+  }
+  hasAttribute(k) { return this._attrs.has(k); }
+  getAttribute(k) { return this._attrs.has(k) ? this._attrs.get(k) : null; }
+  setAttribute(k, v) { this._attrs.set(k, String(v)); }
+  removeAttribute(k) { this._attrs.delete(k); }
+  appendChild(c) {
+    if (c.parentNode) c.parentNode.removeChild(c);
+    c.parentNode = this; this.childNodes.push(c); return c;
+  }
+  insertBefore(c, ref) {
+    if (c.parentNode) c.parentNode.removeChild(c);
+    c.parentNode = this;
+    const i = ref ? this.childNodes.indexOf(ref) : -1;
+    if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c);
+    return c;
+  }
+  removeChild(c) {
+    const i = this.childNodes.indexOf(c);
+    if (i >= 0) { this.childNodes.splice(i, 1); c.parentNode = null; }
+    return c;
+  }
+  find(pred) {
+    for (const c of this.childNodes) {
+      if (pred(c)) return c;
+      const d = c.find?.(pred);
+      if (d) return d;
+    }
+    return null;
+  }
+  findAll(pred, out = []) {
+    for (const c of this.childNodes) {
+      if (pred(c)) out.push(c);
+      c.findAll?.(pred, out);
+    }
+    return out;
+  }
+}
+function parseFragment(html) {
+  const root = new Node(11, "#fragment"), stack = [root];
+  const re = /<\/([a-z0-9]+)>|<([a-z0-9]+)([^>]*)>|([^<]+)/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    if (m[1]) { if (stack.length > 1) stack.pop(); }
+    else if (m[2]) {
+      const el = new Node(1, m[2].toUpperCase());
+      const ar = /([a-z0-9:-]+)(?:="([^"]*)")?/gi;
+      let am;
+      while ((am = ar.exec(m[3] || ""))) el.setAttribute(am[1], am[2] ?? "");
+      stack[stack.length - 1].appendChild(el);
+      if (!/^(INPUT|IMG|BR|HR)$/i.test(m[2])) stack.push(el);
+    } else if (m[4]) {
+      stack[stack.length - 1].appendChild(new Node(3, "#text", m[4]));
+    }
+  }
+  return root;
+}
+const document = {
+  createElement: () => ({ set innerHTML(h) { this.content = parseFragment(h); } }),
+  activeElement: null,
+};
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const ico = (n) => `<svg data-i="${n}"></svg>`;
+const statusLabel = (s) => ({ CURRENT: "Watching", COMPLETED: "Completed", REPEATING: "Rewatching", PLANNING: "Planning" }[s] || s);
+const acct = () => "AniList";
+const reduceMotion = () => false;
+let tablet = false;
+const isPhone = () => false, isTabletP = () => tablet;
+let fe = { id: 161645, episodes: 24, rewatch: { done: [1,2,3,4,5,6,7,8] }, slots: Array.from({ length: 24 }, (_, i) => ({ number: i + 1, watched: true, local: { id: "ep" + i } })) };
+const S = { view: "fr", data: { rewatches: {} }, entry: { mid: 161645, svc: null } };
+const frEntry = () => fe, showById = () => null, epTotal = () => 0, epWatched = () => 0;
+const st = new Node(1, "DIV"), acts = new Node(1, "SPAN");
+st.setAttribute("id", "entrystats"); acts.setAttribute("id", "entryacts");
+const $ = (sel) => sel === "#entrystats" ? st : sel === "#app #entryacts" ? acts : null;
+""" + morph_src + "\n" + entry_src + r"""
+const f = { status: "COMPLETED", score: 9, progress: 24, media: { episodes: 24 } };
+entryPaint(f, false);
+const bar1 = st.find((n) => n.nodeType === 1 && n.nodeName === "I" && n.parentNode?.classList.contains("tline"));
+assert.ok(bar1, "first paint creates span.tline > i");
+assert.equal(bar1.getAttribute("style"), "width:33.3%");
+
+// 1. Background poll / frRepaint with identical state: exact same node, no DOM work
+entryPaint(f, false);
+const bar2 = st.find((n) => n.nodeType === 1 && n.nodeName === "I" && n.parentNode?.classList.contains("tline"));
+assert.strictEqual(bar2, bar1, "identical repaint keeps the exact same bar element");
+
+// 2. Score / pending / progress update: bar node is still reused, width updates in place
+fe.rewatch.done.push(9);
+entryPaint({ ...f, score: 10 }, true);
+const bar3 = st.find((n) => n.nodeType === 1 && n.nodeName === "I" && n.parentNode?.classList.contains("tline"));
+assert.strictEqual(bar3, bar1, "progress and score update reuses the same bar element instead of restarting growx");
+assert.equal(bar3.getAttribute("style"), "width:37.5%");
+
+// 3. Portrait tablet ticks: updating progress reuses all tick nodes
+tablet = true;
+st.childNodes = []; st._html = undefined;
+entryPaint(f, false);
+const ticks1 = st.findAll((n) => n.nodeType === 1 && n.nodeName === "I" && n.parentNode?.classList.contains("ticks"));
+assert.equal(ticks1.length, 24);
+fe.rewatch.done.push(10);
+entryPaint(f, false);
+const ticks2 = st.findAll((n) => n.nodeType === 1 && n.nodeName === "I" && n.parentNode?.classList.contains("ticks"));
+assert.equal(ticks2.length, 24);
+for (let i = 0; i < 24; i++) assert.strictEqual(ticks2[i], ticks1[i], "tick " + i + " node reused");
+assert.equal(ticks2[9].getAttribute("class"), "s");
+"""
+        proc = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
     def test_about_and_top_line(self):
         a = APP.index("function Fran()")
         fran = APP[a:APP.index("\nfunction frOrder(", a)]

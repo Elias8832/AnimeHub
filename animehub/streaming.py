@@ -339,6 +339,8 @@ def friendly_stream_error(msg, code="this episode"):
 _link_locks = {}
 _link_locks_guard = threading.Lock()
 _resolving = set()
+_resolve_failed = {}  # media_id -> unix ts; stops frLoad's 400ms poll from re-spawning a failing autolink
+RESOLVE_RETRY = 60
 
 
 def _media_lock(media_id):
@@ -401,7 +403,8 @@ def stream_autolink(media_id, rematch=False):
 def stream_resolve_async(media_id):
     """Start linking a release in the background (a page was opened), so
     its real episode list is there before anyone clicks."""
-    if (media_id in _resolving or stream_link_get(media_id) or not anicli.anicli_path()
+    if (media_id in _resolving or time.time() - _resolve_failed.get(media_id, 0) < RESOLVE_RETRY
+            or stream_link_get(media_id) or not anicli.anicli_path()
             or media_id in stream_missed_ids() or not settings.site_ok()):
         return
     _resolving.add(media_id)
@@ -409,10 +412,12 @@ def stream_resolve_async(media_id):
     def run():
         try:
             stream_autolink(media_id)
+            _resolve_failed.pop(media_id, None)
         except anicli.AniCliError:
-            pass
+            _resolve_failed[media_id] = time.time()
         except Exception as e:
             util.log("linking %s failed: %s" % (media_id, e))
+            _resolve_failed[media_id] = time.time()
         finally:
             _resolving.discard(media_id)
 
