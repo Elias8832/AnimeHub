@@ -294,7 +294,7 @@ def local_media_candidates(title):
     missing = [mid for mid, c in cards.items() if c is None]
     if missing:
         data = anilist.anilist_request({"query": "query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){"
-                                                 + anilist.MEDIA_FIELDS + " popularity}}}", "variables": {"ids": missing}})
+                                                 + anilist.MEDIA_FIELDS + "}}}", "variables": {"ids": missing}})
         for m in ((data.get("data") or {}).get("Page") or {}).get("media") or []:
             if m.get("id") in cards:
                 cards[m["id"]] = m
@@ -399,7 +399,7 @@ def save_art(url, dest):
 
 
 ART_QUERY = ("query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){"
-             "id bannerImage coverImage{extraLarge}}}}")
+             "id popularity bannerImage coverImage{extraLarge}}}}")
 
 
 def refresh_art():
@@ -423,18 +423,31 @@ def refresh_art():
     for i in range(0, len(ids), 50):
         data = anilist.anilist_request({"query": ART_QUERY, "variables": {"ids": ids[i:i + 50]}})
         for m in ((data.get("data") or {}).get("Page") or {}).get("media") or []:
+            pop = m.get("popularity")
             for kind, key, held in wanted.get(m.get("id"), ()):
                 name = str(key) if kind == "show" else f"stream-{key}"
                 save_art((m.get("coverImage") or {}).get("extraLarge"), config.POSTERS / f"{name}.jpg")
                 bname = f"{name}.banner.jpg"
-                if not save_art(m.get("bannerImage"), config.POSTERS / bname):
-                    continue
-                with database.db() as c:  # AniList added a banner the show had none of
-                    if kind == "show" and not held:
-                        c.execute("UPDATE shows_meta SET banner=? WHERE show_id=?", (f"/img/{bname}", key))
-                    elif kind == "link" and held.get("banner") != f"/img/{bname}":
+                new_banner = save_art(m.get("bannerImage"), config.POSTERS / bname)
+                if kind == "show":
+                    if new_banner and not held:
+                        with database.db() as c:  # AniList added a banner the show had none of
+                            c.execute("UPDATE shows_meta SET banner=?, popularity=COALESCE(?, popularity) WHERE show_id=?",
+                                      (f"/img/{bname}", pop, key))
+                    elif pop is not None:
+                        with database.db() as c:
+                            c.execute("UPDATE shows_meta SET popularity=? WHERE show_id=?", (pop, key))
+                elif kind == "link":
+                    changed = False
+                    if new_banner and held.get("banner") != f"/img/{bname}":
                         held["banner"] = f"/img/{bname}"
-                        c.execute("UPDATE stream_links SET meta=? WHERE media_id=?", (json.dumps(held), key))
+                        changed = True
+                    if pop is not None and held.get("popularity") != pop:
+                        held["popularity"] = pop
+                        changed = True
+                    if changed:
+                        with database.db() as c:
+                            c.execute("UPDATE stream_links SET meta=? WHERE media_id=?", (json.dumps(held), key))
 
 
 def search_candidates(show, season):
@@ -567,13 +580,15 @@ def store_show_meta(show, m):
     title = (m.get("title") or {}).get("english") or (m.get("title") or {}).get("romaji")
     with database.db() as c:
         c.execute(
-            """INSERT INTO shows_meta(show_id,anilist_id,title,year,score,overview,poster,banner,episodes_meta,format,episode_thumbs,fetched_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            """INSERT INTO shows_meta(show_id,anilist_id,title,year,score,popularity,overview,poster,banner,episodes_meta,format,episode_thumbs,fetched_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
                ON CONFLICT(show_id) DO UPDATE SET anilist_id=excluded.anilist_id,title=excluded.title,year=excluded.year,
-               score=excluded.score,overview=excluded.overview,poster=excluded.poster,banner=excluded.banner,
-               episodes_meta=excluded.episodes_meta,format=excluded.format,episode_thumbs=excluded.episode_thumbs,fetched_at=excluded.fetched_at""",
-            (show["id"], m["id"], title, year, m.get("averageScore"), anilist.strip_html(m.get("description")),
-             poster, banner, json.dumps(eps_meta) if eps_meta else None, m.get("format"),
+               score=excluded.score,popularity=excluded.popularity,overview=excluded.overview,poster=excluded.poster,
+               banner=excluded.banner,episodes_meta=excluded.episodes_meta,format=excluded.format,
+               episode_thumbs=excluded.episode_thumbs,fetched_at=excluded.fetched_at""",
+            (show["id"], m["id"], title, year, m.get("averageScore"), m.get("popularity"),
+             anilist.strip_html(m.get("description")), poster, banner,
+             json.dumps(eps_meta) if eps_meta else None, m.get("format"),
              json.dumps(thumbs) if thumbs else None),
         )
     return True

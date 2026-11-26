@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 import unittest
 from unittest import mock
 
@@ -421,6 +422,24 @@ class LibraryCards(unittest.TestCase):
         # The reverse button: lowest first, and no average still goes last.
         self.assertEqual(ids({"sort": "average", "average": "all", "rev": True}), [1, 2, 3])
         self.assertEqual(ids({"sort": "title", "rev": True}), [3, 2, 1])
+
+    def test_popularity_sorts_and_formats(self):
+        entries = [{"id": 1, "title": "A", "popularity": 120000, "status": "PLANNING"},
+                   {"id": 2, "title": "B", "popularity": 950000, "status": "PLANNING"},
+                   {"id": 3, "title": "No pop", "popularity": None, "status": "PLANNING"}]
+        res = run_js(f"""
+            S.data = {{ shows: [], spine: {{ entries: {json.dumps(entries)}, untracked: [] }} }};
+            const ids = (lib) => {{ Object.assign(S.lib, {{ tab: "ALL", group: "all", rev: false }}, lib); return libList(libModel()).map((e) => e.id); }};
+            return {{
+                desc: ids({{ sort: "popularity" }}),
+                asc: ids({{ sort: "popularity", rev: true }}),
+                fmt: [850, 1000, 1540, 99950, 584123, 999500, 1240000].map(fmtPop),
+            }};""")
+        self.assertEqual(res["desc"], [2, 1, 3])  # most popular first, blanks last
+        self.assertEqual(res["asc"], [1, 2, 3])  # least popular first, blanks still last
+        self.assertEqual(res["fmt"], ["850", "1k", "1.5k", "100k", "584k", "1M", "1.2M"])
+        self.assertIn('["popularity", "Popularity"]', APP)
+        self.assertIn('popularity: ["Most popular first", "Least popular first"]', APP)
 
     def test_a_filter_change_replays_the_cards_rise_in(self):
         """TODO 210: every filter, the sort and the reverse button paint the
@@ -880,8 +899,8 @@ class NextSource(unittest.TestCase):
 
 class NextAiringAt(unittest.TestCase):
     def test_cache_keeps_airing_at(self):
-        media = {"id": 7, "status": "RELEASING", "averageScore": 81, "episodes": 12, "format": "TV", "genres": ["Drama"],
-                 "startDate": {"year": 2026}, "title": {"english": "X"},
+        media = {"id": 7, "status": "RELEASING", "averageScore": 81, "popularity": 250000, "episodes": 12,
+                 "format": "TV", "genres": ["Drama"], "startDate": {"year": 2026}, "title": {"english": "X"},
                  "nextAiringEpisode": {"episode": 5, "timeUntilAiring": 3600, "airingAt": 1_800_000_000}}
         data = {"data": {"User": {"name": "u", "statistics": {"anime": {"episodesWatched": 0, "minutesWatched": 0,
                                                                          "meanScore": 0, "count": 1}}},
@@ -897,6 +916,11 @@ class NextAiringAt(unittest.TestCase):
         self.assertEqual(out["entries"][0]["next_episode"], {"number": 5, "in_seconds": 3600, "at": 1_800_000_000})
         self.assertEqual(out["entries"][0]["genres"], ["Drama"])
         self.assertEqual(out["entries"][0]["average"], 81)
+        self.assertEqual(out["entries"][0]["popularity"], 250000)
+        # An older list cache whose entries lack popularity is not treated as fresh, so it refreshes right away.
+        cache.write_text(json.dumps({"user": {"name": "u"}, "entries": [{"id": 7, "average": 81}], "_ts": time.time()}),
+                         encoding="utf-8")
+        self.assertIsNone(anilist._list_cache_fresh("anilist"))
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")

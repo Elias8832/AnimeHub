@@ -56,7 +56,7 @@ def _stream_miss(media_id, missed):
 
 
 RELEASE_QUERY = """query($id:Int){Media(id:$id,type:ANIME){id title{romaji english native} synonyms
-format status episodes averageScore seasonYear startDate{year} nextAiringEpisode{episode airingAt}
+format status episodes averageScore popularity seasonYear startDate{year} nextAiringEpisode{episode airingAt}
 coverImage{extraLarge color} bannerImage description streamingEpisodes{title thumbnail}}}"""
 
 
@@ -118,7 +118,8 @@ def _release_display(m, fallback_title, art):
                    else {"thumbs": None, "titles": None})
     return {"title": t.get("english") or t.get("romaji") or fallback_title,
             "year": (m.get("startDate") or {}).get("year") or m.get("seasonYear"),
-            "score": m.get("averageScore"), "overview": anilist.strip_html(m.get("description")),
+            "score": m.get("averageScore"), "popularity": m.get("popularity"),
+            "overview": anilist.strip_html(m.get("description")),
             "format": m.get("format"), "episodes": m.get("episodes"),
             "poster": poster, "banner": banner,
             "thumbs": eps_art.get("thumbs"), "titles": eps_art.get("titles")}
@@ -589,7 +590,8 @@ def _stream_show(link, rows, extra=None):
             "poster": library.img_url(meta.get("poster")), "banner": library.img_url(meta.get("banner")),
             "movie": meta.get("format") == "MOVIE" and len(eps) <= 1,
             "meta": {"anilist_id": mid, "title": title, "year": meta.get("year"),
-                     "score": meta.get("score"), "overview": meta.get("overview"),
+                     "score": meta.get("score"), "popularity": meta.get("popularity"),
+                     "overview": meta.get("overview"),
                      "format": meta.get("format"), "episodes_meta": None, "episode_thumbs": None},
             # One season that is the release itself, so progress sync and
             # completion (release_units) count its episodes for it.

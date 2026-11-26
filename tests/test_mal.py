@@ -105,7 +105,8 @@ class _Ctx:
 
 
 def media(aid, mal_id, title, status="FINISHED", episodes=12, nxt=None):
-    return {"id": aid, "idMal": mal_id, "status": status, "averageScore": 80, "season": "SPRING",
+    return {"id": aid, "idMal": mal_id, "status": status, "averageScore": 80, "popularity": aid * 1000,
+            "season": "SPRING",
             "episodes": episodes, "format": "TV", "duration": 24, "startDate": {"year": 2020},
             "genres": ["Action"], "nextAiringEpisode": nxt,
             "coverImage": {"extraLarge": "p.jpg", "color": "#fff"}, "bannerImage": None,
@@ -363,7 +364,8 @@ class Lists(Base):
         self.assertEqual((one["status"], one["score"], one["score100"], one["progress"]), ("COMPLETED", 8, 80, 12))
         self.assertEqual((one["started_at"], one["completed_at"], one["repeat"]), ("2025-12-01", "2026-01-02", 1))
         self.assertEqual(one["updated"], 1767323045)
-        self.assertEqual((one["title"], one["mal_id"], one["poster"]), ("One", 1, "p.jpg"))
+        self.assertEqual((one["title"], one["mal_id"], one["poster"], one["popularity"]),
+                         ("One", 1, "p.jpg", 101000))
         self.assertEqual(by[102]["next_episode"], {"number": 5, "in_seconds": 3600, "at": 2000000000})
         self.assertEqual(by[103]["status"], "REPEATING")
         self.assertEqual(d["unmatched"], [{"mal_id": 4, "title": "Not on AniList", "status": "PLANNING"}])
@@ -397,6 +399,15 @@ class Lists(Base):
         with mock.patch.object(anilist, "anilist_request", spy):
             anilist.anilist_user_data(force=True)
         self.assertEqual(calls, [[2]])
+
+    def test_old_catalog_row_without_popularity_refreshes(self):
+        old = dict(CATALOG[1])
+        old.pop("popularity")
+        database.cache_put("malcat:v1:1", {"media": old})
+        d = anilist.anilist_user_data(force=True)
+        self.assertEqual(self.al.catalog_calls, 1)
+        by = {e["id"]: e for e in d["entries"]}
+        self.assertEqual(by[101]["popularity"], 101000)
 
     def test_anilist_down_uses_the_last_catalog(self):
         anilist.anilist_user_data(force=True)

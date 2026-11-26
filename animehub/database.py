@@ -407,12 +407,18 @@ def migration_33(c):
     c.execute("CREATE INDEX IF NOT EXISTS custom_subtitles_slot ON custom_subtitles(slot)")
 
 
+def migration_34(c):
+    """Store AniList popularity on matched local shows so Library can sort by
+    popularity in local/no-account mode too."""
+    _add_columns(c, "shows_meta", {"popularity": "INTEGER"})
+
+
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7,
               migration_8, migration_9, migration_10, migration_reserved, migration_reserved,
               migration_reserved, migration_reserved, migration_15, migration_16, migration_17,
               migration_18, migration_19, migration_20, migration_21, migration_22, migration_23, migration_24, migration_25,
               migration_26, migration_27, migration_28, migration_29, migration_30, migration_31, migration_32,
-              migration_33]
+              migration_33, migration_34]
 
 
 def snapshot_before(target_version):

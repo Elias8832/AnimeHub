@@ -24,8 +24,8 @@ _USER_FIELDS = ("name mediaListOptions{scoreFormat} statistics{anime{episodesWat
                 " favourites{anime(perPage:50){nodes{id}}}")
 _LIST_FIELDS = ("lists{ entries{ status progress repeat startedAt{year month day} completedAt{year month day}"
                 " score(format:POINT_10) score100: score(format:POINT_100) updatedAt media{ id status averageScore"
-                " season episodes format duration startDate{year} genres nextAiringEpisode{ episode timeUntilAiring"
-                " airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }")
+                " popularity season episodes format duration startDate{year} genres nextAiringEpisode{ episode"
+                " timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji} } } }")
 ANILIST_USER_QUERY = ("query($name:String){ User(name:$name){ " + _USER_FIELDS + " }"
                       " MediaListCollection(userName:$name, type:ANIME){ " + _LIST_FIELDS + " } }")
 # By the account's id (stored at connect): a renamed account still reads,
@@ -33,7 +33,7 @@ ANILIST_USER_QUERY = ("query($name:String){ User(name:$name){ " + _USER_FIELDS +
 # for token files from before the id was kept.
 ANILIST_USER_QUERY_ID = ("query($id:Int){ User(id:$id){ " + _USER_FIELDS + " }"
                          " MediaListCollection(userId:$id, type:ANIME){ " + _LIST_FIELDS + " } }")
-MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore seasonYear startDate{year}
+MEDIA_FIELDS = """id title{romaji english native} format episodes duration averageScore popularity seasonYear startDate{year}
 coverImage{extraLarge color} bannerImage description
 relations{edges{relationType node{id format}}}
 streamingEpisodes{title thumbnail}"""
@@ -1213,6 +1213,9 @@ def _list_cache_fresh(which, since=None):
     cached = _cache_raw(which)
     if not cached or (cached.get("service") == "mal") != (which == "mal"):
         return None
+    entries = cached.get("entries") or []
+    if since is None and entries and all("popularity" not in e for e in entries):
+        return None
     ts = cached.get("_ts", 0)
     if (ts >= since) if since is not None else (time.time() - ts < 600):
         return {k: v for k, v in cached.items() if k != "_ts"}
@@ -1313,8 +1316,9 @@ def _anilist_lists():
                     "progress": e.get("progress") or 0,
                     "score": e.get("score") or 0,
                     "score100": e.get("score100"),
-                    # Additive: AniList's community score, 0-100.
+                    # Additive: AniList's community score, 0-100, and member count.
                     "average": e["media"].get("averageScore"),
+                    "popularity": e["media"].get("popularity"),
                     "episodes": e["media"].get("episodes"),
                     "format": e["media"].get("format"),
                     "duration": e["media"].get("duration"),

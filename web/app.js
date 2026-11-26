@@ -1263,8 +1263,10 @@ function yearBounds() {
 const SORT = {
   updated: (a, b) => (b.updated || 0) - (a.updated || 0), score: (a, b) => (b.score || 0) - (a.score || 0),
   average: (a, b) => (b.average || 0) - (a.average || 0),
+  popularity: (a, b) => (b.popularity || 0) - (a.popularity || 0),
   year: (a, b) => (b.year || 0) - (a.year || 0), title: (a, b) => (a.title || "").localeCompare(b.title || ""),
 };
+const fmtPop = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(1)}M` : n >= 99950 ? `${Math.round(n / 1e3)}k` : n >= 1000 ? `${+(n / 1e3).toFixed(1)}k` : String(n));
 /* The reverse button flips the order; shows with no score, average, year or
    date stay last either way, so "lowest first" doesn't open on blanks. */
 const blankFor = (k, e) => k !== "title" && !e[k];
@@ -1942,9 +1944,10 @@ function entryCard(e, i) {
   const facts = rows ? phoneFact(e) : e.episodes ? `${prog} / ${e.episodes}` : prog ? `${prog} seen` : "";
   const pre = (rows && S.lib.tab === "ALL" ? esc(statusLabel(e.status)) + " · " : "") + (disk ? `<span class="dsk">${ico("disk")}${e.capability === "partial" ? "some on disk" : "on disk"}</span> · ` : "");
   const more = ph ? "" : [fmtName(e.format), e.airing === "RELEASING" ? "airing" : e.year].filter(Boolean).join(" · ");
-  /* Sorting or filtering by the average shows the average, or the order would look random. */
-  const byAvg = S.lib.sort === "average" || Array.isArray(S.lib.average);
-  const badge = byAvg ? (e.average ? `<span class="kb" title="AniList average">${e.average}</span>` : "")
+  /* Sorting by popularity or sorting/filtering by the average shows that number, or the order would look random. */
+  const byPop = S.lib.sort === "popularity", byAvg = !byPop && (S.lib.sort === "average" || Array.isArray(S.lib.average));
+  const badge = byPop ? (e.popularity ? `<span class="kb" title="${e.popularity.toLocaleString()} on AniList">${fmtPop(e.popularity)}</span>` : "")
+    : byAvg ? (e.average ? `<span class="kb" title="AniList average">${e.average}</span>` : "")
     : e.score ? `<span class="kb" title="Your score">${Math.round(e.score * 10) / 10}</span>` : "";
   return `<button class="card" style="--i:${Math.min(i, 24)}${e.poster ? `;--art:${esc(cssUrl(pic(e.poster)))}` : ""}" data-a="entry" data-v="${esc(e.id)}" data-poster="${esc(e.poster || "")}" data-color="${esc(e.color || "")}"${ph ? ` aria-label="${esc(e.title)}"` : ""}>
     <div class="pw">${poster(e.title, e.poster, { wait: S.data.meta_running && !e.poster })}
@@ -2371,7 +2374,7 @@ function Lib() {
     const filters = (m.cold || isUn) ? "" : ph ? '<div class="filters"></div>' /* the sheet itself is built in paintPortals */ : `<div class="filters">${lhead}${mrow}
       ${rail ? "" : filterCtl()}
       ${filtersActive() ? `<button class="btn clr" data-a="fclear">${ico("close")}Clear</button>` : ""}
-      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]])}${fsel("group", "show", [["all", "Each show"], ["fr", "Franchises"]])}
+      <span class="fill"></span>${revBtn()}${fsel("sort", "sort", SORTS)}${fsel("group", "show", [["all", "Each show"], ["fr", "Franchises"]])}
       <button class="btn ic" data-a="rescan" aria-label="Rescan" title="Rescan library & fetch missing metadata">${ico("refresh")}</button><button class="btn pri fltdone" data-a="fltclose">Done</button></div>`;
     /* Phones: sort, filter and the view live in the bar above the dock (libBar). */
     const fltb = !filters || ph ? "" : `<div class="fltrow"><button class="btn fltb${filtersActive() ? " on" : ""}" data-a="fltopen">${ico("sliders")}Sort & filter${filtersActive() ? '<i class="att"></i>' : ""}</button><button class="btn fltb swb" data-a="deck" data-v="lib">${ico("up")}Swipe</button></div><i class="fltscrim" data-a="fltclose"></i>`;
@@ -2539,8 +2542,8 @@ function libPickMenu() {
   cm.querySelector(".mi.sel")?.classList.remove("sel");
 }
 /* Sort as a sheet: the order, its direction in words, and franchises on one card. */
-const SORTS = [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["year", "Year"], ["title", "Title"]];
-const SORT_DIR = { updated: ["Newest first", "Oldest first"], score: ["Highest first", "Lowest first"], average: ["Highest first", "Lowest first"], year: ["Newest first", "Oldest first"], title: ["A to Z", "Z to A"] };
+const SORTS = [["updated", "Recently updated"], ["score", "My score"], ["average", "Average score"], ["popularity", "Popularity"], ["year", "Year"], ["title", "Title"]];
+const SORT_DIR = { updated: ["Newest first", "Oldest first"], score: ["Highest first", "Lowest first"], average: ["Highest first", "Lowest first"], popularity: ["Most popular first", "Least popular first"], year: ["Newest first", "Oldest first"], title: ["A to Z", "Z to A"] };
 function libSortMenu() {
   const cm = $("#cm"), k = SORT[S.lib.sort] ? S.lib.sort : "updated";
   const r = (a, v, label, on) => `<button class="mi lso${on ? " on" : ""}" data-a="${a}" data-v="${v}"><span class="ml">${label}</span>${on ? ico("check") : ""}</button>`;
