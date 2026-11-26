@@ -518,7 +518,7 @@ def merge_db(scan):
             rows[r[0]] = r[1:5]
             stamped[r[0]] = (r[5], r[6])
         meta = {r[0]: r for r in c.execute(
-            "SELECT show_id, anilist_id, title, year, score, overview, poster, banner, episodes_meta, format, fetched_at, episode_thumbs FROM shows_meta")}
+            "SELECT show_id, anilist_id, title, year, score, overview, poster, banner, episodes_meta, format, fetched_at, episode_thumbs, popularity FROM shows_meta")}
         season_rows = {r[0] for r in c.execute("SELECT DISTINCT show_id FROM season_thumbs")}
     known = {ep["id"] for s in scan for ep in eps_of(s)}
     stamps = []
@@ -565,8 +565,8 @@ def merge_db(scan):
     for s in scan:
         m = meta.get(s["id"])
         if m:
-            s["meta"] = {"anilist_id": m[1], "title": m[2], "year": m[3], "score": m[4], "overview": m[5],
-                         "episodes_meta": json.loads(m[8]) if m[8] else None, "format": m[9],
+            s["meta"] = {"anilist_id": m[1], "title": m[2], "year": m[3], "score": m[4], "popularity": m[12],
+                         "overview": m[5], "episodes_meta": json.loads(m[8]) if m[8] else None, "format": m[9],
                          "episode_thumbs": json.loads(m[11]) if m[11] else None}
             s["poster"] = img_url(m[6])
             s["banner"] = img_url(m[7])
@@ -650,6 +650,7 @@ def spine_build(entries, scan, streamed=frozenset(), online=False, missed=frozen
         out.append({"id": e["id"], "title": e.get("title"), "status": e.get("status"),
                     "progress": e.get("progress") or 0, "score": e.get("score") or 0,
                     "average": e.get("average"),  # additive: AniList's community score
+                    "popularity": e.get("popularity"),  # additive: AniList's member count
                     "episodes": e.get("episodes"), "format": e.get("format"),
                     "year": e.get("year"), "airing": e.get("airing"),
                     "genres": e.get("genres") or [],
@@ -762,6 +763,7 @@ def spine_build_local(scan, curations, streams=()):
                     "status": status, "progress": progress,
                     "score": cur.get("score") or 0, "episodes": total,
                     "average": meta.get("score"),  # AniList's averageScore, as in spine_build
+                    "popularity": meta.get("popularity"),
                     "format": meta.get("format") or
                               ("MOVIE" if s.get("kind") == "movie" else None),
                     "year": meta.get("year"), "airing": None,

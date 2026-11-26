@@ -229,12 +229,32 @@ class LocalSpineTests(unittest.TestCase):
 
     def test_average_score_comes_from_the_match(self):
         scan = [{"id": "m", "title": "M", "kind": "show", "poster": None, "banner": None,
-                 "meta": {"anilist_id": 99, "score": 81},
+                 "meta": {"anilist_id": 99, "score": 81, "popularity": 420000},
                  "seasons": [{"key": 1, "season": 1, "label": "Season 1",
                               "episodes": [{"id": "m-0", "number": 1,
                                             "watched": 0, "last_played": None}]}]}]
-        self.assertEqual(library.spine_build_local(scan, {})["entries"][0]["average"], 81)
-        self.assertEqual(library.spine_build([dict(entry(99), average=81)], [])["entries"][0]["average"], 81)
+        loc = library.spine_build_local(scan, {})["entries"][0]
+        self.assertEqual(loc["average"], 81)
+        self.assertEqual(loc["popularity"], 420000)
+        sp = library.spine_build([dict(entry(99), average=81, popularity=420000)], [])["entries"][0]
+        self.assertEqual(sp["average"], 81)
+        self.assertEqual(sp["popularity"], 420000)
+
+    def test_shows_meta_persists_popularity(self):
+        from animehub import metadata
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with patch.object(config, "DB", Path(tmp.name) / "hub.db"), \
+             patch.object(config, "POSTERS", Path(tmp.name) / "posters"):
+            config.POSTERS.mkdir()
+            database.init_db()
+            show = {"id": "sh1", "title": "Show", "kind": "show", "seasons": []}
+            with patch.object(metadata, "save_art", return_value=False):
+                metadata.store_show_meta(show, {"id": 99, "title": {"english": "Show"},
+                                                "averageScore": 85, "popularity": 512345})
+            scan = [dict(show)]
+            library.merge_db(scan)
+            self.assertEqual(scan[0]["meta"]["popularity"], 512345)
 
     def test_everything_is_installed_and_deep_linked(self):
         spine = library.spine_build_local([local_show_watched("a", 5),

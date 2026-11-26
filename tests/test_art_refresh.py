@@ -66,6 +66,15 @@ class ArtRefresh(unittest.TestCase):
         with database.db() as c:
             self.assertEqual(c.execute("SELECT banner FROM shows_meta").fetchone()[0], "/img/s1.banner.jpg")
 
+    def test_refresh_art_updates_popularity(self):
+        with database.db() as c:
+            c.execute("INSERT INTO shows_meta(show_id, anilist_id, banner) VALUES('s1', 1, '/img/s1.banner.jpg')")
+        media = [{"id": 1, "popularity": 345678, "bannerImage": OLD, "coverImage": {"extraLarge": COVER}}]
+        with patch.object(anilist, "anilist_request", return_value={"data": {"Page": {"media": media}}}):
+            metadata.refresh_art()
+        with database.db() as c:
+            self.assertEqual(c.execute("SELECT popularity FROM shows_meta WHERE show_id='s1'").fetchone()[0], 345678)
+
     def test_a_linked_release_follows_too(self):
         meta = {"poster": "/img/stream-7.jpg", "banner": "/img/stream-7.banner.jpg"}
         with database.db() as c:

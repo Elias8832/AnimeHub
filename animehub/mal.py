@@ -336,7 +336,7 @@ def _connected(rec):
 
 # --- AniList as the catalog -------------------------------------------------
 
-CATALOG_FIELDS = """id idMal status averageScore season episodes format duration startDate{year} genres
+CATALOG_FIELDS = """id idMal status averageScore popularity season episodes format duration startDate{year} genres
 nextAiringEpisode{ episode timeUntilAiring airingAt } coverImage{extraLarge color} bannerImage title{english romaji}"""
 CATALOG_QUERY = ("query($ids:[Int]){Page(page:1,perPage:50){media(idMal_in:$ids,type:ANIME){"
                  + CATALOG_FIELDS + "}}}")
@@ -354,6 +354,8 @@ def _catalog_key(mal_id):
 def _catalog_fresh(row):
     payload, ts = row
     m = (payload or {}).get("media")
+    if m and "popularity" not in m:
+        return False
     age = time.time() - ts
     if m and m.get("status") in ("RELEASING", "NOT_YET_RELEASED", "HIATUS"):
         return age < CATALOG_FRESH_AIRING
@@ -494,6 +496,7 @@ def user_data(report=None):
             "score": score,
             "score100": score * 10 if score else 0,
             "average": m.get("averageScore"),
+            "popularity": m.get("popularity"),
             "episodes": m.get("episodes"),
             "format": m.get("format"),
             "duration": m.get("duration"),
