@@ -8,11 +8,12 @@ minutes only, never on disk: they are read on demand for one person's own
 screen (AniList's terms: no data storage, no hoarding).
 """
 
+import re
 import threading
 import time
 from datetime import datetime
 
-from . import anilist
+from . import anilist, titles
 
 TTL = 10 * 60            # a list answer is reused this long
 PER_PAGE = 50            # AniList's largest page
@@ -21,7 +22,7 @@ TOP = 100                # the Top 100 stops here
 SEASONS = ("WINTER", "SPRING", "SUMMER", "FALL")
 FORMATS = ("TV", "TV_SHORT", "MOVIE", "SPECIAL", "OVA", "ONA", "MUSIC")
 SORTS = {"trending": "TRENDING_DESC", "popularity": "POPULARITY_DESC", "score": "SCORE_DESC",
-         "newest": "START_DATE_DESC", "title": "TITLE_ROMAJI"}
+         "newest": "START_DATE_DESC", "title": "TITLE_ROMAJI", "relevance": "SEARCH_MATCH"}
 # Each list: its own order, and what narrows it.
 LISTS = {"trending": "trending", "season": "popularity", "next": "popularity",
          "popular": "popularity", "top": "score", "all": "popularity"}
@@ -29,10 +30,18 @@ LISTS = {"trending": "trending", "season": "popularity", "next": "popularity",
 FIELDS = """id title{english romaji} format episodes seasonYear season status averageScore popularity genres
 coverImage{extraLarge color} bannerImage studios(isMain:true){nodes{name}}"""
 PAGE = """query($page:Int,$per:Int,$sort:[MediaSort],$season:MediaSeason,$year:Int,$genres:[String],
-$format:MediaFormat,$score:Int,$scoreMax:Int,$from:FuzzyDateInt,$to:FuzzyDateInt){
+$format:MediaFormat,$score:Int,$scoreMax:Int,$from:FuzzyDateInt,$to:FuzzyDateInt,$search:String,$ids:[Int]){
 Page(page:$page,perPage:$per){ pageInfo{hasNextPage} media(type:ANIME,isAdult:false,sort:$sort,season:$season,
 seasonYear:$year,genre_in:$genres,format:$format,averageScore_greater:$score,averageScore_lesser:$scoreMax,startDate_greater:$from,
-startDate_lesser:$to){ %s } } }""" % FIELDS
+startDate_lesser:$to,search:$search,id_in:$ids){ %s } } }""" % FIELDS
+PERSON_QUERY = """query($id:Int,$page:Int,$per:Int,$sort:[MediaSort]){
+Staff(id:$id){ id name{full native} image{large medium} description(asHtml:false) favourites
+characterMedia(page:$page,perPage:$per,sort:$sort){ pageInfo{hasNextPage}
+edges{ characterRole characters{ id name{full} } node{ type isAdult %s } } } } }""" % FIELDS
+STUDIO_QUERY = """query($id:Int,$page:Int,$per:Int,$sort:[MediaSort]){
+Studio(id:$id){ id name favourites isAnimationStudio
+media(page:$page,perPage:$per,sort:$sort,isMain:true){ pageInfo{hasNextPage}
+nodes{ type isAdult %s } } } }""" % FIELDS
 GENRES = "query{ GenreCollection }"
 
 _lock = threading.Lock()
@@ -72,12 +81,15 @@ def item(m):
 def variables(spec, page=1, per=PER_PAGE):
     """A list + its filters → the query's variables (pure). spec keys: list,
     season/year (which season a season list shows), genres, fyear and score
-    (ranges: (lo, hi), both ends counted), fseason, format, sort."""
+    (ranges: (lo, hi), both ends counted), fseason, format, sort, q."""
     lst = spec.get("list") or "all"
-    sort = spec.get("sort") or LISTS.get(lst, "popularity")
+    q = (spec.get("q") or "").strip()
+    sort = spec.get("sort") or ("relevance" if q else LISTS.get(lst, "popularity"))
     v = {"page": page, "per": per, "sort": [SORTS.get(sort, "POPULARITY_DESC")]}
     if sort == "score":
         v["sort"].append("POPULARITY_DESC")  # ties: the better known first
+    if q:
+        v["search"] = q
     if lst in ("season", "next"):
         v["season"], v["year"] = spec["season"], spec["year"]
     if spec.get("fseason"):
@@ -147,17 +159,38 @@ def overview(now=None):
 
 
 def page(spec, n=1, now=None):
-    """One page of a list, filtered: {items, page, has_next}."""
+    """One page of a list, filtered: {items, page, has_next}.
+    When searching (`q`), check the local prefix/typo-tolerant title index
+    (Decision 68) first so partial prefixes ("Hel" -> Hell's Paradise, Hellsing,
+    Helck) and typos ("freiren") find matches instead of AniList's strict
+    whole-word search returning nothing."""
     lst = spec.get("list") or "all"
     if lst in ("season", "next") and not spec.get("season"):
         spec = {**spec, **_seasons(now)[lst]}
-    v = variables(spec, n)
+    q = (spec.get("q") or "").strip()
+    rank_by = None
+    if q:
+        hits = titles.search(q, limit=200)
+        if hits:
+            ids = list(dict.fromkeys(row[0] for row, _ in hits))
+            rel = not spec.get("sort") or spec.get("sort") == "relevance"
+            v = variables({**spec, "q": "", "sort": "popularity" if rel else spec.get("sort")}, n)
+            v["ids"] = ids
+            if rel:
+                rank_by = {row[0]: round(slips, 2) for row, slips in hits}
+        else:
+            v = variables(spec, n)
+    else:
+        v = variables(spec, n)
     if lst == "top" and (n - 1) * PER_PAGE >= TOP:
         return {"items": [], "page": n, "has_next": False}
     key = ("page",) + tuple(sorted((k, tuple(x) if isinstance(x, list) else x) for k, x in v.items()))
     def build():
         p = _ask(PAGE, v).get("Page") or {}
-        return {"items": [item(m) for m in p.get("media") or []], "has_next": bool((p.get("pageInfo") or {}).get("hasNextPage"))}
+        items = [item(m) for m in p.get("media") or []]
+        if rank_by is not None:
+            items.sort(key=lambda x: (rank_by.get(x["id"], 99), -(x.get("popularity") or 0)))
+        return {"items": items, "has_next": bool((p.get("pageInfo") or {}).get("hasNextPage"))}
     out = dict(_cached(key, build), page=n)
     if lst == "top" and n * PER_PAGE >= TOP:
         out["has_next"] = False
@@ -183,13 +216,105 @@ def _span(text, name, lo, hi):
     return a, b
 
 
+def _clean_bio(text):
+    """Strip AniList markdown/spoiler markers into plain bio text (pure)."""
+    if not text:
+        return ""
+    s = re.sub(r"~!.*?!~", "", text, flags=re.S)
+    s = re.sub(r"<[^>]+>", "", s)
+    s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
+    s = re.sub(r"__|\*\*|~~", "", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def _media_sort(sort):
+    s = SORTS.get(sort or "popularity", "POPULARITY_DESC")
+    if s == "SEARCH_MATCH":
+        s = "POPULARITY_DESC"
+    return [s, "POPULARITY_DESC"] if s == "SCORE_DESC" else [s]
+
+
+def person_page(staff_id, sort="popularity", n=1):
+    """One page of a voice actor's anime roles (in memory only, TODO 260)."""
+    srt = _media_sort(sort)
+    key = ("person", staff_id, tuple(srt), n)
+    def build():
+        st = _ask(PERSON_QUERY, {"id": staff_id, "page": n, "per": PER_PAGE, "sort": srt}).get("Staff")
+        if not st:
+            return {"person": None, "items": [], "has_next": False}
+        nm = st.get("name") or {}
+        img = st.get("image") or {}
+        person = {"id": st["id"], "name": nm.get("full") or nm.get("native") or "",
+                  "native": nm.get("native"), "image": img.get("large") or img.get("medium"),
+                  "description": _clean_bio(st.get("description")),
+                  "favourites": st.get("favourites")}
+        cm = st.get("characterMedia") or {}
+        by_id, order = {}, []
+        for edge in cm.get("edges") or []:
+            node = edge.get("node") or {}
+            if not node.get("id") or node.get("type") != "ANIME" or node.get("isAdult"):
+                continue
+            chars = [((c.get("name") or {}).get("full") or "").strip()
+                     for c in (edge.get("characters") or []) if (c.get("name") or {}).get("full")]
+            if node["id"] not in by_id:
+                row = item(node)
+                row["characters"] = list(dict.fromkeys(chars))[:2]
+                row["role"] = edge.get("characterRole")
+                by_id[node["id"]] = row
+                order.append(node["id"])
+            else:
+                have = by_id[node["id"]]["characters"]
+                for ch in chars:
+                    if ch not in have and len(have) < 2:
+                        have.append(ch)
+        items = []
+        for mid in order:
+            row = by_id[mid]
+            row["character"] = ", ".join(row.pop("characters")) or None
+            items.append(row)
+        return {"person": person, "items": items,
+                "has_next": bool((cm.get("pageInfo") or {}).get("hasNextPage"))}
+    return dict(_cached(key, build), page=n)
+
+
+def studio_page(studio_id, sort="popularity", n=1):
+    """One page of a studio's main anime credits (in memory only, TODO 260)."""
+    srt = _media_sort(sort)
+    key = ("studio", studio_id, tuple(srt), n)
+    def build():
+        st = _ask(STUDIO_QUERY, {"id": studio_id, "page": n, "per": PER_PAGE, "sort": srt}).get("Studio")
+        if not st:
+            return {"studio": None, "items": [], "has_next": False}
+        studio = {"id": st["id"], "name": st.get("name") or "",
+                  "favourites": st.get("favourites"),
+                  "is_animation_studio": bool(st.get("isAnimationStudio"))}
+        md = st.get("media") or {}
+        seen, items = set(), []
+        for node in md.get("nodes") or []:
+            if not node.get("id") or node["id"] in seen or node.get("type") != "ANIME" or node.get("isAdult"):
+                continue
+            seen.add(node["id"])
+            items.append(item(node))
+        return {"studio": studio, "items": items,
+                "has_next": bool((md.get("pageInfo") or {}).get("hasNextPage"))}
+    return dict(_cached(key, build), page=n)
+
+
 def parse(qs):
     """The query string → a spec, checked. Raises ValueError with what's wrong."""
     one = lambda k: (qs.get(k) or [""])[0].strip()
     lst = one("list") or "overview"
-    if lst not in LISTS and lst not in ("overview", "genres"):
+    if lst not in LISTS and lst not in ("overview", "genres", "person", "studio"):
         raise ValueError("unknown list %r" % lst)
     spec = {"list": lst}
+    if lst in ("person", "studio"):
+        raw_id = one("id")
+        if not raw_id.isdigit() or int(raw_id) < 1:
+            raise ValueError("'id' must be a positive integer")
+        spec["id"] = int(raw_id)
+    if one("q"):
+        spec["q"] = one("q")[:120]
     if one("season"):
         if one("season") not in SEASONS or not one("year").isdigit():
             raise ValueError("'season' needs one of %s and a 'year'" % ", ".join(SEASONS))
@@ -227,4 +352,8 @@ def catalog(qs, now=None):
     if spec["list"] == "genres":
         return {"genres": genres()}
     n = spec.pop("page")
+    if spec["list"] == "person":
+        return person_page(spec["id"], spec.get("sort") or "popularity", n)
+    if spec["list"] == "studio":
+        return studio_page(spec["id"], spec.get("sort") or "popularity", n)
     return page(spec, n, now)

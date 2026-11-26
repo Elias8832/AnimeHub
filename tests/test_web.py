@@ -318,6 +318,25 @@ class BrowseTab(unittest.TestCase):
         self.assertIn('if (from === "browse") navKeep();', APP)
         self.assertIn('history.scrollRestoration = "manual"', APP)
 
+    def test_browse_gaps_search_entities_show_extras_and_phone(self):
+        # Search -> Browse (TODO 260)
+        self.assertIn('data-a="brsearch"', APP)
+        self.assertIn('function brOpenSearch(query)', APP)
+        self.assertIn('id="brq"', APP)
+        # Clickable voice actors, studios, genres, rankings & show-page extras
+        self.assertIn('data-a="brperson"', APP)
+        self.assertIn('data-a="brstudio"', APP)
+        self.assertIn('data-a="brgenre"', APP)
+        self.assertIn('data-a="brrank"', APP)
+        self.assertIn('function aboutTrailer(mid)', APP)
+        self.assertIn('function relatedHTML(p, e)', APP)
+        self.assertIn('data-a="brsea"', APP)
+        # Phone Browse bottom bar, sheets and responsive strips
+        self.assertIn('function brBar()', APP)
+        self.assertIn('function brFltSheet()', APP)
+        self.assertIn('.brw.brphone .brrow', CSS)
+        self.assertIn('.brw.brphone .wall.brwall', CSS)
+
 
 class WeekSection(unittest.TestCase):
     def test_calendar_context_only_states_facts(self):
