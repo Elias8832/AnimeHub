@@ -17,7 +17,7 @@ from animehub import android, anicli, downloader, phoneplay, prepare, settings, 
 FAKE_ANICLI = r"""#!/bin/sh
 # fake ani-cli for the tests: the settings and menus the hub checks for
 # ANI_CLI_MENU ANI_CLI_PLAYER_FLAGS ANI_CLI_PLAYER ANI_CLI_MODE ANI_CLI_QUALITY
-version_number="5.1.0"
+version_number="5.2.0"
 printf '%s\n' "$*" >"$TMPDIR/args-seen"
 env >"$TMPDIR/env-seen"
 printf '1 Sousou no Frieren\n2 Sousou no Frieren Movie\n' | "$ANI_CLI_MENU" "Select anime: " >/dev/null \
@@ -93,7 +93,7 @@ class TermuxAniCli(Base):
     def test_the_script_is_read_from_termux(self):
         self.assertTrue(android.fetch_anicli(force=True))
         self.assertEqual(anicli.anicli_path(), str(android.anicli_copy()))
-        self.assertEqual(anicli.anicli_version(), "5.1.0")
+        self.assertEqual(anicli.anicli_version(), "5.2.0")
         self.assertTrue(anicli.anicli_check()["ok"])
         st = anicli.anicli_status()
         self.assertFalse(st["can_get"])  # no "Get ani-cli" button: Termux updates it
@@ -196,7 +196,19 @@ class TermuxSetup(Base):
         android.fetch_anicli(force=True)
         self.termux.refuse = "no-termux"
         self.assertTrue(android.fetch_anicli(force=True))
-        self.assertEqual(anicli.anicli_version(), "5.1.0")
+        self.assertEqual(anicli.anicli_version(), "5.2.0")
+
+    def test_termux_upgrade_lifts_outdated_without_restart(self):
+        p = self.termux.bin / "ani-cli"
+        p.write_text(FAKE_ANICLI.replace('version_number="5.2.0"', 'version_number="5.1.0"'))
+        android.fetch_anicli(force=True)
+        self.assertTrue(anicli.anicli_outdated())
+        # User upgrades ani-cli in Termux while the app stays open.
+        p.write_text(FAKE_ANICLI)
+        android._last["ts"] = time.monotonic() - 21
+        found = anicli.anicli_search("frieren")
+        self.assertEqual(anicli.anicli_version(), "5.2.0")
+        self.assertEqual(found["results"][0]["title"], "Sousou no Frieren")
 
 
 class AndroidRules(Base):

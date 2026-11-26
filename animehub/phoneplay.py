@@ -289,23 +289,47 @@ mv -f "$out.tmp" "$out"
 LINK_TTL = 6 * 3600  # a long movie, paused for a while
 PLAYLIST_MAX = 5_000_000
 UA = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
-_links = {}  # token → {"ep_id", "url", "referrer", "subs", "allowed", "ts"}
+_links = {}  # token → {"ep_id", "url", "referrer", "origin", "audio", "subs", "allowed", "playlists", "ts"}
+MASTER_KEY = "master"
 _URL_RE = re.compile(r"https?://", re.I)
 _URI_ATTR = re.compile(r'URI="([^"]+)"')
 
 
 def player_args(lines):
-    """What ani-cli handed its player → {"url", "referrer", "subs"}, or None."""
+    """What ani-cli handed its player → {"url", "referrer", "subs", ...}, or None.
+    ani-cli 5.2+ may also pass --http-header-fields=Origin: …, --audio-file=…
+    and --demuxer-lavf-format=hls; those are included when present."""
     lines = [x for x in lines if x]
     urls = [x for x in lines if _URL_RE.match(x)]
     if not urls:
         return None
     ref = next((x.split("=", 1)[1] for x in lines if x.startswith("--referrer=")), "")
+    origin = ""
+    audio = ""
+    hls = False
     subs = []
     for x in lines:
         if x.startswith("--sub-file="):
             subs += [u for u in re.split(r"(?<!\\):(?=https?://)", x.split("=", 1)[1]) if u]
-    return {"url": urls[-1], "referrer": ref, "subs": subs}
+        elif x.startswith("--audio-file="):
+            v = x.split("=", 1)[1].strip()
+            if _URL_RE.match(v):
+                audio = v
+        elif x.startswith("--http-header-fields="):
+            for field in x.split("=", 1)[1].split(","):
+                name, sep, val = field.partition(":")
+                if sep and name.strip().lower() == "origin" and val.strip():
+                    origin = val.strip()
+        elif x == "--demuxer-lavf-format=hls":
+            hls = True
+    out = {"url": urls[-1], "referrer": ref, "subs": subs}
+    if origin:
+        out["origin"] = origin
+    if audio:
+        out["audio"] = audio
+    if hls:
+        out["hls"] = True
+    return out
 
 
 def _run_capture(link, token, mode):
@@ -351,7 +375,7 @@ def _run_capture(link, token, mode):
         shutil.rmtree(folder, ignore_errors=True)
 
 
-def start_online(ep_id, mode=None, from_start=False, at=None, switch=False):
+def start_online(ep_id, mode=None, from_start=False, at=None, switch=False, rematched=False):
     """The phone plays an online episode: ani-cli finds it (up to 90 s),
     then the phone's player gets the relay's address. `switch`: the
     player's Sub/Dub pick: no falling back to the sub, and the pick only
@@ -384,6 +408,12 @@ def start_online(ep_id, mode=None, from_start=False, at=None, switch=False):
         return {"error": "unknown episode"}
     label = _label(s, ep, ep_id)
     got, msg = _run_capture(link, token, play_mode)
+    if not got and not rematched and "invalid anime selection" in (msg or "").lower():
+        try:
+            streaming.stream_autolink(mid, rematch=True)
+        except anicli.AniCliError as e:
+            return {"error": str(e)}
+        return start_online(ep_id, mode, from_start, at, switch, rematched=True)
     note = None
     nodub = not got and play_mode == "dub" and "no sources found for dub" in (msg or "").lower()
     if nodub and switch:
@@ -403,18 +433,29 @@ def start_online(ep_id, mode=None, from_start=False, at=None, switch=False):
                   " SET show_id=excluded.show_id, label=excluded.label", (ep_id, s["id"], label))
     tok = secrets.token_urlsafe(16)
     now = time.time()
+    audio = got.get("audio") or ""
+    is_hls = bool(got.get("hls") or audio or _looks_hls(got["url"]))
+    allowed = {got["url"]}
+    playlists = set()
+    if audio:
+        allowed.add(audio)
+        playlists.update((got["url"], audio))
+    elif is_hls:
+        playlists.add(got["url"])
     with _lock:
         for k in [k for k, v in _links.items() if now - v["ts"] > LINK_TTL]:
             _links.pop(k, None)
-        _links[tok] = {"ep_id": ep_id, "url": got["url"], "referrer": got["referrer"], "subs": got["subs"],
-                       "allowed": {got["url"]}, "ts": now}
+        _links[tok] = {"ep_id": ep_id, "url": got["url"], "referrer": got["referrer"],
+                       "origin": got.get("origin") or "", "audio": audio, "subs": got["subs"],
+                       "allowed": allowed, "playlists": playlists, "ts": now}
     _begin(ep_id, 0, s["title"], label)
     builtin = [{"url": f"/api/phone/sub/{tok}/{i}",
                 "label": f"English {i + 1}" if i else "English",
                 "lang": "en", "custom": False, "delay": 0.0}
                for i in range(len(got["subs"]))]
     sub_urls, sub_tracks = _phone_sub_tracks(ep_id, builtin)
-    out = {"ok": True, "id": ep_id, "src": relay_url(tok, got["url"]), "hls": _looks_hls(got["url"]),
+    src = relay_url(tok, MASTER_KEY) if audio else relay_url(tok, got["url"])
+    out = {"ok": True, "id": ep_id, "src": src, "hls": is_hls,
            "subs": sub_urls, "sub_tracks": sub_tracks,
            "start": _start_at(ep_id, from_start, at), "show": s["title"], "label": label,
            "audio": {"current": play_mode, "options": list(anicli.STREAM_MODES)}}
@@ -464,54 +505,127 @@ def relay_may_fetch(base, url):
     return not _inside(u.hostname) or (u.hostname or "").lower() == (b.hostname or "").lower()
 
 
+def master_playlist(tok, video_url, audio_url):
+    """Synthetic HLS master playlist pairing ani-cli's split video and audio
+    playlists (ani-cli 5.2+ passes --audio-file beside the video)."""
+    return (
+        "#EXTM3U\n"
+        "#EXT-X-VERSION:3\n"
+        f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Audio",DEFAULT=YES,AUTOSELECT=YES,URI="{relay_url(tok, audio_url)}"\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,AUDIO="audio"\n'
+        f"{relay_url(tok, video_url)}\n"
+    )
+
+
 def rewrite_playlist(tok, base, text):
     """An HLS playlist with every address pointed back at the relay. Only
     addresses that appear here may be fetched through it later."""
     L = _link(tok)
     allowed = L["allowed"] if L else set()
+    playlists = L.setdefault("playlists", set()) if L is not None else set()
 
-    def to_relay(u):
+    def to_relay(u, is_playlist=False):
         full = urljoin(base, u.strip())
         if relay_may_fetch(base, full):
             allowed.add(full)
+            if is_playlist:
+                playlists.add(full)
         return relay_url(tok, full)
 
     out = []
+    next_is_playlist = False
     for line in text.splitlines():
         if line.startswith("#"):
-            line = _URI_ATTR.sub(lambda m: 'URI="%s"' % to_relay(m.group(1)), line)
+            is_media = line.startswith("#EXT-X-MEDIA:")
+            line = _URI_ATTR.sub(lambda m: 'URI="%s"' % to_relay(m.group(1), is_playlist=is_media), line)
+            if line.startswith("#EXT-X-STREAM-INF:"):
+                next_is_playlist = True
         elif line.strip():
-            line = to_relay(line)
+            line = to_relay(line, is_playlist=next_is_playlist)
+            next_is_playlist = False
         out.append(line)
     return "\n".join(out) + "\n"
+
+
+class _PrefixedResponse:
+    """An HTTP response with a few already-sniffed leading bytes put back."""
+
+    def __init__(self, head, resp):
+        self._head = head
+        self._resp = resp
+        self.status = resp.status
+        self.headers = resp.headers
+
+    def read(self, n=-1):
+        if self._head:
+            if n is None or n < 0:
+                head, self._head = self._head, b""
+                return head + self._resp.read()
+            out, self._head = self._head[:n], self._head[n:]
+            return out
+        return self._resp.read(n)
+
+    def close(self):
+        self._resp.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
 
 class RelayRefused(Exception):
     """Not a link ani-cli handed over for the phone (or it ran out)."""
 
 
+def _is_m3u8_head(data):
+    return data.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"#EXTM3U")
+
+
 def relay_open(tok, url, rng=None):
-    """Fetch one address through the relay, with ani-cli's referrer.
+    """Fetch one address through the relay, with ani-cli's referrer and origin.
     ("playlist", text) for an HLS playlist (rewritten), else ("data",
     response) to pass on as it comes. HTTPError passes the site's answer on."""
     L = _link(tok)
-    if not L or url not in L["allowed"]:
+    if not L:
+        raise RelayRefused(url)
+    if url == MASTER_KEY and L.get("audio"):
+        return "playlist", master_playlist(tok, L["url"], L["audio"])
+    if url not in L["allowed"]:
         raise RelayRefused(url)
     headers = {"User-Agent": UA}
     if L["referrer"]:
         headers["Referer"] = L["referrer"]
+    if L.get("origin"):
+        headers["Origin"] = L["origin"]
     if rng:
         headers["Range"] = rng
     resp = urlopen(Request(url, headers=headers), timeout=20)
     ctype = (resp.headers.get("Content-Type") or "").lower()
-    if "mpegurl" in ctype or _looks_hls(url):
+    if "mpegurl" in ctype or _looks_hls(url) or url in L.get("playlists", ()):
         try:
             body = resp.read(PLAYLIST_MAX)
         finally:
             resp.close()
-        if body.lstrip().startswith(b"#EXTM3U"):
+        if _is_m3u8_head(body):
             return "playlist", rewrite_playlist(tok, resp.geturl() or url, body.decode("utf-8", "replace"))
         return "bytes", body
+    if url == L["url"] and not rng and not ctype.startswith("video/"):
+        # Extensionless HLS URLs without --demuxer-lavf-format=hls (ani-cli omits
+        # it when --sub-file is set) may arrive with a generic Content-Type.
+        try:
+            head = resp.read(16)
+        except BaseException:
+            resp.close()
+            raise
+        if _is_m3u8_head(head):
+            try:
+                body = head + resp.read(PLAYLIST_MAX - len(head))
+            finally:
+                resp.close()
+            return "playlist", rewrite_playlist(tok, resp.geturl() or url, body.decode("utf-8", "replace"))
+        return "data", _PrefixedResponse(head, resp)
     return "data", resp
 
 
@@ -526,6 +640,8 @@ def subtitle(tok, n):
     headers = {"User-Agent": UA}
     if L["referrer"]:
         headers["Referer"] = L["referrer"]
+    if L.get("origin"):
+        headers["Origin"] = L["origin"]
     with urlopen(Request(L["subs"][n], headers=headers), timeout=20) as r:
         text = r.read(PLAYLIST_MAX).decode("utf-8-sig", "replace")
     return to_vtt(text)

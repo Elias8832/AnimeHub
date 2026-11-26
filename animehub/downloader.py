@@ -193,11 +193,14 @@ def _dl_run(job):
         _dl_note(None)
 
 
-def _dl_fetch(job, link, dest, had_file, created):
+def _dl_fetch(job, link, dest, had_file, created, rematched=False):
     # ani-cli hands ANI_CLI_PLAYER_FLAGS to yt-dlp/ffmpeg when downloading;
-    # the user's (mpv) flags would break them.
+    # the user's (mpv) flags would break them. ANI_CLI_TMP_DIR keeps yt-dlp's
+    # temp fragments (ani-cli 5.2+) in dest instead of the hub's CWD.
     mode = job.get("mode") or link["mode"]
-    env = anicli.anicli_env(link, ANI_CLI_DOWNLOAD_DIR=system.shell_path(dest), ANI_CLI_PLAYER_FLAGS="", ANI_CLI_MODE=mode)
+    dest_sh = system.shell_path(dest)
+    env = anicli.anicli_env(link, ANI_CLI_DOWNLOAD_DIR=dest_sh, ANI_CLI_TMP_DIR=dest_sh,
+                            ANI_CLI_PLAYER_FLAGS="", ANI_CLI_MODE=mode)
     try:
         proc = anicli.anicli_spawn(["-d", "-e", job["token"], link["query"]], env, subprocess.PIPE, subprocess.STDOUT)
     except Exception:
@@ -243,12 +246,22 @@ def _dl_fetch(job, link, dest, had_file, created):
             job.update(status="done", percent=100)
         _dl_adopt(job["media_id"], dest)
         return
+    msg = "" if cancelled else anicli.anicli_message("\n".join(tail + [buf.decode(errors="replace")]))
+    if not cancelled and not rematched and "invalid anime selection" in msg.lower():
+        try:
+            new_link = streaming.stream_autolink(job["media_id"], rematch=True)
+        except anicli.AniCliError:
+            new_link = None
+        if new_link and job["token"] in new_link["episodes"]:
+            _dl_cleanup(dest, job["token"], had_file, created)
+            dest.mkdir(parents=True, exist_ok=True)
+            _dl_fetch(job, new_link, dest, had_file, created, rematched=True)
+            return
     _dl_cleanup(dest, job["token"], had_file, created)
     with _dl_cv:
         if cancelled:
             job["status"] = "cancelled"
         else:
-            msg = anicli.anicli_message("\n".join(tail + [buf.decode(errors="replace")]))
             util.log("download %s E%s failed: %s" % (job["media_id"], job["token"], msg or rc))
             job.update(status="failed", error=streaming.friendly_stream_error(msg, f"E{job['token']}"))
 

@@ -442,7 +442,15 @@ def stream_refresh(media_id):
     link = stream_link_get(media_id)
     if not link:
         return {"error": STREAM_UNAVAILABLE}
-    episodes = anicli.anicli_episodes(link)
+    try:
+        episodes = anicli.anicli_episodes(link)
+    except anicli.AniCliError as e:
+        if "no longer finds" not in str(e).lower():
+            raise
+        # A provider or title change (e.g. ani-cli 5.1 → 5.2): re-match once.
+        new_link = stream_autolink(media_id, rematch=True)
+        return {"ok": True, "episodes": len(new_link["episodes"]),
+                "added": len(set(new_link["episodes"]) - set(link["episodes"]))}
     meta = link["meta"]
     if not meta.get("poster"):
         meta = stream_meta(media_id, meta.get("title") or link["title"] or link["query"])
