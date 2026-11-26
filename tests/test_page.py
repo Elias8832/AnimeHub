@@ -338,6 +338,59 @@ class Unavailable(unittest.TestCase):
             fetch.assert_called_once()
         self.assertNotIn(999996, pages._build_failed)
 
+    def test_failed_freshen_and_resolve_back_off(self):
+        """A failing stream_refresh or stream_autolink must not re-spawn on every
+        400 ms frLoad poll."""
+        pages._freshen_failed.clear()
+        streaming._resolve_failed.clear()
+        self.addCleanup(pages._freshen_failed.clear)
+        self.addCleanup(streaming._resolve_failed.clear)
+        with mock.patch.object(anicli, "anicli_path", return_value="/x/ani-cli"), \
+                mock.patch.object(settings, "site_ok", return_value=True):
+            with mock.patch.object(streaming, "stream_refresh", side_effect=anicli.AniCliError("down")) as ref:
+                pages.stream_freshen_async(888001)
+                for _ in range(200):
+                    if 888001 not in pages._freshening:
+                        break
+                    time.sleep(0.01)
+                pages.stream_freshen_async(888001)
+                time.sleep(0.03)
+                self.assertEqual(ref.call_count, 1)
+                self.assertIn(888001, pages._freshen_failed)
+            pages._freshen_failed[888001] = time.time() - pages.FRESHEN_RETRY
+            with mock.patch.object(streaming, "stream_refresh", return_value={"ok": True}) as ref:
+                pages.stream_freshen_async(888001)
+                for _ in range(200):
+                    if 888001 not in pages._freshening:
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(ref.call_count, 1)
+                self.assertNotIn(888001, pages._freshen_failed)
+
+            with mock.patch.object(streaming, "stream_link_get", return_value=None), \
+                    mock.patch.object(streaming, "stream_missed_ids", return_value=set()), \
+                    mock.patch.object(streaming, "stream_autolink", side_effect=anicli.AniCliError("down")) as auto:
+                streaming.stream_resolve_async(888002)
+                for _ in range(200):
+                    if 888002 not in streaming._resolving:
+                        break
+                    time.sleep(0.01)
+                streaming.stream_resolve_async(888002)
+                time.sleep(0.03)
+                self.assertEqual(auto.call_count, 1)
+                self.assertIn(888002, streaming._resolve_failed)
+            streaming._resolve_failed[888002] = time.time() - streaming.RESOLVE_RETRY
+            with mock.patch.object(streaming, "stream_link_get", return_value=None), \
+                    mock.patch.object(streaming, "stream_missed_ids", return_value=set()), \
+                    mock.patch.object(streaming, "stream_autolink", return_value={"media_id": 888002}) as auto:
+                streaming.stream_resolve_async(888002)
+                for _ in range(200):
+                    if 888002 not in streaming._resolving:
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(auto.call_count, 1)
+                self.assertNotIn(888002, streaming._resolve_failed)
+
 
 class Unmapped(unittest.TestCase):
     def test_autoplay_walks_an_unmatched_folder(self):

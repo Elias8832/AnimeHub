@@ -411,6 +411,8 @@ def drop_premature_links(force=False):
 
 
 _freshening = set()
+_freshen_failed = {}  # media_id -> unix ts; stops frLoad's 400ms poll from re-spawning a failing refresh
+FRESHEN_RETRY = 60
 
 
 BEHIND_TTL = 30 * 60  # a list missing an aired episode: the site may have it by now
@@ -440,15 +442,20 @@ def stream_freshen_async(media_id):
     if not anicli.anicli_path() or not settings.site_ok():
         return
     with _jobs_lock:
-        if media_id in _freshening:
+        if media_id in _freshening or time.time() - _freshen_failed.get(media_id, 0) < FRESHEN_RETRY:
             return
         _freshening.add(media_id)
 
     def run():
         try:
-            streaming.stream_refresh(media_id)
+            r = streaming.stream_refresh(media_id)
+            if isinstance(r, dict) and r.get("error"):
+                _freshen_failed[media_id] = time.time()
+            else:
+                _freshen_failed.pop(media_id, None)
         except Exception as e:
             util.log("refreshing %s failed: %s" % (media_id, e))
+            _freshen_failed[media_id] = time.time()
         finally:
             _freshening.discard(media_id)
 

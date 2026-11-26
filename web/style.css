@@ -769,7 +769,7 @@ code{background:var(--s2);padding:1px 6px;border-radius:6px;font:400 13px var(--
 .aerrbox b{display:block;font:600 15px var(--ui);color:var(--ink)}
 .aerrbox .cd{display:block;margin-top:3px;font:500 12px var(--ui);color:var(--mute);font-variant-numeric:tabular-nums}
 .aerrbox .btn{margin-left:auto}
-span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden}span.tline:before{content:none} /* not the Journal's .tline timeline (its padding pushed the fill 28 px in) */span.tline i{display:block;height:100%;border-radius:3px;background:var(--accent);animation:growx .6s .15s var(--ease) both;transform-origin:left}
+span.tline{flex:1;height:6px;padding:0;margin:0;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden}span.tline:before{content:none} /* not the Journal's .tline timeline (its padding pushed the fill 28 px in) */span.tline i{display:block;height:100%;border-radius:3px;background:var(--accent);animation:growx .6s .15s var(--ease) both;transform-origin:left;transition:width .35s var(--ease)}
 .ahead{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin-top:12px;font:500 12px var(--ui);color:var(--mute)}
 .ahead .lnk{display:inline-flex;align-items:center;gap:2px;padding:0;font:600 12px var(--ui);color:var(--accent)}
 .ahead .lnk .ico{width:13px;height:13px;transition:transform .2s var(--ease)}.ahead .lnk:hover .ico{transform:translateX(2px)}
@@ -2675,6 +2675,7 @@ body.has-side #app{padding-left:340px}
   :root:not([data-art=soft]) #canvas.cvc .cv-blur>canvas{display:block;position:absolute;left:50%;top:50%;width:calc(34% + 2*var(--cvp));height:calc(34% + 2*var(--cvp));transform:translate(-50%,-50%) scale(3.6)}
   #app *,.tpeek *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
   #app.nav-in *,.wall.fade .card,.wall.fade .prog i{animation:none!important}
+  #app span.tline i,#app .ticks i{animation:none!important}
   .sp2 .eps .ep{content-visibility:auto;contain-intrinsic-size:auto 90px}
   .prow{content-visibility:auto;contain-intrinsic-size:auto 64px}
   /* Home's recommendations: 30 cards, two or three of them on screen. The
