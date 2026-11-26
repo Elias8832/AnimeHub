@@ -938,7 +938,7 @@ function Home() {
       : d.stream_ready || S.settings?.android ? `<b>Nothing watched yet</b><span>Search for a show to start watching${S.settings?.android ? "." : " — or add your anime folder in Settings → Library."}</span>`
       : `<b>Your library is empty</b><span>Choose your anime folder in Settings → Library.</span>`}</div>` + body;
   }
-  return `<div class="home2${wide ? " wide" : ""}">${hello}${up ? heroHTML(up, wide) : ""}${body}</div>`;
+  return `<div class="home2${wide ? " wide" : ""}">${hello}${typeof aniBanner === "function" ? aniBanner() : ""}${up ? heroHTML(up, wide) : ""}${body}</div>`;
 }
 /* TODO 65: AniList's recommendations of your best-rated shows, minus what's on
    your lists (the hub ranks them); a poster opens its page, + Planning adds it. */
@@ -2989,7 +2989,10 @@ async function slSearch(mid, text, titles) {
   try {
     const r = await api("/api/stream/search", { query: text });
     if (st.tok !== tok) return; // a newer search took over
-    if (r && r.error) { st.err = r.error; st.res = []; }
+    if (r && r.error) {
+      if (r.anicli_update) { st.busy = ""; return openAniUp({ err: r.error, retryLabel: "Search again", retry: () => { openModal({ t: "src", mid, title: S.modal?.title || text }); slSearch(mid, text, titles); } }); }
+      st.err = r.error; st.res = [];
+    }
     else {
       st.res = r.results || []; st.q = r.query || text;
       const want = new Set((titles || []).map(normT).filter(Boolean));
@@ -3278,9 +3281,12 @@ function Fran() {
   const heldTile = held ? `<div class="ep held" tabindex="0" data-a="frcheck" role="button">
     <div class="epa"><span class="heldin">${busy ? '<i class="spin"></i>' : SHIELD_OFF}<b>${busy ? "Loading…" : "More episodes are out"}</b><small>${busy ? "" : "Load them now"}</small></span></div>
     <div class="et"><b>Not loaded — no VPN is on</b><small>they load once a VPN is on</small></div></div>` : "";
-  const note = e.slots.length ? (!e.slots.some((x) => x.local) && !ready ? '<p class="sub eps-note">Install ani-cli to watch these online.</p>'
+  const aniS = aniState();
+  const aniNote = aniS.broken ? `<p class="sub eps-note">${esc(aniS.old ? `ani-cli${aniS.st.version ? " " + aniS.st.version : ""} is too old for online episodes.` : "ani-cli needs an update for online episodes.")}${aniS.remote ? " Update it on the PC." : ' <button class="link-btn fix" data-a="aniopen">Update ani-cli ›</button>'}</p>` : "";
+  const note = e.slots.length ? (aniNote && e.slots.some((x) => !x.local) ? aniNote
+      : !e.slots.some((x) => x.local) && !ready ? '<p class="sub eps-note">Install ani-cli to watch these online.</p>'
       : ready && !e.online.available && e.slots.some((x) => !x.local) ? `<p class="sub eps-note">Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button></p>` : "")
-    : `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : upcoming ? `Not out yet — ${esc(airing || (starts ? "starts " + starts : "no release date known yet"))}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
+    : aniNote || `<p class="sub eps-note">${resolving ? '<i class="spin"></i> Looking for episodes…' : upcoming ? `Not out yet — ${esc(airing || (starts ? "starts " + starts : "no release date known yet"))}.` : !ready ? "Install ani-cli to watch this online." : !e.online.available ? `Not available to watch online. <button class="link-btn fix" data-a="srcfix">Find it manually</button>` : "No episodes yet."}</p>`;
   const framed = isPhone() || !(e.banner || p.banner) || lookGet("art") !== "full"; // phones: poster beside the title (TODO 177, Show C)
   const title = e.title || p.title;
   const ph = isPhone(); // phones show these as a row of icons with short words (TODO 177)
@@ -4423,13 +4429,21 @@ function updateRows(s) {
     + (unstableHere ? ". This is an unstable build: Stable takes over at the next release." : "");
   const chan = u.channel === "unstable" ? "A new build after every change. Newest fixes first, and sometimes broken." + (u.kind === "windows" ? " Not tested on Windows." : "")
     : "Every numbered release on GitHub.";
+  const a = aniState(s);
+  const aniUpRow = a.need && !a.remote ? srow(
+    a.broken ? `ani-cli${a.st.version ? " " + esc(a.st.version) : ""} needs an update${swarn("Required")}` : `ani-cli ${esc(a.upd.version)} is out`,
+    a.old ? `Anime Hub needs ${esc(a.st.min_version || "5.2")} or newer for online episodes.`
+      : a.bad ? "Missing features Anime Hub needs for online episodes."
+      : `You have ${esc(a.st.version || "an older version")}.`,
+    pkdo((a.upd?.url ? `<button class="btn" data-a="aninotes">What's new</button>` : "") + `<button class="btn pri" data-a="aniopen"${a.busy ? " disabled" : ""}>${a.busy ? "Updating…" : "Update ani-cli"}</button>`)) : "";
   return srow("Version", ver, pkdo(`<button class="btn" data-a="upcheck"${S.upBusy ? " disabled" : ""}>${S.upBusy ? "Checking…" : "Check now"}</button>`))
     + (f ? srow(`${esc(upName(f))} is out${j.state === "failed" ? swarn("Failed") : ""}`, how, pkdo(more + (one && !done ? `<button class="btn pri" data-a="upinstall"${busy ? " disabled" : ""}>${busy ? "Installing…" : j.state === "failed" ? "Try again" : "Install"}</button>`
       : done && u.kind !== "android" ? `<button class="btn pri" data-a="uprestart"${S.upRestart ? " disabled" : ""}>${S.upRestart ? "Restarting…" : "Restart now"}</button>` : ""))) : "")
+    + aniUpRow
     + srow("Updates from", chan, pick("Updates from", "spref", "update_channel", [["stable", "Stable"], ["unstable", "Unstable"]], u.channel || "stable"))
-    + srow("Tell me about new versions", "Asks GitHub once a day. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
+    + srow("Tell me about new versions", "Asks GitHub once a day for AnimeHub and ani-cli. GitHub sees your IP address, nothing else.", onoff("update_check", "Tell me about new versions", u.check));
 }
-const toolRow = (name, path, hint) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), pkdo(`${path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : ""}<span class="chip"><i class="dot ${path ? "ok" : ""}"></i>${path ? "Found" : "Not found"}</span>`));
+const toolRow = (name, path, hint, extra = "", st = null) => srow(name, path ? `<code>${esc(path)}</code>` : esc(hint), pkdo(`${extra || (path ? "" : name === "mpv" ? MPV_BTN : name === "upscayl" ? UPSCAYL_BTN : "")}<span class="chip${st === "warn" ? " warn" : ""}"><i class="dot ${st || (path ? "ok" : "")}"></i>${st === "warn" ? "Too old" : path ? "Found" : "Not found"}</span>`));
 /* What each section holds. Built whole for the filter too, which keeps only the rows that match. */
 function setSections(s) {
   const ani = S.ani || {};
@@ -4462,7 +4476,7 @@ function setSections(s) {
     data: s.android ? g("Updates", updateRows(s)) + g("About", srow("Data folder", `<code>${esc(s.data_dir)}</code>`, ""))
       + g("Help", srow("First-run tour", "Walk through your account and Termux again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>')))
     : g("Updates", updateRows(s)) + (s.background_ok ? g("When you close the window", bgRows(s)) : "")
-      + g("Tools", `${toolsBox(s)}${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.")}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
+      + g("Tools", `${toolsBox(s)}${toolRow("mpv", s.tools?.mpv, "Required for playback — install mpv.")}${toolRow("ani-cli", s.tools?.["ani-cli"] && s.tools["ani-cli"] + (s.stream?.version ? " · " + s.stream.version : ""), "Optional — lets you watch and download episodes you don't have.", aniState(s).need && !aniState(s).remote ? `<button class="btn sm" data-a="aniopen">Update</button>` : "", aniState(s).broken ? "warn" : null)}${toolRow("upscayl", s.tools?.upscayl, "Optional — makes banners sharper (Settings → Library).")}`)
       + g("Files", `${srow("Config file", `<code>${esc(s.config_path)}</code>`, "")}${srow("Data folder", `<code>${esc(s.data_dir)}</code>`, "")}${srow("Server", `Port ${esc(String(s.port))} · window mode “${esc(s.window)}”.`, "")}`)
       + g("Help", (isPhone() ? "" : srow("Keys", "Every shortcut. Press ? anywhere for this list.", pkdo('<button class="btn" data-a="menu" data-v="keys">Show keys</button>'))) + srow("First-run tour", "Walk through the library folder and your account again.", pkdo('<button class="btn" data-a="tour">Replay tour</button>'))),
   };
@@ -4545,8 +4559,10 @@ function settPage() {
   const tab = tabs.some(([k]) => k === S.setTab) ? S.setTab : tabs[0][0], find = !!S.setQ.trim();
   let n = 1; // the side list's entrance order
   const title = find ? "Settings" : (tabs.find(([k]) => k === tab) || [0, "Settings"])[1];
+  const aniS = aniState(s), appUpd = !!s.update?.found;
+  const tabDot = (k) => (k === "online" && aniS.need ? `<i class="sdot${aniS.broken ? " warn" : ""}" aria-hidden="true"></i>` : k === "data" && appUpd ? '<i class="sdot" aria-hidden="true"></i>' : "");
   return `<div class="set2${isPhone() ? " pset" : ""}">${isPhone() ? `${setHero()}<button class="backbtn sback" data-a="setback">${ico("chevl")}Settings</button>` : ""}
-  <div class="setg"><nav class="snav" aria-label="Settings sections">${isPhone() ? "" : setSearch()}${tabs.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" style="--i:${n++}" data-a="settab" data-v="${k}">${ico(SET_ICONS[k] || "chevr")}<span>${esc(l)}</span></button>`).join("")}</nav>
+  <div class="setg"><nav class="snav" aria-label="Settings sections">${isPhone() ? "" : setSearch()}${tabs.map(([k, l]) => `<button class="${!find && k === tab ? "on" : ""}" style="--i:${n++}" data-a="settab" data-v="${k}">${ico(SET_ICONS[k] || "chevr")}<span>${esc(l)}</span>${tabDot(k)}</button>`).join("")}</nav>
   <div class="setmain"><div class="hello"><h1 class="hd">${esc(title)}</h1><div class="sum"><span>saves on its own</span></div></div>
   <div class="settings scol" data-sec="${find ? "find" : tab}">${find ? setResults(s, tabs) : setSections(s)[tab]}</div></div></div></div>`;
 }
@@ -5222,13 +5238,25 @@ async function remoteSet(body) {
 }
 const QLABEL = { best: "Best available", worst: "Smallest" };
 function streamGroup(s) {
-  const st = s.stream || {}, off = !s.tools?.["ani-cli"];
-  if (s.android) return `<div class="group"><h3>Termux</h3><p class="sub">Anime Hub finds online episodes with ani-cli, which runs in the Termux app. Update it there with <code>pkg upgrade</code>.</p>${termuxBox(s)}</div>
+  const st = s.stream || {}, off = !s.tools?.["ani-cli"], a = aniState(s);
+  if (s.android) return `<div class="group"><h3>Termux</h3><p class="sub">Anime Hub finds online episodes with ani-cli, which runs in the Termux app.</p>${termuxBox(s)}</div>
     <div class="group ${termuxReady(s) ? "" : "off"}"><h3>Online episodes</h3><p class="sub">Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>
     ${srow("Quality", "For watching.", pick("Quality", "spref", "stream_quality", (st.qualities || []).map((q) => [q, QLABEL[q] || q + "p"]), st.quality, { off: !termuxReady(s) }))}</div>`;
   const bad = !off && st.check?.ok === false; // anicli_check: this ani-cli lacks a setting/menu the bridge uses
-  const getRow = off || st.outdated ? srow("ani-cli", esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : ""), pkdo(aniBtn(s))) : st.own ? srow("ani-cli", esc(aniLine(s)), pkdo(aniBtn(s))) : "";
-  return `${off && getRow ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show. Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>${bad ? `<p class="note">${swarn("Update ani-cli.")} This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
+  const aniDesc = off
+    ? esc(aniLine(s)) + (st.can_get ? " This fetches the latest official version from its GitHub." : "")
+    : a.broken ? esc(aniLine(s)) + (st.upgrade_method === "scoop" ? " Updates through Scoop, no admin rights needed." : st.can_get ? " Fetches the latest official version from GitHub." : "")
+    : a.upd ? `Version ${esc(st.version || "?")} installed · ${esc(a.upd.version)} is out.`
+    : `${esc(aniLine(s))}${st.own ? " · Anime Hub's copy." : ""}`;
+  const aniTitle = `ani-cli${a.broken ? swarn(a.old ? "Too old" : "Update needed") : a.upd ? ` <span class="supd">${esc(a.upd.version)} is out</span>` : ""}`;
+  const aniCtl = a.remote ? (a.broken ? dotTxt("Update on PC", "warn") : dotTxt(off ? "Not found" : "Found", off ? "" : "ok"))
+    : off ? aniBtn(s)
+    : a.need ? ((a.upd?.url ? `<button class="btn" data-a="aninotes">What's new</button>` : "") + (a.can ? `<button class="btn pri" data-a="aniupgrade"${a.busy ? " disabled" : ""}>${a.busy ? "Updating…" : "Update ani-cli"}</button>` : `<button class="btn" data-a="aniopen">How to update</button>`))
+    : `<button class="btn" data-a="anicheck"${S.aniCheck ? " disabled" : ""}>${S.aniCheck ? "Checking…" : "Check for updates"}</button>${dotTxt("Found")}`;
+  const aniErr = !off && a.job.state === "failed" && a.job.error ? `<p class="note">${swarn("Update failed.")} ${esc(a.job.error)}</p>` : "";
+  const aniCmd = !off && a.need && !a.can && st.upgrade_cmd ? `<div class="tcmd"><code>${esc(st.upgrade_cmd)}</code><button class="btn sm" data-a="copy" data-v="${esc(st.upgrade_cmd)}">Copy</button></div>` : "";
+  const getRow = srow(aniTitle, aniDesc, pkdo(aniCtl)) + aniErr + aniCmd;
+  return `${off ? `<div class="group"><h3>ani-cli</h3>${getRow}</div>` : ""}<div class="group ${off ? "off" : ""}"><h3>Online episodes</h3><p class="sub">Downloads go into your library folder, one folder per show. Sub or dub is in Subtitles, the VPN warning in Privacy &amp; VPN.</p>${bad ? `<p class="note">${swarn("Update ani-cli.")} This version${st.version ? " (" + esc(st.version) + ")" : ""} is missing ${esc(st.check.missing.join(", "))} — online episodes and downloads won't work until it's updated.</p>` : ""}
     ${!off && !st.outdated && st.needs?.includes("curl-impersonate") ? srow('curl-impersonate <span style="margin-left:6px;color:var(--warn);font-weight:500">Missing</span>', "Without it, the streaming site blocks ani-cli. Install it, then restart Anime Hub.", pkdo(IMP_BTN)) : ""}
     ${srow("Quality", "For watching and downloading.", pick("Quality", "spref", "stream_quality", (st.qualities || []).map((q) => [q, QLABEL[q] || q + "p"]), st.quality, { off }))}
     ${srow("Load the next episode early", "Gets the next online episode ready while you watch. Only with a VPN, unless you switched off asking in Privacy & VPN.", onoff("prepare_online", "Load the next episode early", s.prepare_online !== false, off))}${off ? "" : getRow}</div>`;
@@ -5411,9 +5439,21 @@ function extraGroup(s) {
   return `<div class="group"><h3>Extra folders</h3><p class="sub">Their shows join your library. Downloads go where a show already is.</p>${rows}
     ${srow("Add a folder", xs.length ? "Another folder with anime." : "No extra folders yet.", `<div class="path">${libPath("extra", {})}${dirBtn("extra")}</div>`, "wide")}${DirPick("extra")}</div>`;
 }
+let setSeq = 0;
 async function loadSettings() {
-  try { S.settings = await api("/api/settings"); } catch { S.settings = null; }
-  if (S.data) paintNav(); // the status line says when a new version is out
+  const seq = ++setSeq;
+  const was = aniState(), wasSig = `${was.has}|${was.broken}|${was.st.version || ""}|${was.upd?.version || ""}`;
+  try {
+    const res = await fetch("/api/settings", { cache: "no-store" });
+    const data = await res.json();
+    if (seq !== setSeq) return S.settings; // a newer loadSettings() is already in flight
+    S.settings = data;
+  } catch { if (seq === setSeq) S.settings = null; }
+  if (S.data) {
+    paintNav(); // the status line says when a new version is out
+    const now = aniState(), nowSig = `${now.has}|${now.broken}|${now.st.version || ""}|${now.upd?.version || ""}`;
+    if (nowSig !== wasSig && (S.view === "home" || S.view === "fr" || S.view === "settings")) render(true);
+  }
   return S.settings;
 }
 
@@ -5445,6 +5485,35 @@ const SETTINGS_INDEX = [
   ["mpv", "data", "mpv ani-cli upscayl tools player detected"], ["Config file", "data", "config file data folder server port"], ["Keys", "data", "keys keyboard shortcuts hotkeys"], ["First-run tour", "data", "tour setup welcome"],
 ];
 const upChip = () => { const f = S.settings?.update?.found; return f ? `<button class="st up" data-a="upopen">${ico("download")}${esc(upName(f))} is out</button>` : ""; };
+function aniState(s = S.settings) {
+  const st = s?.stream || {}, has = !!s?.tools?.["ani-cli"];
+  const bad = has && st.check?.ok === false;
+  const old = has && !!st.outdated;
+  const broken = old || bad;
+  const upd = has && !broken && st.update?.version ? st.update : null;
+  const job = st.upgrade_job || {};
+  const busy = !!S.aniGet || job.state === "working";
+  const remote = !!s?.phone && !s?.android;
+  const can = !remote && (!!st.upgrade_method || !!st.can_get);
+  return { has, st, bad, old, broken, upd, need: broken || !!upd, job, busy, remote, can };
+}
+function aniUpChip() {
+  const a = aniState();
+  if (!a.need) return "";
+  const lbl = a.broken ? "Update ani-cli" : `ani-cli ${a.upd.version} is out`;
+  return `<button class="st aniup${a.broken ? " warn" : ""}" data-a="aniopen">${ico("download")}${esc(lbl)}</button>`;
+}
+function aniBanner(s = S.settings) {
+  const a = aniState(s);
+  if (!a.broken || S.aniBannerDismissed) return "";
+  const v = a.st.version ? ` ${a.st.version}` : "", min = a.st.min_version || "5.2";
+  const title = a.old ? `ani-cli${v} is too old` : "ani-cli needs an update";
+  const sub = a.remote ? "Online episodes won't play until ani-cli is updated on the PC."
+    : a.old ? `Anime Hub needs ${min} or newer for online episodes.`
+    : "Online episodes and downloads won't work until it's updated.";
+  const btn = a.remote ? "" : `<button class="btn pri sm" data-a="aniopen">${a.busy ? "Updating…" : "Update ani-cli"}</button>`;
+  return `<div class="ani-bar" role="status"><i class="dot warn" aria-hidden="true"></i><span class="ab-tx"><b>${esc(title)}</b><small>${esc(sub)}</small></span>${btn}<button class="ab-x" data-a="anidismiss" aria-label="Dismiss">${ico("close")}</button></div>`;
+}
 /* Ten plain sections (Decision 73, like GNOME's Settings): one or two words you'd look for. */
 const SET_TABS = [["player", "Player", "Watching"], ["subs", "Subtitles", "Watching"], ["skipping", "Skipping", "Watching"], ["online", "Online", "Watching"], ["appearance", "Appearance", "Your hub"], ["library", "Library", "Your hub"], ["privacy", "Privacy & VPN", "Accounts"], ["anilist", "Account", "Accounts"], ["phone", "Phone", "Accounts"], ["data", "System", "This PC"]];
 const COMMANDS = [
@@ -5619,7 +5688,7 @@ const dotTxt = (t, c = "ok") => `<span class="chip${c === "live" || c === "warn"
 const setLink = (tab, row, label) => `<button class="lnk" data-a="setgo" data-t="${tab}" data-v="${esc(row)}">${label} settings ›</button>`;
 const whoTxt = (u) => `<span class="who"><i class="avatar">${esc((u || "?")[0].toUpperCase())}</i>${esc(u || "")}</span>`;
 /* The pop-ups drawn this way (paintModal gives them the .dl2 frame). */
-const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done", "peer", "subs"]);
+const DL2 = new Set(["vpn", "skp", "nxt", "tip", "up", "aniup", "where", "src", "pin", "ani", "mal", "tour", "pln", "fonts", "done", "peer", "subs"]);
 
 /* ---------- custom subtitles (episode + whole-season batch) ---------- */
 const readB64 = (file) => new Promise((ok, no) => {
@@ -5878,8 +5947,57 @@ function TipDlg() {
     + dlFoot(setLink("skipping", "Skip openings", "Skipping"), `<button class="btn pri" data-a="tipgo">Got it, play${kb("↵")}</button>`);
 }
 function UpDlg() {
-  return dlHead("New versions?") + dlBody(`<p class="sub">Once a day, AnimeHub can ask GitHub. GitHub sees your IP address.</p>`)
+  return dlHead("New versions?") + dlBody(`<p class="sub">Once a day, AnimeHub can ask GitHub for AnimeHub and ani-cli updates. GitHub sees your IP address.</p>`)
     + dlFoot("", '<button class="btn" data-a="upask" data-v="0">No thanks</button><button class="btn" data-a="upask" data-v="vpn">Only with a VPN</button><button class="btn pri" data-a="upask" data-v="1">Yes</button>', "three");
+}
+/* Dedicated Update ani-cli dialog: opened from the status bar, Home/show notices,
+   Settings, or automatically when Play/Download hits an outdated ani-cli. */
+function openAniUp(opts = {}) {
+  openModal({ t: "aniup", retry: opts.retry || null, retryLabel: opts.retryLabel || "Try again", done: false, err: opts.err || "" });
+  loadSettings().then(() => { if (S.modal?.t === "aniup") paintModal(); }).catch(() => {});
+}
+function AniUpDlg() {
+  const m = S.modal || {}, a = aniState(), st = a.st, j = a.job;
+  const v = st.version || "", min = st.min_version || "5.2", want = a.upd?.version || "";
+  const done = !!m.done || (j.state === "done" && !a.broken && !a.upd);
+  const title = done ? "ani-cli is ready" : "Update ani-cli";
+  const sub = done ? (v ? `Version ${v}` : "Updated")
+    : want ? `${v ? v + " → " : ""}${want}`
+    : a.old ? `${v ? v + " → " : ""}${min} or newer` : "";
+  const intro = done
+    ? `ani-cli${v ? " " + esc(v) : ""} is installed and ready. Online episodes and downloads work again.`
+    : a.remote ? "ani-cli runs on your PC. Open Anime Hub on the PC to update it."
+    : a.old ? `Your ani-cli${v ? " (" + esc(v) + ")" : ""} is too old — Anime Hub needs ${esc(min)} or newer for online episodes and downloads.`
+    : a.bad ? `This ani-cli is missing features Anime Hub needs (${esc((st.check?.missing || []).join(", "))}) — online episodes and downloads won't work until it's updated.`
+    : want ? `ani-cli ${esc(want)} is out. Updating keeps online episodes working when sites change.`
+    : "Check for a newer version of ani-cli.";
+  const methodDesc = {
+    download: "Downloads the latest official script into Anime Hub's data folder. Your system copy stays untouched.",
+    scoop: "Runs Scoop in the background (scoop update ani-cli). No admin rights needed.",
+    termux: "Runs pkg update && pkg install ani-cli inside Termux.",
+  }[st.upgrade_method] || (st.upgrade_cmd ? "Run this command, then click Check again." : "Update ani-cli through your package manager, then click Check again.");
+  const stChip = done ? dotTxt("Ready", "ok") : a.busy ? dotTxt("Updating…", "live") : a.broken ? dotTxt(a.old ? "Too old" : "Update needed", "warn") : want ? dotTxt(`${want} is out`, "ok") : dotTxt("Found", "ok");
+  const errTxt = (j.state === "failed" && j.error) ? j.error : (!done && m.err && !a.broken ? m.err : "");
+  const showCmd = !done && !a.remote && st.upgrade_cmd && (!a.can || j.state === "failed" || st.upgrade_method === "termux");
+  const cmdBox = showCmd ? `<div class="tcmd"><code>${esc(st.upgrade_cmd)}</code><button class="btn sm" data-a="copy" data-v="${esc(st.upgrade_cmd)}">Copy</button></div>` : "";
+  const rows = srow("Installed", v ? `ani-cli ${esc(v)}${st.own ? " · Anime Hub's copy" : ""}` : "ani-cli", pkdo(stChip))
+    + (want && !done ? srow("Latest", `ani-cli ${esc(want)}`, pkdo(a.upd?.url ? '<button class="btn" data-a="aninotes">What\'s new</button>' : "")) : "")
+    + (!done && !a.remote ? srow("How it updates", esc(methodDesc), "") : "");
+  const left = (!a.remote && !(S.view === "settings" && S.setTab === "online")) ? setLink("online", "ani-cli", "Online") : "";
+  let btns;
+  if (done) {
+    btns = m.retry ? escBtn("close", "Close") + `<button class="btn pri" data-a="aniretry">${esc(m.retryLabel || "Try again")}${kb("↵")}</button>`
+      : `<button class="btn pri" data-a="close">Done${kb("↵")}</button>`;
+  } else if (a.remote) {
+    btns = `<button class="btn pri" data-a="close">Close${kb("↵")}</button>`;
+  } else if (a.can) {
+    btns = escBtn() + `<button class="btn pri" data-a="aniupgrade"${a.busy ? " disabled" : ""}>${a.busy ? "Updating…" : j.state === "failed" ? "Try again" : "Update ani-cli"}${kb("↵")}</button>`;
+  } else {
+    btns = escBtn() + `<button class="btn pri" data-a="anirecheck"${S.aniRecheck ? " disabled" : ""}>${S.aniRecheck ? "Checking…" : "Check again"}${kb("↵")}</button>`;
+  }
+  return dlHead(title, sub)
+    + dlBody(`<p class="sub">${intro}</p>${rows}${errTxt ? `<div class="msg">${esc(errTxt)}</div>` : ""}${cmdBox}`, "anib")
+    + dlFoot(left, btns);
 }
 function SkpDlg() {
   const pc = S.modal.pc;
@@ -6011,7 +6129,10 @@ function paintNav() {
   const links = $("#links");
   links.innerHTML = TABS.map(([k, n]) => `<button class="link ${cur === k ? "on" : ""}" ${cur === k ? 'aria-current="page"' : ""} data-a="go" data-v="${k}">${n}</button>`).join(""); // no key hints in the top bar (TODO 236); 1–4 still work, "keys ?" lists them
   glide(links);
+  const aniS = aniState(), hasUpd = !!(aniS.need || S.settings?.update?.found);
   $("#setb").classList.toggle("on", cur === "settings");
+  $("#setb").classList.toggle("has-upd", hasUpd && !aniS.broken);
+  $("#setb").classList.toggle("has-warn", aniS.broken);
   const ph = alSearchable() ? "search library or AniList" : "search your library";
   $("#q").placeholder = ph; $("#srph").textContent = ph;
   paintSr();
@@ -6027,7 +6148,7 @@ function paintNav() {
     <div class="rel"><button class="st dlb${dlActive.length ? " on" : ""}" aria-label="Downloads" aria-expanded="${S.menu === "dl"}" data-a="menu" data-v="dl">${ico("download")}${dlActive.length ? `<b>${dlActive.length}</b>${dlPct != null ? ` · ${Math.floor(dlPct)}%` : ""}` : "downloads"}</button>${S.menu === "dl" ? dlPop() : ""}</div>
     ${vpnChip()}
     ${S.outbox ? `<div class="rel"><button class="st sync warn" aria-expanded="${S.menu === "ob"}" data-a="obox">${ico("refresh")}${S.outbox} change${S.outbox === 1 ? "" : "s"} waiting to sync</button>${S.menu === "ob" ? obPop() : ""}</div>` : S.ani?.connected ? `<span class="st">${isMal() ? "mal" : "anilist"} synced</span>` : ""}
-    ${upChip()}<div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button></div>`;
+    ${aniUpChip()}${upChip()}<div class="rel rgt"><button class="st" aria-expanded="${S.menu === "keys"}" data-a="menu" data-v="keys">keys <kbd class="kb">?</kbd></button></div>`;
   paintKeys();
   if (html === nrLast) {
     /* Only the playback percent moved: patch in place. */
@@ -6137,7 +6258,7 @@ function HomePhone() {
   const touched = new Set((d.history || []).map((e) => e.show_id));
   const fresh = d.shows.filter((s) => !touched.has(s.id) && s.poster && epTotal(s) > 0).slice(0, 7);
   const sum = [L.length + (up ? 1 : 0) ? `<span><b>${L.length + (up ? 1 : 0)}</b> in progress</span>` : "", airing.length ? `<span><b>${airing.length}</b> airing</span>` : ""].filter(Boolean).join('<i class="sep"></i>');
-  let body = up ? upHero(up) : "";
+  let body = (up ? upHero(up) : "") + aniBanner();
   // no count beside the title: the cards show how many (TODO 236, like the PC)
   if (airing.length && (!S.sched || (S.sched.at && now - S.sched.at > 30 * 60e3))) loadSched(); // air times of what's already out, as on the PC
   const tiles = [...out.map(newStill), ...L.filter((x) => !outIds.has(showKey(x.s))).map(contStill)];
@@ -6713,31 +6834,34 @@ document.addEventListener("mousedown", (e) => { if (e.target.closest?.("#pal .sr
 
 /* Settings on a phone (S5): a grouped list; a section opens as its own page. */
 function setSummary(k, s) {
-  const ani = S.ani || {}, st = s.stream || {}, sk = s.skip || {};
+  const ani = S.ani || {}, st = s.stream || {}, sk = s.skip || {}, a = aniState(s);
+  const aniSum = a.old ? `ani-cli${st.version ? " " + st.version : ""} is too old — tap to update`
+    : a.bad ? "ani-cli needs an update"
+    : a.upd ? `ani-cli ${a.upd.version} is out` : null;
   if (s.android) {
     // The Android app's sections (Decision 88): no mpv, folder or desktop parts.
     const and = { player: `season reminder: ${s.recap_ask !== false ? "on" : "off"}`, subs: `${st.mode === "dub" ? "dub" : "sub"} · remember tracks`,
-      online: termuxReady(s) ? `quality: ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "Termux not set up yet",
-      library: s.files_ok ? s.library_root || "no folder chosen yet" : "your files: not allowed yet", data: "updates, tour" };
+      online: aniSum || (termuxReady(s) ? `quality: ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "Termux not set up yet"),
+      library: s.files_ok ? s.library_root || "no folder chosen yet" : "your files: not allowed yet", data: s.update?.found ? `${upName(s.update.found)} is out` : "updates, tour" };
     if (and[k]) return and[k];
   }
   return {
     player: `fullscreen: ${({ on: "on", off: "off", own: "my config" })[s.mpv?.fullscreen] || "on"}`,
     skipping: `openings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.op] || "ask"} · endings: ${({ off: "off", prompt: "ask", auto: "auto" })[sk.ed] || "ask"}`,
     subs: `${st.mode === "dub" ? "dub" : "sub"} · remember tracks, subtitle look`,
-    online: s.tools?.["ani-cli"] ? `quality: ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "ani-cli not installed",
+    online: aniSum || (s.tools?.["ani-cli"] ? `quality: ${st.quality ? QLABEL[st.quality] || st.quality + "p" : "best"}` : "ani-cli not installed"),
     appearance: "accent, fonts, zoom, top bar, motion",
     library: s.library_root || "no folder chosen yet",
     privacy: S.data?.vpn?.active ? "a VPN is on" : "no VPN right now",
     anilist: ani.connected ? `${acct()} · ${ani.user || "you"}` : "not connected",
     phone: s.android ? (S.peer?.paired ? `${S.peer.sync === false ? "paired" : "synced"} with ${S.peer.pc || "your PC"}` : "keep this phone and your PC the same") : "pair a phone with a QR code",
-    data: "updates, tools, files",
+    data: s.update?.found ? `${upName(s.update.found)} is out` : "updates, tools, files",
   }[k] || "";
 }
 const SET_ICONS = { player: "play", subs: "cc", skipping: "next", online: "download", appearance: "edit", library: "folder", privacy: "shield", anilist: "star", phone: "grid", data: "sliders" };
 function settingsList(tabs, s) {
   const find = !!S.setQ.trim();
-  const warn = (k) => k === "privacy" && !S.data?.vpn?.active;
+  const warn = (k) => (k === "privacy" && !S.data?.vpn?.active) || (k === "online" && aniState(s).need) || (k === "data" && !!s.update?.found);
   return `<div class="set2 phone">${setHero()}<div class="hello"><h1 class="hd">Settings</h1></div>${setSearch()}
     ${find ? `<div class="settings scol" data-sec="find">${setResults(s, tabs)}</div>` : `<div class="stiles">${tabs.map(([k, l], i) => `<button class="stile${warn(k) ? " warn" : ""}" style="--i:${i}" data-a="setopen" data-v="${k}">${ico(SET_ICONS[k] || "chevr")}<b>${esc(l)}</b><small>${esc(setSummary(k, s))}</small></button>`).join("")}</div>`}</div>`;
 }
@@ -6993,11 +7117,15 @@ const UPSCAYL_BTN = '<button class="btn sm" data-a="ext" data-v="https://upscayl
 const TOUR_ST = { ok: ["Found", "ok"], bad: ["Needed", "warn"], opt: ["Optional", ""] };
 const tourRow = (st, k, v, more = "", word = "") => srow(k, esc(st === "ok" ? v.replace(/ found$/, "") : v), pkdo(more + dotTxt(word || TOUR_ST[st][0], TOUR_ST[st][1])), st === "bad" ? "bad" : "");
 /* The ani-cli button (Decision 47): the official script, only when clicked. */
-const aniWord = (s) => (s.stream?.own && !s.stream?.outdated ? "Check for updates" : s.stream?.own ? "Update ani-cli" : "Get ani-cli");
-const aniBtn = (s) => (s.stream?.can_get ? `<button class="btn sm" data-a="aniget" ${S.aniGet ? "disabled" : ""}>${S.aniGet ? "Getting it…" : aniWord(s)}</button>` : "");
+const aniWord = (s) => (s.stream?.outdated || s.stream?.check?.ok === false || s.stream?.update?.version ? "Update ani-cli" : s.stream?.own ? "Check for updates" : "Get ani-cli");
+const aniBtn = (s) => {
+  const a = aniState(s);
+  if (a.broken && a.can) return `<button class="btn pri sm" data-a="aniupgrade" ${a.busy ? "disabled" : ""}>${a.busy ? "Updating…" : "Update ani-cli"}</button>`;
+  return s.stream?.can_get ? `<button class="btn sm" data-a="aniget" ${S.aniGet ? "disabled" : ""}>${S.aniGet ? "Getting it…" : aniWord(s)}</button>` : "";
+};
 function aniLine(s) {
-  const v = s.stream?.version, has = !!s.tools?.["ani-cli"], scoop = s.stream?.can_get === false; // Windows has no button: the text says how
-  if (!has) return "Needed for episodes you don't have as files." + (scoop ? " Install it with Scoop (scoop.sh): scoop bucket add extras, then scoop install ani-cli." : "");
+  const v = s.stream?.version, has = !!s.tools?.["ani-cli"], scoop = s.stream?.can_get === false && !s.stream?.upgrade_method; // Windows without Scoop has no button: the text says how
+  if (!has) return "Needed for episodes you don't have as files." + (s.stream?.can_get === false ? " Install it with Scoop (scoop.sh): scoop bucket add extras, then scoop install ani-cli." : "");
   if (s.stream?.outdated) return `Version ${v} is too old: online episodes won't work.` + (scoop ? " Update it with Scoop: scoop update ani-cli." : "");
   return `ani-cli${v ? " " + v : ""} found`;
 }
@@ -7129,15 +7257,28 @@ const tourSwitches = (s, a) => `<div class="group"><h3>While you watch</h3>${sro
 /* Termux commands (Decision 88), the same words the hub's errors use. */
 const TERMUX_INSTALL = "pkg upgrade -y && pkg install -y ani-cli";
 const TERMUX_ALLOW = "mkdir -p ~/.termux && echo allow-external-apps=true >> ~/.termux/termux.properties && termux-reload-settings";
-const termuxReady = (s) => !!s.tools?.["ani-cli"] && !s.termux;
+const termuxReady = (s) => !!s.tools?.["ani-cli"] && !s.termux && !s.stream?.outdated && s.stream?.check?.ok !== false;
 /* Online episodes on Android: ready, or the setup steps with a live check. */
 /* Android (Decision 88): the app may not read the phone's files until Android's "All files access" is on. */
 const filesAsk = () => srow("Your anime files", "To play episodes saved on this phone, Anime Hub needs Android's file access. Online episodes work without it.", pkdo('<button class="btn pri" data-a="askfiles">Allow file access</button>'));
 /* Back from Android's file-access screen: fresh settings, same page (the tour keeps its step). */
 window.hubFilesBack = () => loadSettings().then(() => { if (S.modal) paintModal(); else render(true); }).catch(() => {});
 function termuxBox(s) {
-  if (termuxReady(s)) return srow("ani-cli", `${esc(s.stream?.version || "")} in Termux. Online episodes are ready.`, pkdo(dotTxt("Found")));
   const cmd = (t) => `<div class="tcmd"><code>${esc(t)}</code><button class="btn sm" data-a="copy" data-v="${esc(t)}">Copy</button></div>`;
+  const a = aniState(s);
+  if (s.tools?.["ani-cli"] && !s.termux) {
+    if (a.broken || a.upd) {
+      const v = s.stream?.version || "", min = s.stream?.min_version || "5.2";
+      const title = `ani-cli${a.broken ? swarn(a.old ? "Too old" : "Update needed") : ` <span class="supd">${esc(a.upd.version)} is out</span>`}`;
+      const desc = a.old ? `Version ${esc(v)} in Termux is too old — Anime Hub needs ${esc(min)} or newer.`
+        : a.bad ? "This ani-cli in Termux is missing features Anime Hub needs."
+        : `${esc(v)} in Termux · ${esc(a.upd.version)} is out.`;
+      const err = a.job.state === "failed" && a.job.error ? `<p class="note">${swarn("Update failed.")} ${esc(a.job.error)}</p>` : "";
+      return srow(title, desc, pkdo(`<button class="btn pri" data-a="aniupgrade" ${a.busy ? "disabled" : ""}>${a.busy ? "Updating…" : "Update in Termux"}</button><button class="btn" data-a="termuxcheck" ${S.termuxBusy ? "disabled" : ""}>${S.termuxBusy ? "Checking…" : "Check again"}</button>`))
+        + err + `<p class="sub" style="margin-top:10px">Or update by hand in Termux:</p>${cmd(TERMUX_INSTALL)}`;
+    }
+    return srow("ani-cli", `${esc(s.stream?.version || "")} in Termux. Online episodes are ready.`, pkdo(`<button class="btn" data-a="anicheck" ${S.aniCheck ? "disabled" : ""}>${S.aniCheck ? "Checking…" : "Check for updates"}</button>${dotTxt("Found")}`));
+  }
   return `<ol class="tsteps">
     <li>Install <b>Termux</b> from <a href="https://f-droid.org/packages/com.termux/" target="_blank" rel="noopener">F-Droid</a>. The Play Store's version is too old.</li>
     <li>Open Termux and run:${cmd(TERMUX_INSTALL)}</li>
@@ -7276,7 +7417,7 @@ function paintModal(focus) {
     if (o) { o.classList.add("leave"); setTimeout(() => { if (!S.modal) el.innerHTML = ""; }, 200); }
     return;
   }
-  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, subs: SubDlg, where: WhereDlg, peer: PeerDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
+  const body = (isPhone() && m.t !== "tour" ? grab : "") + { ani: AniDlg, mal: MalDlg, tour: Tour, rec: Rec, done: Done, src: SrcDlg, vpn: VpnDlg, skp: SkpDlg, tip: TipDlg, up: UpDlg, aniup: AniUpDlg, pin: PinDlg, pln: PlNameDlg, plfd: PlFindDlg, fonts: FontDlg, subs: SubDlg, where: WhereDlg, peer: PeerDlg, recap: RecapDlg, nxt: NextDlg, entry: EntryDlg, match: MatchDlg }[m.t]();
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
@@ -8317,7 +8458,10 @@ async function phonePlay(id, version = 0, fromStart = false, mode, skipOk, rewat
   if (rewatch) body.rewatch = true;
   const r = await api("/api/phone/play", body).catch(() => ({ error: "Could not reach the hub." }));
   if (PP.id !== id || ppVideo() !== v) return; // closed or replaced meanwhile
-  if (r.error) { toast(r.error, "err"); return ppClose(false, true); }
+  if (r.error) {
+    if (r.anicli_update) { ppClose(false, true); return openAniUp({ err: r.error, retryLabel: "Play now", retry: () => phonePlay(id, version, fromStart, mode, skipOk, rewatch) }); }
+    toast(r.error, "err"); return ppClose(false, true);
+  }
   if (rewatch) { refreshData(); if (S.view === "fr" && S.fr) frLoad(S.fr.eid); }
   if (r.note) toast(r.note);
   ppLoad(id, version, r);
@@ -8779,7 +8923,11 @@ async function play(id, version = 0, mode, asked, fromStart, skipOk, where, rewa
   if (accent) body.accent = accent;
   const res = await api("/api/play", body).catch(() => ({ error: "Could not reach the hub." }));
   S.playBusy = false;
-  if (res.error) { markLoading(null); loadShown = null; toast(res.error, "err"); }
+  if (res.error) {
+    markLoading(null); loadShown = null;
+    if (res.anicli_update) { toastDone(); return openAniUp({ err: res.error, retryLabel: "Play now", retry: () => play(id, version, mode, true, fromStart, skipOk, where, rewatch) }); }
+    toast(res.error, "err");
+  }
   else if (rewatch) { refreshData(); if (S.view === "fr" && S.fr) frLoad(S.fr.eid); }
   pollSoon(600);
 }
@@ -8836,7 +8984,10 @@ async function rwSet(ref, active, restore) {
 async function download(mid, eps, asked) {
   if (!asked) return vpnGate(() => download(mid, eps, true));
   const r = await api("/api/download", { media_id: mid, episodes: eps }).catch(() => null);
-  if (!r || r.error) return toast(r?.error || "Could not reach the hub.");
+  if (!r || r.error) {
+    if (r?.anicli_update) return openAniUp({ err: r.error, retryLabel: "Download now", retry: () => download(mid, eps, true) });
+    return toast(r?.error || "Could not reach the hub.");
+  }
   toast(r.queued ? `Downloading ${r.queued} episode${r.queued === 1 ? "" : "s"}` : "Already downloaded or downloading");
   pollSoon(300);
 }
@@ -8845,7 +8996,7 @@ async function upCheck(tell) {
   const r = await api("/api/update-check", {}).catch(() => ({ error: "Could not reach the hub." }));
   S.upBusy = false; await loadSettings();
   if (S.view === "settings") render(true);
-  if (tell) toast(r.error || (r.found ? `${upName(r.found)} is out` : "You have the latest version"), r.error ? "err" : undefined);
+  if (tell) toast(r.error || (r.found ? `${upName(r.found)} is out` : r.anicli ? `ani-cli ${r.anicli.version} is out` : "You have the latest version"), r.error ? "err" : undefined);
 }
 async function setToggle(key, on) {
   const r = await api("/api/settings", { [key]: on }).catch(() => null);
@@ -9085,7 +9236,10 @@ const A = {
     st.busy = "Loading its episodes…"; st.err = ""; paintModal();
     const res = await api("/api/stream/link", { media_id: mid, query: st.q, title: r.title, index: r.index, display: S.modal.title }).catch(() => null);
     st.busy = "";
-    if (!res || res.error) { st.err = res?.error || "Could not reach the hub."; paintModal(); return; }
+    if (!res || res.error) {
+      if (res?.anicli_update) return openAniUp({ err: res.error, retryLabel: "Try again", retry: () => { openModal({ t: "src", mid, title: S.modal?.title || st.q }); A.sllink(); } });
+      st.err = res?.error || "Could not reach the hub."; paintModal(); return;
+    }
     delete S.slink[mid];
     closeModal();
     toast("Episodes updated");
@@ -9756,11 +9910,70 @@ const A = {
     toast(j?.state === "failed" ? j.error || "Something didn't install." : "Tools installed", j?.state === "failed" ? "err" : undefined);
   },
   aniget: async () => {
-    S.aniGet = true; if (S.modal?.t === "tour") paintModal(); else render(true);
+    S.aniGet = true; if (S.modal?.t === "tour" || S.modal?.t === "aniup") paintModal(); if (S.view === "settings" || S.view === "home" || S.view === "fr") render(true);
     const r = await api("/api/anicli-get", {}).catch(() => ({ error: "Could not reach the hub." }));
-    S.aniGet = false; await loadSettings();
+    S.aniGet = false; frMemo.clear(); await loadSettings(); await refreshData();
     toast(r.error || (r.changed === false ? `You have the latest ani-cli (${r.version})` : `ani-cli ${r.version || ""} is ready`), r.error ? "err" : undefined);
-    if (S.modal?.t === "tour") paintModal(); else if (S.view === "settings") render(true);
+    if (S.modal?.t === "tour" || S.modal?.t === "aniup") paintModal();
+    if (S.view === "settings" || S.view === "home" || S.view === "fr") render(true); else paintNav();
+    if (!r.error && S.view === "fr" && S.fr?.eid) frLoad(S.fr.eid);
+  },
+  aniopen: () => openAniUp(),
+  anidismiss: () => { S.aniBannerDismissed = true; if (S.view === "home") render(true); },
+  aninotes: () => { const u = S.settings?.stream?.update?.url; if (u) openExternal(u); },
+  anicheck: async () => {
+    if (S.aniCheck) return;
+    S.aniCheck = true; if (S.view === "settings") render(true);
+    const r = await api("/api/anicli-check", {}).catch(() => ({ error: "Could not reach the hub." }));
+    S.aniCheck = false; await loadSettings();
+    if (S.view === "settings" || S.view === "home" || S.view === "fr") render(true); else paintNav();
+    if (S.modal?.t === "aniup") paintModal();
+    toast(r.error || (r.found ? `ani-cli ${r.found.version} is out` : `ani-cli ${r.current || ""} is up to date`), r.error ? "err" : undefined);
+  },
+  aniupgrade: async () => {
+    if (aniState().busy) return;
+    const r = await api("/api/anicli-upgrade", {}).catch(() => ({ error: "Could not reach the hub." }));
+    if (r.error) { toast(r.error, "err"); if (S.modal?.t === "aniup") { S.modal.err = r.error; paintModal(); } return; }
+    const paint = () => {
+      if (S.modal?.t === "aniup" || S.modal?.t === "tour") paintModal();
+      if (S.view === "settings" || S.view === "home" || S.view === "fr") render(true); else paintNav();
+    };
+    do {
+      await loadSettings(); paint();
+      await sleep(700);
+    } while (S.settings?.stream?.upgrade_job?.state === "working");
+    frMemo.clear();
+    await loadSettings(); await refreshData();
+    const j = S.settings?.stream?.upgrade_job || {};
+    if (j.state === "done") {
+      if (S.modal?.t === "aniup") S.modal.done = true;
+      toast(j.changed === false ? `You already have the latest ani-cli (${j.version || S.settings?.stream?.version || ""})` : `ani-cli ${j.version || S.settings?.stream?.version || ""} is ready`);
+    } else if (j.state === "failed") {
+      toast(j.error || "Could not update ani-cli.", "err");
+    }
+    paint();
+    if (j.state === "done" && S.view === "fr" && S.fr?.eid) frLoad(S.fr.eid);
+  },
+  anirecheck: async () => {
+    if (S.aniRecheck) return;
+    S.aniRecheck = true; if (S.modal?.t === "aniup") paintModal();
+    if (S.settings?.android) await api("/api/termux-check", {}).catch(() => null);
+    frMemo.clear();
+    await loadSettings(); await refreshData();
+    S.aniRecheck = false;
+    const a = aniState();
+    if (S.modal?.t === "aniup") {
+      if (!a.broken && !a.upd) S.modal.done = true;
+      paintModal();
+    }
+    if (S.view === "settings" || S.view === "home" || S.view === "fr") render(true); else paintNav();
+    if (!a.broken && S.view === "fr" && S.fr?.eid) frLoad(S.fr.eid);
+    toast(a.broken ? `Still on ani-cli ${a.st.version || "(old)"}` : `ani-cli ${a.st.version || ""} is ready`, a.broken ? "err" : undefined);
+  },
+  aniretry: () => {
+    const fn = S.modal?.retry;
+    closeModal();
+    if (typeof fn === "function") fn();
   },
   tourpick: (v) => { S.tour.choice = v; paintModal(); },
   askfiles: () => window.AnimeHubApp?.askFiles?.(),

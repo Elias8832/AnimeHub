@@ -1,15 +1,20 @@
 """The ani-cli bridge: locating, spawning and probing ani-cli."""
 
+import json
 import os
 import re
 import signal
+import sqlite3
 import subprocess
 import tempfile
+import threading
+import time
 import uuid
+from http.client import HTTPException
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from . import android, settings, system
+from . import VERSION, android, settings, system, util
 from .config import config
 
 
@@ -67,13 +72,58 @@ STREAM_STARTUP_TIMEOUT = 90
 class AniCliError(Exception):
     """An ani-cli failure, worded for the UI."""
 
+    def __init__(self, msg, needs_upgrade=False):
+        super().__init__(msg)
+        self.needs_upgrade = bool(needs_upgrade)
+
+
+def error_dict(exc_or_msg, text=None, needs_upgrade=False):
+    """Error payload for HTTP routes; adds anicli_update when the fix is
+    upgrading ani-cli so the UI can open the upgrade dialog directly."""
+    flag = bool(needs_upgrade or getattr(exc_or_msg, "needs_upgrade", False))
+    msg = text if text is not None else str(exc_or_msg)
+    return {"error": msg, "anicli_update": True} if flag else {"error": msg}
+
 
 # Older releases can't reach the current provider (distro packages lag), so
 # Settings and the tour offer the official script (Decision 47).
 MIN_VERSION = (5, 2)
 ANICLI_URL = "https://github.com/pystardust/ani-cli/releases/latest/download/ani-cli"
+ANICLI_RELEASES_API = "https://api.github.com/repos/pystardust/ani-cli/releases/latest"
 ANICLI_MAX = 2_000_000
+ANICLI_API_MAX = 262_144
+ANICLI_UPDATE_EVERY = 24 * 3600
 ANICLI_TOOLS = ("curl", "sed", "grep")  # what it needs with the hub answering its menus
+ANICLI_NO_VPN = "No VPN is on. Turn one on, or switch off Only with a VPN."
+_upgrade_lock = threading.Lock()
+_upgrade_job = {"state": "idle", "version": None, "changed": None, "error": None}
+
+
+def parse_version(text):
+    """Numeric (major, minor, patch) from a version or tag string, or None."""
+    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text or "")
+    return (int(m[1]), int(m[2]), int(m[3] or 0)) if m else None
+
+
+def _get_setting(key):
+    try:
+        return settings.get_setting(key)
+    except sqlite3.OperationalError:
+        return None
+
+
+def _set_setting(key, value):
+    try:
+        settings.set_setting(key, value)
+    except sqlite3.OperationalError:
+        pass
+
+
+def _vpn_missing():
+    try:
+        return settings.automation_enabled("update_vpn_only") and not settings.vpn_status().get("active")
+    except sqlite3.OperationalError:
+        return False
 
 
 def own_anicli():
@@ -93,8 +143,8 @@ def anicli_path():
 
 
 def anicli_outdated():
-    m = re.search(r"(\d+)\.(\d+)", anicli_version() or "")
-    return bool(m) and (int(m[1]), int(m[2])) < MIN_VERSION
+    v = parse_version(anicli_version())
+    return bool(v) and v[:len(MIN_VERSION)] < MIN_VERSION
 
 
 def anicli_too_old_message():
@@ -117,10 +167,213 @@ def anicli_curl_needs():
     return ["curl-impersonate"]
 
 
+def upgrade_method():
+    """How one-click upgrade works on this platform, or None for manual."""
+    if system.WINDOWS:
+        return "scoop" if system.powershell() and system.scoop_script() else None
+    if system.ANDROID:
+        return "termux" if anicli_path() or not android.problem() else None
+    return "download"
+
+
+def upgrade_cmd():
+    """Manual fallback upgrade command for this OS (shown when needed)."""
+    if system.WINDOWS:
+        return "scoop update ani-cli"
+    if system.ANDROID:
+        return "pkg upgrade -y && pkg install -y ani-cli"
+    return None
+
+
+def update_stored():
+    """Newer upstream ani-cli release found by the last check, while still
+    newer than the installed copy (clears automatically after upgrading)."""
+    if not anicli_path():
+        return None
+    try:
+        found = json.loads(_get_setting("anicli_update_found") or "null")
+    except ValueError:
+        return None
+    if not isinstance(found, dict) or not found.get("version"):
+        return None
+    want = parse_version(found["version"])
+    cur = parse_version(anicli_version())
+    if not want:
+        return None
+    if cur and want <= cur:
+        return None
+    return found
+
+
+def update_due(now=None):
+    """True when consented daily checks are on, ani-cli is installed, and a
+    day has passed since the last check (respects update_vpn_only)."""
+    try:
+        on = settings.automation_enabled("update_check")
+    except sqlite3.OperationalError:
+        return False
+    if not anicli_path() or not on or _vpn_missing():
+        return False
+    try:
+        last = int(_get_setting("anicli_update_checked") or 0)
+    except ValueError:
+        last = 0
+    return (now if now is not None else time.time()) - last >= ANICLI_UPDATE_EVERY
+
+
+def check_update():
+    """POST /api/anicli-check, and the daily loop: ask GitHub's latest
+    pystardust/ani-cli release and remember it when newer than installed."""
+    if _vpn_missing():
+        return {"error": ANICLI_NO_VPN}
+    if not anicli_path():
+        return {"ok": True, "found": None, "current": None, "latest": None}
+    try:
+        req = Request(ANICLI_RELEASES_API,
+                      headers={"User-Agent": f"anime-hub/{VERSION}", "Accept": "application/vnd.github+json"})
+        with urlopen(req, timeout=15) as r:
+            data = json.loads(r.read(ANICLI_API_MAX + 1))
+    except (OSError, HTTPException, ValueError):
+        return {"error": "Could not reach GitHub."}
+    if not isinstance(data, dict):
+        return {"error": "GitHub sent something unexpected."}
+    tag = str(data.get("tag_name") or "").strip()
+    latest = tag.lstrip("v")
+    want = parse_version(latest)
+    if not want:
+        return {"error": "GitHub sent something unexpected."}
+    current = anicli_version()
+    cur = parse_version(current)
+    found = None
+    if (cur and want > cur) or (not cur and anicli_outdated()):
+        found = {"version": latest, "url": str(data.get("html_url") or ""), "published": str(data.get("published_at") or "")}
+    _set_setting("anicli_update_checked", str(int(time.time())))
+    _set_setting("anicli_update_found", json.dumps(found))
+    return {"ok": True, "found": found, "current": current, "latest": latest}
+
+
+def upgrade_job():
+    with _upgrade_lock:
+        return dict(_upgrade_job)
+
+
+def upgrade_start():
+    """POST /api/anicli-upgrade: one-click upgrade on Linux (download),
+    Windows (Scoop), or Android (Termux), only on the user's click."""
+    method = upgrade_method()
+    if not method:
+        how = upgrade_cmd()
+        return {"error": f"Update ani-cli by hand: {how}" if how else "This copy can't update ani-cli automatically."}
+    if _vpn_missing():
+        return {"error": ANICLI_NO_VPN}
+    with _upgrade_lock:
+        if _upgrade_job["state"] == "working":
+            return {"ok": True, "method": method}
+        _upgrade_job.update(state="working", version=None, changed=None, error=None)
+    threading.Thread(target=_upgrade_work, args=(method,), daemon=True).start()
+    return {"ok": True, "method": method}
+
+
+def _clear_stream_backoffs():
+    """Let shows that failed under an older ani-cli resolve immediately now."""
+    try:
+        from . import pages, streaming
+        streaming._resolve_failed.clear()
+        pages._freshen_failed.clear()
+    except Exception:
+        pass
+
+
+def _upgrade_work(method):
+    before = anicli_version()
+    error = None
+    changed = None
+    version = None
+    try:
+        if method == "download":
+            r = fetch_anicli()
+            error = r.get("error")
+            version = r.get("version")
+            changed = r.get("changed")
+        elif method == "scoop":
+            r = _upgrade_scoop(before)
+            error = r.get("error")
+            version = r.get("version")
+            changed = r.get("changed")
+        elif method == "termux":
+            r = android.upgrade_anicli()
+            error = r.get("error")
+            if not error:
+                _anicli_checks.clear()
+                version = anicli_version()
+                changed = (version != before) if (version and before) else True
+    except Exception as e:
+        util.log("ani-cli upgrade: %r" % e)
+        error = "Could not update ani-cli."
+    if not error:
+        if anicli_outdated() or (anicli_check() or {}).get("ok") is False:
+            error = (f"Updated, but ani-cli is still {version or 'too old'}. "
+                     + (f"Try running {upgrade_cmd()} yourself." if upgrade_cmd() else "Try again later."))
+        elif not update_stored():
+            _set_setting("anicli_update_found", "null")
+        if not error:
+            _clear_stream_backoffs()
+    with _upgrade_lock:
+        _upgrade_job.update(state="failed" if error else "done", version=version, changed=changed, error=error)
+
+
+def _upgrade_scoop(before):
+    """Windows (Decision 87): run `scoop update` + `scoop update ani-cli`
+    through PowerShell, then refresh PATH and version caches."""
+    ps, scoop = system.powershell(), system.scoop_script()
+    if not ps or not scoop:
+        return {"error": "Scoop was not found — update ani-cli with Scoop: scoop update ani-cli."}
+    shell = [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scoop]
+    log = config.DATA / "tools-install.log"
+    lines = []
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    rc = 0
+    for args in (["update"], ["update", "ani-cli"]):
+        try:
+            proc = subprocess.run(shell + args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, encoding="utf-8", errors="replace",
+                                  timeout=180, **system.quiet())
+            rc = proc.returncode
+            out = proc.stdout or ""
+            try:
+                with open(log, "a", encoding="utf-8", errors="replace") as f:
+                    f.write(f"\n> scoop {' '.join(args)}\n{out}")
+            except OSError:
+                pass
+            for line in out.splitlines():
+                line = line.strip()
+                if line:
+                    lines = (lines + [line])[-12:]
+        except (OSError, subprocess.SubprocessError) as e:
+            return {"error": f"Scoop could not run: {e}"}
+    system.refresh_path()
+    _anicli_versions.clear()
+    _anicli_checks.clear()
+    after = anicli_version()
+    if rc != 0 and (not after or after == before):
+        tail = " ".join(lines[-2:])[:300]
+        return {"error": f"Scoop could not update ani-cli.{(' Last output: ' + tail) if tail else ''}"}
+    return {"ok": True, "version": after, "changed": bool(after and after != before)}
+
+
 def anicli_status():
-    """Additive in /api/settings: stream.own / outdated / can_get / needs."""
+    """Additive in /api/settings: stream.own / outdated / can_get / needs /
+    min_version / update / upgrade_method / upgrade_cmd / upgrade_job."""
     return {"own": anicli_path() == str(own_anicli()), "outdated": anicli_outdated(), "can_get": not system.WINDOWS and not system.ANDROID,
-            "needs": [] if system.ANDROID else system.script_needs(ANICLI_TOOLS) + anicli_curl_needs()}
+            "needs": [] if system.ANDROID else system.script_needs(ANICLI_TOOLS) + anicli_curl_needs(),
+            "min_version": ".".join(map(str, MIN_VERSION)),
+            "update": update_stored(),
+            "upgrade_method": upgrade_method(),
+            "upgrade_cmd": upgrade_cmd(),
+            "upgrade_job": upgrade_job()}
 
 
 def fetch_anicli():
@@ -131,6 +384,8 @@ def fetch_anicli():
         return {"error": "On Windows, update ani-cli with Scoop."}
     if system.ANDROID:
         return {"error": "On Android, update ani-cli in Termux: pkg upgrade -y"}
+    if _vpn_missing():
+        return {"error": ANICLI_NO_VPN}
     try:
         req = Request(ANICLI_URL, headers={"User-Agent": "anime-hub/1.0"})
         with urlopen(req, timeout=20) as r:
@@ -150,6 +405,10 @@ def fetch_anicli():
     tmp.chmod(0o755)
     os.replace(tmp, path)
     _clear_version_cache(str(path))
+    _anicli_checks.clear()
+    _clear_stream_backoffs()
+    if not update_stored():
+        _set_setting("anicli_update_found", "null")
     return {"ok": True, "version": anicli_version(), "changed": True}
 
 
@@ -297,10 +556,10 @@ def anicli_spawn(args, env, stdout, stderr):
         if android.fetch_anicli():
             check = anicli_check()
     if check and check["ok"] is False:
-        raise AniCliError(anicli_unsupported_message(check))
+        raise AniCliError(anicli_unsupported_message(check), needs_upgrade=True)
     if anicli_outdated():
         # Settings and the tour say so too, but a play click is where it's felt.
-        raise AniCliError(anicli_too_old_message())
+        raise AniCliError(anicli_too_old_message(), needs_upgrade=True)
     if system.ANDROID:
         return android.TermuxRun(args, env, stdout, stderr)  # one Termux job, Popen-shaped
     try:

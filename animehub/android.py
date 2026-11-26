@@ -320,3 +320,36 @@ def anicli_version():
     except OSError:
         return None
     return m[1] if m else None
+
+
+UPGRADE_TIMEOUT = 180
+UPGRADE_SCRIPT = (
+    'T=$(mktemp -d "${TMPDIR:-/tmp}/animehub-up.XXXXXX") || exit 97\n'
+    'printf \'DPkg::Options { "--force-confdef"; "--force-confold"; };\\n\' > "$T/apt.conf"\n'
+    'export DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none APT_CONFIG="$T/apt.conf"\n'
+    'pkg update -y </dev/null && pkg install -y ani-cli </dev/null\n'
+    'rc=$?\n'
+    'rm -rf "$T"\n'
+    'echo "@@UPRC $rc"\n'
+    'exit $rc\n'
+)
+
+
+def upgrade_anicli():
+    """Upgrade ani-cli inside Termux on the user's click, then refresh the
+    cached script copy so version/checks update immediately."""
+    try:
+        rc, out, err, msg = transport(UPGRADE_SCRIPT, UPGRADE_TIMEOUT)
+    except Exception as e:
+        return {"error": f"Termux could not be asked: {e}"}
+    m = re.search(r"^@@UPRC (-?\d+)$", out or "", re.M)
+    code = int(m[1]) if m else None
+    if code is None:
+        return {"error": termux_error(msg, err) or f"Termux ended the upgrade: {(msg or err).strip() or 'no reason given'}"}
+    if code != 0:
+        lines = [line.strip() for line in ((err or "") + "\n" + (out or "")).splitlines()
+                 if line.strip() and not line.strip().startswith("@@UPRC")]
+        tail = " ".join(lines[-2:])[:300]
+        return {"error": f"Could not update ani-cli in Termux.{(' ' + tail) if tail else ''}"}
+    fetch_anicli(force=True)
+    return {"ok": True, "version": anicli_version()}

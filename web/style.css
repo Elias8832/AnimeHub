@@ -159,7 +159,9 @@ body.sc #nav{background:rgba(13,14,17,.72);backdrop-filter:blur(22px) saturate(1
 .search .sp{color:var(--accent);font:600 16px var(--ui);margin-top:-2px}
 .search .ph{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette opens centred: the bar's search stays, marked open */
-.setb{margin-left:8px;width:40px;height:40px;border-radius:999px;display:grid;place-items:center;color:rgba(243,243,241,.8);background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px)}
+.setb{position:relative;margin-left:8px;width:40px;height:40px;border-radius:999px;display:grid;place-items:center;color:rgba(243,243,241,.8);background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px)}
+.setb.has-upd:after,.setb.has-warn:after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px rgba(13,14,17,.85)}
+.setb.has-warn:after{background:var(--warn)}
 .setb:hover,.setb.on{background:var(--glass-h);color:var(--ink)}.setb.on{background:var(--pick)}
 .setb .ico{width:18px;height:18px;transition:transform .5s var(--ease)}.setb:hover .ico{transform:rotate(90deg)}
 .fill{flex:1}.rel{position:relative}
@@ -181,7 +183,7 @@ body.srch .search{background:var(--glass-h);color:var(--ink-2)} /* the palette o
 #nr .vpn.ok{color:var(--ink-2)} /* the status line's warnings speak in the show's colour (Elias); a VPN that's up is just a fact */
 #nr .ib .ico,#nr .st .ico{width:14px;height:14px}
 #nr .sync .ico{animation:spin 2.4s linear infinite}
-#nr .rgt{margin-left:auto}#nr .up{margin-left:auto}#nr .up+.rgt{margin-left:0}
+#nr .rgt,#nr .up,#nr .aniup{margin-left:auto}#nr .aniup+.up,#nr .aniup+.rgt,#nr .up+.rgt{margin-left:0}
 #nr .pop{top:auto;bottom:40px;transform-origin:bottom left}
 #nr .pop.dl{left:0;right:auto}
 #nr .rgt .pop{left:auto;right:0;transform-origin:bottom right}
@@ -274,6 +276,18 @@ button.kn{cursor:pointer}button.kn:hover{color:var(--ink)}
 @keyframes floaty{50%{transform:translateY(-6px)}}
 .note-bar{margin:18px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:var(--r-m);background:var(--s1);color:var(--mute);font-size:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;animation:rise .35s var(--ease) both}
 .note-bar .btn{font-size:13px;padding:5px 12px}
+/* Outdated / broken ani-cli notice bar on Home (desktop + phone): calm glass pill, dismissible */
+.ani-bar{margin:0 0 18px;padding:11px 14px 11px 16px;border-radius:16px;background:var(--glass);box-shadow:var(--edge);backdrop-filter:blur(18px);display:flex;align-items:center;gap:12px;flex-wrap:wrap;animation:rise .32s var(--ease) both}
+.ani-bar .dot{width:8px;height:8px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px color-mix(in srgb,var(--warn) 55%,transparent);flex:none}
+.ani-bar .ab-tx{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;min-width:0;flex:1 1 200px}
+.ani-bar .ab-tx b{font:600 14px var(--ui);color:var(--ink)}
+.ani-bar .ab-tx small{font:400 13px var(--ui);color:var(--ink-2)}
+.ani-bar .ab-x{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--mute);flex:none}
+.ani-bar .ab-x:hover{color:var(--ink);background:rgba(255,255,255,.08)}
+.ani-bar .ab-x .ico{width:15px;height:15px}
+.home2.phone .ani-bar{margin:16px 16px 4px;padding:12px 14px;gap:10px;background:var(--s2);backdrop-filter:none}
+.home2.phone .ani-bar .ab-tx{flex-direction:column;gap:2px}
+.anib .tcmd{margin-top:12px}
 /* Your lists on their way (TODO 191): a quiet line where they'll land, the real count, a thin bar */
 .lload .ll{display:flex;align-items:center;gap:8px;margin:0;font:500 12px var(--ui);color:var(--mute);cursor:default}
 .lload .lc{margin-left:auto;color:var(--ink-2);font-weight:500;font-variant-numeric:tabular-nums}
@@ -467,7 +481,7 @@ aside .panel{padding:18px 20px}.note{margin-bottom:10px;color:var(--mute);font-s
 .legend{display:grid;gap:4px;font-size:14px;color:var(--mute)}.legend span{padding:3px 8px;margin:0 -8px;border-radius:8px;transition:background .2s,color .2s;cursor:default}.legend span:hover{background:var(--s2);color:var(--ink)}.legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:9px}
 .settings{max-width:860px;margin:0 auto}.group{margin-top:40px}.group h3{font-size:18px;font-weight:650;margin-bottom:4px;display:flex;align-items:center;gap:10px}.group h3:before{content:"";width:4px;height:16px;border-radius:2px;background:linear-gradient(var(--accent),var(--accent-hi))}
 .srow{display:flex;justify-content:space-between;align-items:center;gap:30px;padding:16px 12px;margin:0 -12px;border-bottom:1px solid var(--line);transition:background .2s}
-.srow:hover{background:rgba(255,255,255,.02)}.swarn{color:var(--warn);font-weight:500}.srow b .swarn{margin-left:8px}.srow p{margin-top:2px;color:var(--mute);font-size:14px;max-width:480px}
+.srow:hover{background:rgba(255,255,255,.02)}.swarn{color:var(--warn);font-weight:500}.supd{color:var(--accent-hi);font-weight:500}.srow b .swarn,.srow b .supd{margin-left:8px}.srow p{margin-top:2px;color:var(--mute);font-size:14px;max-width:480px}
 .path{display:flex;gap:8px}.path input{flex:1;min-width:220px}
 .srow:has(+ .dirpick){border-bottom-color:transparent}
 .dirpick{padding:0 0 18px;margin-top:-6px;border-bottom:1px solid var(--line)}.dialog .dirpick{margin-top:12px;padding:0;border:0}
@@ -1881,6 +1895,8 @@ body.srch #pal{display:grid}
 .snav button:hover{color:var(--ink);background:rgba(255,255,255,.04)}
 .snav button.on{background:var(--pick);color:var(--ink)}
 .snav button.on .ico{opacity:1;color:var(--accent)}
+.snav button .sdot{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.snav button .sdot.warn{background:var(--warn);box-shadow:0 0 8px color-mix(in srgb,var(--warn) 50%,transparent)}
 .snav .slsearch{height:40px;margin:0 0 12px;padding:0 14px;border-radius:12px}.slsearch input{font-size:13px!important}
 .slsearch input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;background:none!important;box-shadow:none!important;backdrop-filter:none;color:var(--ink);font:400 14px var(--ui)}
 .slsearch input::placeholder{color:var(--mute)}.slsearch input::-webkit-search-cancel-button{display:none}
