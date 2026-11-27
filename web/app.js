@@ -835,8 +835,8 @@ function newEps(skipId, now) {
     .filter((x) => x.behind > 0 && !(skipId && [x.e.local_show_id, x.e.stream_show_id].some((id) => id && keyOfId(id) === keyOfId(skipId))))
     .sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
 }
-function newCard({ e, behind }, k) {
-  const n = (e.progress || 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
+function newCard({ e, behind, prog }, k) {
+  const n = (prog ?? e.progress ?? 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
   const art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster;
   return `<div class="hc hcnew" style="--i:${k}${art ? `;--art:${esc(cssUrl(art))}` : ""}" data-a="${s ? "open" : "entry"}" data-v="${esc(s ? s.id : e.id)}"${s ? ` data-cw="${esc(s.id)}"${ep ? ` data-cwep="${esc(ep.id)}"` : ""}` : ""} tabindex="0">
     <div class="epa">${art ? `<span class="epimg" style="background-image:${esc(cssUrl(art))};background-position:50% 30%"></span>` : ""}
@@ -855,6 +855,46 @@ function airDay(t, now) {
   return n === 0 ? "today" : n === 1 ? "tomorrow" : n === -1 ? "yesterday" : `${DAYS[(d.getDay() + 6) % 7]} ${d.getDate()}`;
 }
 const hhmm = (t) => new Date(t).toTimeString().slice(0, 5);
+/* Effective progress for airing/new-episode badges: AniList progress, plus any
+   locally watched episodes for this entry (disk or online) so a just-watched
+   episode leaves "1 new" immediately instead of waiting on AniList sync. Active
+   rewatches read this run's `done`; manual REPEATING without one keeps AniList's. */
+function airProgress(e) {
+  const remote = typeof e.progress === "number" ? e.progress : 0;
+  const mid = e.media_id ?? e.id;
+  if (!mid) return remote;
+  const rw = S.data?.rewatches?.["aid:" + mid];
+  if (rw && rw.started_at) {
+    const nums = (rw.done || []).filter((n) => typeof n === "number" && Number.isInteger(n) && n >= 1);
+    return Math.max(remote, nums.length ? Math.max(...nums) : 0);
+  }
+  if (e.status === "REPEATING") return remote;
+  let local = 0;
+  const ix = epIndex();
+  if (ix) {
+    const pre = `${mid}:`;
+    for (const [k, eps] of ix.bySlot) {
+      if (!k.startsWith(pre)) continue;
+      if (eps.some((ep) => ep.watched)) {
+        const n = +k.slice(pre.length);
+        if (n > local) local = n;
+      }
+    }
+  }
+  for (const id of [e.local_show_id, e.stream_show_id]) {
+    const s = id && showById(id);
+    if (!s) continue;
+    const mine = s.seasons.filter((sea) => sea.media_id && sea.media_id === mid);
+    const seasons = mine.length ? mine : (s.seasons.length === 1 ? s.seasons : []);
+    for (const sea of seasons) {
+      if ((sea.releases || []).length) continue;
+      for (const ep of sea.episodes) {
+        if (ep.watched && typeof ep.number === "number" && ep.number > local) local = ep.number;
+      }
+    }
+  }
+  return Math.max(remote, local);
+}
 /* One airing show: its newest aired episode (with time when known), the next one, how far behind you are. */
 function airState(e, now) {
   const ne = e.next_episode || {}, at = ne.at ? ne.at * 1000 : ne.in_seconds != null ? now + ne.in_seconds * 1000 : null;
@@ -868,9 +908,10 @@ function airState(e, now) {
     else if (!next || at < next.t) next = { ep: ne.number, t: at };
   }
   const aired = last ? last.ep : next ? next.ep - 1 : 0;
-  const behind = typeof e.progress === "number" ? Math.max(0, aired - e.progress) : 0;
+  const prog = airProgress(e);
+  const behind = typeof e.progress === "number" ? Math.max(0, aired - prog) : 0;
   if (!last && aired > 0) last = { ep: aired, t: null }; // out, time not stated
-  return { e, last, next, behind };
+  return { e, last, next, behind, prog };
 }
 /* The first unwatched episode you can play: on disk first, then online. */
 function airPlayEp(e, n) {
@@ -1530,7 +1571,7 @@ function phoneFact(e) {
     if (n && p >= n) return "all seen";
     if (e.airing === "RELEASING" && e.next_episode) {
       const a = airState(e, Date.now());
-      if (a.behind) return `E${p + 1} next · ${a.behind} behind`;
+      if (a.behind) return `E${(a.prog ?? p) + 1} next · ${a.behind} behind`;
       if (a.next) return airText(e.next_episode);
     }
     return n ? `E${p + 1} next · ${n - p} left` : `E${p + 1} next`;
@@ -4046,7 +4087,7 @@ function entryFlush() {
     if (res && res.queued) res.patch = patch;
     if (!res.queued) entryMemo[key] = res; else delete entryMemo[key];
     if (here && !entryPend) entryDraw(res); // newer edits are still on screen: keep them
-    if (patch.status || job.fav !== undefined) refreshData();
+    if (patch.status || patch.progress !== undefined || job.fav !== undefined) refreshData();
   }).catch(() => { toast("Could not save — is the hub running?"); if (S.entry?.mid === job.mid && (S.entry.svc || null) === job.svc) loadEntry(job.mid); })
     .finally(() => { entryFlight = false; if (entryPend) entryFlush(); });
 }
@@ -6244,8 +6285,8 @@ function contStill({ s, t }) {
    show for the phone, idk if i like it, will have to see"): first in Continue
    watching with "2 new"; Play plays the first one you're missing. It goes once
    you've caught up (AniList's progress reaches what's aired). */
-function newStill({ e, behind }) {
-  const n = (e.progress || 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
+function newStill({ e, behind, prog }) {
+  const n = (prog ?? e.progress ?? 0) + 1, ep = airPlayEp(e, n), s = ep && findEpContext(ep.id)?.s;
   const art = (e.local_show_id && showById(e.local_show_id)?.banner) || e.banner || e.poster;
   return `<div class="ccard ccnew" data-a="${s ? "open" : "entry"}" data-v="${esc(s ? s.id : e.id)}" tabindex="0"><span class="cc-art" style="${art ? `background-image:${esc(cssUrl(art))}` : `--h:${hueOf(e.title)}`}"><span class="newtag">${behind} new</span><em>E${n}</em>${ep ? `<button class="cc-go" data-a="play" data-v="${esc(ep.id)}" aria-label="Play ${esc(e.title)} episode ${n}">${ico("play")}</button>` : ""}</span>
     <b>${esc(e.title)}</b><small>E${n} next</small></div>`;
@@ -8264,16 +8305,19 @@ async function pollNow() {
       const nl = now.playing && now.loading ? now.episode_id : null;
       if (nl !== S.loadingEp) { S.loadingEp = nl; if (was === now.playing) pagePatch(); }
     }
-    if (was !== now.playing) await reload();
+    let reloaded = false;
+    if (was !== now.playing) { await reload(); reloaded = true; }
     else if (now.playing) {
       const wasLoading = !!S.data.now?.loading;
       S.data.now = { episode_id: now.episode_id, show: now.show, label: now.label, percent: now.percent, loading: !!now.loading, next: now.next };
       liveFrom(now);
       if (wasLoading !== !!now.loading) pagePatch();
-      if (prevEp && prevEp !== now.episode_id) await reload(); // autoplay moved on: refresh ticks / next-up
+      if (prevEp && prevEp !== now.episode_id) { await reload(); reloaded = true; } // autoplay moved on: refresh ticks / next-up
     }
+    const obDrained = S.outbox > 0 && outbox < S.outbox;
     if (S.outbox > 0 && outbox === 0) toast(`Waiting changes synced to ${acct()}`);
     if (outbox !== S.outbox) { S.outbox = outbox; if (S.menu === "ob") outbox ? obLoad() : (S.menu = null); }
+    if (obDrained && !reloaded) { await reload(); reloaded = true; }
     S.artWorking = !!now.art?.working;
     if (now.art && now.art.stamp !== S.artStamp) { S.artStamp = now.art.stamp; swapArt(now.art.changed); }
     const dls = now.downloads || [], done = (l) => l.filter((j) => j.status === "done").length;

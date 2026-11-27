@@ -445,3 +445,72 @@ test("a synced active rewatch with no last_played and no story_next shows on Hom
   app.S.data.rewatches["aid:142838"].done = [1, 2];
   assert.deepEqual(plain(app.keepWatching("aid:129201").map((x) => x.s.id)), []);
 });
+
+test("a locally watched airing episode leaves Continue watching '1 new' even before AniList syncs", () => {
+  const now = Date.now();
+  const nextAt = Math.floor(now / 1000) + 6 * 86400;
+  const ep = (id, number, watched = false, played = null) => ({ ...episode(id, played, watched, 0), number });
+
+  // 1. Online airing show: E9 just finished locally while cached AniList progress is still 8.
+  const s3 = {
+    ...show("The Apothecary Diaries Season 3", []),
+    id: "aid:195516", kind: "stream", meta: { anilist_id: 195516 },
+    seasons: [{
+      key: 1, season: 1, label: "Episodes",
+      episodes: [ep("stream:195516:8", 8, true, earlier), ep("stream:195516:9", 9, true, latest)],
+      releases: [{ id: 195516, first_ep: 1, last_ep: null, offset: 0 }],
+    }],
+  };
+  const older = show("Older", [episode("older", earlier)]);
+  const entry = {
+    id: 195516, title: "The Apothecary Diaries Season 3", airing: "RELEASING",
+    status: "CURRENT", progress: 8, episodes: 12, stream_show_id: "aid:195516",
+    next_episode: { number: 10, at: nextAt },
+  };
+  let app = homepage({
+    shows: [older], streams: [s3], continue: [older.seasons[0].episodes[0]],
+    history: [s3.seasons[0].episodes[1], older.seasons[0].episodes[0]],
+    spine: { entries: [entry] },
+  }, { ani: true });
+  assert.equal(app.airState(entry, now).behind, 0);
+  assert.equal(app.newEps(null, now).length, 0);
+  const home1 = app.Home();
+  assert.doesNotMatch(home1, /<h2>Continue watching<\/h2>|hcnew|1 new/);
+  assert.match(home1, /<h2>This week<\/h2>[\s\S]*The Apothecary Diaries Season 3[\s\S]*Episode 10 of 12/);
+
+  // 2. Two aired (E8 & E9), AniList still at 7, E8 watched locally and E9 unwatched -> 1 new · E9.
+  s3.seasons[0].episodes[1].watched = false;
+  entry.progress = 7;
+  app = homepage({
+    shows: [older], streams: [s3], continue: [older.seasons[0].episodes[0]],
+    history: [older.seasons[0].episodes[0]], spine: { entries: [entry] },
+  }, { ani: true });
+  const st = app.airState(entry, now);
+  assert.equal(st.prog, 8);
+  assert.equal(st.behind, 1);
+  const html = app.Home();
+  assert.match(html, /<span class="newtag">1 new<\/span><span class="enum">E9<\/span>/);
+  assert.match(html, /data-a="play" data-v="stream:195516:9"/);
+
+  // 3. Disk-only show linked by local_show_id without season releases also counts local watched.
+  const disk = { ...show("Blue Box Season 2", [ep("bb5", 5, true, latest)]), id: "bb" };
+  const eDisk = {
+    id: 7, title: "Blue Box Season 2", airing: "RELEASING", status: "CURRENT",
+    progress: 4, episodes: 12, local_show_id: "bb", next_episode: { number: 6, at: nextAt },
+  };
+  app = homepage({ shows: [older, disk], continue: [older.seasons[0].episodes[0]], history: [older.seasons[0].episodes[0]], spine: { entries: [eDisk] } }, { ani: true });
+  assert.equal(app.airState(eDisk, now).behind, 0);
+
+  // 4. Manual REPEATING without a local rewatch keeps AniList progress; active local rewatch reads rw.done.
+  s3.seasons[0].episodes[1].watched = true;
+  const rep = { ...entry, status: "REPEATING", progress: 4 };
+  app = homepage({ shows: [], streams: [s3], continue: [], history: [], spine: { entries: [rep] } }, { ani: true });
+  assert.equal(app.airState(rep, now).prog, 4);
+  assert.equal(app.airState(rep, now).behind, 5);
+  app = homepage({
+    shows: [], streams: [s3], continue: [], history: [], spine: { entries: [rep] },
+    rewatches: { "aid:195516": { started_at: latest, done: [1, 2, 3, 4, 5, 6] } },
+  }, { ani: true });
+  assert.equal(app.airState(rep, now).prog, 6);
+  assert.equal(app.airState(rep, now).behind, 3);
+});

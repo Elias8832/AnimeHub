@@ -18,9 +18,15 @@ from . import anicli, anilist, database, library, mapping, progress, settings, s
 
 OUTBOX_BACKOFF = [30, 60, 120, 300, 900, 1800]
 OUTBOX_MAX_ATTEMPTS = 8
+_outbox_wake = threading.Event()
 
 
-def outbox_enqueue(media_id, patch=None, favourite=None, verify=None, account=None):
+def outbox_wake():
+    """Wake the background flush thread immediately when new work is queued."""
+    _outbox_wake.set()
+
+
+def outbox_enqueue(media_id, patch=None, favourite=None, verify=None, account=None, wake=True):
     """`verify` ({"add": bool}) marks a progress guess queued without a
     fresh AniList list — outbox_verify settles it before it is sent.
     `account` is who the change is for, read before the service was asked;
@@ -40,6 +46,8 @@ def outbox_enqueue(media_id, patch=None, favourite=None, verify=None, account=No
         c.execute("INSERT INTO outbox(media_id,payload,account_id,created)"
                   " VALUES(?,?,?,?)",
                   (media_id, json.dumps(payload), account, util.utc_stamp()))
+    if wake:
+        outbox_wake()
 
 
 def outbox_defer(show_id, eps, manual):
@@ -178,6 +186,7 @@ def outbox_retry_now():
     asked the sync chip to try)."""
     with database.db() as c:
         c.execute("UPDATE outbox SET next_try=0")
+    outbox_wake()
 
 
 
@@ -208,6 +217,7 @@ def _outbox_flush(limit):
                         " WHERE next_try <= ? ORDER BY id LIMIT ?",
                         (time.time(), limit)).fetchall()
     sent = 0
+    sent_active = 0
     account = anilist.account_id()
     remote = None  # the live list, fetched once for the pass's verify rows
     for row_id, media_id, payload_s, attempts in due:
@@ -265,6 +275,9 @@ def _outbox_flush(limit):
             continue
         _delete_sent(row_id, payload_s)
         sent += 1
+        sent_active += 1
+    if sent_active:
+        anilist.bump_lists_stamp()
     return sent
 
 
@@ -321,16 +334,18 @@ def outbox_discard_other_accounts(new_account_id):
 
 
 def outbox_loop():
-    """Background flush: shortly after boot, then every minute. Failures are
-    invisible here by design — the chip carries the state (Decision 3)."""
-    time.sleep(10)
+    """Background flush: shortly after boot, then whenever new work is
+    queued or every minute for retries. Failures are invisible here by
+    design — the chip carries the state (Decision 3)."""
+    _outbox_wake.wait(10)
     seen = _last_ok()
     while True:
+        _outbox_wake.clear()
         try:
             seen = outbox_tick(seen)
         except Exception as e:
             util.log("outbox loop: %s" % e)
-        time.sleep(60)
+        _outbox_wake.wait(60)
 
 
 def _last_ok():
