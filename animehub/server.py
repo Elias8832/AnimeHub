@@ -671,6 +671,7 @@ class Handler(BaseHTTPRequestHandler):
                     # explains itself for a short window after the failure.
                     if player._session_error["error"] and time.time() - player._session_error["ts"] < 60:
                         payload["error"] = player._session_error["error"]
+                        payload["error_id"] = player._session_error.get("seq", 0)
                     # Show-completion popup event (TODO 9, Decision 25):
                     # delivered until dismissed, then never again.
                     pending = progress._pending_completion()

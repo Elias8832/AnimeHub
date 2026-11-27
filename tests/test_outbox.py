@@ -557,6 +557,20 @@ class OutboxRouteTests(unittest.TestCase):
         code, body = self.request("GET", "/api/now")
         self.assertNotIn("next_prompt", body)
 
+    def test_now_gives_repeated_identical_errors_new_error_ids(self):
+        """Clicking Play again after the same failure must toast again even
+        when /api/now never saw an empty error in between."""
+        self.addCleanup(player._session_error.update, ep_id=None, error=None, ts=0.0)
+        msg = "The streaming site is blocking this VPN server — try switching VPN servers or try again later."
+        player._record_session_error("stream:1:1", msg)
+        code1, body1 = self.request("GET", "/api/now")
+        player._record_session_error("stream:1:1", msg)
+        code2, body2 = self.request("GET", "/api/now")
+        self.assertEqual((code1, code2), (200, 200))
+        self.assertEqual(body1.get("error"), msg)
+        self.assertEqual(body2.get("error"), msg)
+        self.assertGreater(body2.get("error_id", 0), body1.get("error_id", 0))
+
     def test_now_while_playing_reports_the_session(self):
         """Regression: the playing branch read an unbound `a` and every
         /api/now poll during playback died with a NameError."""

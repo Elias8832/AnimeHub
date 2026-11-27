@@ -8244,7 +8244,8 @@ async function pollNow() {
   pcPoll(); // the Android app: what plays on the paired PC (TODO 263)
   try {
     const now = await api("/api/now");
-    if (now.error && now.error !== lastNowError) { lastNowError = now.error; toast(now.error); } else if (!now.error) lastNowError = null;
+    const errKey = now.error ? (now.error_id ?? now.error) : null;
+    if (errKey && errKey !== lastNowError) { lastNowError = errKey; toast(now.error, "err"); } else if (!errKey) lastNowError = null;
     const was = !!S.data?.now, prevEp = S.data?.now?.episode_id;
     const outbox = typeof now.outbox === "number" ? now.outbox : 0;
     if (now.vpn && S.data) {
