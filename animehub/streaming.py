@@ -325,6 +325,8 @@ def friendly_stream_error(msg, code="this episode"):
     if "curl-impersonate" in m:
         return "The streaming site turns plain curl away — install curl-impersonate (Settings → Online episodes)."
     if "cloudflare" in m:
+        if settings.vpn_status().get("active"):
+            return "The streaming site is blocking this VPN server — try switching VPN servers or try again later."
         return "The streaming site is blocking requests right now — try again later."
     if any(k in m for k in ("connection error", "request failed", "did not answer", "could not resolve")):
         return "Couldn't reach the streaming site — check your connection."
@@ -900,6 +902,7 @@ def start_stream(ep_id, mode=None, sub_once=False, rematched=False, from_start=F
                 if err:
                     err.close()
         with player._active_lock:
+            player._session_error.update(ep_id=None, error=None, ts=0.0)
             player._active.clear()
             player._active[ep_id] = {"proc": proc, "ep_id": ep_id, "show_title": s["title"],
                               "label": label, "percent": 0, "version": 0, "loading": True, "mode": play_mode}

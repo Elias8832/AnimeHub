@@ -25,7 +25,7 @@ _launch_lock = threading.Lock()
 # The most recent session that never started playing (died before the IPC
 # socket appeared), surfaced additively in /api/now so the UI can explain
 # a play click that produced nothing.
-_session_error = {"ep_id": None, "error": None, "ts": 0.0}
+_session_error = {"ep_id": None, "error": None, "ts": 0.0, "seq": 0}
 
 
 def ipc_socket_path():
@@ -719,7 +719,8 @@ def _session_state(ep_id, proc):
 
 
 def _record_session_error(ep_id, msg):
-    _session_error.update(ep_id=ep_id, error=msg, ts=time.time())
+    with _active_lock:
+        _session_error.update(ep_id=ep_id, error=msg, ts=time.time(), seq=_session_error.get("seq", 0) + 1)
 
 
 # AniSkip without a VPN (Decision 39): the hub asks before a play click
@@ -1256,6 +1257,7 @@ def start_play(ep_id, version=0, from_start=False, handoff=None):
             return {"error": f"mpv could not be started: {e}"}
         sea = next(x for x in s["seasons"] if any(e["id"] == ep_id for e in x["episodes"]))
         with _active_lock:
+            _session_error.update(ep_id=None, error=None, ts=0.0)
             _active.clear()
             _active[ep_id] = {"proc": proc, "ep_id": ep_id, "show_title": s["title"],
                               "label": streaming.session_label(sea, ep), "percent": 0, "version": version,

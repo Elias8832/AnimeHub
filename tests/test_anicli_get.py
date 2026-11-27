@@ -109,8 +109,15 @@ class TooOldOrBlocked(unittest.TestCase):
 
     def test_the_cloudflare_block_names_the_fix(self):
         from animehub import streaming
-        msg = streaming.friendly_stream_error("ani-cli: Blocked by cloudflare. Try installing curl-impersonate")
-        self.assertIn("install curl-impersonate", msg)
+        with mock.patch.object(settings, "vpn_status", return_value={"active": True, "iface": "proton0", "known": True}):
+            msg = streaming.friendly_stream_error("ani-cli: Blocked by cloudflare. Try installing curl-impersonate")
+            self.assertIn("install curl-impersonate", msg)
+            vpn_msg = streaming.friendly_stream_error("ani-cli: Blocked by cloudflare.")
+            self.assertIn("switching VPN servers", vpn_msg)
+        with mock.patch.object(settings, "vpn_status", return_value={"active": False, "iface": None, "known": True}):
+            plain_msg = streaming.friendly_stream_error("ani-cli: Blocked by cloudflare.")
+            self.assertIn("blocking requests right now", plain_msg)
+            self.assertNotIn("VPN", plain_msg)
 
     @unittest.skipIf(system.WINDOWS, "uses a POSIX shell script")
     def test_in_place_upgrade_refreshes_cached_version(self):

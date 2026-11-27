@@ -914,6 +914,8 @@ class NextSource(unittest.TestCase):
         self.assertIn('skpBtns("nxgo", "nxno"', APP)  # with AniSkip on: Use / Without AniSkip (D39)
         self.assertIn('if (vpnMoved && now.vpn.active && S.modal?.t === "nxt") A.nxgo();', APP)  # starts by itself once a VPN is up
         self.assertIn("play(id, 0, undefined, true, undefined, true)", APP)  # the popup already showed the VPN state (also the AniSkip yes, D39)
+        self.assertIn("const errKey = now.error ? (now.error_id ?? now.error) : null;", APP)
+        self.assertIn('toast(now.error, "err")', APP)
 
 
 class NextAiringAt(unittest.TestCase):
