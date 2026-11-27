@@ -1332,6 +1332,18 @@ def lists_status():
     return out
 
 
+def bump_lists_stamp(which=None):
+    """Advance the active service's lists stamp after a background sync patches
+    the list cache, so open tabs refresh their spine without waiting for the
+    next full list refetch."""
+    which = which or service()
+    if not which:
+        return
+    now = time.time()
+    prev = _stamps.get(which) or 0
+    _stamps[which] = now if now > prev else prev + 0.001
+
+
 def _progress(which):
     def report(step, done=None, total=None):
         lists_loading[which] = {"step": step, "done": done, "total": total}

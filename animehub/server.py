@@ -1825,7 +1825,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Dormant outbox (Decision 24): the intent is kept,
                 # held until a valid token exists again.
                 sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav,
-                                    account=account)
+                                    account=account, wake=False)
                 self.send_json({"error": e.reason, "auth": True,
                                 "queued": True}, 401)
                 return
@@ -1833,7 +1833,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Offline / AniList down (TODO 14, Decision 3): the
                 # local change is already committed; the intent waits.
                 sync.outbox_enqueue(body["media_id"], patch=patch, favourite=fav,
-                                    account=account)
+                                    account=account, wake=False)
                 cur = library.curation_get(ref) or {}
                 self.send_json({"queued": True, "local": True,
                                 "entry": cur, "reason": anilist.friendly_error(e)})

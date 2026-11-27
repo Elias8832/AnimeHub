@@ -601,6 +601,42 @@ class OutboxRouteTests(unittest.TestCase):
         self.assertEqual(cur["status"], "COMPLETED")
         self.assertEqual(cur["score"], 10)
 
+    def test_enqueue_wakes_loop_and_flush_bumps_lists_stamp(self):
+        """Playback / manual progress enqueues wake outbox_loop immediately,
+        direct-save transient fallbacks don't immediately re-hammer AniList,
+        and a successful flush advances lists_status().stamp so open tabs reload."""
+        sync._outbox_wake.clear()
+        sync.outbox_enqueue(11061, patch={"progress": 9})
+        self.assertTrue(sync._outbox_wake.is_set())
+
+        sync._outbox_wake.clear()
+        sync.outbox_enqueue(11061, patch={"progress": 9}, wake=False)
+        self.assertFalse(sync._outbox_wake.is_set())
+
+        sync.outbox_retry_now()
+        self.assertTrue(sync._outbox_wake.is_set())
+
+        # Direct-save transient fallback uses wake=False.
+        sync._outbox_wake.clear()
+        with mock.patch.object(anilist, "anilist_entry_save",
+                               side_effect=anilist.AniListTransientError("offline")):
+            code, body = self.request("POST", "/api/entry", {
+                "media_id": 11061, "patch": {"progress": 9}})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["queued"])
+        self.assertFalse(sync._outbox_wake.is_set())
+
+        # Successful flush bumps lists_status().stamp for the active service.
+        anilist._stamps.clear()
+        with mock.patch.object(anilist, "service", return_value="anilist"), \
+                mock.patch.object(anilist, "_cache_raw", return_value={"_ts": 1000.0}), \
+                mock.patch.object(anilist, "anilist_entry_save", return_value={}):
+            before = anilist.lists_status()["stamp"]
+            sent = sync.outbox_flush()
+            after = anilist.lists_status()["stamp"]
+        self.assertGreater(sent, 0)
+        self.assertGreater(after, before)
+
 
 if __name__ == "__main__":
     unittest.main()
