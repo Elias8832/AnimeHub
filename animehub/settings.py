@@ -105,8 +105,9 @@ MPV_CHOICES = {"mpv_start_volume": ("own", ("own", "last", "25", "50", "75", "10
                "mpv_sub_styled": ("own", ("own", "keep", "scale", "style", "override", "strip")),
                # Read by the player look, not flags.
                "mpv_skip_seconds": ("10", ("5", "10", "15", "30")),
-               # The four clicks share one list (Decision 74).
+               # The click rows share one list (Decision 74); left click splits fullscreen vs windowed (TODO 295).
                "mpv_click": ("own", CLICK_CHOICES),
+               "mpv_click_windowed": ("own", CLICK_CHOICES),
                "mpv_double": ("own", CLICK_CHOICES),
                "mpv_wheel": ("own", ("volume", "seek", "own")),
                "mpv_right": ("menu", CLICK_CHOICES),
@@ -473,6 +474,7 @@ def key_prefs():
 def player_prefs():
     """What the player look reads itself: skip length and the mouse."""
     return {"skip": int(mpv_choice("mpv_skip_seconds")), "click": mpv_choice("mpv_click"),
+            "click_windowed": mpv_choice("mpv_click_windowed"),
             "double": mpv_choice("mpv_double"), "wheel": mpv_choice("mpv_wheel"),
             "right": mpv_choice("mpv_right"), "right_double": mpv_choice("mpv_right_double"), "priority": mpv_choice("mpv_priority"), "loaded": mpv_choice("mpv_loaded"),
             "keys": key_prefs()}

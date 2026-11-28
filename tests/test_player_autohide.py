@@ -37,6 +37,8 @@ local props = {
     ["time-pos"] = 10,
     ["sub-pos"] = 100,
     ["window-dragging"] = true,
+    ["input-builtin-dragging"] = true,
+    ["input-dragging-deadzone"] = 3,
     ["osd-dimensions"] = { w = 0, h = 0 },
     ["mouse-pos"] = { x = 0, y = 0, hover = false },
     ["track-list"] = {},
@@ -201,6 +203,12 @@ package.preload["mp.utils"] = function()
         parse_json = function(raw)
             if type(raw) == "string" and raw:find('"kind":"op"', 1, true) then
                 return { segments = { { kind = "op", start = 5, ["end"] = 95 } } }
+            elseif type(raw) == "string" and raw:find('"click_windowed":"own"', 1, true) then
+                return { prefs = { click = "pause", click_windowed = "own", priority = "settings" } }
+            elseif type(raw) == "string" and raw:find('"click_windowed":"menu"', 1, true) then
+                return { prefs = { click = "pause", click_windowed = "menu", priority = "settings" } }
+            elseif type(raw) == "string" and raw:find('"click":"pause"', 1, true) then
+                return { prefs = { click = "pause", priority = "settings" } }
             end
             return nil
         end,
@@ -349,6 +357,93 @@ elseif scenario == "skip_pill_before_1440p_scale" then
         visible_soon = visible_soon,
         visible_after = any_overlay_visible(),
     })
+elseif scenario == "dragging_toggles_with_fullscreen" then
+    -- Starts fullscreen: built-in dragging must be off so moving the mouse
+    -- while clicking never cancels MBTN_LEFT / MBTN_LEFT_DBL.
+    set_prop("osd-dimensions", { w = 2560, h = 1440 })
+    local fs_drag = props["input-builtin-dragging"]
+    local fs_deadzone = props["input-dragging-deadzone"]
+    -- Leave fullscreen: built-in dragging returns, with scaled deadzone (24 px at 1440p).
+    set_prop("fullscreen", false)
+    local win_drag = props["input-builtin-dragging"]
+    local win_deadzone = props["input-dragging-deadzone"]
+    -- Re-enter fullscreen: built-in dragging turns back off.
+    set_prop("fullscreen", true)
+    local fs_drag_again = props["input-builtin-dragging"]
+    -- Windowed at 1080p rescales deadzone to 18 px.
+    set_prop("fullscreen", false)
+    set_prop("osd-dimensions", { w = 1920, h = 1080 })
+    local win_1080_deadzone = props["input-dragging-deadzone"]
+    emit_result({
+        fs_drag = fs_drag,
+        fs_deadzone = fs_deadzone,
+        win_drag = win_drag,
+        win_deadzone = win_deadzone,
+        fs_drag_again = fs_drag_again,
+        win_1080_deadzone = win_1080_deadzone,
+    })
+elseif scenario == "dragging_respects_user_mpv_conf" then
+    -- User already disabled built-in dragging and set a custom deadzone before
+    -- script load; toggling fullscreen must not overwrite either.
+    -- Reset and re-run with custom initial properties.
+    props["input-builtin-dragging"] = false
+    props["input-dragging-deadzone"] = 40
+    props["fullscreen"] = true
+    observers = {}
+    dofile(script_path)
+    set_prop("osd-dimensions", { w = 2560, h = 1440 })
+    local fs_drag = props["input-builtin-dragging"]
+    set_prop("fullscreen", false)
+    local win_drag = props["input-builtin-dragging"]
+    local win_deadzone = props["input-dragging-deadzone"]
+    emit_result({
+        fs_drag = fs_drag,
+        win_drag = win_drag,
+        win_deadzone = win_deadzone,
+    })
+elseif scenario == "dragging_safe_on_older_mpv" then
+    -- mpv < 0.39 lacks input-builtin-dragging / input-dragging-deadzone.
+    props["input-builtin-dragging"] = nil
+    props["input-dragging-deadzone"] = nil
+    props["fullscreen"] = true
+    observers = {}
+    dofile(script_path)
+    set_prop("osd-dimensions", { w = 2560, h = 1440 })
+    set_prop("fullscreen", false)
+    emit_result({
+        drag_is_nil = props["input-builtin-dragging"] == nil,
+        deadzone_is_nil = props["input-dragging-deadzone"] == nil,
+    })
+elseif scenario == "click_splits_fullscreen_and_windowed" then
+    -- Separate actions: Pause in fullscreen, My config (unbound) when windowed.
+    set_prop("fullscreen", true)
+    emit_msg("anime-hub-info", '{"prefs":{"click":"pause","click_windowed":"own"}}')
+    local fs_bound = bindings["hub-click-fs"] ~= nil and bindings["hub-click-win"] == nil
+    local fs_drag = props["input-builtin-dragging"]
+    set_prop("fullscreen", false)
+    local win_unbound = bindings["hub-click-fs"] == nil and bindings["hub-click-win"] == nil and bindings["hub-click"] == nil
+    local win_own_drag = props["input-builtin-dragging"]
+    -- Separate actions: Pause in fullscreen, Menu when windowed -> dragging off in windowed too.
+    emit_msg("anime-hub-info", '{"prefs":{"click":"pause","click_windowed":"menu"}}')
+    local win_menu_bound = bindings["hub-click-win"] ~= nil and bindings["hub-click-fs"] == nil
+    local win_menu_drag = props["input-builtin-dragging"]
+    bindings["hub-click-win"]()
+    local menu_sent = #sent_messages == 1 and sent_messages[1][2] == "anime-hub-menu"
+    -- Omitting click_windowed falls back to click (backwards compatible) and disables dragging too.
+    emit_msg("anime-hub-info", '{"prefs":{"click":"pause"}}')
+    local fallback_shared = bindings["hub-click"] ~= nil and bindings["hub-click-win"] == nil
+    local fallback_drag = props["input-builtin-dragging"]
+    emit_result({
+        fs_bound = fs_bound,
+        fs_drag = fs_drag,
+        win_unbound = win_unbound,
+        win_own_drag = win_own_drag,
+        win_menu_bound = win_menu_bound,
+        win_menu_drag = win_menu_drag,
+        menu_sent = menu_sent,
+        fallback_shared = fallback_shared,
+        fallback_drag = fallback_drag,
+    })
 else
     error("unknown scenario: " .. tostring(scenario))
 end
@@ -426,6 +521,38 @@ class PlayerAutoHideTests(unittest.TestCase):
         res = self.run_scenario("skip-credits.lua", "skip_pill_before_1440p_scale")
         self.assertTrue(res["visible_soon"])
         self.assertFalse(res["visible_after"])
+
+    def test_fullscreen_disables_builtin_dragging_and_windowed_scales_deadzone(self):
+        res = self.run_scenario("player-mouse.lua", "dragging_toggles_with_fullscreen")
+        self.assertFalse(res["fs_drag"])
+        self.assertEqual(res["fs_deadzone"], 24)
+        self.assertTrue(res["win_drag"])
+        self.assertEqual(res["win_deadzone"], 24)
+        self.assertFalse(res["fs_drag_again"])
+        self.assertEqual(res["win_1080_deadzone"], 18)
+
+    def test_dragging_sync_respects_user_mpv_conf(self):
+        res = self.run_scenario("player-mouse.lua", "dragging_respects_user_mpv_conf")
+        self.assertFalse(res["fs_drag"])
+        self.assertFalse(res["win_drag"])
+        self.assertEqual(res["win_deadzone"], 40)
+
+    def test_dragging_sync_noop_on_older_mpv(self):
+        res = self.run_scenario("player-mouse.lua", "dragging_safe_on_older_mpv")
+        self.assertTrue(res["drag_is_nil"])
+        self.assertTrue(res["deadzone_is_nil"])
+
+    def test_left_click_splits_fullscreen_and_windowed(self):
+        res = self.run_scenario("player-mouse.lua", "click_splits_fullscreen_and_windowed")
+        self.assertTrue(res["fs_bound"])
+        self.assertFalse(res["fs_drag"])
+        self.assertTrue(res["win_unbound"])
+        self.assertTrue(res["win_own_drag"])
+        self.assertTrue(res["win_menu_bound"])
+        self.assertFalse(res["win_menu_drag"])
+        self.assertTrue(res["menu_sent"])
+        self.assertTrue(res["fallback_shared"])
+        self.assertFalse(res["fallback_drag"])
 
 
 if __name__ == "__main__":
