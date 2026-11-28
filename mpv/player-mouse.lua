@@ -22,10 +22,31 @@ local CLICKS = {
     fullscreen = function() mp.commandv("cycle", "fullscreen") end,
     off = function() end,
 }
-local BUTTONS = { { "MBTN_LEFT", "click", "own" }, { "MBTN_LEFT_DBL", "double", "own" },
+local BUTTONS = { { "MBTN_LEFT_DBL", "double", "own" },
     { "MBTN_RIGHT", "right", "menu" }, { "MBTN_RIGHT_DBL", "right_double", "own" } }
+local click_fs, click_win = "own", "own"
+local click_bound = { name = nil, action = nil, priority = nil }
+local sync_dragging -- defined below
+
+local function bind_click()
+    local fs = mp.get_property_bool("fullscreen")
+    local action = fs and click_fs or click_win
+    local fn = CLICKS[action]
+    local name = fn and (click_fs == click_win and "hub-click" or (fs and "hub-click-fs" or "hub-click-win")) or nil
+    if name == click_bound.name and action == click_bound.action and priority == click_bound.priority then
+        return
+    end
+    for _, old in ipairs({ "hub-click", "hub-click-fs", "hub-click-win" }) do
+        mp.remove_key_binding(old)
+    end
+    if name and fn then bind("MBTN_LEFT", name, fn) end
+    click_bound = { name = name, action = action, priority = priority }
+end
 
 local function bind_buttons(prefs)
+    click_fs = prefs.click or "own"
+    click_win = prefs.click_windowed or click_fs
+    bind_click()
     for _, b in ipairs(BUTTONS) do
         local name = "hub-" .. b[2]
         mp.remove_key_binding(name)
@@ -39,6 +60,7 @@ bind_buttons({})
 local function apply(prefs)
     priority = prefs.priority == "settings" and "settings" or "config"
     bind_buttons(prefs)
+    if sync_dragging then sync_dragging() end
     for _, name in ipairs({ "hub-wheel-up", "hub-wheel-down" }) do
         mp.remove_key_binding(name)
     end
@@ -181,12 +203,49 @@ local function update()
     if not timer then tick() end
 end
 
+-- mpv cancels MBTN_LEFT (and MBTN_LEFT_DBL) once the mouse moves past
+-- input-dragging-deadzone (default 3 px) to start window dragging — even in
+-- fullscreen (where dragging does nothing) and even when left click is bound
+-- to an action like Pause. Turn built-in dragging off in fullscreen and
+-- whenever the active left-click setting is an action; keep it when windowed
+-- with My config / Nothing (with a scaled deadzone), without overwriting
+-- values the user set in mpv.conf.
+local drag_user = mp.get_property_native("input-builtin-dragging")
+local drag_overridden = false
+local deadzone_user = mp.get_property_native("input-dragging-deadzone")
+
+sync_dragging = function()
+    if drag_user ~= nil then
+        local fs = mp.get_property_bool("fullscreen")
+        local action = fs and click_fs or click_win
+        local no_drag = fs or (action ~= "own" and action ~= "off")
+        if no_drag then
+            if not drag_overridden then
+                drag_user = mp.get_property_bool("input-builtin-dragging")
+                if drag_user then
+                    mp.set_property_bool("input-builtin-dragging", false)
+                    drag_overridden = true
+                end
+            end
+        elseif drag_overridden then
+            mp.set_property_bool("input-builtin-dragging", drag_user)
+            drag_overridden = false
+        end
+    end
+    if deadzone_user == 3 then
+        mp.set_property_number("input-dragging-deadzone", math.max(12, math.floor(12 * screen.scale + 0.5)))
+    end
+end
+
+sync_dragging()
+
 mp.observe_property("osd-dimensions", "native", function(_, d)
     if type(d) == "table" and d.h and d.h > 0 then
         screen.w, screen.scale = 720 * d.w / d.h, d.h / 720
         if screen.raw_x then
             screen.x, screen.y = screen.raw_x / screen.scale, screen.raw_y / screen.scale
         end
+        sync_dragging()
         update()
     end
 end)
@@ -197,4 +256,8 @@ mp.observe_property("mouse-pos", "native", function(_, m)
         update()
     end
 end)
-mp.observe_property("fullscreen", "bool", function() update() end)
+mp.observe_property("fullscreen", "bool", function()
+    bind_click()
+    sync_dragging()
+    update()
+end)

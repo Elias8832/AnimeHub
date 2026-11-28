@@ -307,6 +307,83 @@ class RealPlayerScripts(unittest.TestCase):
                 self.assertNotIn("Lua error", run.stdout + run.stderr)
                 self.assertNotIn("error loading", (run.stdout + run.stderr).lower())
 
+    def test_left_click_pauses_while_mouse_moves(self):
+        """Moving the mouse during a left-click in fullscreen (or slightly when
+        windowed) must still pause instead of being canceled by VO dragging."""
+        mpv = system.find_program("mpv")
+        if not (os.environ.get("ANIME_HUB_REAL_TOOLS") and mpv):
+            self.skipTest("needs ANIME_HUB_REAL_TOOLS and mpv")
+        sock = player.ipc_socket_path()
+        proc = subprocess.Popen(
+            [mpv, "--no-config", "--vo=null", "--ao=null", "--idle=yes",
+             "--fullscreen=yes", f"--input-ipc-server={sock}",
+             f"--script={player.PLAYER_LOOKS['soft']}",
+             f"--script={player.PLAYER_MOUSE_LUA}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                try:
+                    if player.mpv_ipc(sock, ["get_property", "pid"], timeout=0.5):
+                        break
+                except OSError:
+                    time.sleep(0.05)
+            player.mpv_ipc(sock, ["script-message", "anime-hub-info", json.dumps({
+                "prefs": {"click": "pause", "click_windowed": "off", "double": "fullscreen",
+                          "right": "menu", "right_double": "own", "priority": "settings"}
+            })])
+            time.sleep(0.05)
+            # Fullscreen: even a large 50 px sweep while clicking must pause.
+            player.mpv_ipc(sock, ["mouse", 400, 300])
+            player.mpv_ipc(sock, ["keydown", "MBTN_LEFT"])
+            player.mpv_ipc(sock, ["mouse", 450, 320])
+            player.mpv_ipc(sock, ["keyup", "MBTN_LEFT"])
+            time.sleep(0.05)
+            self.assertTrue((player.mpv_ipc(sock, ["get_property", "pause"]) or {}).get("data"))
+            # Windowed with click_windowed="off": clicking must leave pause unchanged.
+            player.mpv_ipc(sock, ["set_property", "fullscreen", False])
+            time.sleep(0.35)
+            player.mpv_ipc(sock, ["mouse", 400, 300])
+            player.mpv_ipc(sock, ["keydown", "MBTN_LEFT"])
+            player.mpv_ipc(sock, ["keyup", "MBTN_LEFT"])
+            time.sleep(0.05)
+            self.assertTrue((player.mpv_ipc(sock, ["get_property", "pause"]) or {}).get("data"))
+            # Double-click from windowed -> fullscreen must not fire the fullscreen pause on release.
+            player.mpv_ipc(sock, ["set_property", "pause", False])
+            time.sleep(0.35)
+            player.mpv_ipc(sock, ["keydown", "MBTN_LEFT"])
+            player.mpv_ipc(sock, ["keyup", "MBTN_LEFT"])
+            player.mpv_ipc(sock, ["keydown", "MBTN_LEFT"])
+            time.sleep(0.05)
+            player.mpv_ipc(sock, ["keyup", "MBTN_LEFT"])
+            time.sleep(0.05)
+            self.assertTrue((player.mpv_ipc(sock, ["get_property", "fullscreen"]) or {}).get("data"))
+            self.assertFalse((player.mpv_ipc(sock, ["get_property", "pause"]) or {}).get("data"))
+            # Windowed with click_windowed="pause": even a large 80 px mouse sweep while clicking pauses.
+            player.mpv_ipc(sock, ["script-message", "anime-hub-info", json.dumps({
+                "prefs": {"click": "pause", "click_windowed": "pause", "double": "fullscreen",
+                          "right": "menu", "right_double": "own", "priority": "settings"}
+            })])
+            player.mpv_ipc(sock, ["set_property", "fullscreen", False])
+            time.sleep(0.35)
+            player.mpv_ipc(sock, ["mouse", 400, 300])
+            player.mpv_ipc(sock, ["keydown", "MBTN_LEFT"])
+            player.mpv_ipc(sock, ["mouse", 480, 340])
+            player.mpv_ipc(sock, ["keyup", "MBTN_LEFT"])
+            time.sleep(0.05)
+            self.assertTrue((player.mpv_ipc(sock, ["get_property", "pause"]) or {}).get("data"))
+        finally:
+            proc.terminate()
+            try:
+                _, err = proc.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                _, err = proc.communicate(timeout=3)
+            if isinstance(sock, str) and not sock.startswith("\\\\") and os.path.exists(sock):
+                os.unlink(sock)
+        self.assertNotIn("Lua error", err or "")
+
 
 @unittest.skipUnless(os.environ.get("ANIME_HUB_REAL_TOOLS"), "set ANIME_HUB_REAL_TOOLS=1 to play for real")
 class RealArtCopies(unittest.TestCase):

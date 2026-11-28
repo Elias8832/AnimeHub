@@ -470,12 +470,13 @@ class SettingsRouteTests(unittest.TestCase):
             self.assertEqual(self.post(bad, "/api/subtitles/profile")[0], 400, bad)
 
     def test_player_look_reads_skip_and_mouse(self):
-        self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_wheel": "own", "mpv_right": "menu", "mpv_right_double": "own", "mpv_priority": "config"})
-        self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "double": "own", "wheel": "own", "right": "menu", "right_double": "own", "priority": "config", "loaded": "on", "keys": settings.player_prefs()["keys"]})
-        self.post({"mpv_skip_seconds": "30", "mpv_click": "pause", "mpv_wheel": "seek", "mpv_right": "fullscreen", "mpv_right_double": "pause", "mpv_priority": "settings"})
-        self.assertEqual(settings.player_prefs(), {"skip": 30, "click": "pause", "double": "own", "wheel": "seek", "right": "fullscreen", "right_double": "pause", "priority": "settings", "loaded": "on", "keys": settings.player_prefs()["keys"]})
+        self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_click_windowed": "own", "mpv_wheel": "own", "mpv_right": "menu", "mpv_right_double": "own", "mpv_priority": "config"})
+        self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "click_windowed": "own", "double": "own", "wheel": "own", "right": "menu", "right_double": "own", "priority": "config", "loaded": "on", "keys": settings.player_prefs()["keys"]})
+        self.post({"mpv_skip_seconds": "30", "mpv_click": "pause", "mpv_click_windowed": "off", "mpv_wheel": "seek", "mpv_right": "fullscreen", "mpv_right_double": "pause", "mpv_priority": "settings"})
+        self.assertEqual(settings.player_prefs(), {"skip": 30, "click": "pause", "click_windowed": "off", "double": "own", "wheel": "seek", "right": "fullscreen", "right_double": "pause", "priority": "settings", "loaded": "on", "keys": settings.player_prefs()["keys"]})
         self.assertEqual(self.post({"mpv_right": "nope"})[0], 400)
-        self.assertEqual(self.post({"mpv_click": "menu", "mpv_double": "pause"})[0], 200)  # one list for all four
+        self.assertEqual(self.post({"mpv_click_windowed": "nope"})[0], 400)
+        self.assertEqual(self.post({"mpv_click": "menu", "mpv_click_windowed": "pause", "mpv_double": "pause"})[0], 200)  # one list for all five
         self.addCleanup(self.post, {"mpv_double": "own"})
 
     def test_player_keys_move_and_free_the_old_key(self):
