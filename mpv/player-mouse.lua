@@ -6,6 +6,7 @@ local utils = require "mp.utils"
 
 -- Settings → Player → Who wins: "settings" binds forced, over input.conf.
 local priority = "config"
+local step = "10" -- Settings → Player → Skip length, in seconds
 local function bind(key, name, fn, opts)
     if priority == "settings" then
         mp.add_forced_key_binding(key, name, fn, opts)
@@ -59,6 +60,7 @@ bind_buttons({})
 
 local function apply(prefs)
     priority = prefs.priority == "settings" and "settings" or "config"
+    step = tostring(tonumber(prefs.skip) or 10)
     bind_buttons(prefs)
     if sync_dragging then sync_dragging() end
     for _, name in ipairs({ "hub-wheel-up", "hub-wheel-down" }) do
@@ -68,16 +70,17 @@ local function apply(prefs)
         bind("WHEEL_UP", "hub-wheel-up", function() mp.commandv("add", "volume", "5") end)
         bind("WHEEL_DOWN", "hub-wheel-down", function() mp.commandv("add", "volume", "-5") end)
     elseif prefs.wheel == "seek" then
-        local step = tostring(tonumber(prefs.skip) or 10)
         bind("WHEEL_UP", "hub-wheel-up", function() mp.commandv("seek", step, "relative+exact") end)
         bind("WHEEL_DOWN", "hub-wheel-down", function() mp.commandv("seek", "-" .. step, "relative+exact") end)
     end
 end
 
 -- Settings → mpv → Keys: only the keys the user moved, as plain bindings
--- (input.conf still wins). Each matches what mpv's own default key does.
+-- (input.conf still wins). Each matches what mpv's own default key does,
+-- except Back and Forward: they jump by the skip length, so their keys are
+-- bound even when not moved (a plain ← in mpv would still go 5 s).
 local ACTIONS = {
-    pause = { "cycle", "pause" }, back = { "seek", "-5" }, forward = { "seek", "5" },
+    pause = { "cycle", "pause" }, back = { "seek", "-" }, forward = { "seek", "" },
     vol_up = { "add", "volume", "2" }, vol_down = { "add", "volume", "-2" }, mute = { "cycle", "mute" },
     fullscreen = { "cycle", "fullscreen" }, subs = { "cycle", "sub" }, audio = { "cycle", "audio" },
     speed_up = { "multiply", "speed", "1.1" }, speed_down = { "multiply", "speed", "0.9090909" },
@@ -96,10 +99,20 @@ local function apply_keys(keys)
         bind(key, name, function() end)
         key_names[#key_names + 1] = name
     end
-    for action, key in pairs(type(keys.bind) == "table" and keys.bind or {}) do
+    local moved = type(keys.bind) == "table" and keys.bind or {}
+    local all = type(keys.all) == "table" and keys.all or {}
+    local wanted = {}
+    for action, key in pairs(moved) do wanted[action] = key end
+    for _, action in ipairs({ "back", "forward" }) do
+        if wanted[action] == nil then wanted[action] = all[action] end
+    end
+    for action, key in pairs(wanted) do
         local cmd = ACTIONS[action]
         if cmd and type(key) == "string" and key ~= "" then
             local name = "hub-key-" .. action
+            if action == "back" or action == "forward" then
+                cmd = { "seek", cmd[2] .. step }
+            end
             bind(key, name, function() mp.commandv(unpack_(cmd)) end,
                 { repeatable = REPEATS[action] or false })
             key_names[#key_names + 1] = name

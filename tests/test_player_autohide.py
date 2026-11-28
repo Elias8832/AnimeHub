@@ -57,6 +57,9 @@ local messages = {}
 local overlays = {}
 local bindings = {}
 local sent_messages = {}
+local bound_keys = {}
+local json_values = {} -- raw text → what parse_json gives back
+local seeks = {}
 
 local function clone_shallow(v)
     if type(v) ~= "table" then return v end
@@ -174,13 +177,15 @@ _G.mp = {
     set_property_bool = function(name, val) props[name] = val and true or false end,
     set_property_number = function(name, val) props[name] = val end,
     set_property_native = function(name, val) props[name] = val end,
-    add_key_binding = function(key, name, fn) bindings[name] = fn end,
-    add_forced_key_binding = function(key, name, fn) bindings[name] = fn end,
+    add_key_binding = function(key, name, fn) bindings[name] = fn; bound_keys[name] = key end,
+    add_forced_key_binding = function(key, name, fn) bindings[name] = fn; bound_keys[name] = key end,
     remove_key_binding = function(name) bindings[name] = nil end,
     commandv = function(...)
         local a = { ... }
         if a[1] == "script-message" then
             sent_messages[#sent_messages + 1] = a
+        elseif a[1] == "seek" then
+            seeks[#seeks + 1] = a[2]
         end
     end,
     command = function() end,
@@ -201,6 +206,7 @@ _G.mp = {
 package.preload["mp.utils"] = function()
     return {
         parse_json = function(raw)
+            if json_values[raw] then return json_values[raw] end
             if type(raw) == "string" and raw:find('"kind":"op"', 1, true) then
                 return { segments = { { kind = "op", start = 5, ["end"] = 95 } } }
             elseif type(raw) == "string" and raw:find('"click_windowed":"own"', 1, true) then
@@ -444,6 +450,24 @@ elseif scenario == "click_splits_fullscreen_and_windowed" then
         fallback_shared = fallback_shared,
         fallback_drag = fallback_drag,
     })
+elseif scenario == "skip_keys_follow_skip_length" then
+    -- player-mouse.lua: Back and Forward jump by Settings → Player → Skip
+    -- length on their keys, moved or not (a plain ← in mpv goes 5 s).
+    local function info(bind)
+        local raw = "info" .. tostring(next(bind) or "")
+        json_values[raw] = { prefs = { skip = 30, keys = { bind = bind, free = {},
+            all = { pause = "SPACE", back = "LEFT", forward = "RIGHT" } } } }
+        emit_msg("anime-hub-info", raw)
+    end
+    info({})
+    local back, forward = bound_keys["hub-key-back"], bound_keys["hub-key-forward"]
+    local pause = bindings["hub-key-pause"] ~= nil
+    bindings["hub-key-back"]()
+    bindings["hub-key-forward"]()
+    info({ back = "a" })
+    bindings["hub-key-back"]()
+    emit_result({ back = back, forward = forward, pause = pause, moved_back = bound_keys["hub-key-back"],
+        seeks = table.concat(seeks, " ") })
 else
     error("unknown scenario: " .. tostring(scenario))
 end
@@ -516,6 +540,13 @@ class PlayerAutoHideTests(unittest.TestCase):
         res = self.run_scenario("player-mouse.lua", "close_button_before_1440p_scale")
         self.assertFalse(res["visible_after"])
         self.assertFalse(res["close_bound"])
+
+    def test_skip_keys_jump_by_skip_length(self):
+        res = self.run_scenario("player-mouse.lua", "skip_keys_follow_skip_length")
+        self.assertEqual((res["back"], res["forward"]), ("LEFT", "RIGHT"))  # bound though not moved
+        self.assertFalse(res["pause"])  # other untouched keys stay mpv's own
+        self.assertEqual(res["moved_back"], "a")
+        self.assertEqual(res["seeks"], "-30 30 -30")
 
     def test_standalone_skip_pill_rescales_hover_with_osd_dimensions(self):
         res = self.run_scenario("skip-credits.lua", "skip_pill_before_1440p_scale")
