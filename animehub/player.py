@@ -1,8 +1,10 @@
 """Local playback in mpv: sessions, resume, auto-play next."""
 
+import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -12,7 +14,7 @@ import time
 import uuid
 
 from . import anicli, database, library, mapping, pages, prepare, progress, settings, skips, streaming, subtitles, system, tracks, util
-from .config import config, PLAYER_FONTS, PLAYER_LOOKS, PLAYER_MOUSE_LUA, SKIP_CREDITS_LUA
+from .config import config, PLAYER_FONTS, PLAYER_LOOKS, PLAYER_MOUSE_LUA, PLAYER_THUMB_LUA, SKIP_CREDITS_LUA
 
 
 _active = {}
@@ -550,8 +552,16 @@ def design_args(path=str):
     if settings.mpv_mode("mpv_design") != "on" or not look.exists():
         return []
     scripts = [path(x) for x in (look, PLAYER_MOUSE_LUA) if x.exists()]
+    thumb_mode = settings.mpv_choice("mpv_thumb")
+    thumb_script = path(PLAYER_THUMB_LUA) if thumb_mode != "off" and PLAYER_THUMB_LUA.exists() else None
+    if thumb_script:
+        scripts.append(thumb_script)
     fonts = path(PLAYER_FONTS)
-    return [*(f"--script={x}" for x in scripts if x), *([f"--osd-fonts-dir={fonts}"] if fonts else [])]
+    out = [*(f"--script={x}" for x in scripts if x), *([f"--osd-fonts-dir={fonts}"] if fonts else [])]
+    if thumb_script:
+        out.extend((f"--script-opts-append=animehub_thumb-mode={thumb_mode}",
+                    "--script-opts-append=thumbfast-spawn_first=no"))
+    return out
 
 
 _ACCENT = re.compile(r"#[0-9a-fA-F]{6}\Z")
@@ -634,12 +644,91 @@ def sleep_due():
     return False
 
 
+THUMB_CACHE_MAX_DAYS = 14
+THUMB_CACHE_MAX_BYTES = 150 * 1024 * 1024
+THUMB_CACHE_MAX_DIRS = 30
+
+
+def _thumb_cache_path(ep_id):
+    if not isinstance(ep_id, str) or not ep_id.startswith("stream:"):
+        return None
+    key = hashlib.sha1(ep_id.encode("utf-8")).hexdigest()[:16]
+    return config.THUMBS / key
+
+
+def prune_thumb_cache(max_age_days=THUMB_CACHE_MAX_DAYS, max_bytes=THUMB_CACHE_MAX_BYTES,
+                      max_dirs=THUMB_CACHE_MAX_DIRS):
+    """Bound the persistent online seek-preview cache by age, count, and total size."""
+    root = getattr(config, "THUMBS", None)
+    if not root or not root.is_dir():
+        return
+    cutoff = time.time() - max_age_days * 86400
+    entries = []
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return
+    for d in children:
+        if not d.is_dir():
+            continue
+        try:
+            mtime = d.stat().st_mtime
+            size = 0
+            for f in d.iterdir():
+                try:
+                    st = f.stat()
+                    size += st.st_size
+                    if st.st_mtime > mtime:
+                        mtime = st.st_mtime
+                except OSError:
+                    pass
+        except OSError:
+            continue
+        if mtime < cutoff:
+            shutil.rmtree(d, ignore_errors=True)
+        else:
+            entries.append((mtime, size, d))
+    entries.sort(key=lambda item: item[0])  # oldest first
+    total = sum(s for _, s, _ in entries)
+    while entries and (total > max_bytes or len(entries) > max_dirs):
+        _, size, d = entries.pop(0)
+        shutil.rmtree(d, ignore_errors=True)
+        total -= size
+
+
+def thumb_cache_dir(ep_id, create=False):
+    """Per-episode folder for watched online seek previews, or None for local files."""
+    path = _thumb_cache_path(ep_id)
+    if not path:
+        return None
+    if create:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            os.utime(path, None)
+            threading.Thread(target=prune_thumb_cache, daemon=True).start()
+        except OSError:
+            return None
+    return path
+
+
+def clear_thumb_cache(ep_id):
+    """Remove an online episode's persistent preview cache once finished."""
+    path = _thumb_cache_path(ep_id)
+    if path and path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def _send_info(proc, ep_id, sock_path):
     try:
         episodes = episode_menu(ep_id)
         with _active_lock:
             entry = dict(_active.get(ep_id) or {})
         audio = audio_choice(ep_id, entry)
+        tcache = None
+        if ep_id.startswith("stream:") and settings.mpv_choice("mpv_thumb") == "all":
+            p = thumb_cache_dir(ep_id, create=True)
+            if p:
+                tcache = str(p)
         with _active_lock:
             entry = _active.get(ep_id)
             if entry is None or entry.get("proc") is not proc:
@@ -648,7 +737,8 @@ def _send_info(proc, ep_id, sock_path):
             entry["audio"] = audio
             info = {"title": entry.get("show_title"), "episode": entry.get("label"), "current": ep_id,
                     "accent": _accents.get(_accent_key(ep_id)), "episodes": episodes,
-                    "prefs": settings.player_prefs(), "sleep": sleep_info(), "audio": audio}
+                    "prefs": settings.player_prefs(), "sleep": sleep_info(), "audio": audio,
+                    "thumb_cache": tcache}
         mpv_ipc(sock_path, ["script-message", "anime-hub-info", json.dumps(info)])
     except Exception as exc:
         util.log("player info not sent: %s" % exc)
@@ -1041,6 +1131,8 @@ def _watch(proc, ep_id, sock_path, startup, failure):
     done = (duration and duration - last_time <= 3) or marker.exists()
     if not retired:
         finish_episode(ep_id, last_time, duration, done)
+        if done or (duration and last_time / duration >= 0.9):
+            clear_thumb_cache(ep_id)
         from . import peersync  # here: peersync reaches player through library
         peersync.touched()  # a paired phone hears of it at once (Decision 99)
     autoplay = False

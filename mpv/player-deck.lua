@@ -25,6 +25,7 @@ local st = {
 }
 local info, parts = {}, {}
 local thumb
+local hub_thumb
 local screen = mp.create_osd_overlay("ass-events")
 
 -- Colours ---------------------------------------------------------------
@@ -719,15 +720,34 @@ local function part_at(t)
     return name ~= "Episode" and name or nil
 end
 
+local function active_thumb()
+    if info.prefs and info.prefs.thumb == "off" then return nil, nil end
+    if hub_thumb then
+        if hub_thumb.available and not hub_thumb.disabled and hub_thumb.width and hub_thumb.width > 0 then
+            return hub_thumb, hub_thumb.target or "player_thumb"
+        end
+        return nil, nil
+    end
+    if thumb and thumb.available and not thumb.disabled and thumb.width and thumb.width > 0 then
+        return thumb, "thumbfast"
+    end
+    return nil, nil
+end
+
+local function clear_thumb()
+    if st.thumb_on then
+        mp.commandv("script-message-to", st.thumb_target or "thumbfast", "clear")
+        st.thumb_on = false
+        st.thumb_target = nil
+    end
+end
+
 local function draw_bubble(ev)
     local tr = st.track
     local on = tr and tr.duration and tr.duration > 0 and not st.menu
         and inside(tr.x, tr.y - 10, tr.w, 24) and st.slide > 0.95
     if not on then
-        if st.thumb_on then
-            mp.commandv("script-message-to", "thumbfast", "clear")
-            st.thumb_on = false
-        end
+        clear_thumb()
         return
     end
     local t = (st.mouse.x - tr.x) / tr.w * tr.duration
@@ -738,11 +758,24 @@ local function draw_bubble(ev)
     local y = H - DOCK - 42
     fill(ev, box(x - bw / 2, y, bw, 30, 15), POP, POP_A, EDGE)
     write(ev, x, y + 15, 5, 15, WHITE, label, false, MONO)
-    if thumb and thumb.available and thumb.width then
-        local tx = math.max(8 * st.scale, math.min(st.w * st.scale - thumb.width - 8 * st.scale, x * st.scale - thumb.width / 2))
-        mp.commandv("script-message-to", "thumbfast", "thumb", tostring(t), tostring(math.floor(tx)),
-            tostring(math.floor((y - 8) * st.scale - thumb.height)))
+    local th, target = active_thumb()
+    if th then
+        local tw, th_h = th.width / st.scale, th.height / st.scale
+        local bx = math.max(8, math.min(st.w - tw - 8, x - tw / 2))
+        local by = y - 8 - th_h
+        if th.loading then
+            fill(ev, box(bx - 1, by - 1, tw + 2, th_h + 2, 4), POP, POP_A, EDGE)
+            write(ev, bx + tw / 2, by + th_h / 2, 5, 13, DIM, "Loading…", false, UI)
+        end
+        if st.thumb_on and st.thumb_target and st.thumb_target ~= target then
+            clear_thumb()
+        end
+        mp.commandv("script-message-to", target, "thumb", tostring(t),
+            tostring(math.floor(bx * st.scale + 0.5)), tostring(math.floor(by * st.scale + 0.5)))
         st.thumb_on = true
+        st.thumb_target = target
+    else
+        clear_thumb()
     end
 end
 
@@ -1430,14 +1463,21 @@ mp.observe_property("demuxer-cache-state", "native", function(_, c)
     end
 end)
 
+mp.register_script_message("anime-hub-thumb-info", function(raw)
+    hub_thumb = utils.parse_json(raw or "")
+    if st.slide > 0 then redraw() end
+end)
+
 mp.register_script_message("thumbfast-info", function(raw) thumb = utils.parse_json(raw or "") end)
 
 mp.register_event("start-file", function()
+    clear_thumb()
     info, parts, st.menu = {}, {}, nil
 end)
 
 mp.register_event("file-loaded", function()
     mp.commandv("script-message", "osc-visibility", "never", "no-osd")
+    mp.commandv("script-message", "anime-hub-thumb-query")
     mp.commandv("script-message-to", "thumbfast", "thumbfast-info")
     mp.commandv("script-message", "anime-hub-skip-look")
     poke()

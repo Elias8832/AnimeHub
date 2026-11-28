@@ -23,6 +23,7 @@ SKIP_CREDITS_LUA = MPV / "skip-credits.lua"
 # so one can differ from another as much as it likes.
 PLAYER_LOOKS = {"soft": MPV / "player-soft.lua", "deck": MPV / "player-deck.lua"}
 PLAYER_MOUSE_LUA = MPV / "player-mouse.lua"
+PLAYER_THUMB_LUA = MPV / "player-thumb.lua"
 PLAYER_FONTS = MPV / "fonts"
 DEFAULT_PORT = 8787
 
@@ -232,6 +233,7 @@ def apply_config(cfg):
     config.CACHE = config.DATA / "cache"
     config.POSTERS = config.CACHE / "posters"
     config.EPIMGS = config.CACHE / "epimgs"
+    config.THUMBS = config.CACHE / "thumbs"
     config.DB = config.DATA / "hub.db"
     config.LIBRARY = cfg["library_root"]
     config.EXTRA = tuple(cfg.get("library_extra") or ())

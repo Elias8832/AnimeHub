@@ -470,10 +470,10 @@ class SettingsRouteTests(unittest.TestCase):
             self.assertEqual(self.post(bad, "/api/subtitles/profile")[0], 400, bad)
 
     def test_player_look_reads_skip_and_mouse(self):
-        self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_click_windowed": "own", "mpv_wheel": "own", "mpv_right": "menu", "mpv_right_double": "own", "mpv_priority": "config"})
-        self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "click_windowed": "own", "double": "own", "wheel": "own", "right": "menu", "right_double": "own", "priority": "config", "loaded": "on", "keys": settings.player_prefs()["keys"]})
-        self.post({"mpv_skip_seconds": "30", "mpv_click": "pause", "mpv_click_windowed": "off", "mpv_wheel": "seek", "mpv_right": "fullscreen", "mpv_right_double": "pause", "mpv_priority": "settings"})
-        self.assertEqual(settings.player_prefs(), {"skip": 30, "click": "pause", "click_windowed": "off", "double": "own", "wheel": "seek", "right": "fullscreen", "right_double": "pause", "priority": "settings", "loaded": "on", "keys": settings.player_prefs()["keys"]})
+        self.addCleanup(self.post, {"mpv_skip_seconds": "10", "mpv_click": "own", "mpv_click_windowed": "own", "mpv_wheel": "own", "mpv_right": "menu", "mpv_right_double": "own", "mpv_priority": "config", "mpv_thumb": "all"})
+        self.assertEqual(settings.player_prefs(), {"skip": 10, "click": "own", "click_windowed": "own", "double": "own", "wheel": "own", "right": "menu", "right_double": "own", "priority": "config", "loaded": "on", "thumb": "all", "keys": settings.player_prefs()["keys"]})
+        self.post({"mpv_skip_seconds": "30", "mpv_click": "pause", "mpv_click_windowed": "off", "mpv_wheel": "seek", "mpv_right": "fullscreen", "mpv_right_double": "pause", "mpv_priority": "settings", "mpv_thumb": "local"})
+        self.assertEqual(settings.player_prefs(), {"skip": 30, "click": "pause", "click_windowed": "off", "double": "own", "wheel": "seek", "right": "fullscreen", "right_double": "pause", "priority": "settings", "loaded": "on", "thumb": "local", "keys": settings.player_prefs()["keys"]})
         self.assertEqual(self.post({"mpv_right": "nope"})[0], 400)
         self.assertEqual(self.post({"mpv_click_windowed": "nope"})[0], 400)
         self.assertEqual(self.post({"mpv_click": "menu", "mpv_click_windowed": "pause", "mpv_double": "pause"})[0], 200)  # one list for all five
@@ -504,9 +504,37 @@ class SettingsRouteTests(unittest.TestCase):
         on, and a flag that can't be written without spaces stays out."""
         from animehub import player
         args = player.design_args()
-        self.assertEqual([a.split("=")[0] for a in args], ["--script", "--script", "--osd-fonts-dir"])
+        self.assertEqual([a.split("=")[0] for a in args],
+                         ["--script", "--script", "--script", "--osd-fonts-dir",
+                          "--script-opts-append", "--script-opts-append"])
         self.assertEqual(player.design_args(lambda path: None), [])
         self.assertIn("player-soft.lua", args[0])
+        self.assertIn("player-thumb.lua", args[2])
+        self.assertIn("--script-opts-append=animehub_thumb-mode=all", args)
+        self.assertIn("--script-opts-append=thumbfast-spawn_first=no", args)
+        self.assertEqual(self.post({"mpv_thumb": "local"})[0], 200)
+        self.assertIn("--script-opts-append=animehub_thumb-mode=local", player.design_args())
+        self.assertEqual(self.post({"mpv_thumb": "off"})[0], 200)
+        off_args = player.design_args()
+        self.assertEqual([a.split("=")[0] for a in off_args], ["--script", "--script", "--osd-fonts-dir"])
+        self.assertEqual(self.post({"mpv_thumb": "nope"})[0], 400)
+        self.post({"mpv_thumb": "all"})
+        # Preload in RAM: My config sends no cache flags; presets pass exact forward + back byte caps.
+        self.assertEqual(self.get("/api/settings")["mpv"]["cache"], "own")
+        self.assertFalse(any(f.startswith("--demuxer-max-bytes=") for f in settings.mpv_flags()))
+        self.assertEqual(self.post({"mpv_cache": "high"})[0], 200)
+        flags = settings.mpv_flags()
+        self.assertIn("--cache=yes", flags)
+        self.assertIn("--demuxer-readahead-secs=3600", flags)
+        self.assertIn("--demuxer-max-bytes=512MiB", flags)
+        self.assertIn("--demuxer-max-back-bytes=512MiB", flags)
+        self.assertEqual(self.post({"mpv_cache": "unlimited"})[0], 200)
+        uflags = settings.mpv_flags()
+        self.assertIn("--demuxer-readahead-secs=86400", uflags)
+        self.assertIn("--demuxer-max-bytes=100GiB", uflags)
+        self.assertIn("--demuxer-max-back-bytes=100GiB", uflags)
+        self.assertEqual(self.post({"mpv_cache": "nope"})[0], 400)
+        self.post({"mpv_cache": "own"})
         self.assertEqual(self.post({"mpv_look": "deck"})[0], 200)
         self.assertIn("player-deck.lua", player.design_args()[0])
         self.post({"mpv_look": "soft"})

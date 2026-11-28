@@ -22,6 +22,7 @@ local ui = { w = 1280, scale = 1, opacity = 0, hit = {}, menu = nil,
     mouse = { x = 0, y = 0, hover = false }, raw_mouse = nil, mouse_active = false, had_hover = false }
 local back, front, hover_layer
 local thumb = nil                 -- thumbfast's size, when the user has it
+local hub_thumb = nil             -- Anime Hub's built-in previewer (player-thumb.lua)
 
 -- Drawing ---------------------------------------------------------------
 
@@ -1061,17 +1062,36 @@ local function keep_moving()
     unsettled = false
 end
 
+local function active_thumb()
+    if info.prefs and info.prefs.thumb == "off" then return nil, nil end
+    if hub_thumb then
+        if hub_thumb.available and not hub_thumb.disabled and hub_thumb.width and hub_thumb.width > 0 then
+            return hub_thumb, hub_thumb.target or "player_thumb"
+        end
+        return nil, nil
+    end
+    if thumb and thumb.available and not thumb.disabled and thumb.width and thumb.width > 0 then
+        return thumb, "thumbfast"
+    end
+    return nil, nil
+end
+
+local function clear_thumb()
+    if ui.thumb_on then
+        mp.commandv("script-message-to", ui.thumb_target or "thumbfast", "clear")
+        ui.thumb_on = false
+        ui.thumb_target = nil
+    end
+end
+
 local function draw_hover()
-    -- Under the mouse on the bar: the time, the part's name, thumbfast's
-    -- picture when the user has it. Its own layer, it moves with the mouse.
+    -- Under the mouse on the bar: the time, the part's name, and the preview
+    -- picture (Anime Hub's player-thumb.lua or thumbfast). Its own layer.
     local b = ui.bar
     local t = b and ui.mouse.y >= BAR_Y - 12 and ui.mouse.y <= BAR_Y + BAR_H + 12
         and ui.mouse.x >= b.x0 and ui.mouse.x <= b.x1 and bar_time(ui.mouse.x)
     if not t or ui.opacity < 1 then
-        if ui.thumb_on then
-            mp.commandv("script-message-to", "thumbfast", "clear")
-            ui.thumb_on = false
-        end
+        clear_thumb()
         hover_layer:remove()
         return
     end
@@ -1080,18 +1100,35 @@ local function draw_hover()
     local bw = 26 + #label * 9.5
     local x = math.max(bw / 2 + 8, math.min(ui.w - bw / 2 - 8, spring("pill:x", ui.mouse.x, 0.32)))
     local y = BAR_Y - 46
-    hover_layer.res_x, hover_layer.res_y = ui.w, RES_Y
-    hover_layer.data = table.concat({
+    local layers = {
         shape(rr(x - bw / 2, y, bw, 28, 14), "120F0E", 40),
         text(x, y + 14, 5, 16, "FFFFFF", label, UI, true),
-    }, "\n")
-    hover_layer:update()
-    if thumb and thumb.available and thumb.width then
+    }
+    local th, target = active_thumb()
+    if th then
         local px, py = ui.scale, ui.scale
-        local tx = math.max(8 * px, math.min(ui.w * px - thumb.width - 8 * px, x * px - thumb.width / 2))
-        mp.commandv("script-message-to", "thumbfast", "thumb", tostring(t),
-            tostring(math.floor(tx)), tostring(math.floor((y - 8) * py - thumb.height)))
+        local tw, th_h = th.width / px, th.height / py
+        local bx = math.max(8, math.min(ui.w - tw - 8, x - tw / 2))
+        local by = y - 8 - th_h
+        if th.loading then
+            layers[#layers + 1] = shape(rr(bx - 1, by - 1, tw + 2, th_h + 2, 4), "120F0E", 30)
+            layers[#layers + 1] = text(bx + tw / 2, by + th_h / 2, 5, 13, "B8B8BC", "Loading…", UI, false)
+        end
+        hover_layer.res_x, hover_layer.res_y = ui.w, RES_Y
+        hover_layer.data = table.concat(layers, "\n")
+        hover_layer:update()
+        if ui.thumb_on and ui.thumb_target and ui.thumb_target ~= target then
+            clear_thumb()
+        end
+        mp.commandv("script-message-to", target, "thumb", tostring(t),
+            tostring(math.floor(bx * px + 0.5)), tostring(math.floor(by * py + 0.5)))
         ui.thumb_on = true
+        ui.thumb_target = target
+    else
+        clear_thumb()
+        hover_layer.res_x, hover_layer.res_y = ui.w, RES_Y
+        hover_layer.data = table.concat(layers, "\n")
+        hover_layer:update()
     end
 end
 
@@ -1757,19 +1794,26 @@ mp.observe_property("demuxer-cache-state", "native", function(_, c)
     end
 end)
 
+mp.register_script_message("anime-hub-thumb-info", function(raw)
+    hub_thumb = utils.parse_json(raw or "")
+    if ui.opacity > 0 then redraw() end
+end)
+
 mp.register_script_message("thumbfast-info", function(raw)
     thumb = utils.parse_json(raw or "")
 end)
 
 mp.register_event("start-file", function()
+    clear_thumb()
     info, segments, ui.menu = {}, {}, nil
 end)
 
 mp.register_event("file-loaded", function()
     -- Skins built on mpv's own OSC (ModernZ among them) step aside for us;
-    -- thumbfast, if there, says what it can do.
+    -- player-thumb.lua (or thumbfast, if present) says what it can do.
     mp.commandv("script-message", "osc-visibility", "never", "no-osd")
     mp.commandv("script-message", "anime-hub-skip-look")
+    mp.commandv("script-message", "anime-hub-thumb-query")
     mp.commandv("script-message-to", "thumbfast", "thumbfast-info")
     poke()
 end)
