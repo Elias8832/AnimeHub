@@ -302,7 +302,7 @@ class RealPlayerScripts(unittest.TestCase):
             with self.subTest(look.name):
                 run = subprocess.run([mpv, "--no-config", "--vo=null", "--ao=null", "--osc=no", "--msg-level=all=warn", "--frames=5",
                                       "av://lavfi:testsrc=d=1", f"--script={player.SKIP_CREDITS_LUA}", f"--script={look}",
-                                      f"--script={player.PLAYER_MOUSE_LUA}",
+                                      f"--script={player.PLAYER_MOUSE_LUA}", f"--script={player.PLAYER_THUMB_LUA}",
                                       f"--osd-fonts-dir={player.PLAYER_FONTS}"], capture_output=True, text=True, timeout=30)
                 self.assertNotIn("Lua error", run.stdout + run.stderr)
                 self.assertNotIn("error loading", (run.stdout + run.stderr).lower())

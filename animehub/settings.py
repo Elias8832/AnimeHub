@@ -114,7 +114,9 @@ MPV_CHOICES = {"mpv_start_volume": ("own", ("own", "last", "25", "50", "75", "10
                "mpv_right_double": ("own", CLICK_CHOICES),
                # Decision 74: who wins when input.conf binds the same button or key.
                "mpv_priority": ("config", ("config", "settings")),
-               "mpv_loaded": ("on", ("on", "off"))}
+               "mpv_loaded": ("on", ("on", "off")),
+               "mpv_thumb": ("all", ("all", "local", "off")),
+               "mpv_cache": ("own", ("own", "low", "medium", "high", "max", "unlimited"))}
 _SUB_SCALE_FLAGS = {"xsmall": "--sub-scale=0.65", "small": "--sub-scale=0.8", "normal": "--sub-scale=1.0",
                     "large": "--sub-scale=1.3", "xlarge": "--sub-scale=1.6"}
 _CHOICE_FLAGS = {"mpv_alang": {"jpn": "--alang=jpn,ja,jp", "eng": "--alang=eng,en", "ger": "--alang=ger,deu,de",
@@ -149,7 +151,13 @@ _CHOICE_FLAGS = {"mpv_alang": {"jpn": "--alang=jpn,ja,jp", "eng": "--alang=eng,e
                                  "high": "--sub-pos=76", "top": "--sub-pos=10"},
                  "mpv_sub_styled": {"keep": "--sub-ass-override=no", "scale": "--sub-ass-override=scale",
                                     "style": "--sub-ass-override=yes", "override": "--sub-ass-override=force",
-                                    "strip": "--sub-ass-override=strip"}}
+                                    "strip": "--sub-ass-override=strip"},
+                 # Exact memory caps (forward + backward cache) for preloading while watching & instant previews.
+                 "mpv_cache": {"low": ("--cache=yes", "--demuxer-readahead-secs=300", "--demuxer-max-bytes=100MiB", "--demuxer-max-back-bytes=50MiB"),
+                               "medium": ("--cache=yes", "--demuxer-readahead-secs=1800", "--demuxer-max-bytes=384MiB", "--demuxer-max-back-bytes=128MiB"),
+                               "high": ("--cache=yes", "--demuxer-readahead-secs=3600", "--demuxer-max-bytes=512MiB", "--demuxer-max-back-bytes=512MiB"),
+                               "max": ("--cache=yes", "--demuxer-readahead-secs=12000", "--demuxer-max-bytes=1024MiB", "--demuxer-max-back-bytes=1024MiB"),
+                               "unlimited": ("--cache=yes", "--demuxer-readahead-secs=86400", "--demuxer-max-bytes=100GiB", "--demuxer-max-back-bytes=100GiB")}}
 _SUB_FONT_SIMPLE = {"sans": "--sub-font=sans-serif", "serif": "--sub-font=serif", "mono": "--sub-font=monospace"}
 
 
@@ -476,7 +484,8 @@ def player_prefs():
     return {"skip": int(mpv_choice("mpv_skip_seconds")), "click": mpv_choice("mpv_click"),
             "click_windowed": mpv_choice("mpv_click_windowed"),
             "double": mpv_choice("mpv_double"), "wheel": mpv_choice("mpv_wheel"),
-            "right": mpv_choice("mpv_right"), "right_double": mpv_choice("mpv_right_double"), "priority": mpv_choice("mpv_priority"), "loaded": mpv_choice("mpv_loaded"),
+            "right": mpv_choice("mpv_right"), "right_double": mpv_choice("mpv_right_double"), "priority": mpv_choice("mpv_priority"),
+            "loaded": mpv_choice("mpv_loaded"), "thumb": mpv_choice("mpv_thumb"),
             "keys": key_prefs()}
 
 
