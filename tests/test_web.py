@@ -834,7 +834,7 @@ class Polish(unittest.TestCase):
 
     def test_a_tour_setting_does_not_reload_the_dialog(self):
         """A switch or card updates in place; only a new page animates."""
-        self.assertIn('if (m.t === "tour" && !focus) morphHTML(dlg, body);', APP)
+        self.assertIn('if ((m.t === "tour" || m.t === "aniup") && !focus) morphHTML(dlg, body);', APP)
         self.assertIn("tourback: () => { S.tour.step--; paintModal(true); }", APP)
         self.assertIn("if (T.step < tourBlocks().length - 1) { T.step++; return paintModal(true); }", APP)
 
@@ -1736,6 +1736,15 @@ class SubtitleSettingsUI(unittest.TestCase):
 class AniCliUpgradeNoticeUI(unittest.TestCase):
     """Noticing and upgrading ani-cli from the status line, Home, show pages,
     Settings (PC + Android), and playback failures."""
+
+    def test_poll_repaint_leaves_an_unchanged_dialog_alone(self):
+        """The upgrade loop repaints every 0.7 s; the same HTML must not
+        rebuild the dialog and replay its rise-in (TODO 299)."""
+        paint = APP.split("function paintModal(focus) {", 1)[1].split("\nfunction ", 1)[0]
+        self.assertIn('const same = dlg._html === body && m.t !== "entry";', paint)
+        self.assertIn('el.querySelector(".dialog")._html = body;', paint)
+        self.assertLess(paint.index("if (same)"), paint.index("dlg.innerHTML = body;"))
+        self.assertIn('else if ((m.t === "tour" || m.t === "aniup") && !focus) morphHTML(dlg, body);', paint)  # Updating… changes in place
 
     def test_notice_surfaces_and_dialog_wired(self):
         self.assertIn('"aniup"', APP.split("const DL2 = new Set(", 1)[1].split(")", 1)[0])

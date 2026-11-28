@@ -7463,8 +7463,13 @@ function paintModal(focus) {
   const cur = el.querySelector(".overlay:not(.leave)");
   if (cur && cur.dataset.t === m.t) {
     const dlg = cur.querySelector(".dialog");
-    dlg.classList.remove("swap");
-    if (m.t === "tour" && !focus) morphHTML(dlg, body);
+    /* Nothing changed (a poll while ani-cli updates repainted every 0.7 s):
+       leave it, or it rebuilds and its rows rise in again (TODO 299). */
+    const same = dlg._html === body && m.t !== "entry"; // the editor fills itself in after this
+    dlg._html = body;
+    if (!same) dlg.classList.remove("swap");
+    if (same) { /* keep what shows */ }
+    else if ((m.t === "tour" || m.t === "aniup") && !focus) morphHTML(dlg, body); // Update → Updating… → Ready: the same page, its words change
     else {
       const w0 = dlg.offsetWidth, h0 = dlg.offsetHeight; // mid-ease on a quick click: start from what shows
       dlg._size?.cancel(); dlg._size = null; dlg.style.removeProperty("overflow");
@@ -7482,6 +7487,7 @@ function paintModal(focus) {
     }
   } else {
     el.innerHTML = `<div class="overlay" data-t="${m.t}" ${m.t === "tour" ? "" : 'data-a="scrim"'}><div class="dialog ${m.t === "rec" ? "recon dl2" : m.t === "recap" || m.t === "plfd" ? m.t + " dl2" : m.t === "entry" || m.t === "match" ? m.t : DL2.has(m.t) ? "dl2" : ""}" role="dialog" aria-modal="true" aria-labelledby="dt" tabindex="-1">${body}</div></div>`;
+    el.querySelector(".dialog")._html = body;
   }
   if (m.t === "entry" && S.entry?.mid && !entryLoadedFor()) loadEntry(S.entry.mid); // the editor's own pick (Decision 83)
   else if (m.t === "entry" && S.entry?.f) entryPaint(S.entry.f, !!(S.entry.res?.pending || S.entry.res?.queued));
